@@ -127,7 +127,7 @@ public class ChatTaskToolsTests
     }
 
     [Fact]
-    public async Task CompleteTaskInListAsync_ThrowsWhenSummaryAmbiguous()
+    public async Task CompleteTaskInListAsync_AmbiguousInSameList_ReturnsStructuredJson()
     {
         _taskService.GetTaskListsAsync(Arg.Any<CancellationToken>())
             .Returns(new[] { new TaskList { Href = "/work/", DisplayName = "Work" } });
@@ -140,12 +140,14 @@ public class ChatTaskToolsTests
                 new TaskItem { Href = "/work/2.ics", Summary = "Review", ETag = "\"2\"" }
             });
 
-        var ex = await Should.ThrowAsync<InvalidOperationException>(
-            () => _sut.CompleteTaskInListAsync("Work", "Review", cancellationToken: CancellationToken.None));
+        var json = await _sut.CompleteTaskInListAsync("Work", "Review", cancellationToken: CancellationToken.None);
+        using var doc = JsonDocument.Parse(json);
 
-        ex.Message.ShouldContain("ambiguous");
-        ex.Message.ShouldContain("/work/1.ics");
-        ex.Message.ShouldContain("/work/2.ics");
+        doc.RootElement.GetProperty("status").GetString().ShouldBe("ambiguous");
+        doc.RootElement.GetProperty("summary").GetString().ShouldBe("Review");
+        doc.RootElement.GetProperty("message").GetString()!.ShouldContain("Multiple tasks match");
+        var candidates = doc.RootElement.GetProperty("candidates");
+        candidates.GetArrayLength().ShouldBe(2);
     }
 
     [Fact]
@@ -206,7 +208,7 @@ public class ChatTaskToolsTests
     }
 
     [Fact]
-    public async Task CompleteTaskInListAsync_WithoutListName_ThrowsWhenMatchesExistAcrossLists()
+    public async Task CompleteTaskInListAsync_AmbiguousAcrossLists_ReturnsStructuredJson()
     {
         _taskService.GetTaskListsAsync(Arg.Any<CancellationToken>())
             .Returns([
@@ -218,24 +220,39 @@ public class ChatTaskToolsTests
         _taskService.GetTasksAsync("/shopping/", Arg.Any<TaskQuery>(), Arg.Any<CancellationToken>())
             .Returns([new TaskItem { Href = "/shopping/1.ics", Summary = "Strawberry", ETag = "\"2\"" }]);
 
-        var ex = await Should.ThrowAsync<InvalidOperationException>(
-            () => _sut.CompleteTaskInListAsync(null, "Strawberry", cancellationToken: CancellationToken.None));
+        var json = await _sut.CompleteTaskInListAsync(null, "Strawberry", cancellationToken: CancellationToken.None);
+        using var doc = JsonDocument.Parse(json);
 
-        ex.Message.ShouldContain("ambiguous", Case.Insensitive);
-        ex.Message.ShouldContain("Shopping");
-        ex.Message.ShouldContain("Tasks");
+        doc.RootElement.GetProperty("status").GetString().ShouldBe("ambiguous");
+        doc.RootElement.GetProperty("summary").GetString().ShouldBe("Strawberry");
+        var candidates = doc.RootElement.GetProperty("candidates");
+        candidates.GetArrayLength().ShouldBe(2);
     }
 
     [Fact]
     public void ChatTools_DescriptionsSteerTowardListNames()
     {
-        var method = typeof(ChatTaskTools).GetMethod(nameof(ChatTaskTools.AddTaskToListAsync));
+        GetDescription(nameof(ChatTaskTools.AddTaskToListAsync)).ShouldBe(
+            "Create a task in a user-facing task list name. If the user says 'add a task ...' and does not name a list, omit listName so the configured default task list is used. Explicit list names always win over task content. Never choose a list based on what the task sounds like.");
+
+        GetDescription(nameof(ChatTaskTools.CompleteTaskInListAsync)).ShouldBe(
+            "Mark a task as completed by summary. If the user named a list, only that list is searched. If they did not name a list, all visible lists are searched. If zero tasks match, returns not_found. If multiple tasks match, returns ambiguous with candidates instead of guessing. Never complete multiple tasks in one call.");
+
+        GetDescription(nameof(ChatTaskTools.DeleteTaskInListAsync)).ShouldBe(
+            "Delete a task by summary. If the user named a list, only that list is searched. If they did not name a list, all visible lists are searched. If zero tasks match, returns not_found. If multiple tasks match, returns ambiguous with candidates instead of guessing. Never delete multiple tasks in one call.");
+
+        GetDescription(nameof(ChatTaskTools.FindTaskInListAsync)).ShouldBe(
+            "Find tasks by summary text. If the user named a list, pass listName and search only that list. If they did not name a list, this tool searches all visible lists and returns all matches. Use this for read-only lookup; for mutations, use complete_task_by_summary or delete_task_by_summary which enforce single-target safety.");
+    }
+
+    private static string GetDescription(string methodName)
+    {
+        var method = typeof(ChatTaskTools).GetMethod(methodName);
         method.ShouldNotBeNull();
 
-        var attr = method.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>();
+        var attr = method!.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>();
         attr.ShouldNotBeNull();
-        attr!.Description.ShouldContain("default", Case.Insensitive);
-        attr.Description.ShouldContain("Explicit list names always win", Case.Insensitive);
+        return attr!.Description;
     }
 
     [Fact]
@@ -275,7 +292,7 @@ public class ChatTaskToolsTests
     }
 
     [Fact]
-    public async Task DeleteTaskInListAsync_ThrowsNotFound_WithoutListName()
+    public async Task DeleteTaskInListAsync_NotFound_ReturnsStructuredJsonWithAvailableLists()
     {
         _taskService.GetTaskListsAsync(Arg.Any<CancellationToken>())
             .Returns([
@@ -287,15 +304,41 @@ public class ChatTaskToolsTests
         _taskService.GetTasksAsync("/shopping/", Arg.Any<TaskQuery>(), Arg.Any<CancellationToken>())
             .Returns(Array.Empty<TaskItem>());
 
-        var ex = await Should.ThrowAsync<InvalidOperationException>(
-            () => _sut.DeleteTaskInListAsync(null, "Nonexistent", cancellationToken: CancellationToken.None));
+        var json = await _sut.DeleteTaskInListAsync(null, "Nonexistent", cancellationToken: CancellationToken.None);
+        using var doc = JsonDocument.Parse(json);
 
-        ex.Message.ShouldContain("not found");
-        ex.Message.ShouldContain("any visible task list");
+        doc.RootElement.GetProperty("status").GetString().ShouldBe("not_found");
+        doc.RootElement.GetProperty("summary").GetString().ShouldBe("Nonexistent");
+        doc.RootElement.GetProperty("message").GetString()!.ShouldContain("not found");
+        var availableLists = doc.RootElement.GetProperty("availableLists");
+        availableLists.GetArrayLength().ShouldBe(2);
     }
 
     [Fact]
-    public async Task CompleteTaskInListAsync_ThrowsNotFound_WithExplicitListName()
+    public async Task DeleteTaskInListAsync_AmbiguousMatch_ReturnsStructuredJson()
+    {
+        _taskService.GetTaskListsAsync(Arg.Any<CancellationToken>())
+            .Returns([
+                new TaskList { Href = "/shopping/", DisplayName = "Shopping" },
+                new TaskList { Href = "/tasks/", DisplayName = "Tasks" }
+            ]);
+        _taskService.GetTasksAsync("/shopping/", Arg.Any<TaskQuery>(), Arg.Any<CancellationToken>())
+            .Returns([new TaskItem { Href = "/shopping/1.ics", Summary = "buy milk", ETag = "\"1\"" }]);
+        _taskService.GetTasksAsync("/tasks/", Arg.Any<TaskQuery>(), Arg.Any<CancellationToken>())
+            .Returns([new TaskItem { Href = "/tasks/2.ics", Summary = "buy milk", ETag = "\"2\"" }]);
+
+        var json = await _sut.DeleteTaskInListAsync(null, "buy milk", cancellationToken: CancellationToken.None);
+        using var doc = JsonDocument.Parse(json);
+
+        doc.RootElement.GetProperty("status").GetString().ShouldBe("ambiguous");
+        doc.RootElement.GetProperty("summary").GetString().ShouldBe("buy milk");
+        doc.RootElement.GetProperty("message").GetString()!.ShouldContain("Multiple tasks match");
+        var candidates = doc.RootElement.GetProperty("candidates");
+        candidates.GetArrayLength().ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task CompleteTaskInListAsync_NotFound_WithExplicitListName_ReturnsStructuredJson()
     {
         _taskService.GetTaskListsAsync(Arg.Any<CancellationToken>())
             .Returns([new TaskList { Href = "/work/", DisplayName = "Work" }]);
@@ -304,11 +347,15 @@ public class ChatTaskToolsTests
         _taskService.GetTasksAsync("/work/", Arg.Any<TaskQuery>(), Arg.Any<CancellationToken>())
             .Returns(Array.Empty<TaskItem>());
 
-        var ex = await Should.ThrowAsync<InvalidOperationException>(
-            () => _sut.CompleteTaskInListAsync("Work", "Missing task", cancellationToken: CancellationToken.None));
+        var json = await _sut.CompleteTaskInListAsync("Work", "Missing task", cancellationToken: CancellationToken.None);
+        using var doc = JsonDocument.Parse(json);
 
-        ex.Message.ShouldContain("not found");
-        ex.Message.ShouldContain("Work");
+        doc.RootElement.GetProperty("status").GetString().ShouldBe("not_found");
+        doc.RootElement.GetProperty("summary").GetString().ShouldBe("Missing task");
+        doc.RootElement.GetProperty("message").GetString()!.ShouldContain("not found");
+        doc.RootElement.GetProperty("message").GetString()!.ShouldContain("Work");
+        var availableLists = doc.RootElement.GetProperty("availableLists");
+        availableLists.GetArrayLength().ShouldBe(1);
     }
 
     [Fact]
