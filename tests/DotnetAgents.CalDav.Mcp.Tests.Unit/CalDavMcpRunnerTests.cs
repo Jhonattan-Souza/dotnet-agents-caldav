@@ -8,6 +8,17 @@ namespace DotnetAgents.CalDav.Mcp.Tests.Unit;
 
 public class CalDavMcpRunnerTests
 {
+    [Theory]
+    [InlineData("true")]
+    [InlineData("True")]
+    [InlineData("TRUE")]
+    public void ShouldExposeAdvancedTools_ReturnsTrue_ForCaseInsensitiveTrue(string envValue)
+    {
+        var result = CalDavMcpRunner.ShouldExposeAdvancedTools(_ => envValue);
+
+        result.ShouldBeTrue();
+    }
+
     [Fact]
     public async Task RunAsync_WithAllConfigMissing_ReturnsExitCode1()
     {

@@ -50,12 +50,18 @@ public sealed class CalDavMcpRunner
         }
     }
 
+    internal static bool ShouldExposeAdvancedTools(Func<string, string?>? envProvider = null)
+    {
+        var getEnv = envProvider ?? Environment.GetEnvironmentVariable;
+        return string.Equals(getEnv("CALDAV_EXPOSE_ADVANCED_TOOLS"), "true", StringComparison.OrdinalIgnoreCase);
+    }
+
     [ExcludeFromCodeCoverage]
     private static async Task<int> RunHostAsync(Action<CalDavOptions> configure, CancellationToken cancellationToken)
     {
         try
         {
-            var exposeAdvancedTools = Environment.GetEnvironmentVariable("CALDAV_EXPOSE_ADVANCED_TOOLS") == "true";
+            var exposeAdvancedTools = ShouldExposeAdvancedTools();
             var builder = CalDavHostBuilder.CreateBuilder(exposeAdvancedTools);
             builder.Services.ConfigureCalDav(configure);
             using var host = builder.Build();
