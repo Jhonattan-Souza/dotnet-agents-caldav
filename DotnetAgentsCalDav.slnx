@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DotnetAgents.CalDav.Core/DotnetAgents.CalDav.Core.csproj" />
+    <Project Path="src/DotnetAgents.CalDav.Mcp/DotnetAgents.CalDav.Mcp.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DotnetAgents.CalDav.Core.Tests.Unit/DotnetAgents.CalDav.Core.Tests.Unit.csproj" />
+    <Project Path="tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj" />
+    <Project Path="tests/DotnetAgents.CalDav.Mcp.Tests.Unit/DotnetAgents.CalDav.Mcp.Tests.Unit.csproj" />
+  </Folder>
+</Solution>

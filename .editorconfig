@@ -1,0 +1,79 @@
+root = true
+
+# All files
+[*]
+charset = utf-8
+indent_style = space
+indent_size = 2
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Markdown files
+[*.md]
+trim_trailing_whitespace = false
+
+# Text files
+[*.txt]
+insert_final_newline = false
+
+# Sln files
+[*.sln]
+indent_style = tab
+indent_size = 4
+
+# Shell scripts
+[*.sh]
+end_of_line = lf
+[*.{cmd,bat}]
+end_of_line = crlf
+
+# C# files
+[*.cs]
+indent_size = 4
+
+# Organize usings
+dotnet_separate_import_directive_groups = false
+dotnet_sort_system_directives_first = true
+
+# File header template
+file_header_template = unset
+
+# Code style
+csharp_style_prefer_primary_constructors = false:warning
+
+# Analyzers
+dotnet_diagnostic.CA1860.severity = warning
+dotnet_diagnostic.SYSLIB1045.severity = warning
+
+# Cyclomatic complexity (CA1502) — hard limit 10, error on violation
+dotnet_code_quality.CA1502.maximum_method_complexity = 10
+dotnet_code_quality.CA1502.severity = error
+dotnet_code_quality.CA1502.api_surface = all
+
+# Maintainability index (CA1501)
+dotnet_code_quality.CA1501.severity = warning
+dotnet_code_quality.CA1501.api_surface = all
+
+# Naming conventions
+dotnet_naming_rule.private_fields_with_underscore.severity = warning
+dotnet_naming_rule.private_fields_with_underscore.symbols = private_fields
+dotnet_naming_rule.private_fields_with_underscore.style = with_underscore
+
+dotnet_naming_symbols.private_fields.applicable_kinds = field
+dotnet_naming_symbols.private_fields.applicable_accessibilities = private
+
+dotnet_naming_style.with_underscore.required_prefix = _
+
+dotnet_naming_rule.interfaces_start_with_i.severity = warning
+dotnet_naming_rule.interfaces_start_with_i.symbols = interfaces
+dotnet_naming_rule.interfaces_start_with_i.style = starts_with_i
+
+dotnet_naming_symbols.interfaces.applicable_kinds = interface
+dotnet_naming_symbols.interfaces.applicable_accessibilities = public, internal, private, protected, protected_internal, private_protected
+
+dotnet_naming_style.starts_with_i.required_prefix = I
+
+# Unused code / formatting
+dotnet_diagnostic.IDE0005.severity = error
+dotnet_diagnostic.IDE0055.severity = error
+dotnet_diagnostic.CA1822.severity = warning

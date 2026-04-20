@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>$(NetLibVersion)</TargetFrameworks>
+    <OutputType>Exe</OutputType>
+    <PackageId>DotnetAgents.CalDav.Mcp</PackageId>
+    <PackageType>McpServer</PackageType>
+    <PackAsTool>true</PackAsTool>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DotnetAgents.CalDav.Core\DotnetAgents.CalDav.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include=".mcp/server.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

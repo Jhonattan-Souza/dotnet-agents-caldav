@@ -1,0 +1,60 @@
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <!-- Shared version variables -->
+  <PropertyGroup Label="SharedVersions">
+    <McpSdkVersion>1.2.0</McpSdkVersion>
+    <IcalNetVersion>5.2.1</IcalNetVersion>
+    <XunitV3Version>3.2.2</XunitV3Version>
+    <AutoFixtureVersion>4.18.1</AutoFixtureVersion>
+    <TestContainersVersion>4.11.0</TestContainersVersion>
+    <MicrosoftExtensionsVersion>10.0.6</MicrosoftExtensionsVersion>
+  </PropertyGroup>
+
+  <!-- MCP SDK -->
+  <ItemGroup Label="MCP">
+    <PackageVersion Include="ModelContextProtocol" Version="$(McpSdkVersion)" />
+  </ItemGroup>
+
+  <!-- Core Dependencies -->
+  <ItemGroup Label="Core">
+    <PackageVersion Include="Ical.Net" Version="$(IcalNetVersion)" />
+    <PackageVersion Include="Microsoft.Extensions.Http" Version="$(MicrosoftExtensionsVersion)" />
+    <PackageVersion Include="Microsoft.Extensions.Options" Version="$(MicrosoftExtensionsVersion)" />
+    <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="$(MicrosoftExtensionsVersion)" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="$(MicrosoftExtensionsVersion)" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="$(MicrosoftExtensionsVersion)" />
+  </ItemGroup>
+
+  <!-- Build / SourceLink / Analyzers -->
+  <ItemGroup Label="Build">
+    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.202" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="10.0.100" />
+  </ItemGroup>
+
+  <!-- Testing -->
+  <ItemGroup Label="Testing">
+    <PackageVersion Include="xunit.v3" Version="$(XunitV3Version)" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.4.0" />
+    <PackageVersion Include="coverlet.collector" Version="10.0.0" />
+    <PackageVersion Include="NSubstitute" Version="5.3.0" />
+    <PackageVersion Include="NSubstitute.Analyzers.CSharp" Version="1.0.17" />
+    <PackageVersion Include="AutoFixture" Version="$(AutoFixtureVersion)" />
+    <PackageVersion Include="AutoFixture.AutoNSubstitute" Version="$(AutoFixtureVersion)" />
+    <PackageVersion Include="Shouldly" Version="4.3.0" />
+    <PackageVersion Include="Verify.XunitV3" Version="31.16.1" />
+    <PackageVersion Include="RichardSzalay.MockHttp" Version="7.0.0" />
+    <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="$(MicrosoftExtensionsVersion)" />
+  </ItemGroup>
+
+  <!-- Integration Testing -->
+  <ItemGroup Label="Integration Testing">
+    <PackageVersion Include="Testcontainers" Version="$(TestContainersVersion)" />
+    <PackageVersion Include="Microsoft.Extensions.Logging" Version="$(MicrosoftExtensionsVersion)" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="$(MicrosoftExtensionsVersion)" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="$(MicrosoftExtensionsVersion)" />
+  </ItemGroup>
+</Project>

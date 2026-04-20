@@ -1,0 +1,5 @@
+# Roslynator configuration
+# Maximum cyclomatic complexity per method: 10 (hard limit)
+# Target: ≤7 for new code
+
+roslynator.CA1502.maximum_method_complexity = 10
