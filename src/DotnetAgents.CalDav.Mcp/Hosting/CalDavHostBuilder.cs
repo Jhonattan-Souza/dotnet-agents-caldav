@@ -1,5 +1,6 @@
 using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Core.DependencyInjection;
+using DotnetAgents.CalDav.Mcp.Tools;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -16,13 +17,26 @@ public sealed class CalDavHostBuilder
     /// The caller must configure <see cref="CalDavOptions"/> via <see cref="ConfigureCalDav"/>
     /// before calling <see cref="HostApplicationBuilder.Build"/>.
     /// </summary>
-    public static HostApplicationBuilder CreateBuilder()
+    /// <param name="exposeAdvancedTools">
+    /// When <c>true</c>, registers all tool classes including <see cref="TaskQueryTools"/> and
+    /// <see cref="TaskMutationTools"/> (href-based, advanced tools). When <c>false</c> (default),
+    /// registers only chat-safe tools: <see cref="TaskListTools"/> and <see cref="ChatTaskTools"/>.
+    /// </param>
+    public static HostApplicationBuilder CreateBuilder(bool exposeAdvancedTools = false)
     {
         var builder = Host.CreateApplicationBuilder();
 
-        builder.Services.AddMcpServer()
+        var mcpBuilder = builder.Services.AddMcpServer()
             .WithStdioServerTransport()
-            .WithToolsFromAssembly(typeof(CalDavHostBuilder).Assembly);
+            .WithTools<TaskListTools>()
+            .WithTools<ChatTaskTools>();
+
+        if (exposeAdvancedTools)
+        {
+            mcpBuilder
+                .WithTools<TaskQueryTools>()
+                .WithTools<TaskMutationTools>();
+        }
 
         // TimeProvider abstraction — registered at the host layer so the MCP
         // program explicitly owns the dependency rather than relying on a

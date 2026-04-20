@@ -137,4 +137,57 @@ public class CalDavHostBuilderTests
             toolMethods.ShouldNotBeEmpty($"{toolType.Name} is marked [McpServerToolType] but has no [McpServerTool] methods");
         }
     }
+
+    [Fact]
+    public void CreateBuilder_DefaultMode_RegistersOnlyChatSafeTools()
+    {
+        // Arrange & Act
+        var builder = CalDavHostBuilder.CreateBuilder();
+
+        // Assert — only TaskListTools and ChatTaskTools should be registered as tool types
+        var registeredToolTypes = GetRegisteredMcpToolTypes(builder.Services);
+
+        registeredToolTypes.ShouldContain(typeof(DotnetAgents.CalDav.Mcp.Tools.TaskListTools));
+        registeredToolTypes.ShouldContain(typeof(DotnetAgents.CalDav.Mcp.Tools.ChatTaskTools));
+        registeredToolTypes.ShouldNotContain(typeof(DotnetAgents.CalDav.Mcp.Tools.TaskQueryTools),
+            "TaskQueryTools should not be registered in default (chat-safe) mode");
+        registeredToolTypes.ShouldNotContain(typeof(DotnetAgents.CalDav.Mcp.Tools.TaskMutationTools),
+            "TaskMutationTools should not be registered in default (chat-safe) mode");
+    }
+
+    [Fact]
+    public void CreateBuilder_AdvancedMode_RegistersAllToolTypes()
+    {
+        // Arrange & Act
+        var builder = CalDavHostBuilder.CreateBuilder(exposeAdvancedTools: true);
+
+        // Assert — all 4 tool classes should be registered
+        var registeredToolTypes = GetRegisteredMcpToolTypes(builder.Services);
+
+        registeredToolTypes.ShouldContain(typeof(DotnetAgents.CalDav.Mcp.Tools.TaskListTools));
+        registeredToolTypes.ShouldContain(typeof(DotnetAgents.CalDav.Mcp.Tools.ChatTaskTools));
+        registeredToolTypes.ShouldContain(typeof(DotnetAgents.CalDav.Mcp.Tools.TaskQueryTools));
+        registeredToolTypes.ShouldContain(typeof(DotnetAgents.CalDav.Mcp.Tools.TaskMutationTools));
+    }
+
+    private static IReadOnlyList<Type> GetRegisteredMcpToolTypes(IServiceCollection services)
+    {
+        // The MCP SDK registers each [McpServerTool] method as an McpServerTool service.
+        // The ImplementationFactory's declaring type is a generic closure class that
+        // captures the tool type as its first generic argument.
+        var mcpAssembly = typeof(DotnetAgents.CalDav.Mcp.Hosting.CalDavHostBuilder).Assembly;
+        var knownToolTypes = mcpAssembly.GetTypes()
+            .Where(t => t.GetCustomAttribute<ModelContextProtocol.Server.McpServerToolTypeAttribute>() is not null)
+            .ToHashSet();
+
+        return services
+            .Where(sd => sd.ServiceType == typeof(ModelContextProtocol.Server.McpServerTool)
+                         && sd.ImplementationFactory is not null)
+            .Select(sd => sd.ImplementationFactory!.Method.DeclaringType)
+            .Where(declaringType => declaringType is not null && declaringType.IsGenericType)
+            .Select(declaringType => declaringType!.GetGenericArguments()[0])
+            .Where(toolType => knownToolTypes.Contains(toolType))
+            .Distinct()
+            .ToArray();
+    }
 }
