@@ -20,9 +20,9 @@ public sealed class TaskQueryTools
         _taskService = taskService;
     }
 
-    [McpServerTool(Name = "list_tasks"), Description("List tasks in a CalDAV task list by absolute href with optional filters. Use the chat-oriented list-name tools unless you already know the exact href.")]
+    [McpServerTool(Name = "list_tasks"), Description("List tasks in a CalDAV task list by absolute href with optional filters. Only use this when the user explicitly provides or confirms the exact href. Prefer the chat-oriented list-name tools for normal agent workflows.")]
     public async Task<string> ListTasksAsync(
-        [Description("The absolute href of the task list to query. Use chat-oriented list-name tools unless you already know the exact href.")] string taskListHref,
+        [Description("The absolute href of the task list to query. Only use this when the user explicitly provides or confirms the exact href. Prefer chat-oriented list-name tools otherwise.")] string taskListHref,
         [Description("Filter by status: NeedsAction, InProcess, Completed, or Cancelled")] string? status = null,
         [Description("Filter for tasks due after this date/time")] DateTimeOffset? dueAfter = null,
         [Description("Filter for tasks due before this date/time")] DateTimeOffset? dueBefore = null,
@@ -43,9 +43,9 @@ public sealed class TaskQueryTools
         return System.Text.Json.JsonSerializer.Serialize(tasks);
     }
 
-    [McpServerTool(Name = "get_task"), Description("Get a single CalDAV task by its absolute href. Use chat-oriented list-name tools unless you already know the exact href.")]
+    [McpServerTool(Name = "get_task"), Description("Get a single CalDAV task by its absolute href. Only use this when the user explicitly provides or confirms the exact href. Prefer chat-oriented list-name tools otherwise.")]
     public async Task<string> GetTaskAsync(
-        [Description("The absolute href of the task to retrieve. Use chat-oriented list-name tools unless you already know the exact href.")] string href,
+        [Description("The absolute href of the task to retrieve. Only use this when the user explicitly provides or confirms the exact href. Prefer chat-oriented list-name tools otherwise.")] string href,
         CancellationToken cancellationToken)
     {
         var task = await _taskService.GetTaskAsync(href, cancellationToken);

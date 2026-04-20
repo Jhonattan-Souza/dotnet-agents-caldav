@@ -148,6 +148,9 @@ public class ChatTaskToolsTests
         doc.RootElement.GetProperty("message").GetString()!.ShouldContain("Multiple tasks match");
         var candidates = doc.RootElement.GetProperty("candidates");
         candidates.GetArrayLength().ShouldBe(2);
+        candidates[0].GetProperty("summary").GetString().ShouldBe("Review");
+        candidates[0].GetProperty("taskListName").GetString().ShouldBe("Work");
+        candidates[0].GetProperty("href").GetString().ShouldBe("/work/1.ics");
     }
 
     [Fact]
@@ -227,6 +230,9 @@ public class ChatTaskToolsTests
         doc.RootElement.GetProperty("summary").GetString().ShouldBe("Strawberry");
         var candidates = doc.RootElement.GetProperty("candidates");
         candidates.GetArrayLength().ShouldBe(2);
+        candidates[0].GetProperty("summary").GetString().ShouldBe("Strawberry");
+        candidates[0].GetProperty("taskListName").GetString().ShouldBe("Tasks");
+        candidates[0].GetProperty("href").GetString().ShouldBe("/tasks/1.ics");
     }
 
     [Fact]
@@ -236,13 +242,13 @@ public class ChatTaskToolsTests
             "Create a task in a user-facing task list name. If the user says 'add a task ...' and does not name a list, omit listName so the configured default task list is used. Explicit list names always win over task content. Never choose a list based on what the task sounds like.");
 
         GetDescription(nameof(ChatTaskTools.CompleteTaskInListAsync)).ShouldBe(
-            "Mark a task as completed by summary. If the user named a list, only that list is searched. If they did not name a list, all visible lists are searched. If zero tasks match, returns not_found. If multiple tasks match, returns ambiguous with candidates instead of guessing. Never complete multiple tasks in one call.");
+            "Mark a task as completed by summary. If the user named a list, only that list is searched. If they did not name a list, all visible lists are searched. If zero tasks match, returns not_found. If multiple tasks match, returns ambiguous with candidates instead of guessing. This is a single-target tool: never complete multiple tasks in one call or by repeating this tool for a bulk request without explicit per-target confirmation.");
 
         GetDescription(nameof(ChatTaskTools.DeleteTaskInListAsync)).ShouldBe(
-            "Delete a task by summary. If the user named a list, only that list is searched. If they did not name a list, all visible lists are searched. If zero tasks match, returns not_found. If multiple tasks match, returns ambiguous with candidates instead of guessing. Never delete multiple tasks in one call.");
+            "Delete a task by summary. If the user named a list, only that list is searched. If they did not name a list, all visible lists are searched. If zero tasks match, returns not_found. If multiple tasks match, returns ambiguous with candidates instead of guessing. This is a single-target tool: never delete multiple tasks in one call or by repeating this tool for a bulk request without explicit per-target confirmation.");
 
         GetDescription(nameof(ChatTaskTools.FindTaskInListAsync)).ShouldBe(
-            "Find tasks by summary text. If the user named a list, pass listName and search only that list. If they did not name a list, this tool searches all visible lists and returns all matches. Use this for read-only lookup; for mutations, use complete_task_by_summary or delete_task_by_summary which enforce single-target safety.");
+            "Find tasks by summary text. If the user named a list, pass listName and search only that list. If they did not name a list, this tool searches all visible lists and returns all matches. Use this for read-only lookup only. Do not use this as the first step of a destructive flow; for mutations, call complete_task_by_summary or delete_task_by_summary directly because they enforce single-target safety.");
     }
 
     private static string GetDescription(string methodName)
@@ -335,6 +341,9 @@ public class ChatTaskToolsTests
         doc.RootElement.GetProperty("message").GetString()!.ShouldContain("Multiple tasks match");
         var candidates = doc.RootElement.GetProperty("candidates");
         candidates.GetArrayLength().ShouldBe(2);
+        candidates[0].GetProperty("summary").GetString().ShouldBe("buy milk");
+        candidates[0].GetProperty("taskListName").GetString().ShouldBe("Shopping");
+        candidates[0].GetProperty("href").GetString().ShouldBe("/shopping/1.ics");
     }
 
     [Fact]
