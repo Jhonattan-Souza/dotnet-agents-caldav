@@ -27,6 +27,7 @@ jobs:
         with:
           global-json-file: global.json
           cache: true
+          lockfile: false
 
       - name: Restore local tools
         run: dotnet tool restore
