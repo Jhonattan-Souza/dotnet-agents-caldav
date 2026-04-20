@@ -3,9 +3,10 @@
   <PropertyGroup>
     <TargetFrameworks>$(NetLibVersion)</TargetFrameworks>
     <OutputType>Exe</OutputType>
-    <PackageId>DotnetAgents.CalDav.Mcp</PackageId>
+    <PackageId>dotnet-agents-caldav</PackageId>
     <PackageType>McpServer</PackageType>
     <PackAsTool>true</PackAsTool>
+    <ToolCommandName>dotnet-agents-caldav</ToolCommandName>
   </PropertyGroup>
 
   <ItemGroup>

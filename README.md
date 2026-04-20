@@ -13,7 +13,7 @@ Add this MCP server to VS Code, Claude Desktop, Cursor, or any MCP client:
   "mcpServers": {
     "caldav-tasks": {
       "command": "dnx",
-      "args": ["--yes", "DotnetAgents.CalDav.Mcp"],
+      "args": ["--yes", "dotnet-agents-caldav"],
       "env": {
         "CALDAV_URL": "https://caldav.example.com",
         "CALDAV_USERNAME": "user",

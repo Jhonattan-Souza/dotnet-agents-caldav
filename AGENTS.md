@@ -96,9 +96,9 @@ CI enforces (in order):
 
 ## Distribution
 
-Published as `DotnetAgents.CalDav.Mcp` on NuGet. Installed via:
+Published as `dotnet-agents-caldav` on NuGet. Installed via:
 ```bash
-dnx --yes DotnetAgents.CalDav.Mcp
+dnx --yes dotnet-agents-caldav
 ```
 
 Requires environment variables: `CALDAV_URL`, `CALDAV_USERNAME`, `CALDAV_PASSWORD`
