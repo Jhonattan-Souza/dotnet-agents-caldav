@@ -8,15 +8,6 @@ namespace DotnetAgents.CalDav.Core.Services;
 /// <inheritdoc/>
 internal sealed class TaskListResolver : ITaskListResolver
 {
-    private static readonly IReadOnlyDictionary<string, string> KnownAliases =
-        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            { "task list", "Tasks" },
-            { "tasks", "Tasks" },
-            { "shopping list", "Shopping" },
-            { "shopping", "Shopping" },
-        };
-
     private readonly IOptions<CalDavOptions> _options;
 
     public TaskListResolver(IOptions<CalDavOptions> options)
@@ -63,11 +54,11 @@ internal sealed class TaskListResolver : ITaskListResolver
                     $"Ambiguous task list name '{userInput}' matched {exactMatches.Count} lists.");
             }
 
-            // Rule 2: Known alias match
-            var aliasResolved = TryResolveAlias(taskLists, userInput.Trim());
-            if (aliasResolved is not null)
+            // Rule 2: Dynamic alias match
+            var aliasMap = BuildAliasMap(taskLists);
+            if (aliasMap.TryGetValue(userInput.Trim(), out var aliasMatch))
             {
-                return Task.FromResult(WithDefaultFlag(aliasResolved, defaultName));
+                return Task.FromResult(WithDefaultFlag(aliasMatch, defaultName));
             }
         }
 
@@ -91,28 +82,47 @@ internal sealed class TaskListResolver : ITaskListResolver
             message);
     }
 
-    private static TaskList? TryResolveAlias(IReadOnlyList<TaskList> taskLists, string input)
+    private static IReadOnlyDictionary<string, TaskList> BuildAliasMap(IReadOnlyList<TaskList> taskLists)
     {
-        if (KnownAliases.TryGetValue(input, out var canonicalPhrase))
-        {
-            var matches = taskLists
-                .Where(t =>
-                    t.DisplayName.Contains(canonicalPhrase, StringComparison.OrdinalIgnoreCase) ||
-                    t.DisplayName.Contains(input, StringComparison.OrdinalIgnoreCase))
-                .ToList();
+        var suffixes = new[] { " list", " tasks", " task list" };
+        var aliases = new Dictionary<string, List<TaskList>>(StringComparer.OrdinalIgnoreCase);
 
-            return matches.Count switch
+        foreach (var list in taskLists)
+        {
+            var name = list.DisplayName.Trim();
+
+            foreach (var suffix in suffixes)
             {
-                1 => matches[0],
-                > 1 => throw new TaskListResolutionException(
-                    input,
-                    taskLists.Select(t => t.DisplayName).ToList(),
-                    $"Task list alias '{input}' is ambiguous. Matching lists: {string.Join(", ", matches.Select(t => t.DisplayName))}."),
-                _ => null
-            };
+                if (name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) && name.Length > suffix.Length)
+                {
+                    var stripped = name[..^suffix.Length].Trim();
+                    if (!string.IsNullOrWhiteSpace(stripped))
+                    {
+                        if (!aliases.TryGetValue(stripped, out var existing))
+                        {
+                            existing = [];
+                            aliases[stripped] = existing;
+                        }
+                        existing.Add(list);
+                    }
+                }
+            }
+
+            if (name.Length > 1 && name.EndsWith('s'))
+            {
+                var singular = name[..^1];
+                if (!aliases.TryGetValue(singular, out var existing))
+                {
+                    existing = [];
+                    aliases[singular] = existing;
+                }
+                existing.Add(list);
+            }
         }
 
-        return null;
+        return aliases
+            .Where(kvp => kvp.Value.Count == 1)
+            .ToDictionary(kvp => kvp.Key, kvp => kvp.Value[0], StringComparer.OrdinalIgnoreCase);
     }
 
     private static TaskList? ResolveDefaultList(IReadOnlyList<TaskList> taskLists, string? defaultName)

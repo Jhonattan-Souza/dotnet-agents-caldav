@@ -92,22 +92,22 @@ public class TaskListResolverTests
     public async Task ResolveAsync_AliasTasks_ResolvesToSingleTasksList()
     {
         var resolver = CreateResolver();
-        var lists = new List<TaskList> { T("My Tasks"), T("Shopping List") };
+        var lists = new List<TaskList> { T("Tasks"), T("Shopping List") };
 
-        var result = await resolver.ResolveAsync(lists, "tasks", TestContext.Current.CancellationToken);
+        var result = await resolver.ResolveAsync(lists, "task", TestContext.Current.CancellationToken);
 
-        result.DisplayName.ShouldBe("My Tasks");
+        result.DisplayName.ShouldBe("Tasks");
     }
 
     [Fact]
     public async Task ResolveAsync_AliasTaskList_ResolvesToSingleTasksList()
     {
         var resolver = CreateResolver();
-        var lists = new List<TaskList> { T("My Tasks"), T("Shopping List") };
+        var lists = new List<TaskList> { T("Tasks"), T("Shopping List") };
 
-        var result = await resolver.ResolveAsync(lists, "task list", TestContext.Current.CancellationToken);
+        var result = await resolver.ResolveAsync(lists, "tasks", TestContext.Current.CancellationToken);
 
-        result.DisplayName.ShouldBe("My Tasks");
+        result.DisplayName.ShouldBe("Tasks");
     }
 
     [Fact]
@@ -136,15 +136,13 @@ public class TaskListResolverTests
     public async Task ResolveAsync_AliasAmbiguous_ThrowsWithCandidates()
     {
         var resolver = CreateResolver();
-        // Two lists that both contain "Tasks"
         var lists = new List<TaskList> { T("Work Tasks"), T("Personal Tasks") };
 
         var ex = await Should.ThrowAsync<TaskListResolutionException>(
             () => resolver.ResolveAsync(lists, "tasks", TestContext.Current.CancellationToken));
 
-        ex.Message.ShouldContain("ambiguous", Case.Insensitive);
-        ex.Message.ShouldContain("Work Tasks");
-        ex.Message.ShouldContain("Personal Tasks");
+        ex.Message.ShouldContain("not found", Case.Insensitive);
+        ex.AvailableLists.ShouldBe(["Work Tasks", "Personal Tasks"]);
     }
 
     [Fact]
@@ -237,6 +235,69 @@ public class TaskListResolverTests
         var result = await resolver.ResolveAsync(lists, "tasks", TestContext.Current.CancellationToken);
 
         result.DisplayName.ShouldBe("tasks");
+    }
+
+    // ─── Phase 2: Dynamic alias generation ─────────────────────────────────
+
+    [Fact]
+    public async Task ResolveAsync_DynamicAlias_SuffixStripping_ResolvesShoppingList()
+    {
+        var resolver = CreateResolver();
+        var lists = new List<TaskList> { T("My Tasks"), T("Shopping List") };
+
+        var result = await resolver.ResolveAsync(lists, "shopping", TestContext.Current.CancellationToken);
+
+        result.DisplayName.ShouldBe("Shopping List");
+    }
+
+    [Fact]
+    public async Task ResolveAsync_DynamicAlias_SingularForm_ResolvesTasksList()
+    {
+        var resolver = CreateResolver();
+        var lists = new List<TaskList> { T("Tasks"), T("Shopping List") };
+
+        var result = await resolver.ResolveAsync(lists, "task", TestContext.Current.CancellationToken);
+
+        result.DisplayName.ShouldBe("Tasks");
+    }
+
+    [Fact]
+    public async Task ResolveAsync_DynamicAlias_AmbiguousAlias_DroppedAndThrowsNotFound()
+    {
+        var resolver = CreateResolver();
+        // Both "Personal Tasks" (strips " tasks") and "Personal List" (strips " list") generate "personal"
+        var lists = new List<TaskList> { T("Personal Tasks"), T("Personal List") };
+
+        var ex = await Should.ThrowAsync<TaskListResolutionException>(
+            () => resolver.ResolveAsync(lists, "personal", TestContext.Current.CancellationToken));
+
+        ex.Message.ShouldContain("not found", Case.Insensitive);
+        ex.AvailableLists.ShouldBe(["Personal Tasks", "Personal List"]);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_DynamicAlias_NoCollisionWithExactName()
+    {
+        var resolver = CreateResolver();
+        var lists = new List<TaskList> { T("Work"), T("Work Tasks") };
+
+        // "work" should resolve to "Work" via exact match, not be confused with "Work Tasks"
+        var result = await resolver.ResolveAsync(lists, "work", TestContext.Current.CancellationToken);
+
+        result.DisplayName.ShouldBe("Work");
+    }
+
+    [Fact]
+    public async Task ResolveAsync_DynamicAlias_AvailableListsReportedOnFailure()
+    {
+        var resolver = CreateResolver();
+        var lists = new List<TaskList> { T("Shopping List"), T("Work Tasks") };
+
+        var ex = await Should.ThrowAsync<TaskListResolutionException>(
+            () => resolver.ResolveAsync(lists, "nonexistent", TestContext.Current.CancellationToken));
+
+        ex.AvailableLists.ShouldContain("Shopping List");
+        ex.AvailableLists.ShouldContain("Work Tasks");
     }
 
     // ─── Cancellation ──────────────────────────────────────────────────────
