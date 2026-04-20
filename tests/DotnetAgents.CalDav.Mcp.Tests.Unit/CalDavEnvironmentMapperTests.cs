@@ -108,38 +108,4 @@ public class CalDavEnvironmentMapperTests
         options.DefaultTaskList.ShouldBeNull();
     }
 
-    [Fact]
-    public void MapFromEnvironment_MapsExposeAdvancedTools_WhenEnvVarIsTrue()
-    {
-        var envVars = new Dictionary<string, string?>
-        {
-            ["CALDAV_URL"] = "https://caldav.example.com",
-            ["CALDAV_USERNAME"] = "user",
-            ["CALDAV_PASSWORD"] = "pass",
-            ["CALDAV_EXPOSE_ADVANCED_TOOLS"] = "true",
-        };
-
-        var configure = CalDavEnvironmentMapper.MapFromEnvironment(key => envVars.GetValueOrDefault(key));
-        var options = new CalDavOptions();
-        configure(options);
-
-        options.ExposeAdvancedTools.ShouldBeTrue();
-    }
-
-    [Fact]
-    public void MapFromEnvironment_MissingExposeAdvancedTools_DefaultsToFalse()
-    {
-        var envVars = new Dictionary<string, string?>
-        {
-            ["CALDAV_URL"] = "https://caldav.example.com",
-            ["CALDAV_USERNAME"] = "user",
-            ["CALDAV_PASSWORD"] = "pass",
-        };
-
-        var configure = CalDavEnvironmentMapper.MapFromEnvironment(key => envVars.GetValueOrDefault(key));
-        var options = new CalDavOptions();
-        configure(options);
-
-        options.ExposeAdvancedTools.ShouldBeFalse();
-    }
 }

@@ -28,9 +28,6 @@ public sealed class CalDavOptions
     /// <summary>Optional timeout for HTTP requests. Defaults to 30 seconds.</summary>
     public TimeSpan RequestTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
-    /// <summary>When true, advanced (href-based) MCP tools are exposed alongside chat-oriented tools. Defaults to false.</summary>
-    public bool ExposeAdvancedTools { get; set; }
-
     public override string ToString() =>
         $"CalDavOptions {{ BaseUrl = {BaseUrl}, Username = {Username}, Password = *** }}";
 }
