@@ -31,6 +31,9 @@ jobs:
       - name: Restore local tools
         run: dotnet tool restore
 
+      - name: Restore packages
+        run: dotnet restore
+
       - name: Build Release
         run: dotnet build -c Release --no-restore
 
