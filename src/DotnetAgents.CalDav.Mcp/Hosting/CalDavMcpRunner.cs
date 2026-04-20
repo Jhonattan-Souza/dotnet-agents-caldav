@@ -55,7 +55,8 @@ public sealed class CalDavMcpRunner
     {
         try
         {
-            var builder = CalDavHostBuilder.CreateBuilder();
+            var exposeAdvancedTools = Environment.GetEnvironmentVariable("CALDAV_EXPOSE_ADVANCED_TOOLS") == "true";
+            var builder = CalDavHostBuilder.CreateBuilder(exposeAdvancedTools);
             builder.Services.ConfigureCalDav(configure);
             using var host = builder.Build();
             await host.RunAsync(cancellationToken).ConfigureAwait(false);
