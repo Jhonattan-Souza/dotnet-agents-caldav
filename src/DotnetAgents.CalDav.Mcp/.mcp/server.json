@@ -25,6 +25,10 @@
     "CALDAV_DEFAULT_TASK_LIST": {
       "description": "Display name of the default task list to use when chat requests omit an explicit list name (optional)",
       "required": false
+    },
+    "CALDAV_EXPOSE_ADVANCED_TOOLS": {
+      "description": "Set to true to expose advanced href-based tools alongside the chat-safe surface (optional)",
+      "required": false
     }
   }
 }
