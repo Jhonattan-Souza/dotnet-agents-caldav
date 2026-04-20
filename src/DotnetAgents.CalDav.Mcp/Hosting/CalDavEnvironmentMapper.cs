@@ -11,7 +11,8 @@ public static class CalDavEnvironmentMapper
 {
     /// <summary>
     /// Creates a configure action that reads CALDAV_URL, CALDAV_USERNAME,
-    /// CALDAV_PASSWORD, and optional CALDAV_TASK_LISTS from environment variables.
+    /// CALDAV_PASSWORD, CALDAV_TASK_LISTS, CALDAV_DEFAULT_TASK_LIST, and CALDAV_EXPOSE_ADVANCED_TOOLS
+    /// from environment variables.
     /// </summary>
     /// <param name="envProvider">
     /// Override for environment variable access. Defaults to <see cref="Environment.GetEnvironmentVariable"/>.
@@ -27,6 +28,7 @@ public static class CalDavEnvironmentMapper
             options.Password = getEnv("CALDAV_PASSWORD") ?? string.Empty;
             options.TaskLists = getEnv("CALDAV_TASK_LISTS");
             options.DefaultTaskList = getEnv("CALDAV_DEFAULT_TASK_LIST");
+            options.ExposeAdvancedTools = bool.TryParse(getEnv("CALDAV_EXPOSE_ADVANCED_TOOLS"), out var exposeAdvanced) && exposeAdvanced;
         };
     }
 }
