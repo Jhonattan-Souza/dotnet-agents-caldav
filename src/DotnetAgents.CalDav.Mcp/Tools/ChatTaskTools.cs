@@ -71,7 +71,7 @@ public sealed class ChatTaskTools
         return JsonSerializer.Serialize(created);
     }
 
-    [McpServerTool(Name = "find_tasks"), Description("Find tasks by summary text. If the user named a list, pass listName and search only that list. If they did not name a list, this tool searches all visible lists and returns all matches. Use this for read-only lookup; for mutations, use complete_task_by_summary or delete_task_by_summary which enforce single-target safety.")]
+    [McpServerTool(Name = "find_tasks"), Description("Find tasks by summary text. If the user named a list, pass listName and search only that list. If they did not name a list, this tool searches all visible lists and returns all matches. Use this for read-only lookup only. Do not use this as the first step of a destructive flow; for mutations, call complete_task_by_summary or delete_task_by_summary directly because they enforce single-target safety.")]
     public async Task<string> FindTaskInListAsync(
         [Description("User-facing task list name such as 'Shopping', 'Work', or 'task list'. Omit or pass null to search all visible lists.")] string? taskListName,
         [Description("Exact task summary to match. If multiple tasks share this summary, all matches are returned.")] string summary,
@@ -81,7 +81,7 @@ public sealed class ChatTaskTools
         return JsonSerializer.Serialize(matches);
     }
 
-    [McpServerTool(Name = "complete_task_by_summary"), Description("Mark a task as completed by summary. If the user named a list, only that list is searched. If they did not name a list, all visible lists are searched. If zero tasks match, returns not_found. If multiple tasks match, returns ambiguous with candidates instead of guessing. Never complete multiple tasks in one call.")]
+    [McpServerTool(Name = "complete_task_by_summary"), Description("Mark a task as completed by summary. If the user named a list, only that list is searched. If they did not name a list, all visible lists are searched. If zero tasks match, returns not_found. If multiple tasks match, returns ambiguous with candidates instead of guessing. This is a single-target tool: never complete multiple tasks in one call or by repeating this tool for a bulk request without explicit per-target confirmation.")]
     public async Task<string> CompleteTaskInListAsync(
         [Description("User-facing task list name such as 'Shopping', 'Work', or 'task list'. Omit or pass null to search all visible lists.")] string? taskListName,
         [Description("Exact task summary to match. If multiple tasks share this summary, the tool fails with candidates.")] string summary,
@@ -112,7 +112,7 @@ public sealed class ChatTaskTools
         return JsonSerializer.Serialize(completed);
     }
 
-    [McpServerTool(Name = "delete_task_by_summary"), Description("Delete a task by summary. If the user named a list, only that list is searched. If they did not name a list, all visible lists are searched. If zero tasks match, returns not_found. If multiple tasks match, returns ambiguous with candidates instead of guessing. Never delete multiple tasks in one call.")]
+    [McpServerTool(Name = "delete_task_by_summary"), Description("Delete a task by summary. If the user named a list, only that list is searched. If they did not name a list, all visible lists are searched. If zero tasks match, returns not_found. If multiple tasks match, returns ambiguous with candidates instead of guessing. This is a single-target tool: never delete multiple tasks in one call or by repeating this tool for a bulk request without explicit per-target confirmation.")]
     public async Task<string> DeleteTaskInListAsync(
         [Description("User-facing task list name such as 'Shopping', 'Work', or 'task list'. Omit or pass null to search all visible lists.")] string? taskListName,
         [Description("Exact task summary to match. If multiple tasks share this summary, the tool fails with candidates.")] string summary,
@@ -245,7 +245,10 @@ public sealed class ChatTaskTools
         public static readonly NotFoundResult Instance = new();
     }
 
-    private sealed record CandidateMatch(string Summary, string TaskListName, string Href);
+    private sealed record CandidateMatch(
+        [property: JsonPropertyName("summary")] string Summary,
+        [property: JsonPropertyName("taskListName")] string TaskListName,
+        [property: JsonPropertyName("href")] string Href);
 
     private sealed record AmbiguousResponse(
         [property: JsonPropertyName("status")] string Status,

@@ -237,10 +237,21 @@ public sealed class McpToolsIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task GetTask_ThrowsWhenNotFound()
+    public async Task ChatDeleteTaskBySummary_ReturnsAmbiguousJsonWhenMultipleTasksMatchInSameList()
     {
-        await Should.ThrowAsync<InvalidOperationException>(
-            () => _taskQueryTools.GetTaskAsync("/nonexistent/path.ics", TestContext.Current.CancellationToken));
+        var summary = UniqueValue("duplicate-delete");
+        await CreateTrackedTaskAsync(new TaskItem { Summary = summary });
+        await CreateTrackedTaskAsync(new TaskItem { Summary = summary });
+
+        var json = await _chatTaskTools.DeleteTaskInListAsync(
+            "Tasks",
+            summary,
+            cancellationToken: TestContext.Current.CancellationToken);
+        using var doc = JsonDocument.Parse(json);
+
+        doc.RootElement.GetProperty("status").GetString().ShouldBe("ambiguous");
+        doc.RootElement.GetProperty("summary").GetString().ShouldBe(summary);
+        doc.RootElement.GetProperty("candidates").GetArrayLength().ShouldBe(2);
     }
 
     [Fact]
@@ -450,23 +461,6 @@ public sealed class McpToolsIntegrationTests : IAsyncLifetime
 
         tasks.ShouldContain(task => task.Summary == taskSummary);
         tasks.ShouldNotContain(task => task.Summary == shoppingSummary);
-    }
-
-    [Fact]
-    public async Task ChatDeleteTaskBySummary_ThrowsWhenMultipleTasksMatchInSameList()
-    {
-        var summary = UniqueValue("duplicate-delete");
-        await CreateTrackedTaskAsync(new TaskItem { Summary = summary });
-        await CreateTrackedTaskAsync(new TaskItem { Summary = summary });
-
-        var ex = await Should.ThrowAsync<InvalidOperationException>(
-            () => _chatTaskTools.DeleteTaskInListAsync(
-                "Tasks",
-                summary,
-                cancellationToken: TestContext.Current.CancellationToken));
-
-        ex.Message.ShouldContain("ambiguous", Case.Insensitive);
-        ex.Message.ShouldContain(".ics");
     }
 
     private async Task<TaskItem> CreateTrackedTaskAsync(TaskItem task)

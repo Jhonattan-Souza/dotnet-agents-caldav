@@ -22,9 +22,9 @@ public sealed class TaskMutationTools
         _timeProvider = timeProvider;
     }
 
-    [McpServerTool(Name = "create_task"), Description("Create a new task in a CalDAV task list by absolute href. Use the chat-oriented add-to-list tool unless you already know the exact href.")]
+    [McpServerTool(Name = "create_task"), Description("Create a new task in a CalDAV task list by absolute href. Only use this when the user explicitly provides or confirms the exact href. Prefer the chat-oriented add-to-list tool for normal agent workflows.")]
     public async Task<string> CreateTaskAsync(
-        [Description("The absolute href of the task list to create the task in. Use the chat-oriented add-to-list tool unless you already know the exact href.")] string taskListHref,
+        [Description("The absolute href of the task list to create the task in. Only use this when the user explicitly provides or confirms the exact href. Prefer the chat-oriented add-to-list tool otherwise.")] string taskListHref,
         [Description("Brief summary / title of the task")] string summary,
         [Description("Detailed description of the task")] string? description = null,
         [Description("Task status: NeedsAction, InProcess, Completed, or Cancelled")] string? status = null,
@@ -45,9 +45,9 @@ public sealed class TaskMutationTools
         return JsonSerializer.Serialize(created);
     }
 
-    [McpServerTool(Name = "update_task"), Description("Partial update of an existing CalDAV task by absolute href. Omitted or null fields preserve the current value (fetch-and-merge semantics). Use chat-oriented list-name tools unless you already know the exact href.")]
+    [McpServerTool(Name = "update_task"), Description("Partial update of an existing CalDAV task by absolute href. Omitted or null fields preserve the current value (fetch-and-merge semantics). Only use this when the user explicitly provides or confirms the exact href. Prefer chat-oriented list-name tools otherwise.")]
     public async Task<string> UpdateTaskAsync(
-        [Description("The absolute href of the task to update. Use chat-oriented list-name tools unless you already know the exact href.")] string href,
+        [Description("The absolute href of the task to update. Only use this when the user explicitly provides or confirms the exact href. Prefer chat-oriented list-name tools otherwise.")] string href,
         [Description("Updated summary / title of the task (null to preserve existing)")] string? summary = null,
         [Description("Updated description of the task (null to preserve existing)")] string? description = null,
         [Description("Updated status: NeedsAction, InProcess, Completed, or Cancelled (null to preserve existing)")] string? status = null,
@@ -73,9 +73,9 @@ public sealed class TaskMutationTools
         return JsonSerializer.Serialize(updated);
     }
 
-    [McpServerTool(Name = "complete_task"), Description("Mark a CalDAV task as completed with a deterministic timestamp by absolute href. Use the chat-oriented complete-in-list tool unless you already know the exact href.")]
+    [McpServerTool(Name = "complete_task"), Description("Mark a CalDAV task as completed with a deterministic timestamp by absolute href. Only use this when the user explicitly provides or confirms the exact href. Prefer the chat-oriented complete-in-list tool for normal agent workflows.")]
     public async Task<string> CompleteTaskAsync(
-        [Description("The absolute href of the task to complete. Use the chat-oriented complete-in-list tool unless you already know the exact href.")] string href,
+        [Description("The absolute href of the task to complete. Only use this when the user explicitly provides or confirms the exact href. Prefer the chat-oriented complete-in-list tool otherwise.")] string href,
         [Description("ETag for optimistic concurrency control")] string? etag = null,
         CancellationToken cancellationToken = default)
     {
@@ -93,9 +93,9 @@ public sealed class TaskMutationTools
         return JsonSerializer.Serialize(completed);
     }
 
-    [McpServerTool(Name = "delete_task"), Description("Delete a CalDAV task by its absolute href. Use the chat-oriented delete-in-list tool unless you already know the exact href.")]
+    [McpServerTool(Name = "delete_task"), Description("Delete a CalDAV task by its absolute href. Only use this when the user explicitly provides or confirms the exact href. Do not use this for search-then-delete flows or bulk deletion. Prefer the chat-oriented delete-in-list tool for normal agent workflows.")]
     public async Task<string> DeleteTaskAsync(
-        [Description("The absolute href of the task to delete. Use the chat-oriented delete-in-list tool unless you already know the exact href.")] string href,
+        [Description("The absolute href of the task to delete. Only use this when the user explicitly provides or confirms the exact href. Do not use this for search-then-delete flows or bulk deletion. Prefer the chat-oriented delete-in-list tool otherwise.")] string href,
         [Description("ETag for optimistic concurrency control")] string? etag = null,
         CancellationToken cancellationToken = default)
     {

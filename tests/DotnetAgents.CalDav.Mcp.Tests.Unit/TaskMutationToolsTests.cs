@@ -643,6 +643,7 @@ public class TaskMutationToolsTests
         descAttr.ShouldNotBeNull("update_task must have a [Description] attribute");
         descAttr.Description.ShouldContain("partial update", Case.Insensitive,
             "update_task description must document partial-update semantics so MCP clients understand null = preserve");
+        descAttr.Description.ShouldContain("explicitly provides or confirms the exact href", Case.Insensitive);
     }
 
     [Fact]
@@ -663,6 +664,38 @@ public class TaskMutationToolsTests
             descAttr.Description.ShouldContain("null", Case.Insensitive,
                 $"Parameter '{param.Name}' description must mention null behavior for partial-update clarity");
         }
+    }
+
+    [Fact]
+    public void RawHrefMutationToolDescriptions_RequireExplicitHrefAndDiscourageBulkUse()
+    {
+        GetDescription(nameof(TaskMutationTools.CreateTaskAsync)).ShouldContain("explicitly provides or confirms the exact href", Case.Insensitive);
+        GetDescription(nameof(TaskMutationTools.CompleteTaskAsync)).ShouldContain("explicitly provides or confirms the exact href", Case.Insensitive);
+        GetDescription(nameof(TaskMutationTools.DeleteTaskAsync)).ShouldContain("Do not use this for search-then-delete flows or bulk deletion", Case.Insensitive);
+
+        GetParameterDescription(nameof(TaskMutationTools.DeleteTaskAsync), "href")
+            .ShouldContain("Do not use this for search-then-delete flows or bulk deletion", Case.Insensitive);
+    }
+
+    private static string GetDescription(string methodName)
+    {
+        var method = typeof(TaskMutationTools).GetMethod(methodName);
+        method.ShouldNotBeNull();
+
+        var attr = method!.GetCustomAttribute<DescriptionAttribute>();
+        attr.ShouldNotBeNull();
+        return attr!.Description;
+    }
+
+    private static string GetParameterDescription(string methodName, string parameterName)
+    {
+        var method = typeof(TaskMutationTools).GetMethod(methodName);
+        method.ShouldNotBeNull();
+
+        var parameter = method!.GetParameters().Single(p => p.Name == parameterName);
+        var attr = parameter.GetCustomAttribute<DescriptionAttribute>();
+        attr.ShouldNotBeNull();
+        return attr!.Description;
     }
 
     // ─── update_task data-preservation tests ────────────────────────────────
