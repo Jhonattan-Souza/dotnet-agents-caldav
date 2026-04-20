@@ -33,6 +33,14 @@ public sealed class CalDavMcpRunner
         {
             return await RunHostAsync(configure, cancellationToken).ConfigureAwait(false);
         }
+        catch (AggregateException aggregationEx) when (aggregationEx.InnerExceptions.All(e => e is OptionsValidationException))
+        {
+            _errorOutput.WriteLine("CalDAV configuration error:");
+            foreach (var inner in aggregationEx.InnerExceptions.Cast<OptionsValidationException>())
+            foreach (var failure in inner.Failures)
+                _errorOutput.WriteLine($"  - {failure}");
+            return 1;
+        }
         catch (OptionsValidationException ex)
         {
             _errorOutput.WriteLine("CalDAV configuration error:");
