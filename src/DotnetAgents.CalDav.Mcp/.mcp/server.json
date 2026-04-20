@@ -1,5 +1,5 @@
 {
-  "name": "DotnetAgents.CalDav.Mcp",
+  "name": "dotnet-agents-caldav",
   "version": "0.1.0",
   "description": "MCP server for CalDAV task management — create, update, complete, and query tasks via CalDAV.",
   "transport": {

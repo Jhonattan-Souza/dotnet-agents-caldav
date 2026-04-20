@@ -6,15 +6,27 @@ on:
       - 'v*'
 
 permissions:
-  contents: read
+  contents: write
+  id-token: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   publish:
+    name: Publish NuGet
     runs-on: ubuntu-latest
+    env:
+      BUILD_CONFIGURATION: Release
+      PACKAGE_OUTPUT_DIRECTORY: ${{ github.workspace }}/artifacts
+      PACKAGE_PROJECT_PATH: src/DotnetAgents.CalDav.Mcp/DotnetAgents.CalDav.Mcp.csproj
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v5
@@ -28,11 +40,72 @@ jobs:
       - name: Restore packages
         run: dotnet restore
 
+      - name: Determine package version
+        id: version
+        shell: bash
+        run: |
+          PACKAGE_VERSION="${GITHUB_REF_NAME#v}"
+          echo "package_version=${PACKAGE_VERSION}" >> "$GITHUB_OUTPUT"
+
       - name: Build Release
         run: dotnet build -c Release --no-restore
 
+      - name: Run tests
+        run: dotnet test -c Release --no-build
+
       - name: Pack
-        run: dotnet pack -c Release --no-build
+        run: >
+          dotnet pack ${{ env.PACKAGE_PROJECT_PATH }}
+          -c ${{ env.BUILD_CONFIGURATION }}
+          --no-build
+          -o ${{ env.PACKAGE_OUTPUT_DIRECTORY }}
+          /p:Version=${{ steps.version.outputs.package_version }}
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: nuget-package-${{ steps.version.outputs.package_version }}
+          path: |
+            ${{ env.PACKAGE_OUTPUT_DIRECTORY }}/*.nupkg
+            ${{ env.PACKAGE_OUTPUT_DIRECTORY }}/*.snupkg
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: NuGet login
+        id: login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ secrets.NUGET_USER }}
 
       - name: Push to NuGet
-        run: dotnet nuget push "**/bin/Release/*.nupkg" --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+        run: >
+          dotnet nuget push "${{ env.PACKAGE_OUTPUT_DIRECTORY }}/*.nupkg"
+          --api-key "${{ steps.login.outputs.NUGET_API_KEY }}"
+          --source https://api.nuget.org/v3/index.json
+          --skip-duplicate
+
+      - name: Extract latest release notes
+        shell: bash
+        run: |
+          awk '
+            /^## / {
+              if (capture) {
+                exit
+              }
+              capture=1
+            }
+            capture {
+              print
+            }
+          ' RELEASE_NOTES.md > RELEASE_NOTES_LATEST.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: dotnet-agents-caldav ${{ steps.version.outputs.package_version }}
+          body_path: RELEASE_NOTES_LATEST.md
+          files: |
+            ${{ env.PACKAGE_OUTPUT_DIRECTORY }}/*.nupkg
+            ${{ env.PACKAGE_OUTPUT_DIRECTORY }}/*.snupkg
+          draft: false
+          prerelease: false

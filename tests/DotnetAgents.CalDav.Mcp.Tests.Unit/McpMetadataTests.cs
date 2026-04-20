@@ -114,8 +114,9 @@ public class McpMetadataTests
 
         var csproj = File.ReadAllText(csprojPath);
 
-        csproj.ShouldContain("<PackageId>");
+        csproj.ShouldContain("<PackageId>dotnet-agents-caldav</PackageId>");
         csproj.ShouldContain("<PackageType>");
         csproj.ShouldContain("<PackAsTool>");
+        csproj.ShouldContain("<ToolCommandName>dotnet-agents-caldav</ToolCommandName>");
     }
 }
