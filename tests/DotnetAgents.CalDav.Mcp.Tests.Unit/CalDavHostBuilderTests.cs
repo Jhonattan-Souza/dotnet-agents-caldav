@@ -157,15 +157,18 @@ public class CalDavHostBuilderTests
             .Where(t => t.GetCustomAttribute<ModelContextProtocol.Server.McpServerToolTypeAttribute>() is not null)
             .ToList();
 
-        // Each [McpServerToolType] class must have at least one [McpServerTool] method
-        foreach (var toolType in toolTypes)
-        {
-            var toolMethods = toolType.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)
-                .Where(m => m.GetCustomAttribute<ModelContextProtocol.Server.McpServerToolAttribute>() is not null)
-                .ToList();
+        // Assert: each [McpServerToolType] class must have at least one [McpServerTool] method
+        var invalidTypes = GetTypesWithoutToolMethods(toolTypes);
+        invalidTypes.ShouldBeEmpty($"Types marked [McpServerToolType] without [McpServerTool] methods: {string.Join(", ", invalidTypes)}");
+    }
 
-            toolMethods.ShouldNotBeEmpty($"{toolType.Name} is marked [McpServerToolType] but has no [McpServerTool] methods");
-        }
+    private static List<string> GetTypesWithoutToolMethods(List<Type> toolTypes)
+    {
+        return toolTypes
+            .Where(t => !t.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)
+                .Any(m => m.GetCustomAttribute<ModelContextProtocol.Server.McpServerToolAttribute>() is not null))
+            .Select(t => t.Name)
+            .ToList();
     }
 
     [Fact]
