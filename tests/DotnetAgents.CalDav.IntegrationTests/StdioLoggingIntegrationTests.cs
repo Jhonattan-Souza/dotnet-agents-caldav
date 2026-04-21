@@ -68,6 +68,46 @@ public sealed class StdioLoggingIntegrationTests
     }
 
     /// <summary>
+    /// Verifies that the MCP server exits promptly after the client closes stdin.
+    /// A stdio MCP server should detect EOF and shut down within a reasonable time
+    /// so that stale processes do not accumulate when the client reconnects.
+    /// </summary>
+    [Fact]
+    public async Task McpProcess_WithValidConfig_ExitsWithinTwoSecondsAfterStdinCloses()
+    {
+        using var process = CreateProcess();
+        _fixture.ConfigureCalDavEnvironment(process.StartInfo.Environment);
+
+        process.Start();
+
+        var stdoutTask = process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
+        var stderrTask = process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
+
+        // Act: close stdin and measure how long the process takes to exit
+        var beforeClose = DateTimeOffset.UtcNow;
+        process.StandardInput.Close();
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken);
+        cts.CancelAfter(TimeSpan.FromSeconds(15));
+        await process.WaitForExitAsync(cts.Token);
+        var elapsed = DateTimeOffset.UtcNow - beforeClose;
+
+        var stdout = await stdoutTask;
+        var stderr = await stderrTask;
+
+        // Assert: the process should exit within 2 seconds of stdin closing
+        elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(2),
+            $"MCP server took too long to exit after stdin closed. " +
+            $"stdout: {stdout}\nstderr: {stderr}");
+
+        process.ExitCode.ShouldBe(0,
+            $"stdout: {stdout}\nstderr: {stderr}");
+        stdout.ShouldBeEmpty(
+            $"stdout must remain empty for JSON-RPC, but contained:\n{stdout}");
+    }
+
+    /// <summary>
     /// Resolves the path to the MCP server DLL relative to the test assembly,
     /// walking up from the test bin/ to the src project bin/.
     /// </summary>
