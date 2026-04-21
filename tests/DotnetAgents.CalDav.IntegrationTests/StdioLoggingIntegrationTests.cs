@@ -80,28 +80,39 @@ public sealed class StdioLoggingIntegrationTests
 
         process.Start();
 
+        // Start readers before closing stdin so they are active during the
+        // shutdown window and can capture any race output from the transport.
         var stdoutTask = process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
         var stderrTask = process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
 
-        // Act: close stdin and measure how long the process takes to exit
+        // Act: close stdin and measure how long the process takes to exit.
+        // The timestamp is captured after process.Start() so JIT/startup time
+        // is excluded; only the stdin-EOF to process-exit delay is measured.
         var beforeClose = DateTimeOffset.UtcNow;
         process.StandardInput.Close();
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(
             TestContext.Current.CancellationToken);
         cts.CancelAfter(TimeSpan.FromSeconds(15));
-        await process.WaitForExitAsync(cts.Token);
-        var elapsed = DateTimeOffset.UtcNow - beforeClose;
+        try
+        {
+            await process.WaitForExitAsync(cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            process.Kill(entireProcessTree: true);
+            throw;
+        }
 
+        var elapsed = DateTimeOffset.UtcNow - beforeClose;
         var stdout = await stdoutTask;
         var stderr = await stderrTask;
 
-        // Assert: the process should exit within 2 seconds of stdin closing
+        // Assert: clean exit first, then timing, then stdout cleanliness.
+        process.ExitCode.ShouldBe(0,
+            $"stdout: {stdout}\nstderr: {stderr}");
         elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(2),
             $"MCP server took too long to exit after stdin closed. " +
-            $"stdout: {stdout}\nstderr: {stderr}");
-
-        process.ExitCode.ShouldBe(0,
             $"stdout: {stdout}\nstderr: {stderr}");
         stdout.ShouldBeEmpty(
             $"stdout must remain empty for JSON-RPC, but contained:\n{stdout}");
@@ -124,7 +135,15 @@ public sealed class StdioLoggingIntegrationTests
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(
             TestContext.Current.CancellationToken);
         cts.CancelAfter(TimeSpan.FromSeconds(15));
-        await process.WaitForExitAsync(cts.Token);
+        try
+        {
+            await process.WaitForExitAsync(cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            process.Kill(entireProcessTree: true);
+            throw;
+        }
 
         return (await stdoutTask, await stderrTask);
     }
