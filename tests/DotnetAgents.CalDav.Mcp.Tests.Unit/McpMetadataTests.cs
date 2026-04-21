@@ -47,13 +47,11 @@ public class McpMetadataTests
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
 
-        // Must have an env or environmentVariables section with the expected keys
-        var envVars = root.TryGetProperty("env", out var env)
-            ? env
-            : root.GetProperty("environmentVariables");
+        // MCP Registry schema: environmentVariables are inside packages[0]
+        var envVars = root.GetProperty("packages")[0].GetProperty("environmentVariables");
 
-        var envVarNames = envVars.EnumerateObject()
-            .Select(p => p.Name)
+        var envVarNames = envVars.EnumerateArray()
+            .Select(e => e.GetProperty("name").GetString()!)
             .ToList();
 
         envVarNames.ShouldContain("CALDAV_URL");
@@ -71,12 +69,10 @@ public class McpMetadataTests
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
 
-        var envVars = root.TryGetProperty("env", out var env)
-            ? env
-            : root.GetProperty("environmentVariables");
+        var envVars = root.GetProperty("packages")[0].GetProperty("environmentVariables");
 
-        var envVarNames = envVars.EnumerateObject()
-            .Select(p => p.Name)
+        var envVarNames = envVars.EnumerateArray()
+            .Select(e => e.GetProperty("name").GetString()!)
             .ToList();
 
         envVarNames.ShouldContain("CALDAV_TASK_LISTS");
@@ -92,12 +88,10 @@ public class McpMetadataTests
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
 
-        var envVars = root.TryGetProperty("env", out var env)
-            ? env
-            : root.GetProperty("environmentVariables");
+        var envVars = root.GetProperty("packages")[0].GetProperty("environmentVariables");
 
-        var envVarNames = envVars.EnumerateObject()
-            .Select(p => p.Name)
+        var envVarNames = envVars.EnumerateArray()
+            .Select(e => e.GetProperty("name").GetString()!)
             .ToList();
 
         envVarNames.ShouldContain("CALDAV_DEFAULT_TASK_LIST");
