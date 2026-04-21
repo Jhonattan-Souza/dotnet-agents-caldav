@@ -53,22 +53,7 @@ public class RadicaleDiscoveryTests(RadicaleFixture fixture) : IAsyncLifetime
         request.Headers.Add("Depth", "0");
 
         var response = await _diagClient.SendAsync(request, TestContext.Current.CancellationToken);
-
-        // Follow redirect manually since AllowAutoRedirect=false
-        if (response.StatusCode is HttpStatusCode.MovedPermanently or HttpStatusCode.Redirect
-            or HttpStatusCode.RedirectKeepVerb or HttpStatusCode.TemporaryRedirect)
-        {
-            var location = response.Headers.Location?.ToString();
-            location.ShouldNotBeNull("Expected Location header in redirect");
-            response.Dispose();
-
-            request = new HttpRequestMessage(new HttpMethod("PROPFIND"), location)
-            {
-                Content = new StringContent(propfindBody, Encoding.UTF8, "application/xml")
-            };
-            request.Headers.Add("Depth", "0");
-            response = await _diagClient.SendAsync(request, TestContext.Current.CancellationToken);
-        }
+        response = await FollowRedirectIfNeededAsync(response, request, propfindBody);
 
         response.StatusCode.ShouldBe(HttpStatusCode.MultiStatus,
             $"Expected 207 from /.well-known/caldav endpoint, got {response.StatusCode}");
@@ -77,6 +62,29 @@ public class RadicaleDiscoveryTests(RadicaleFixture fixture) : IAsyncLifetime
         (body.Contains("calendar-home-set", StringComparison.OrdinalIgnoreCase) ||
          body.Contains("current-user-principal", StringComparison.OrdinalIgnoreCase))
             .ShouldBeTrue("Expected calendar-home-set or current-user-principal in response");
+    }
+
+    private async Task<HttpResponseMessage> FollowRedirectIfNeededAsync(
+        HttpResponseMessage response,
+        HttpRequestMessage originalRequest,
+        string propfindBody)
+    {
+        if (response.StatusCode is HttpStatusCode.MovedPermanently or HttpStatusCode.Redirect
+            or HttpStatusCode.RedirectKeepVerb or HttpStatusCode.TemporaryRedirect)
+        {
+            var location = response.Headers.Location?.ToString();
+            location.ShouldNotBeNull("Expected Location header in redirect");
+            response.Dispose();
+
+            var redirectRequest = new HttpRequestMessage(originalRequest.Method, location)
+            {
+                Content = new StringContent(propfindBody, Encoding.UTF8, "application/xml")
+            };
+            redirectRequest.Headers.Add("Depth", "0");
+            return await _diagClient.SendAsync(redirectRequest, TestContext.Current.CancellationToken);
+        }
+
+        return response;
     }
 
     [Fact]
