@@ -14,11 +14,11 @@ dotnet build -c Release
 # Run all tests (unit + integration)
 dotnet test
 
-# Run with coverage (outputs to TestResults/)
+# Run with coverage (outputs raw collector files to tests/**/TestResults/)
 dotnet test --settings coverage.runsettings --collect:"XPlat Code Coverage"
 
-# Generate coverage report
-dotnet reportgenerator -reports:"TestResults/**/coverage.cobertura.xml" -targetdir:"coverage-report" -reporttypes:Cobertura
+# Generate filtered coverage report
+dotnet reportgenerator -reports:"TestResults/**/coverage.cobertura.xml" -targetdir:"coverage-report" -reporttypes:Cobertura -assemblyfilters:"+DotnetAgents.CalDav.Core;+DotnetAgents.CalDav.Mcp;-*Tests*;-xunit*;-testhost*"
 
 # Verify coverage thresholds (90% line, 85% branch)
 bash scripts/verify-coverage.sh coverage-report 0.90 0.85

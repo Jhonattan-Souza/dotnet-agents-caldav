@@ -70,7 +70,9 @@ dotnet test
 Coverage:
 
 ```bash
-dotnet test --collect:"XPlat Code Coverage"
+dotnet test --settings coverage.runsettings --collect:"XPlat Code Coverage"
+dotnet reportgenerator -reports:"TestResults/**/coverage.cobertura.xml" -targetdir:"coverage-report" -reporttypes:Cobertura -assemblyfilters:"+DotnetAgents.CalDav.Core;+DotnetAgents.CalDav.Mcp;-*Tests*;-xunit*;-testhost*"
+bash scripts/verify-coverage.sh coverage-report 0.90 0.85
 ```
 
 Slopwatch:

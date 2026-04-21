@@ -33,18 +33,27 @@ public sealed class ChatTaskTools
         [Description("Filter by category")] string? category = null,
         CancellationToken cancellationToken = default)
     {
-        var taskList = await ResolveTaskListAsync(taskListName, cancellationToken);
-        var query = new TaskQuery
-        {
-            Status = status is not null ? EnumParsingHelpers.ParseTaskStatus(status) : null,
-            DueAfter = dueAfter,
-            DueBefore = dueBefore,
-            TextSearch = textSearch,
-            Category = category
-        };
+        var normalizedTaskListName = NormalizeTaskListName(taskListName);
 
-        var tasks = await _taskService.GetTasksAsync(taskList.Href, query, cancellationToken);
-        return JsonSerializer.Serialize(tasks);
+        try
+        {
+            var taskList = await ResolveTaskListAsync(normalizedTaskListName, cancellationToken);
+            var query = new TaskQuery
+            {
+                Status = status is not null ? EnumParsingHelpers.ParseTaskStatus(status) : null,
+                DueAfter = dueAfter,
+                DueBefore = dueBefore,
+                TextSearch = textSearch,
+                Category = category
+            };
+
+            var tasks = await _taskService.GetTasksAsync(taskList.Href, query, cancellationToken);
+            return JsonSerializer.Serialize(tasks);
+        }
+        catch (TaskListResolutionException ex)
+        {
+            return ReturnTaskListResolutionError(normalizedTaskListName, ex.Message, ex.AvailableLists);
+        }
     }
 
     [McpServerTool(Name = "add_task"), Description("Create a task in a user-facing task list name. If the user says 'add a task ...' and does not name a list, omit listName so the configured default task list is used. Explicit list names always win over task content. Never choose a list based on what the task sounds like.")]
@@ -57,18 +66,27 @@ public sealed class ChatTaskTools
         [Description("When the task is due")] DateTimeOffset? due = null,
         CancellationToken cancellationToken = default)
     {
-        var taskList = await ResolveTaskListAsync(taskListName, cancellationToken);
-        var task = new TaskItem
-        {
-            Summary = summary,
-            Description = description,
-            Status = status is not null ? EnumParsingHelpers.ParseTaskStatus(status) : CalDavTaskStatus.NeedsAction,
-            Priority = priority is not null ? EnumParsingHelpers.ParseTaskPriority(priority) : TaskPriority.None,
-            Due = due
-        };
+        var normalizedTaskListName = NormalizeTaskListName(taskListName);
 
-        var created = await _taskService.CreateTaskAsync(taskList.Href, task, cancellationToken);
-        return JsonSerializer.Serialize(created);
+        try
+        {
+            var taskList = await ResolveTaskListAsync(normalizedTaskListName, cancellationToken);
+            var task = new TaskItem
+            {
+                Summary = summary,
+                Description = description,
+                Status = status is not null ? EnumParsingHelpers.ParseTaskStatus(status) : CalDavTaskStatus.NeedsAction,
+                Priority = priority is not null ? EnumParsingHelpers.ParseTaskPriority(priority) : TaskPriority.None,
+                Due = due
+            };
+
+            var created = await _taskService.CreateTaskAsync(taskList.Href, task, cancellationToken);
+            return JsonSerializer.Serialize(created);
+        }
+        catch (TaskListResolutionException ex)
+        {
+            return ReturnTaskListResolutionError(normalizedTaskListName, ex.Message, ex.AvailableLists, summary);
+        }
     }
 
     [McpServerTool(Name = "find_tasks"), Description("Find tasks by summary text. If the user named a list, pass listName and search only that list. If they did not name a list, this tool searches all visible lists and returns all matches. Use this for read-only lookup only. Do not use this as the first step of a destructive flow; for mutations, call complete_task_by_summary or delete_task_by_summary directly because they enforce single-target safety.")]
@@ -77,8 +95,17 @@ public sealed class ChatTaskTools
         [Description("Exact task summary to match. If multiple tasks share this summary, all matches are returned.")] string summary,
         CancellationToken cancellationToken = default)
     {
-        var matches = await FindMatchesAsync(taskListName, summary, cancellationToken);
-        return JsonSerializer.Serialize(matches);
+        var normalizedTaskListName = NormalizeTaskListName(taskListName);
+
+        try
+        {
+            var matches = await FindMatchesAsync(normalizedTaskListName, summary, cancellationToken);
+            return JsonSerializer.Serialize(matches);
+        }
+        catch (TaskListResolutionException ex)
+        {
+            return ReturnTaskListResolutionError(normalizedTaskListName, ex.Message, ex.AvailableLists, summary);
+        }
     }
 
     [McpServerTool(Name = "complete_task_by_summary"), Description("Mark a task as completed by summary. If the user named a list, only that list is searched. If they did not name a list, all visible lists are searched. If zero tasks match, returns not_found. If multiple tasks match, returns ambiguous with candidates instead of guessing. This is a single-target tool: never complete multiple tasks in one call or by repeating this tool for a bulk request without explicit per-target confirmation.")]
@@ -88,15 +115,24 @@ public sealed class ChatTaskTools
         [Description("ETag for optimistic concurrency control (null to preserve the fetched ETag)")] string? etag = null,
         CancellationToken cancellationToken = default)
     {
-        var (result, availableLists) = await TryResolveUniqueMatchAsync(taskListName, summary, cancellationToken);
+        var normalizedTaskListName = NormalizeTaskListName(taskListName);
 
-        return result switch
+        try
         {
-            ResolvedMatch match => await CompleteTask(match.Task, etag, cancellationToken),
-            AmbiguousResult a => ReturnAmbiguous(summary, a.Matches),
-            NotFoundResult => ReturnNotFound(summary, taskListName, availableLists),
-            _ => throw new InvalidOperationException($"Unexpected resolve result: {result.GetType().Name}")
-        };
+            var (result, availableLists) = await TryResolveUniqueMatchAsync(normalizedTaskListName, summary, cancellationToken);
+
+            return result switch
+            {
+                ResolvedMatch match => await CompleteTask(match.Task, etag, cancellationToken),
+                AmbiguousResult a => ReturnAmbiguous(summary, a.Matches),
+                NotFoundResult => ReturnNotFound(summary, normalizedTaskListName, availableLists),
+                _ => throw new InvalidOperationException($"Unexpected resolve result: {result.GetType().Name}")
+            };
+        }
+        catch (TaskListResolutionException ex)
+        {
+            return ReturnTaskListResolutionError(normalizedTaskListName, ex.Message, ex.AvailableLists, summary);
+        }
     }
 
     private async Task<string> CompleteTask(TaskItem task, string? etag, CancellationToken cancellationToken)
@@ -119,15 +155,24 @@ public sealed class ChatTaskTools
         [Description("ETag for optimistic concurrency control (null to skip concurrency check)")] string? etag = null,
         CancellationToken cancellationToken = default)
     {
-        var (result, availableLists) = await TryResolveUniqueMatchAsync(taskListName, summary, cancellationToken);
+        var normalizedTaskListName = NormalizeTaskListName(taskListName);
 
-        return result switch
+        try
         {
-            ResolvedMatch match => await DeleteTask(match.Task, etag, cancellationToken),
-            AmbiguousResult a => ReturnAmbiguous(summary, a.Matches),
-            NotFoundResult => ReturnNotFound(summary, taskListName, availableLists),
-            _ => throw new InvalidOperationException($"Unexpected resolve result: {result.GetType().Name}")
-        };
+            var (result, availableLists) = await TryResolveUniqueMatchAsync(normalizedTaskListName, summary, cancellationToken);
+
+            return result switch
+            {
+                ResolvedMatch match => await DeleteTask(match.Task, etag, cancellationToken),
+                AmbiguousResult a => ReturnAmbiguous(summary, a.Matches),
+                NotFoundResult => ReturnNotFound(summary, normalizedTaskListName, availableLists),
+                _ => throw new InvalidOperationException($"Unexpected resolve result: {result.GetType().Name}")
+            };
+        }
+        catch (TaskListResolutionException ex)
+        {
+            return ReturnTaskListResolutionError(normalizedTaskListName, ex.Message, ex.AvailableLists, summary);
+        }
     }
 
     private async Task<string> DeleteTask(TaskItem task, string? etag, CancellationToken cancellationToken)
@@ -205,25 +250,47 @@ public sealed class ChatTaskTools
 
     private static string ReturnAmbiguous(string summary, CandidateMatch[] candidates)
     {
+        var normalizedSummary = summary.Trim();
+
         return JsonSerializer.Serialize(new AmbiguousResponse(
             "ambiguous",
-            summary,
-            $"Multiple tasks match '{summary}'. Specify the task list name to disambiguate.",
+            normalizedSummary,
+            $"Multiple tasks match '{normalizedSummary}'. Specify the task list name to disambiguate.",
             candidates));
     }
 
     private static string ReturnNotFound(string summary, string? taskListName, IReadOnlyList<TaskList> availableLists)
     {
+        var normalizedSummary = summary.Trim();
         var message = string.IsNullOrWhiteSpace(taskListName)
-            ? $"Task '{summary.Trim()}' was not found in any visible task list."
-            : $"Task '{summary.Trim()}' was not found in list '{taskListName.Trim()}'.";
+            ? $"Task '{normalizedSummary}' was not found in any visible task list."
+            : $"Task '{normalizedSummary}' was not found in list '{taskListName.Trim()}'.";
 
         return JsonSerializer.Serialize(new NotFoundResponse(
             "not_found",
-            summary,
+            normalizedSummary,
             message,
             availableLists.Select(tl => tl.DisplayName).ToArray()));
     }
+
+    private static string ReturnTaskListResolutionError(
+        string? taskListName,
+        string message,
+        IReadOnlyList<string> availableLists,
+        string? summary = null)
+    {
+        var normalizedSummary = summary?.Trim();
+
+        return JsonSerializer.Serialize(new TaskListResolutionErrorResponse(
+            "list_resolution_error",
+            taskListName,
+            normalizedSummary,
+            message,
+            availableLists.ToArray()));
+    }
+
+    private static string? NormalizeTaskListName(string? taskListName) =>
+        string.IsNullOrWhiteSpace(taskListName) ? null : taskListName.Trim();
 
     private async Task<IReadOnlyList<TaskList>> GetListsToSearchAsync(string? taskListName, CancellationToken cancellationToken)
     {
@@ -259,6 +326,13 @@ public sealed class ChatTaskTools
     private sealed record NotFoundResponse(
         [property: JsonPropertyName("status")] string Status,
         [property: JsonPropertyName("summary")] string Summary,
+        [property: JsonPropertyName("message")] string Message,
+        [property: JsonPropertyName("availableLists")] string[] AvailableLists);
+
+    private sealed record TaskListResolutionErrorResponse(
+        [property: JsonPropertyName("status")] string Status,
+        [property: JsonPropertyName("taskListName")] string? TaskListName,
+        [property: JsonPropertyName("summary")][property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Summary,
         [property: JsonPropertyName("message")] string Message,
         [property: JsonPropertyName("availableLists")] string[] AvailableLists);
 }
