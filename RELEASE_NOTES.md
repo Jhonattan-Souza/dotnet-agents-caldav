@@ -7,7 +7,9 @@
 - Strengthen `StdioLoggingIntegrationTests` to verify both invalid config (stderr contains error) and valid config (both stdout and stderr are clean) scenarios
 
 ### Changed
-- Update GitHub Actions: `NuGet/login@v1` → `v2`, `softprops/action-gh-release@v2` → `v2.2.1`
+- Keep `NuGet/login@v1` because that is the version currently documented by NuGet/Microsoft for trusted publishing
+- Opt the release workflow into the GitHub Actions Node 24 runtime early via `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true`
+- Update `softprops/action-gh-release` from `v2` to `v3` for Node 24 runner compatibility
 
 ## 0.1.2 — 2026-04-21
 
