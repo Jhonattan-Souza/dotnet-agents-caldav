@@ -4,6 +4,8 @@ using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Mcp.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Console;
 using Microsoft.Extensions.Options;
 using Shouldly;
 using Xunit;
@@ -116,6 +118,25 @@ public class CalDavHostBuilderTests
         var timeProvider = host.Services.GetService<TimeProvider>();
         timeProvider.ShouldNotBeNull();
         timeProvider.ShouldBeSameAs(TimeProvider.System);
+    }
+
+    [Fact]
+    public void CreateBuilder_ConfiguresConsoleLogging_ToStandardError()
+    {
+        // The MCP server uses stdio transport (JSON-RPC over stdin/stdout).
+        // Console logging must be redirected to stderr to avoid corrupting
+        // the protocol stream.
+
+        // Arrange & Act
+        var builder = CalDavHostBuilder.CreateBuilder();
+        builder.Services.ConfigureCalDav(ValidOptions);
+        using var host = builder.Build();
+
+        // Assert — verify the ConsoleLoggerOptions are configured with
+        // LogToStandardErrorThreshold = Trace (meaning ALL log levels go to stderr)
+        var consoleOptions = host.Services.GetService<IOptionsMonitor<ConsoleLoggerOptions>>();
+        consoleOptions.ShouldNotBeNull();
+        consoleOptions.CurrentValue.LogToStandardErrorThreshold.ShouldBe(LogLevel.Trace);
     }
 
     [Fact]

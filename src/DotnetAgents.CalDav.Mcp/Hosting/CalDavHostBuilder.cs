@@ -3,6 +3,8 @@ using DotnetAgents.CalDav.Core.DependencyInjection;
 using DotnetAgents.CalDav.Mcp.Tools;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Console;
 
 namespace DotnetAgents.CalDav.Mcp.Hosting;
 
@@ -26,6 +28,9 @@ public sealed class CalDavHostBuilder
     {
         var builder = Host.CreateApplicationBuilder();
 
+        builder.Logging.AddConsole(options =>
+            options.LogToStandardErrorThreshold = LogLevel.Trace);
+
         var mcpBuilder = builder.Services.AddMcpServer()
             .WithStdioServerTransport()
             .WithTools<TaskListTools>()
@@ -38,10 +43,6 @@ public sealed class CalDavHostBuilder
                 .WithTools<TaskMutationTools>();
         }
 
-        // TimeProvider abstraction — registered at the host layer so the MCP
-        // program explicitly owns the dependency rather than relying on a
-        // transitive registration from Core. Core's registration is kept to
-        // avoid broadening the diff, but the MCP layer provides it as well.
         builder.Services.AddSingleton(TimeProvider.System);
 
         return builder;
