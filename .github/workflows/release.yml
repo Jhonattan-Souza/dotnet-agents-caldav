@@ -81,7 +81,7 @@ jobs:
 
       - name: NuGet login
         id: login
-        uses: NuGet/login@v1
+        uses: NuGet/login@v2
         with:
           user: ${{ secrets.NUGET_USER }}
 
@@ -108,7 +108,7 @@ jobs:
           ' RELEASE_NOTES.md > RELEASE_NOTES_LATEST.md
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v2.2.1
         with:
           name: dotnet-agents-caldav ${{ steps.version.outputs.package_version }}
           body_path: RELEASE_NOTES_LATEST.md

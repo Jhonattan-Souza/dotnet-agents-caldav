@@ -121,22 +121,31 @@ public class CalDavHostBuilderTests
     }
 
     [Fact]
-    public void CreateBuilder_ConfiguresConsoleLogging_ToStandardError()
+    public void CreateBuilder_HasNoConsoleLoggingProviders()
     {
         // The MCP server uses stdio transport (JSON-RPC over stdin/stdout).
-        // Console logging must be redirected to stderr to avoid corrupting
-        // the protocol stream.
+        // Console logging must NOT be registered to avoid corrupting the protocol stream.
+        // Any diagnostic output (even to stderr) can break MCP clients that merge streams.
 
         // Arrange & Act
         var builder = CalDavHostBuilder.CreateBuilder();
         builder.Services.ConfigureCalDav(ValidOptions);
         using var host = builder.Build();
 
-        // Assert — verify the ConsoleLoggerOptions are configured with
-        // LogToStandardErrorThreshold = Trace (meaning ALL log levels go to stderr)
-        var consoleOptions = host.Services.GetService<IOptionsMonitor<ConsoleLoggerOptions>>();
-        consoleOptions.ShouldNotBeNull();
-        consoleOptions.CurrentValue.LogToStandardErrorThreshold.ShouldBe(LogLevel.Trace);
+        // Assert — verify no console logging providers are registered
+        // (ClearProviders was called, so the provider list should be empty)
+        var loggerFactory = host.Services.GetService<ILoggerFactory>();
+        loggerFactory.ShouldNotBeNull();
+
+        // Create a logger and verify no console output occurs
+        // The key assertion is that ConsoleLoggerProvider was not added
+        var providerTypes = builder.Services
+            .Where(sd => sd.ServiceType == typeof(ILoggerProvider))
+            .Select(sd => sd.ImplementationType?.Name ?? sd.ImplementationFactory?.Method.DeclaringType?.Name)
+            .ToList();
+
+        providerTypes.ShouldNotContain("ConsoleLoggerProvider",
+            "Console logging provider should not be registered for stdio MCP servers");
     }
 
     [Fact]

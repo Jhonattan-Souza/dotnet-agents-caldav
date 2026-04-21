@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
@@ -23,8 +24,8 @@ public sealed class RadicaleFixture : IAsyncLifetime
     private ServiceProvider? _serviceProvider;
     private HttpClient? _adminHttpClient;
 
-    private const string Username = "caldavtest";
-    private const string Password = "caldavtest123";
+    private const string TestUsername = "caldavtest";
+    private const string TestPassword = "caldavtest123";
     private const int RadicalePort = 5232;
     private const string TaskCollectionName = "tasks";
     private const string ShoppingCollectionName = "shopping";
@@ -44,6 +45,17 @@ public sealed class RadicaleFixture : IAsyncLifetime
 
     /// <summary>The base URL of the Radicale container (e.g. <c>http://localhost:31234</c>).</summary>
     public string BaseUrl { get; private set; } = null!;
+
+    /// <summary>
+    /// Populates process environment variables with working CalDAV credentials
+    /// for the live Radicale container backing this fixture.
+    /// </summary>
+    public void ConfigureCalDavEnvironment(IDictionary<string, string?> environment)
+    {
+        environment["CALDAV_URL"] = BaseUrl;
+        environment["CALDAV_USERNAME"] = TestUsername;
+        environment["CALDAV_PASSWORD"] = TestPassword;
+    }
 
     // ── IAsyncLifetime ─────────────────────────────────────────────────────
 
@@ -79,7 +91,7 @@ public sealed class RadicaleFixture : IAsyncLifetime
         {
             BaseAddress = new Uri(BaseUrl)
         };
-        var credentials = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{Username}:{Password}"));
+        var credentials = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{TestUsername}:{TestPassword}"));
         _adminHttpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", credentials);
 
         // 3. Create user principal and task collections.
@@ -94,8 +106,8 @@ public sealed class RadicaleFixture : IAsyncLifetime
         services.AddCalDavTasks(options =>
         {
             options.BaseUrl = BaseUrl;
-            options.Username = Username;
-            options.Password = Password;
+            options.Username = TestUsername;
+            options.Password = TestPassword;
         });
 
         _serviceProvider = services.BuildServiceProvider();
@@ -141,14 +153,14 @@ public sealed class RadicaleFixture : IAsyncLifetime
         level = info
         """;
 
-    private static string BuildUsersFile() => $"{Username}:{Password}";
+    private static string BuildUsersFile() => $"{TestUsername}:{TestPassword}";
 
     // ── Collection provisioning ─────────────────────────────────────────────
 
     private async Task CreateUserPrincipalAsync()
     {
         // MKCOL /caldavtest/ — creates the user's principal collection.
-        var principalPath = $"/{Username}/";
+        var principalPath = $"/{TestUsername}/";
         var response = await _adminHttpClient!.SendAsync(
             new HttpRequestMessage(new HttpMethod("MKCOL"), principalPath));
 
@@ -165,7 +177,7 @@ public sealed class RadicaleFixture : IAsyncLifetime
     private async Task<string> CreateTaskCollectionAsync(string collectionName, string displayName)
     {
         // Extended MKCOL to create a VTODO-capable calendar collection.
-        var collectionPath = $"/{Username}/{collectionName}/";
+        var collectionPath = $"/{TestUsername}/{collectionName}/";
         var body = $$"""
             <?xml version="1.0" encoding="utf-8" ?>
             <D:mkcol xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">

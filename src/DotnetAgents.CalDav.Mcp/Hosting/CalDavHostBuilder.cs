@@ -4,7 +4,6 @@ using DotnetAgents.CalDav.Mcp.Tools;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Console;
 
 namespace DotnetAgents.CalDav.Mcp.Hosting;
 
@@ -29,8 +28,6 @@ public sealed class CalDavHostBuilder
         var builder = Host.CreateApplicationBuilder();
 
         builder.Logging.ClearProviders();
-        builder.Logging.AddConsole(options =>
-            options.LogToStandardErrorThreshold = LogLevel.Trace);
 
         var mcpBuilder = builder.Services.AddMcpServer()
             .WithStdioServerTransport()
