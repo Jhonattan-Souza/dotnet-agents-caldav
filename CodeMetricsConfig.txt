@@ -1,0 +1,2 @@
+# Conservative starting point for method complexity.
+CA1502: 10

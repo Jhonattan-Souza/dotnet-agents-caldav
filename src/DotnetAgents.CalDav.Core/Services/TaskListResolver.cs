@@ -34,32 +34,10 @@ internal sealed class TaskListResolver : ITaskListResolver
         var availableNames = taskLists.Select(t => t.DisplayName).ToList();
         var defaultName = _options.Value.DefaultTaskList;
 
-        // Rule 1: Exact case-insensitive display name match
-        if (!string.IsNullOrWhiteSpace(userInput))
+        var resolvedFromInput = TryResolveFromUserInput(taskLists, userInput, availableNames, defaultName);
+        if (resolvedFromInput is not null)
         {
-            var exactMatches = taskLists
-                .Where(t => string.Equals(t.DisplayName, userInput, StringComparison.OrdinalIgnoreCase))
-                .ToList();
-
-            if (exactMatches.Count == 1)
-            {
-                return Task.FromResult(WithDefaultFlag(exactMatches[0], defaultName));
-            }
-
-            if (exactMatches.Count > 1)
-            {
-                throw new TaskListResolutionException(
-                    userInput,
-                    availableNames,
-                    $"Ambiguous task list name '{userInput}' matched {exactMatches.Count} lists.");
-            }
-
-            // Rule 2: Dynamic alias match
-            var aliasMap = BuildAliasMap(taskLists);
-            if (aliasMap.TryGetValue(userInput.Trim(), out var aliasMatch))
-            {
-                return Task.FromResult(WithDefaultFlag(aliasMatch, defaultName));
-            }
+            return Task.FromResult(resolvedFromInput);
         }
 
         // Rule 3: Configured default
@@ -79,7 +57,50 @@ internal sealed class TaskListResolver : ITaskListResolver
         throw new TaskListResolutionException(
             userInput ?? "(null)",
             availableNames,
-            message);
+            BuildResolutionFailureMessage(userInput, defaultName));
+    }
+
+    private static TaskList? TryResolveFromUserInput(
+        IReadOnlyList<TaskList> taskLists,
+        string? userInput,
+        IReadOnlyList<string> availableNames,
+        string? defaultName)
+    {
+        if (string.IsNullOrWhiteSpace(userInput))
+        {
+            return null;
+        }
+
+        var exactMatches = taskLists
+            .Where(t => string.Equals(t.DisplayName, userInput, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (exactMatches.Count == 1)
+        {
+            return WithDefaultFlag(exactMatches[0], defaultName);
+        }
+
+        if (exactMatches.Count > 1)
+        {
+            throw new TaskListResolutionException(
+                userInput,
+                availableNames,
+                $"Ambiguous task list name '{userInput}' matched {exactMatches.Count} lists.");
+        }
+
+        var aliasMap = BuildAliasMap(taskLists);
+        return aliasMap.TryGetValue(userInput.Trim(), out var aliasMatch)
+            ? WithDefaultFlag(aliasMatch, defaultName)
+            : null;
+    }
+
+    private static string BuildResolutionFailureMessage(string? userInput, string? defaultName)
+    {
+        return string.IsNullOrWhiteSpace(userInput)
+            ? (string.IsNullOrWhiteSpace(defaultName)
+                ? "No default task list configured and no list name provided."
+                : $"Default task list '{defaultName}' not found.")
+            : $"Task list '{userInput}' not found.";
     }
 
     private static IReadOnlyDictionary<string, TaskList> BuildAliasMap(IReadOnlyList<TaskList> taskLists)
