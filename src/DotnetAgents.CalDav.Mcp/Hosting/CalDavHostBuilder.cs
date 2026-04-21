@@ -28,6 +28,7 @@ public sealed class CalDavHostBuilder
     {
         var builder = Host.CreateApplicationBuilder();
 
+        builder.Logging.ClearProviders();
         builder.Logging.AddConsole(options =>
             options.LogToStandardErrorThreshold = LogLevel.Trace);
 
