@@ -476,9 +476,14 @@ public class TaskServiceIntegrationTests(RadicaleFixture fixture) : IAsyncLifeti
         // Note: Radicale does not return the current ETag in 412 responses.
         // The CurrentEtag may be null — this is an observed Radicale limitation,
         // not a bug in our code. The exception itself confirms optimistic concurrency works.
-        if (ex.CurrentEtag is not null)
+        AssertCurrentEtagIsValid(ex.CurrentEtag);
+    }
+
+    private static void AssertCurrentEtagIsValid(string? currentEtag)
+    {
+        if (currentEtag is not null)
         {
-            ex.CurrentEtag.ShouldNotBeEmpty("If provided, the current ETag should not be empty");
+            currentEtag.ShouldNotBeEmpty("If provided, the current ETag should not be empty");
         }
     }
 }
