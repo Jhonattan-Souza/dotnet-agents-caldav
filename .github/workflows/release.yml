@@ -47,6 +47,14 @@ jobs:
           PACKAGE_VERSION="${GITHUB_REF_NAME#v}"
           echo "package_version=${PACKAGE_VERSION}" >> "$GITHUB_OUTPUT"
 
+      - name: Sync server.json version
+        shell: bash
+        run: |
+          jq --arg ver "${{ steps.version.outputs.package_version }}" \
+             '.version = $ver | .packages[0].version = $ver' \
+             src/DotnetAgents.CalDav.Mcp/.mcp/server.json > server.json.tmp
+          mv server.json.tmp src/DotnetAgents.CalDav.Mcp/.mcp/server.json
+
       - name: Build Release
         run: dotnet build -c Release --no-restore
 

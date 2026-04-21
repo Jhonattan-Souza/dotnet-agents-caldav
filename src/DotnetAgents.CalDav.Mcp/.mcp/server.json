@@ -1,34 +1,61 @@
 {
-  "name": "dotnet-agents-caldav",
-  "version": "0.1.0",
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.jhonattan-souza/dotnet-agents-caldav",
   "description": "MCP server for CalDAV task management — create, update, complete, and query tasks via CalDAV.",
-  "transport": {
-    "type": "stdio"
+  "version": "0.0.0",
+  "packages": [
+    {
+      "registryType": "nuget",
+      "registryBaseUrl": "https://api.nuget.org/v3/index.json",
+      "identifier": "dotnet-agents-caldav",
+      "version": "0.0.0",
+      "runtimeHint": "dnx",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "CALDAV_URL",
+          "description": "Base URL of the CalDAV server (e.g. https://caldav.example.com)",
+          "isRequired": true
+        },
+        {
+          "name": "CALDAV_USERNAME",
+          "description": "Username for CalDAV Basic authentication",
+          "isRequired": true
+        },
+        {
+          "name": "CALDAV_PASSWORD",
+          "description": "Password for CalDAV Basic authentication",
+          "isRequired": true,
+          "isSecret": true
+        },
+        {
+          "name": "CALDAV_TASK_LISTS",
+          "description": "Comma-separated list of task list hrefs to expose (optional; omit to auto-discover)",
+          "isRequired": false
+        },
+        {
+          "name": "CALDAV_DEFAULT_TASK_LIST",
+          "description": "Display name of the default task list to use when chat requests omit an explicit list name (optional)",
+          "isRequired": false
+        },
+        {
+          "name": "CALDAV_EXPOSE_ADVANCED_TOOLS",
+          "description": "Set to true to expose advanced href-based tools alongside the chat-safe surface (optional)",
+          "isRequired": false
+        }
+      ]
+    }
+  ],
+  "repository": {
+    "url": "https://github.com/Jhonattan-Souza/dotnet-agents-caldav",
+    "source": "github"
   },
-  "env": {
-    "CALDAV_URL": {
-      "description": "Base URL of the CalDAV server (e.g. https://caldav.example.com)",
-      "required": true
-    },
-    "CALDAV_USERNAME": {
-      "description": "Username for CalDAV Basic authentication",
-      "required": true
-    },
-    "CALDAV_PASSWORD": {
-      "description": "Password for CalDAV Basic authentication",
-      "required": true
-    },
-    "CALDAV_TASK_LISTS": {
-      "description": "Comma-separated list of task list hrefs to expose (optional; omit to auto-discover)",
-      "required": false
-    },
-    "CALDAV_DEFAULT_TASK_LIST": {
-      "description": "Display name of the default task list to use when chat requests omit an explicit list name (optional)",
-      "required": false
-    },
-    "CALDAV_EXPOSE_ADVANCED_TOOLS": {
-      "description": "Set to true to expose advanced href-based tools alongside the chat-safe surface (optional)",
-      "required": false
+  "_meta": {
+    "io.modelcontextprotocol.registry/publisher-provided": {
+      "tool": "dotnet-publisher",
+      "version": "0.0.0"
     }
   }
 }
