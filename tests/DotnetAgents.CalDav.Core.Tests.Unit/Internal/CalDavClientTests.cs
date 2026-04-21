@@ -526,15 +526,11 @@ public class CalDavClientTests
     public async Task GetTaskListsAsync_SendsPropFindWithDepthHeader()
     {
         // Arrange
-        var requestCount = 0;
         var requests = new List<HttpRequestMessage>();
-        var handler = new StubHttpMessageHandler(request =>
-        {
-            requestCount++;
-            requests.Add(request);
-            return requestCount switch
+        var handler = CreateSequencedHandler(
+            new List<HttpResponseMessage>
             {
-                1 => new HttpResponseMessage(HttpStatusCode.MultiStatus)
+                new(HttpStatusCode.MultiStatus)
                 {
                     Content = new StringContent(
                         "<?xml version=\"1.0\" encoding=\"utf-8\"?>" +
@@ -552,7 +548,7 @@ public class CalDavClientTests
                             "</d:response>" +
                         "</d:multistatus>", Encoding.UTF8, "application/xml")
                 },
-                2 => new HttpResponseMessage(HttpStatusCode.MultiStatus)
+                new(HttpStatusCode.MultiStatus)
                 {
                     Content = new StringContent(
                         "<?xml version=\"1.0\" encoding=\"utf-8\"?>" +
@@ -573,10 +569,9 @@ public class CalDavClientTests
                                 "</d:propstat>" +
                             "</d:response>" +
                         "</d:multistatus>", Encoding.UTF8, "application/xml")
-                },
-                _ => new HttpResponseMessage(HttpStatusCode.OK)
-            };
-        });
+                }
+            },
+            requests);
 
         var sut = CreateSut(handler, "https://example.com/");
 
@@ -584,7 +579,7 @@ public class CalDavClientTests
         await sut.GetTaskListsAsync(CancellationToken.None);
 
         // Assert
-        requestCount.ShouldBe(2);
+        requests.Count.ShouldBe(2);
         // First PROPFIND is the calendar-home-set discovery (Depth: 0)
         requests[0].Method.Method.ShouldBe("PROPFIND");
         requests[0].Headers.TryGetValues("Depth", out var depth0).ShouldBeTrue();
@@ -599,15 +594,11 @@ public class CalDavClientTests
     public async Task GetTaskListsAsync_SendsApplicationXmlContentType()
     {
         // Arrange — must provide distinct responses for the two PROPFIND calls
-        var requestCount = 0;
         var requests = new List<HttpRequestMessage>();
-        var handler = new StubHttpMessageHandler(request =>
-        {
-            requestCount++;
-            requests.Add(request);
-            return requestCount switch
+        var handler = CreateSequencedHandler(
+            new List<HttpResponseMessage>
             {
-                1 => new HttpResponseMessage(HttpStatusCode.MultiStatus)
+                new(HttpStatusCode.MultiStatus)
                 {
                     Content = new StringContent(
                         "<?xml version=\"1.0\" encoding=\"utf-8\"?>" +
@@ -625,7 +616,7 @@ public class CalDavClientTests
                             "</d:response>" +
                         "</d:multistatus>", Encoding.UTF8, "application/xml")
                 },
-                2 => new HttpResponseMessage(HttpStatusCode.MultiStatus)
+                new(HttpStatusCode.MultiStatus)
                 {
                     Content = new StringContent(
                         "<?xml version=\"1.0\" encoding=\"utf-8\"?>" +
@@ -646,10 +637,9 @@ public class CalDavClientTests
                                 "</d:propstat>" +
                             "</d:response>" +
                         "</d:multistatus>", Encoding.UTF8, "application/xml")
-                },
-                _ => new HttpResponseMessage(HttpStatusCode.OK)
-            };
-        });
+                }
+            },
+            requests);
 
         var sut = CreateSut(handler, "https://example.com/");
 
@@ -657,12 +647,9 @@ public class CalDavClientTests
         var result = await sut.GetTaskListsAsync(CancellationToken.None);
 
         // Assert — both PROPFIND requests should send application/xml content type
-        requestCount.ShouldBe(2);
-        foreach (var req in requests)
-        {
-            req.Method.Method.ShouldBe("PROPFIND");
-            req.Content!.Headers.ContentType!.MediaType.ShouldBe("application/xml");
-        }
+        requests.Count.ShouldBe(2);
+        requests.All(r => r.Method.Method == "PROPFIND").ShouldBeTrue();
+        requests.All(r => r.Content!.Headers.ContentType!.MediaType == "application/xml").ShouldBeTrue();
 
         // Verify the two-request flow produced a valid result — this ensures the test
         // passes because the production code correctly processed distinct responses,
@@ -673,58 +660,8 @@ public class CalDavClientTests
     [Fact]
     public async Task GetTaskListsAsync_CalendarHomeSetDiscovery_SendsDepth0AndApplicationXmlContentType()
     {
-        // Arrange — capture both requests and return distinct responses for each PROPFIND
-        var requestCount = 0;
         var requests = new List<HttpRequestMessage>();
-        var handler = new StubHttpMessageHandler(request =>
-        {
-            requestCount++;
-            requests.Add(request);
-            return requestCount switch
-            {
-                1 => new HttpResponseMessage(HttpStatusCode.MultiStatus)
-                {
-                    Content = new StringContent(
-                        "<?xml version=\"1.0\" encoding=\"utf-8\"?>" +
-                        "<d:multistatus xmlns:d=\"DAV:\">" +
-                            "<d:response>" +
-                                "<d:href>/calendars/user/</d:href>" +
-                                "<d:propstat>" +
-                                    "<d:prop>" +
-                                        "<cal:calendar-home-set xmlns:cal=\"urn:ietf:params:xml:ns:caldav\">" +
-                                            "<d:href>/calendars/user/</d:href>" +
-                                        "</cal:calendar-home-set>" +
-                                    "</d:prop>" +
-                                    "<d:status>HTTP/1.1 200 OK</d:status>" +
-                                "</d:propstat>" +
-                            "</d:response>" +
-                        "</d:multistatus>", Encoding.UTF8, "application/xml")
-                },
-                2 => new HttpResponseMessage(HttpStatusCode.MultiStatus)
-                {
-                    Content = new StringContent(
-                        "<?xml version=\"1.0\" encoding=\"utf-8\"?>" +
-                        "<d:multistatus xmlns:d=\"DAV:\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\">" +
-                            "<d:response>" +
-                                "<d:href>/calendars/user/tasks/</d:href>" +
-                                "<d:propstat>" +
-                                    "<d:prop>" +
-                                        "<d:resourcetype>" +
-                                            "<cal:calendar/>" +
-                                        "</d:resourcetype>" +
-                                        "<d:displayname>Tasks</d:displayname>" +
-                                        "<cal:supported-calendar-component-set>" +
-                                            "<cal:comp name=\"VTODO\"/>" +
-                                        "</cal:supported-calendar-component-set>" +
-                                    "</d:prop>" +
-                                    "<d:status>HTTP/1.1 200 OK</d:status>" +
-                                "</d:propstat>" +
-                            "</d:response>" +
-                        "</d:multistatus>", Encoding.UTF8, "application/xml")
-                },
-                _ => new HttpResponseMessage(HttpStatusCode.OK)
-            };
-        });
+        var handler = CreateCalendarHomeSetDiscoveryDepth0Handler(requests);
 
         var sut = CreateSut(handler, "https://example.com/");
 
@@ -732,7 +669,7 @@ public class CalDavClientTests
         var result = await sut.GetTaskListsAsync(CancellationToken.None);
 
         // Assert — the initial PROPFIND for calendar-home-set discovery
-        requestCount.ShouldBe(2);
+        requests.Count.ShouldBe(2);
         var discoveryRequest = requests[0];
         discoveryRequest.Method.Method.ShouldBe("PROPFIND");
         discoveryRequest.Headers.TryGetValues("Depth", out var depth).ShouldBeTrue();
@@ -913,26 +850,7 @@ public class CalDavClientTests
     public async Task GetTasksAsync_FollowsRedirect_WhenServerReturns308()
     {
         var requests = new List<HttpRequestMessage>();
-        var handler = new AsyncStubHttpMessageHandler(request =>
-        {
-            requests.Add(request);
-
-            return Task.FromResult(requests.Count switch
-            {
-                1 => new HttpResponseMessage(HttpStatusCode.PermanentRedirect)
-                {
-                    Headers = { Location = new Uri("/new-path/", UriKind.Relative) }
-                },
-                2 => new HttpResponseMessage(HttpStatusCode.MultiStatus)
-                {
-                    Content = new StringContent(
-                        "<?xml version=\"1.0\" encoding=\"utf-8\"?><d:multistatus xmlns:d=\"DAV:\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\"></d:multistatus>",
-                        Encoding.UTF8,
-                        "application/xml")
-                },
-                _ => throw new InvalidOperationException("Unexpected request")
-            });
-        });
+        var handler = CreateGetTasksRedirectHandler(requests);
 
         var sut = CreateSut(handler);
 
@@ -953,61 +871,8 @@ public class CalDavClientTests
     public async Task GetTaskListsAsync_FallsBackToBaseUrl_WhenWellKnownFails()
     {
         // Arrange
-        var requestCount = 0;
         var requests = new List<HttpRequestMessage>();
-        var handler = new AsyncStubHttpMessageHandler(async request =>
-        {
-            requestCount++;
-            requests.Add(request);
-            return requestCount switch
-            {
-                // First request to well-known fails as a faulted task (models true async failure)
-                1 => await Task.FromException<HttpResponseMessage>(new HttpRequestException("Not found")),
-                // Second request to base URL succeeds
-                2 => new HttpResponseMessage(HttpStatusCode.MultiStatus)
-                {
-                    Content = new StringContent(
-                        "<?xml version=\"1.0\" encoding=\"utf-8\"?>" +
-                        "<d:multistatus xmlns:d=\"DAV:\">" +
-                            "<d:response>" +
-                                "<d:href>/dav/calendars/</d:href>" +
-                                "<d:propstat>" +
-                                    "<d:prop>" +
-                                        "<cal:calendar-home-set xmlns:cal=\"urn:ietf:params:xml:ns:caldav\">" +
-                                            "<d:href>/dav/calendars/user/</d:href>" +
-                                        "</cal:calendar-home-set>" +
-                                    "</d:prop>" +
-                                    "<d:status>HTTP/1.1 200 OK</d:status>" +
-                                "</d:propstat>" +
-                            "</d:response>" +
-                        "</d:multistatus>", Encoding.UTF8, "application/xml")
-                },
-                // Third request to get calendars from home set
-                3 => new HttpResponseMessage(HttpStatusCode.MultiStatus)
-                {
-                    Content = new StringContent(
-                        "<?xml version=\"1.0\" encoding=\"utf-8\"?>" +
-                        "<d:multistatus xmlns:d=\"DAV:\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\">" +
-                            "<d:response>" +
-                                "<d:href>/dav/calendars/user/tasks/</d:href>" +
-                                "<d:propstat>" +
-                                    "<d:prop>" +
-                                        "<d:resourcetype>" +
-                                            "<cal:calendar/>" +
-                                        "</d:resourcetype>" +
-                                        "<d:displayname>Tasks</d:displayname>" +
-                                        "<cal:supported-calendar-component-set>" +
-                                            "<cal:comp name=\"VTODO\"/>" +
-                                        "</cal:supported-calendar-component-set>" +
-                                    "</d:prop>" +
-                                    "<d:status>HTTP/1.1 200 OK</d:status>" +
-                                "</d:propstat>" +
-                            "</d:response>" +
-                        "</d:multistatus>", Encoding.UTF8, "application/xml")
-                },
-                _ => new HttpResponseMessage(HttpStatusCode.OK)
-            };
-        });
+        var handler = CreateWellKnownFailureFallbackHandler(requests);
 
         var sut = CreateSut(handler, "https://example.com/dav/");
 
@@ -1015,7 +880,7 @@ public class CalDavClientTests
         var result = await sut.GetTaskListsAsync(CancellationToken.None);
 
         // Assert
-        requestCount.ShouldBe(3);
+        requests.Count.ShouldBe(3);
         requests[0].RequestUri!.PathAndQuery.ShouldBe("/.well-known/caldav");
         requests[1].RequestUri!.PathAndQuery.ShouldBe("/dav/");
         result.Count.ShouldBe(1);
@@ -1052,23 +917,8 @@ public class CalDavClientTests
     public async Task GetTaskListsAsync_ReturnsNull_WhenBaseUrlDiscoveryThrows()
     {
         // Arrange
-        var requestCount = 0;
-        var handler = new AsyncStubHttpMessageHandler(request =>
-        {
-            requestCount++;
-            return requestCount switch
-            {
-                1 => Task.FromResult(new HttpResponseMessage(HttpStatusCode.MultiStatus)
-                {
-                    Content = new StringContent(
-                        "<?xml version=\"1.0\" encoding=\"utf-8\"?><d:multistatus xmlns:d=\"DAV:\"><d:response /></d:multistatus>",
-                        Encoding.UTF8,
-                        "application/xml")
-                }),
-                2 => Task.FromException<HttpResponseMessage>(new HttpRequestException("Base URL unavailable")),
-                _ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK))
-            };
-        });
+        var requests = new List<HttpRequestMessage>();
+        var handler = CreateBaseUrlDiscoveryThrowsHandler(requests);
 
         var sut = CreateSut(handler);
 
@@ -1076,7 +926,7 @@ public class CalDavClientTests
         var result = await sut.GetTaskListsAsync(CancellationToken.None);
 
         // Assert
-        requestCount.ShouldBe(2);
+        requests.Count.ShouldBe(2);
         result.ShouldBeEmpty();
     }
 
@@ -1084,30 +934,8 @@ public class CalDavClientTests
     public async Task GetTaskListsAsync_FallsBackToBaseUrl_WhenWellKnownReturnsNotFound()
     {
         // Arrange
-        var requestCount = 0;
-        var handler = new StubHttpMessageHandler(request =>
-        {
-            requestCount++;
-            return requestCount switch
-            {
-                1 => new HttpResponseMessage(HttpStatusCode.NotFound),
-                2 => new HttpResponseMessage(HttpStatusCode.MultiStatus)
-                {
-                    Content = new StringContent(
-                        "<?xml version=\"1.0\" encoding=\"utf-8\"?><d:multistatus xmlns:d=\"DAV:\"><d:response><d:propstat><d:prop><cal:calendar-home-set xmlns:cal=\"urn:ietf:params:xml:ns:caldav\"><d:href>/calendars/user/</d:href></cal:calendar-home-set></d:prop></d:propstat></d:response></d:multistatus>",
-                        Encoding.UTF8,
-                        "application/xml")
-                },
-                3 => new HttpResponseMessage(HttpStatusCode.MultiStatus)
-                {
-                    Content = new StringContent(
-                        "<?xml version=\"1.0\" encoding=\"utf-8\"?><d:multistatus xmlns:d=\"DAV:\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\"><d:response><d:href>/calendars/user/tasks/</d:href><d:propstat><d:prop><d:resourcetype><cal:calendar/></d:resourcetype><d:displayname>Tasks</d:displayname><cal:supported-calendar-component-set><cal:comp name=\"VTODO\"/></cal:supported-calendar-component-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>",
-                        Encoding.UTF8,
-                        "application/xml")
-                },
-                _ => new HttpResponseMessage(HttpStatusCode.OK)
-            };
-        });
+        var requests = new List<HttpRequestMessage>();
+        var handler = CreateWellKnownNotFoundFallbackHandler(requests);
 
         var sut = CreateSut(handler);
 
@@ -1115,7 +943,7 @@ public class CalDavClientTests
         var result = await sut.GetTaskListsAsync(CancellationToken.None);
 
         // Assert
-        requestCount.ShouldBe(3);
+        requests.Count.ShouldBe(3);
         result.Count.ShouldBe(1);
     }
 
@@ -1150,29 +978,8 @@ public class CalDavClientTests
     public async Task GetTaskListsAsync_ReturnsEmptyList_WhenCalendarHomeSetNotFound()
     {
         // Arrange
-        var requestCount = 0;
-        var handler = new StubHttpMessageHandler(request =>
-        {
-            requestCount++;
-            return requestCount switch
-            {
-                1 => new HttpResponseMessage(HttpStatusCode.MultiStatus)
-                {
-                    Content = new StringContent(
-                        "<?xml version=\"1.0\" encoding=\"utf-8\"?><d:multistatus xmlns:d=\"DAV:\"><d:response><d:propstat><d:prop><cal:current-user-principal xmlns:cal=\"urn:ietf:params:xml:ns:caldav\"><d:href>/principals/users/user/</d:href></cal:current-user-principal></d:prop></d:propstat></d:response></d:multistatus>",
-                        Encoding.UTF8,
-                        "application/xml")
-                },
-                2 => new HttpResponseMessage(HttpStatusCode.MultiStatus)
-                {
-                    Content = new StringContent(
-                        "<?xml version=\"1.0\" encoding=\"utf-8\"?><d:multistatus xmlns:d=\"DAV:\"><d:response><d:propstat><d:prop /></d:propstat></d:response></d:multistatus>",
-                        Encoding.UTF8,
-                        "application/xml")
-                },
-                _ => new HttpResponseMessage(HttpStatusCode.OK)
-            };
-        });
+        var requests = new List<HttpRequestMessage>();
+        var handler = CreateCalendarHomeSetNotFoundHandler(requests);
 
         var sut = CreateSut(handler);
 
@@ -1180,7 +987,7 @@ public class CalDavClientTests
         var result = await sut.GetTaskListsAsync(CancellationToken.None);
 
         // Assert
-        requestCount.ShouldBe(2);
+        requests.Count.ShouldBe(2);
         result.ShouldBeEmpty();
     }
 
@@ -1250,33 +1057,8 @@ public class CalDavClientTests
     public async Task GetTaskListsAsync_FollowsRedirect_WhenWellKnownReturnsRedirect()
     {
         // Arrange
-        var requestCount = 0;
-        var handler = new StubHttpMessageHandler(request =>
-        {
-            requestCount++;
-            return requestCount switch
-            {
-                1 => new HttpResponseMessage(HttpStatusCode.MovedPermanently)
-                {
-                    Headers = { Location = new Uri("/redirected/caldav", UriKind.Relative) }
-                },
-                2 => new HttpResponseMessage(HttpStatusCode.MultiStatus)
-                {
-                    Content = new StringContent(
-                        "<?xml version=\"1.0\" encoding=\"utf-8\"?><d:multistatus xmlns:d=\"DAV:\"><d:response><d:propstat><d:prop><cal:calendar-home-set xmlns:cal=\"urn:ietf:params:xml:ns:caldav\"><d:href>/calendars/user/</d:href></cal:calendar-home-set></d:prop></d:propstat></d:response></d:multistatus>",
-                        Encoding.UTF8,
-                        "application/xml")
-                },
-                3 => new HttpResponseMessage(HttpStatusCode.MultiStatus)
-                {
-                    Content = new StringContent(
-                        "<?xml version=\"1.0\" encoding=\"utf-8\"?><d:multistatus xmlns:d=\"DAV:\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\"><d:response><d:href>/calendars/user/tasks/</d:href><d:propstat><d:prop><d:resourcetype><cal:calendar/></d:resourcetype><d:displayname>Tasks</d:displayname><cal:supported-calendar-component-set><cal:comp name=\"VTODO\"/></cal:supported-calendar-component-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>",
-                        Encoding.UTF8,
-                        "application/xml")
-                },
-                _ => new HttpResponseMessage(HttpStatusCode.OK)
-            };
-        });
+        var requests = new List<HttpRequestMessage>();
+        var handler = CreateWellKnownRedirectHandler(requests);
 
         var sut = CreateSut(handler);
 
@@ -1284,7 +1066,7 @@ public class CalDavClientTests
         var result = await sut.GetTaskListsAsync(CancellationToken.None);
 
         // Assert
-        requestCount.ShouldBe(3);
+        requests.Count.ShouldBe(3);
         result.Count.ShouldBe(1);
     }
 
@@ -1504,13 +1286,78 @@ public class CalDavClientTests
     public async Task GetTaskListsAsync_AppliesConfiguredTaskListsFilter()
     {
         // Arrange
-        var requestCount = 0;
-        var handler = new StubHttpMessageHandler(request =>
+        var handler = CreateConfiguredTaskListsFilterHandler();
+
+        var options = new CalDavOptions { BaseUrl = "https://example.com/", TaskLists = "work" };
+        var sut = new CalDavClient(new HttpClient(handler), Options.Create(options), Substitute.For<ILogger<CalDavClient>>());
+
+        // Act
+        var result = await sut.GetTaskListsAsync(CancellationToken.None);
+
+        // Assert
+        result.Count.ShouldBe(1);
+        result[0].DisplayName.ShouldBe("Work");
+    }
+
+    [Fact]
+    public async Task GetTaskListsAsync_AppliesMultipleTaskListsFilter()
+    {
+        // Arrange
+        var handler = CreateMultipleTaskListsFilterHandler();
+
+        var options = new CalDavOptions { BaseUrl = "https://example.com/", TaskLists = "work, personal" };
+        var sut = new CalDavClient(new HttpClient(handler), Options.Create(options), Substitute.For<ILogger<CalDavClient>>());
+
+        // Act
+        var result = await sut.GetTaskListsAsync(CancellationToken.None);
+
+        // Assert
+        result.Count.ShouldBe(2);
+        result.Select(tl => tl.DisplayName).ShouldContain("Work");
+        result.Select(tl => tl.DisplayName).ShouldContain("Personal");
+    }
+
+    #endregion
+
+    #region Helper Methods
+
+    private static CalDavClient CreateSut(HttpMessageHandler handler, string baseUrl = "https://example.com/remote.php/dav")
+    {
+        var httpClient = new HttpClient(handler);
+        var options = Options.Create(new CalDavOptions
         {
-            requestCount++;
-            return requestCount switch
-            {
-                1 => new HttpResponseMessage(HttpStatusCode.MultiStatus)
+            BaseUrl = baseUrl,
+        });
+
+        return new CalDavClient(httpClient, options, Substitute.For<ILogger<CalDavClient>>());
+    }
+
+    private static string BuildTasksResponseXml(params (string Href, string ICalData)[] tasks)
+    {
+        var Dav = System.Xml.Linq.XNamespace.Get("DAV:");
+        var CalDav = System.Xml.Linq.XNamespace.Get("urn:ietf:params:xml:ns:caldav");
+
+        var multistatus = new System.Xml.Linq.XElement(Dav + "multistatus");
+        var doc = new System.Xml.Linq.XDocument(new System.Xml.Linq.XDeclaration("1.0", "utf-8", null), multistatus);
+
+        foreach (var (href, icalData) in tasks)
+        {
+            multistatus.Add(new System.Xml.Linq.XElement(Dav + "response",
+                new System.Xml.Linq.XElement(Dav + "href", href),
+                new System.Xml.Linq.XElement(Dav + "propstat",
+                    new System.Xml.Linq.XElement(Dav + "prop",
+                        new System.Xml.Linq.XElement(CalDav + "calendar-data", icalData)),
+                    new System.Xml.Linq.XElement(Dav + "status", "HTTP/1.1 200 OK"))));
+        }
+
+        return doc.ToString(System.Xml.Linq.SaveOptions.DisableFormatting);
+    }
+
+    private static StubHttpMessageHandler CreateCalendarHomeSetDiscoveryDepth0Handler(List<HttpRequestMessage> requests)
+    {
+        return CreateSequencedHandler(
+            [
+                new HttpResponseMessage(HttpStatusCode.MultiStatus)
                 {
                     Content = new StringContent(
                         "<?xml version=\"1.0\" encoding=\"utf-8\"?>" +
@@ -1528,7 +1375,210 @@ public class CalDavClientTests
                             "</d:response>" +
                         "</d:multistatus>", Encoding.UTF8, "application/xml")
                 },
-                2 => new HttpResponseMessage(HttpStatusCode.MultiStatus)
+                new HttpResponseMessage(HttpStatusCode.MultiStatus)
+                {
+                    Content = new StringContent(
+                        "<?xml version=\"1.0\" encoding=\"utf-8\"?>" +
+                        "<d:multistatus xmlns:d=\"DAV:\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\">" +
+                            "<d:response>" +
+                                "<d:href>/calendars/user/tasks/</d:href>" +
+                                "<d:propstat>" +
+                                    "<d:prop>" +
+                                        "<d:resourcetype>" +
+                                            "<cal:calendar/>" +
+                                        "</d:resourcetype>" +
+                                        "<d:displayname>Tasks</d:displayname>" +
+                                        "<cal:supported-calendar-component-set>" +
+                                            "<cal:comp name=\"VTODO\"/>" +
+                                        "</cal:supported-calendar-component-set>" +
+                                    "</d:prop>" +
+                                    "<d:status>HTTP/1.1 200 OK</d:status>" +
+                                "</d:propstat>" +
+                            "</d:response>" +
+                        "</d:multistatus>", Encoding.UTF8, "application/xml")
+                }
+            ],
+            requests);
+    }
+
+    private static AsyncStubHttpMessageHandler CreateGetTasksRedirectHandler(List<HttpRequestMessage> requests)
+    {
+        return CreateAsyncSequencedHandler(
+            [
+                () => Task.FromResult(new HttpResponseMessage(HttpStatusCode.PermanentRedirect)
+                {
+                    Headers = { Location = new Uri("/new-path/", UriKind.Relative) }
+                }),
+                () => Task.FromResult(new HttpResponseMessage(HttpStatusCode.MultiStatus)
+                {
+                    Content = new StringContent(
+                        "<?xml version=\"1.0\" encoding=\"utf-8\"?><d:multistatus xmlns:d=\"DAV:\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\"></d:multistatus>",
+                        Encoding.UTF8,
+                        "application/xml")
+                })
+            ],
+            requests);
+    }
+
+    private static AsyncStubHttpMessageHandler CreateWellKnownFailureFallbackHandler(List<HttpRequestMessage> requests)
+    {
+        return CreateAsyncSequencedHandler(
+            [
+                () => Task.FromException<HttpResponseMessage>(new HttpRequestException("Not found")),
+                () => Task.FromResult(new HttpResponseMessage(HttpStatusCode.MultiStatus)
+                {
+                    Content = new StringContent(
+                        "<?xml version=\"1.0\" encoding=\"utf-8\"?>" +
+                        "<d:multistatus xmlns:d=\"DAV:\">" +
+                            "<d:response>" +
+                                "<d:href>/dav/calendars/</d:href>" +
+                                "<d:propstat>" +
+                                    "<d:prop>" +
+                                        "<cal:calendar-home-set xmlns:cal=\"urn:ietf:params:xml:ns:caldav\">" +
+                                            "<d:href>/dav/calendars/user/</d:href>" +
+                                        "</cal:calendar-home-set>" +
+                                    "</d:prop>" +
+                                    "<d:status>HTTP/1.1 200 OK</d:status>" +
+                                "</d:propstat>" +
+                            "</d:response>" +
+                        "</d:multistatus>", Encoding.UTF8, "application/xml")
+                }),
+                () => Task.FromResult(new HttpResponseMessage(HttpStatusCode.MultiStatus)
+                {
+                    Content = new StringContent(
+                        "<?xml version=\"1.0\" encoding=\"utf-8\"?>" +
+                        "<d:multistatus xmlns:d=\"DAV:\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\">" +
+                            "<d:response>" +
+                                "<d:href>/dav/calendars/user/tasks/</d:href>" +
+                                "<d:propstat>" +
+                                    "<d:prop>" +
+                                        "<d:resourcetype>" +
+                                            "<cal:calendar/>" +
+                                        "</d:resourcetype>" +
+                                        "<d:displayname>Tasks</d:displayname>" +
+                                        "<cal:supported-calendar-component-set>" +
+                                            "<cal:comp name=\"VTODO\"/>" +
+                                        "</cal:supported-calendar-component-set>" +
+                                    "</d:prop>" +
+                                    "<d:status>HTTP/1.1 200 OK</d:status>" +
+                                "</d:propstat>" +
+                            "</d:response>" +
+                        "</d:multistatus>", Encoding.UTF8, "application/xml")
+                })
+            ],
+            requests);
+    }
+
+    private static AsyncStubHttpMessageHandler CreateBaseUrlDiscoveryThrowsHandler(List<HttpRequestMessage> requests)
+    {
+        return CreateAsyncSequencedHandler(
+            [
+                () => Task.FromResult(new HttpResponseMessage(HttpStatusCode.MultiStatus)
+                {
+                    Content = new StringContent(
+                        "<?xml version=\"1.0\" encoding=\"utf-8\"?><d:multistatus xmlns:d=\"DAV:\"><d:response /></d:multistatus>",
+                        Encoding.UTF8,
+                        "application/xml")
+                }),
+                () => Task.FromException<HttpResponseMessage>(new HttpRequestException("Base URL unavailable"))
+            ],
+            requests);
+    }
+
+    private static StubHttpMessageHandler CreateWellKnownNotFoundFallbackHandler(List<HttpRequestMessage> requests)
+    {
+        return CreateSequencedHandler(
+            [
+                new HttpResponseMessage(HttpStatusCode.NotFound),
+                new HttpResponseMessage(HttpStatusCode.MultiStatus)
+                {
+                    Content = new StringContent(
+                        "<?xml version=\"1.0\" encoding=\"utf-8\"?><d:multistatus xmlns:d=\"DAV:\"><d:response><d:propstat><d:prop><cal:calendar-home-set xmlns:cal=\"urn:ietf:params:xml:ns:caldav\"><d:href>/calendars/user/</d:href></cal:calendar-home-set></d:prop></d:propstat></d:response></d:multistatus>",
+                        Encoding.UTF8,
+                        "application/xml")
+                },
+                new HttpResponseMessage(HttpStatusCode.MultiStatus)
+                {
+                    Content = new StringContent(
+                        "<?xml version=\"1.0\" encoding=\"utf-8\"?><d:multistatus xmlns:d=\"DAV:\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\"><d:response><d:href>/calendars/user/tasks/</d:href><d:propstat><d:prop><d:resourcetype><cal:calendar/></d:resourcetype><d:displayname>Tasks</d:displayname><cal:supported-calendar-component-set><cal:comp name=\"VTODO\"/></cal:supported-calendar-component-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>",
+                        Encoding.UTF8,
+                        "application/xml")
+                }
+            ],
+            requests);
+    }
+
+    private static StubHttpMessageHandler CreateCalendarHomeSetNotFoundHandler(List<HttpRequestMessage> requests)
+    {
+        return CreateSequencedHandler(
+            [
+                new HttpResponseMessage(HttpStatusCode.MultiStatus)
+                {
+                    Content = new StringContent(
+                        "<?xml version=\"1.0\" encoding=\"utf-8\"?><d:multistatus xmlns:d=\"DAV:\"><d:response><d:propstat><d:prop><cal:current-user-principal xmlns:cal=\"urn:ietf:params:xml:ns:caldav\"><d:href>/principals/users/user/</d:href></cal:current-user-principal></d:prop></d:propstat></d:response></d:multistatus>",
+                        Encoding.UTF8,
+                        "application/xml")
+                },
+                new HttpResponseMessage(HttpStatusCode.MultiStatus)
+                {
+                    Content = new StringContent(
+                        "<?xml version=\"1.0\" encoding=\"utf-8\"?><d:multistatus xmlns:d=\"DAV:\"><d:response><d:propstat><d:prop /></d:propstat></d:response></d:multistatus>",
+                        Encoding.UTF8,
+                        "application/xml")
+                }
+            ],
+            requests);
+    }
+
+    private static AsyncStubHttpMessageHandler CreateWellKnownRedirectHandler(List<HttpRequestMessage> requests)
+    {
+        return CreateAsyncSequencedHandler(
+            [
+                () => Task.FromResult(new HttpResponseMessage(HttpStatusCode.MovedPermanently)
+                {
+                    Headers = { Location = new Uri("/redirected/caldav", UriKind.Relative) }
+                }),
+                () => Task.FromResult(new HttpResponseMessage(HttpStatusCode.MultiStatus)
+                {
+                    Content = new StringContent(
+                        "<?xml version=\"1.0\" encoding=\"utf-8\"?><d:multistatus xmlns:d=\"DAV:\"><d:response><d:propstat><d:prop><cal:calendar-home-set xmlns:cal=\"urn:ietf:params:xml:ns:caldav\"><d:href>/calendars/user/</d:href></cal:calendar-home-set></d:prop></d:propstat></d:response></d:multistatus>",
+                        Encoding.UTF8,
+                        "application/xml")
+                }),
+                () => Task.FromResult(new HttpResponseMessage(HttpStatusCode.MultiStatus)
+                {
+                    Content = new StringContent(
+                        "<?xml version=\"1.0\" encoding=\"utf-8\"?><d:multistatus xmlns:d=\"DAV:\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\"><d:response><d:href>/calendars/user/tasks/</d:href><d:propstat><d:prop><d:resourcetype><cal:calendar/></d:resourcetype><d:displayname>Tasks</d:displayname><cal:supported-calendar-component-set><cal:comp name=\"VTODO\"/></cal:supported-calendar-component-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>",
+                        Encoding.UTF8,
+                        "application/xml")
+                })
+            ],
+            requests);
+    }
+
+    private static StubHttpMessageHandler CreateConfiguredTaskListsFilterHandler()
+    {
+        return CreateSequencedHandler(
+            [
+                new HttpResponseMessage(HttpStatusCode.MultiStatus)
+                {
+                    Content = new StringContent(
+                        "<?xml version=\"1.0\" encoding=\"utf-8\"?>" +
+                        "<d:multistatus xmlns:d=\"DAV:\">" +
+                            "<d:response>" +
+                                "<d:href>/calendars/user/</d:href>" +
+                                "<d:propstat>" +
+                                    "<d:prop>" +
+                                        "<cal:calendar-home-set xmlns:cal=\"urn:ietf:params:xml:ns:caldav\">" +
+                                            "<d:href>/calendars/user/</d:href>" +
+                                        "</cal:calendar-home-set>" +
+                                    "</d:prop>" +
+                                    "<d:status>HTTP/1.1 200 OK</d:status>" +
+                                "</d:propstat>" +
+                            "</d:response>" +
+                        "</d:multistatus>", Encoding.UTF8, "application/xml")
+                },
+                new HttpResponseMessage(HttpStatusCode.MultiStatus)
                 {
                     Content = new StringContent(
                         "<?xml version=\"1.0\" encoding=\"utf-8\"?>" +
@@ -1564,33 +1614,16 @@ public class CalDavClientTests
                                 "</d:propstat>" +
                             "</d:response>" +
                         "</d:multistatus>", Encoding.UTF8, "application/xml")
-                },
-                _ => new HttpResponseMessage(HttpStatusCode.OK)
-            };
-        });
-
-        var options = new CalDavOptions { BaseUrl = "https://example.com/", TaskLists = "work" };
-        var sut = new CalDavClient(new HttpClient(handler), Options.Create(options), Substitute.For<ILogger<CalDavClient>>());
-
-        // Act
-        var result = await sut.GetTaskListsAsync(CancellationToken.None);
-
-        // Assert
-        result.Count.ShouldBe(1);
-        result[0].DisplayName.ShouldBe("Work");
+                }
+            ],
+            []);
     }
 
-    [Fact]
-    public async Task GetTaskListsAsync_AppliesMultipleTaskListsFilter()
+    private static StubHttpMessageHandler CreateMultipleTaskListsFilterHandler()
     {
-        // Arrange
-        var requestCount = 0;
-        var handler = new StubHttpMessageHandler(request =>
-        {
-            requestCount++;
-            return requestCount switch
-            {
-                1 => new HttpResponseMessage(HttpStatusCode.MultiStatus)
+        return CreateSequencedHandler(
+            [
+                new HttpResponseMessage(HttpStatusCode.MultiStatus)
                 {
                     Content = new StringContent(
                         "<?xml version=\"1.0\" encoding=\"utf-8\"?>" +
@@ -1608,7 +1641,7 @@ public class CalDavClientTests
                             "</d:response>" +
                         "</d:multistatus>", Encoding.UTF8, "application/xml")
                 },
-                2 => new HttpResponseMessage(HttpStatusCode.MultiStatus)
+                new HttpResponseMessage(HttpStatusCode.MultiStatus)
                 {
                     Content = new StringContent(
                         "<?xml version=\"1.0\" encoding=\"utf-8\"?>" +
@@ -1659,57 +1692,9 @@ public class CalDavClientTests
                                 "</d:propstat>" +
                             "</d:response>" +
                         "</d:multistatus>", Encoding.UTF8, "application/xml")
-                },
-                _ => new HttpResponseMessage(HttpStatusCode.OK)
-            };
-        });
-
-        var options = new CalDavOptions { BaseUrl = "https://example.com/", TaskLists = "work, personal" };
-        var sut = new CalDavClient(new HttpClient(handler), Options.Create(options), Substitute.For<ILogger<CalDavClient>>());
-
-        // Act
-        var result = await sut.GetTaskListsAsync(CancellationToken.None);
-
-        // Assert
-        result.Count.ShouldBe(2);
-        result.Select(tl => tl.DisplayName).ShouldContain("Work");
-        result.Select(tl => tl.DisplayName).ShouldContain("Personal");
-    }
-
-    #endregion
-
-    #region Helper Methods
-
-    private static CalDavClient CreateSut(HttpMessageHandler handler, string baseUrl = "https://example.com/remote.php/dav")
-    {
-        var httpClient = new HttpClient(handler);
-        var options = Options.Create(new CalDavOptions
-        {
-            BaseUrl = baseUrl,
-        });
-
-        return new CalDavClient(httpClient, options, Substitute.For<ILogger<CalDavClient>>());
-    }
-
-    private static string BuildTasksResponseXml(params (string Href, string ICalData)[] tasks)
-    {
-        var Dav = System.Xml.Linq.XNamespace.Get("DAV:");
-        var CalDav = System.Xml.Linq.XNamespace.Get("urn:ietf:params:xml:ns:caldav");
-
-        var multistatus = new System.Xml.Linq.XElement(Dav + "multistatus");
-        var doc = new System.Xml.Linq.XDocument(new System.Xml.Linq.XDeclaration("1.0", "utf-8", null), multistatus);
-
-        foreach (var (href, icalData) in tasks)
-        {
-            multistatus.Add(new System.Xml.Linq.XElement(Dav + "response",
-                new System.Xml.Linq.XElement(Dav + "href", href),
-                new System.Xml.Linq.XElement(Dav + "propstat",
-                    new System.Xml.Linq.XElement(Dav + "prop",
-                        new System.Xml.Linq.XElement(CalDav + "calendar-data", icalData)),
-                    new System.Xml.Linq.XElement(Dav + "status", "HTTP/1.1 200 OK"))));
-        }
-
-        return doc.ToString(System.Xml.Linq.SaveOptions.DisableFormatting);
+                }
+            ],
+            []);
     }
 
     private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> handler)
@@ -1733,6 +1718,39 @@ public class CalDavClientTests
         {
             return handler(request);
         }
+    }
+
+    /// <summary>
+    /// Creates a stub handler that returns responses from a sequence in order.
+    /// Captures each request for later assertion. The final response is repeated
+    /// for any additional requests.
+    /// </summary>
+    private static StubHttpMessageHandler CreateSequencedHandler(
+        List<HttpResponseMessage> responses,
+        List<HttpRequestMessage> capturedRequests)
+    {
+        var index = 0;
+        return new StubHttpMessageHandler(request =>
+        {
+            capturedRequests.Add(request);
+            var response = responses[Math.Min(index, responses.Count - 1)];
+            index++;
+            return response;
+        });
+    }
+
+    private static AsyncStubHttpMessageHandler CreateAsyncSequencedHandler(
+        List<Func<Task<HttpResponseMessage>>> responseFactories,
+        List<HttpRequestMessage> capturedRequests)
+    {
+        var index = 0;
+        return new AsyncStubHttpMessageHandler(request =>
+        {
+            capturedRequests.Add(request);
+            var responseFactory = responseFactories[Math.Min(index, responseFactories.Count - 1)];
+            index++;
+            return responseFactory();
+        });
     }
 
     #endregion
