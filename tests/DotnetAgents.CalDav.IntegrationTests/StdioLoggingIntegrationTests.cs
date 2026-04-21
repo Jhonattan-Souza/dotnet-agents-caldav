@@ -91,18 +91,7 @@ public sealed class StdioLoggingIntegrationTests
         var beforeClose = DateTimeOffset.UtcNow;
         process.StandardInput.Close();
 
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(
-            TestContext.Current.CancellationToken);
-        cts.CancelAfter(TimeSpan.FromSeconds(15));
-        try
-        {
-            await process.WaitForExitAsync(cts.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            process.Kill(entireProcessTree: true);
-            throw;
-        }
+        await WaitForExitWithTimeoutAsync(process, TestContext.Current.CancellationToken);
 
         var elapsed = DateTimeOffset.UtcNow - beforeClose;
         var stdout = await stdoutTask;
@@ -132,8 +121,19 @@ public sealed class StdioLoggingIntegrationTests
         var stdoutTask = process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
         var stderrTask = process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
 
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(
-            TestContext.Current.CancellationToken);
+        await WaitForExitWithTimeoutAsync(process, TestContext.Current.CancellationToken);
+
+        return (await stdoutTask, await stderrTask);
+    }
+
+    /// <summary>
+    /// Waits for the process to exit with a 15-second safety timeout.
+    /// If the timeout fires, the process (and its children) are killed
+    /// so tests do not leak orphan processes.
+    /// </summary>
+    private static async Task WaitForExitWithTimeoutAsync(Process process, CancellationToken cancellationToken)
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cts.CancelAfter(TimeSpan.FromSeconds(15));
         try
         {
@@ -144,8 +144,6 @@ public sealed class StdioLoggingIntegrationTests
             process.Kill(entireProcessTree: true);
             throw;
         }
-
-        return (await stdoutTask, await stderrTask);
     }
 
     private static Process CreateProcess()
