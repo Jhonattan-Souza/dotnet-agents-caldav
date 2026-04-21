@@ -19,6 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       BUILD_CONFIGURATION: Release
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       PACKAGE_OUTPUT_DIRECTORY: ${{ github.workspace }}/artifacts
       PACKAGE_PROJECT_PATH: src/DotnetAgents.CalDav.Mcp/DotnetAgents.CalDav.Mcp.csproj
 
@@ -81,7 +82,7 @@ jobs:
 
       - name: NuGet login
         id: login
-        uses: NuGet/login@v2
+        uses: NuGet/login@v1
         with:
           user: ${{ secrets.NUGET_USER }}
 
@@ -108,7 +109,7 @@ jobs:
           ' RELEASE_NOTES.md > RELEASE_NOTES_LATEST.md
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2.2.1
+        uses: softprops/action-gh-release@v3
         with:
           name: dotnet-agents-caldav ${{ steps.version.outputs.package_version }}
           body_path: RELEASE_NOTES_LATEST.md
