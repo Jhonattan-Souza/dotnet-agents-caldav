@@ -1,4 +1,4 @@
-[![CI](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/actions/workflows/ci.yml/badge.svg)](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/actions/workflows/ci.yml)
+[![Release](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/actions/workflows/release.yml/badge.svg)](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/actions/workflows/release.yml)
 
 # CalDAV Tasks MCP Server
 
