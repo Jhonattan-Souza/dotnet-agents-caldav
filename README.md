@@ -17,7 +17,8 @@ Add this MCP server to VS Code, Claude Desktop, Cursor, or any MCP client:
       "env": {
         "CALDAV_URL": "https://caldav.example.com",
         "CALDAV_USERNAME": "user",
-        "CALDAV_PASSWORD": "password"
+        "CALDAV_PASSWORD": "password",
+        "CALDAV_EXPOSE_ADVANCED_TOOLS": "true"
       }
     }
   }
@@ -32,16 +33,27 @@ Add this MCP server to VS Code, Claude Desktop, Cursor, or any MCP client:
 | `CALDAV_USERNAME` | Yes | Username for Basic auth |
 | `CALDAV_PASSWORD` | Yes | Password for Basic auth |
 | `CALDAV_TASK_LISTS` | No | Comma-separated task list hrefs to expose; omit to auto-discover |
+| `CALDAV_EXPOSE_ADVANCED_TOOLS` | No | Set to `true` to expose href-based tools like `get_task`, `update_task`, `complete_task`, and `delete_task` |
 
 ## Available tools
 
+### Chat-safe tools
+
 - `list_task_lists` — List available CalDAV task lists.
+- `caldav_add_task` — Create a task using a user-facing list name.
+- `caldav_complete_task_by_summary` — Mark a task complete by summary.
+- `caldav_delete_task_by_summary` — Delete a task by summary.
+
+### Advanced tools
+
 - `list_tasks` — List tasks with optional filters such as task list, text search, status, due date, and completion state.
 - `get_task` — Fetch a single task by ID or href.
 - `create_task` — Create a new task in a task list.
 - `update_task` — Update task fields while preserving server state via ETag checks.
 - `complete_task` — Mark a task complete.
 - `delete_task` — Delete a task.
+
+By default, the server exposes only the chat-safe tools: `list_task_lists`, `caldav_add_task`, `caldav_complete_task_by_summary`, and `caldav_delete_task_by_summary`. Set `CALDAV_EXPOSE_ADVANCED_TOOLS=true` to also expose the href-based advanced tools.
 
 ## Supported servers
 
