@@ -7,6 +7,7 @@
     <PackageType>McpServer</PackageType>
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>dotnet-agents-caldav</ToolCommandName>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
@@ -20,7 +21,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include=".mcp/server.json">
+    <None Include="../../README.md" Pack="true" PackagePath="\" />
+    <None Include=".mcp/server.json" Pack="true" PackagePath=".mcp/server.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
