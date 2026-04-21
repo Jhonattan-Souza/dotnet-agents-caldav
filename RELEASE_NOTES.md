@@ -1,5 +1,14 @@
 # Release Notes
 
+## 0.1.3 — 2026-04-21
+
+### Fixed
+- Remove console logging entirely from MCP stdio server to prevent log pollution that breaks MCP clients
+- Strengthen `StdioLoggingIntegrationTests` to verify both invalid config (stderr contains error) and valid config (both stdout and stderr are clean) scenarios
+
+### Changed
+- Update GitHub Actions: `NuGet/login@v1` → `v2`, `softprops/action-gh-release@v2` → `v2.2.1`
+
 ## 0.1.2 — 2026-04-21
 
 ### Fixed

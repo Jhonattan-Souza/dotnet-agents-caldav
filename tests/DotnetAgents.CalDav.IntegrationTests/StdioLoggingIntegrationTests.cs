@@ -1,16 +1,24 @@
 using System.Diagnostics;
 using System.Reflection;
+using DotnetAgents.CalDav.IntegrationTests.Fixtures;
 using Shouldly;
 using Xunit;
 
 namespace DotnetAgents.CalDav.IntegrationTests;
 
 /// <summary>
-/// Verifies that the MCP server process keeps stdout clean for JSON-RPC
-/// by redirecting all .NET console logging to stderr.
+/// Verifies that the MCP server process keeps stdio clean for JSON-RPC.
 /// </summary>
+[Collection("RadicaleCollection")]
 public sealed class StdioLoggingIntegrationTests
 {
+    private readonly RadicaleFixture _fixture;
+
+    public StdioLoggingIntegrationTests(RadicaleFixture fixture)
+    {
+        _fixture = fixture;
+    }
+
     /// <summary>
     /// Launches the MCP server exe with no CalDAV env vars so that config
     /// validation fails and the process exits with code 1. Asserts that
@@ -18,21 +26,9 @@ public sealed class StdioLoggingIntegrationTests
     /// that the validation error appears on stderr.
     /// </summary>
     [Fact]
-    public async Task McpProcess_WritesNoLogLinesToStdout()
+    public async Task McpProcess_WithInvalidConfig_WritesNoLogLinesToStdout()
     {
-        var mcpDll = GetMcpDllPath();
-
-        using var process = new Process();
-        process.StartInfo = new ProcessStartInfo
-        {
-            FileName = "dotnet",
-            Arguments = mcpDll,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            RedirectStandardInput = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
+        using var process = CreateProcess();
 
         // Strip all CALDAV_ env vars so the process hits validation failure
         // and exits immediately — no server needed for this test.
@@ -40,21 +36,7 @@ public sealed class StdioLoggingIntegrationTests
         process.StartInfo.Environment.Remove("CALDAV_USERNAME");
         process.StartInfo.Environment.Remove("CALDAV_PASSWORD");
 
-        process.Start();
-
-        // Close stdin so the stdio transport doesn't block waiting for input.
-        process.StandardInput.Close();
-
-        var stdoutTask = process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
-        var stderrTask = process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
-
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(
-            TestContext.Current.CancellationToken);
-        cts.CancelAfter(TimeSpan.FromSeconds(15));
-        await process.WaitForExitAsync(cts.Token);
-
-        var stdout = await stdoutTask;
-        var stderr = await stderrTask;
+        var (stdout, stderr) = await RunProcessToCompletionAsync(process);
 
         // The process should exit with code 1 (config validation failure).
         process.ExitCode.ShouldBe(1, $"stderr was: {stderr}");
@@ -69,10 +51,63 @@ public sealed class StdioLoggingIntegrationTests
         stderr.ShouldContain("CalDAV configuration error");
     }
 
+    [Fact]
+    public async Task McpProcess_WithValidConfig_WritesNoConsoleLogsToStdoutOrStderr()
+    {
+        using var process = CreateProcess();
+        _fixture.ConfigureCalDavEnvironment(process.StartInfo.Environment);
+
+        var (stdout, stderr) = await RunProcessToCompletionAsync(process);
+
+        process.ExitCode.ShouldBe(0,
+            $"stdout was: {stdout}\nstderr was: {stderr}");
+        stdout.ShouldBeEmpty(
+            $"stdout must remain reserved for JSON-RPC messages, but contained:\n{stdout}");
+        stderr.ShouldBeEmpty(
+            $"stderr must remain empty for stdio MCP compatibility, but contained:\n{stderr}");
+    }
+
     /// <summary>
     /// Resolves the path to the MCP server DLL relative to the test assembly,
     /// walking up from the test bin/ to the src project bin/.
     /// </summary>
+    private static async Task<(string Stdout, string Stderr)> RunProcessToCompletionAsync(Process process)
+    {
+        process.Start();
+
+        // Close stdin so the stdio transport can observe EOF and shut down.
+        process.StandardInput.Close();
+
+        var stdoutTask = process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
+        var stderrTask = process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken);
+        cts.CancelAfter(TimeSpan.FromSeconds(15));
+        await process.WaitForExitAsync(cts.Token);
+
+        return (await stdoutTask, await stderrTask);
+    }
+
+    private static Process CreateProcess()
+    {
+        var mcpDll = GetMcpDllPath();
+
+        return new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = "dotnet",
+                Arguments = mcpDll,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                RedirectStandardInput = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            }
+        };
+    }
+
     private static string GetMcpDllPath()
     {
         // The MCP project builds to:
