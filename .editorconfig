@@ -45,12 +45,10 @@ csharp_style_prefer_primary_constructors = false:warning
 dotnet_diagnostic.CA1860.severity = warning
 dotnet_diagnostic.SYSLIB1045.severity = warning
 
-# Cyclomatic complexity (CA1502) — hard limit 10, error on violation
-dotnet_code_quality.CA1502.maximum_method_complexity = 10
-dotnet_code_quality.CA1502.severity = error
-dotnet_code_quality.CA1502.api_surface = all
+# Cyclomatic complexity (CA1502) — threshold configured in CodeMetricsConfig.txt
+dotnet_diagnostic.CA1502.severity = error
 
-# Maintainability index (CA1501)
+# Excessive inheritance (CA1501)
 dotnet_code_quality.CA1501.severity = warning
 dotnet_code_quality.CA1501.api_surface = all
 

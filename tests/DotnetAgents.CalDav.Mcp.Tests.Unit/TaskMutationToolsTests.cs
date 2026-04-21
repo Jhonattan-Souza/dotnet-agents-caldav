@@ -566,19 +566,7 @@ public class TaskMutationToolsTests
 
         // Assert — existing fields must be preserved; only Status and Completed change
         await _taskService.Received(1).UpdateTaskAsync(
-            Arg.Is<TaskItem>(t =>
-                t.Href == existingTask.Href &&
-                t.Uid == existingTask.Uid &&
-                t.Summary == existingTask.Summary &&
-                t.Description == existingTask.Description &&
-                t.Priority == existingTask.Priority &&
-                t.Due == existingTask.Due &&
-                t.Start == existingTask.Start &&
-                t.Categories.SequenceEqual(existingTask.Categories) &&
-                t.RecurrenceRule == existingTask.RecurrenceRule &&
-                t.Status == CalDavTaskStatus.Completed &&
-                t.Completed == FixedNow &&
-                t.ETag == existingTask.ETag),
+            Arg.Is<TaskItem>(t => MatchesCompletedTaskPreservingExistingFields(t, existingTask)),
             Arg.Any<CancellationToken>());
     }
 
@@ -745,20 +733,41 @@ public class TaskMutationToolsTests
 
         // Assert — existing fields must be preserved; only Status changed
         await _taskService.Received(1).UpdateTaskAsync(
-            Arg.Is<TaskItem>(t =>
-                t.Href == existingTask.Href &&
-                t.Uid == existingTask.Uid &&
-                t.Summary == existingTask.Summary &&        // preserved
-                t.Description == existingTask.Description && // preserved
-                t.Priority == existingTask.Priority &&       // preserved
-                t.Due == existingTask.Due &&                 // preserved
-                t.Start == existingTask.Start &&             // preserved
-                t.Categories.SequenceEqual(existingTask.Categories) && // preserved
-                t.RecurrenceRule == existingTask.RecurrenceRule &&     // preserved
-                t.Status == CalDavTaskStatus.Completed &&              // updated
-                t.ETag == existingTask.ETag),                           // preserved (no explicit etag)
+            Arg.Is<TaskItem>(t => MatchesUpdatedTaskPreservingExistingFields(t, existingTask)),
             Arg.Any<CancellationToken>());
     }
+
+    private static bool MatchesCompletedTaskPreservingExistingFields(TaskItem actual, TaskItem existingTask) =>
+        All(
+            actual.Href == existingTask.Href,
+            actual.Uid == existingTask.Uid,
+            actual.Summary == existingTask.Summary,
+            actual.Description == existingTask.Description,
+            actual.Priority == existingTask.Priority,
+            actual.Due == existingTask.Due,
+            actual.Start == existingTask.Start,
+            actual.Categories.SequenceEqual(existingTask.Categories),
+            actual.RecurrenceRule == existingTask.RecurrenceRule,
+            actual.Status == CalDavTaskStatus.Completed,
+            actual.Completed == FixedNow,
+            actual.ETag == existingTask.ETag);
+
+    private static bool MatchesUpdatedTaskPreservingExistingFields(TaskItem actual, TaskItem existingTask) =>
+        All(
+            actual.Href == existingTask.Href,
+            actual.Uid == existingTask.Uid,
+            actual.Summary == existingTask.Summary,
+            actual.Description == existingTask.Description,
+            actual.Priority == existingTask.Priority,
+            actual.Due == existingTask.Due,
+            actual.Start == existingTask.Start,
+            actual.Categories.SequenceEqual(existingTask.Categories),
+            actual.RecurrenceRule == existingTask.RecurrenceRule,
+            actual.Status == CalDavTaskStatus.Completed,
+            actual.ETag == existingTask.ETag);
+
+    private static bool All(params bool[] conditions) =>
+        conditions.All(static condition => condition);
 
     [Fact]
     public async Task UpdateTaskAsync_SetsProvidedFieldsAndPreservesOthers()

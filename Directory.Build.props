@@ -41,15 +41,9 @@
     <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
   </ItemGroup>
 
-  <!-- Analyzers — CA1502 cyclomatic complexity hard limit 10 -->
+  <!-- Analyzers -->
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" PrivateAssets="All" />
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)CodeMetricsConfig.txt" />
   </ItemGroup>
-
-  <PropertyGroup>
-    <!-- CA1502: Cyclomatic complexity — hard limit 10, error on violation -->
-    <CA1502MaximumMethodComplexity>10</CA1502MaximumMethodComplexity>
-    <!-- Treat analyzer warnings as errors so CC violations fail the build -->
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-  </PropertyGroup>
 </Project>
