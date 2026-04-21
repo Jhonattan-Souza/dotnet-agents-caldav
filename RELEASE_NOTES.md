@@ -1,6 +1,12 @@
 # Release Notes
 
+## 0.1.1 — 2026-04-20
+
+### Fixed
+- Redirect MCP server console logs to stderr to prevent JSON-RPC stream corruption on stdout
+
 ## 0.1.0 — 2026-04-19
+
 
 ### Added
 - CalDAV Tasks (VTODO) MCP server for AI agents
