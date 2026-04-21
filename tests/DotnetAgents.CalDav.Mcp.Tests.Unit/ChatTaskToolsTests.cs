@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text.Json;
 using CalDavTaskStatus = DotnetAgents.CalDav.Core.Models.TaskStatus;
 using DotnetAgents.CalDav.Core.Abstractions;
+using DotnetAgents.CalDav.Core;
 using DotnetAgents.CalDav.Core.Models;
 using DotnetAgents.CalDav.Mcp.Tools;
 using NSubstitute;
@@ -105,6 +106,23 @@ public class ChatTaskToolsTests
     }
 
     [Fact]
+    public async Task FindTaskInListAsync_WhenNoTasksMatch_ReturnsEmptyArray()
+    {
+        _taskService.GetTaskListsAsync(Arg.Any<CancellationToken>())
+            .Returns(new[] { new TaskList { Href = "/work/", DisplayName = "Work" } });
+        _taskListResolver.ResolveAsync(Arg.Any<IReadOnlyList<TaskList>>(), "Work", Arg.Any<CancellationToken>())
+            .Returns(new TaskList { Href = "/work/", DisplayName = "Work" });
+        _taskService.GetTasksAsync("/work/", Arg.Any<TaskQuery>(), Arg.Any<CancellationToken>())
+            .Returns([new TaskItem { Href = "/work/1.ics", Summary = "Other task" }]);
+
+        var json = await _sut.FindTaskInListAsync("Work", "Missing", CancellationToken.None);
+        using var doc = JsonDocument.Parse(json);
+
+        doc.RootElement.ValueKind.ShouldBe(JsonValueKind.Array);
+        doc.RootElement.GetArrayLength().ShouldBe(0);
+    }
+
+    [Fact]
     public async Task ListTasksInListAsync_UsesConfiguredDefault_WhenListNameOmitted()
     {
         _taskService.GetTaskListsAsync(Arg.Any<CancellationToken>())
@@ -154,7 +172,7 @@ public class ChatTaskToolsTests
     }
 
     [Fact]
-    public async Task AddTaskToListAsync_ThrowsWhenAliasIsAmbiguous()
+    public async Task AddTaskToListAsync_ListResolutionFailure_ReturnsStructuredJson()
     {
         _taskService.GetTaskListsAsync(Arg.Any<CancellationToken>())
             .Returns([
@@ -162,14 +180,186 @@ public class ChatTaskToolsTests
                 new TaskList { Href = "/work-tasks/", DisplayName = "Work Tasks" }
             ]);
         _taskListResolver.ResolveAsync(Arg.Any<IReadOnlyList<TaskList>>(), "tasks", Arg.Any<CancellationToken>())
-            .Returns<Task<TaskList>>(_ => throw new InvalidOperationException("Task list alias 'tasks' is ambiguous. Matching lists: Personal Tasks, Work Tasks."));
+            .Returns<Task<TaskList>>(_ => throw new TaskListResolutionException(
+                "tasks",
+                ["Personal Tasks", "Work Tasks"],
+                "Task list alias 'tasks' is ambiguous. Matching lists: Personal Tasks, Work Tasks."));
 
-        var ex = await Should.ThrowAsync<InvalidOperationException>(
-            () => _sut.AddTaskToListAsync("tasks", "Plan sprint", cancellationToken: CancellationToken.None));
+        var json = await _sut.AddTaskToListAsync("tasks", "Plan sprint", cancellationToken: CancellationToken.None);
 
-        ex.Message.ShouldContain("ambiguous", Case.Insensitive);
-        ex.Message.ShouldContain("Personal Tasks");
-        ex.Message.ShouldContain("Work Tasks");
+        AssertListResolutionErrorWithSummary(json, "tasks", "Plan sprint", "ambiguous", "Personal Tasks", "Work Tasks");
+    }
+
+    [Fact]
+    public async Task AddTaskToListAsync_WithExplicitListNameNotFound_ReturnsStructuredJsonWhenResolutionFails()
+    {
+        _taskService.GetTaskListsAsync(Arg.Any<CancellationToken>())
+            .Returns([
+                new TaskList { Href = "/personal-tasks/", DisplayName = "Personal Tasks" },
+                new TaskList { Href = "/work-tasks/", DisplayName = "Work Tasks" }
+            ]);
+        _taskListResolver.ResolveAsync(Arg.Any<IReadOnlyList<TaskList>>(), "BadList", Arg.Any<CancellationToken>())
+            .Returns<Task<TaskList>>(_ => throw new TaskListResolutionException(
+                "BadList",
+                ["Personal Tasks", "Work Tasks"],
+                "Task list 'BadList' was not found."));
+
+        var json = await _sut.AddTaskToListAsync("BadList", "Plan sprint", cancellationToken: CancellationToken.None);
+
+        AssertListResolutionErrorWithSummary(json, "BadList", "Plan sprint", "not found", "Personal Tasks", "Work Tasks");
+    }
+
+    [Fact]
+    public async Task AddTaskToListAsync_WithoutListName_ReturnsStructuredJsonWhenDefaultListMissing()
+    {
+        _taskService.GetTaskListsAsync(Arg.Any<CancellationToken>())
+            .Returns([
+                new TaskList { Href = "/personal-tasks/", DisplayName = "Personal Tasks" },
+                new TaskList { Href = "/work-tasks/", DisplayName = "Work Tasks" }
+            ]);
+        _taskListResolver.ResolveAsync(Arg.Any<IReadOnlyList<TaskList>>(), null, Arg.Any<CancellationToken>())
+            .Returns<Task<TaskList>>(_ => throw new TaskListResolutionException(
+                "(null)",
+                ["Personal Tasks", "Work Tasks"],
+                "No default task list configured and no list name provided."));
+
+        var json = await _sut.AddTaskToListAsync(null, "Plan sprint", cancellationToken: CancellationToken.None);
+
+        AssertListResolutionErrorWithSummary(json, null, "Plan sprint", "default task list", "Personal Tasks", "Work Tasks");
+    }
+
+    [Fact]
+    public async Task ListTasksInListAsync_WithoutListName_ReturnsStructuredJsonWhenDefaultListMissing()
+    {
+        _taskService.GetTaskListsAsync(Arg.Any<CancellationToken>())
+            .Returns([
+                new TaskList { Href = "/personal-tasks/", DisplayName = "Personal Tasks" },
+                new TaskList { Href = "/work-tasks/", DisplayName = "Work Tasks" }
+            ]);
+        _taskListResolver.ResolveAsync(Arg.Any<IReadOnlyList<TaskList>>(), null, Arg.Any<CancellationToken>())
+            .Returns<Task<TaskList>>(_ => throw new TaskListResolutionException(
+                "(null)",
+                ["Personal Tasks", "Work Tasks"],
+                "No default task list configured and no list name provided."));
+
+        var json = await _sut.ListTasksInListAsync(cancellationToken: CancellationToken.None);
+
+        AssertListResolutionErrorWithoutSummary(json, null, "default task list", "Personal Tasks", "Work Tasks");
+    }
+
+    [Fact]
+    public async Task ListTasksInListAsync_WithExplicitListName_ReturnsStructuredJsonWhenResolutionFails()
+    {
+        _taskService.GetTaskListsAsync(Arg.Any<CancellationToken>())
+            .Returns([
+                new TaskList { Href = "/personal-tasks/", DisplayName = "Personal Tasks" },
+                new TaskList { Href = "/work-tasks/", DisplayName = "Work Tasks" }
+            ]);
+        _taskListResolver.ResolveAsync(Arg.Any<IReadOnlyList<TaskList>>(), "BadList", Arg.Any<CancellationToken>())
+            .Returns<Task<TaskList>>(_ => throw new TaskListResolutionException(
+                "BadList",
+                ["Personal Tasks", "Work Tasks"],
+                "Task list 'BadList' was not found."));
+
+        var json = await _sut.ListTasksInListAsync("BadList", cancellationToken: CancellationToken.None);
+
+        AssertListResolutionErrorWithoutSummary(json, "BadList", "not found", "Personal Tasks", "Work Tasks");
+    }
+
+    [Fact]
+    public async Task ListTasksInListAsync_TrimsExplicitListNameBeforeResolutionFailureResponse()
+    {
+        _taskService.GetTaskListsAsync(Arg.Any<CancellationToken>())
+            .Returns([
+                new TaskList { Href = "/personal-tasks/", DisplayName = "Personal Tasks" },
+                new TaskList { Href = "/work-tasks/", DisplayName = "Work Tasks" }
+            ]);
+        _taskListResolver.ResolveAsync(Arg.Any<IReadOnlyList<TaskList>>(), "BadList", Arg.Any<CancellationToken>())
+            .Returns<Task<TaskList>>(_ => throw new TaskListResolutionException(
+                "BadList",
+                ["Personal Tasks", "Work Tasks"],
+                "Task list 'BadList' was not found."));
+
+        var json = await _sut.ListTasksInListAsync("  BadList  ", cancellationToken: CancellationToken.None);
+
+        AssertListResolutionErrorWithoutSummary(json, "BadList", "not found", "Personal Tasks", "Work Tasks");
+        await _taskListResolver.Received(1).ResolveAsync(Arg.Any<IReadOnlyList<TaskList>>(), "BadList", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ListTasksInListAsync_WithAmbiguousExplicitListName_ReturnsStructuredJsonWhenResolutionFails()
+    {
+        _taskService.GetTaskListsAsync(Arg.Any<CancellationToken>())
+            .Returns([
+                new TaskList { Href = "/personal-tasks/", DisplayName = "Personal Tasks" },
+                new TaskList { Href = "/work-tasks/", DisplayName = "Work Tasks" }
+            ]);
+        _taskListResolver.ResolveAsync(Arg.Any<IReadOnlyList<TaskList>>(), "tasks", Arg.Any<CancellationToken>())
+            .Returns<Task<TaskList>>(_ => throw new TaskListResolutionException(
+                "tasks",
+                ["Personal Tasks", "Work Tasks"],
+                "Task list alias 'tasks' is ambiguous."));
+
+        var json = await _sut.ListTasksInListAsync("tasks", cancellationToken: CancellationToken.None);
+
+        AssertListResolutionErrorWithoutSummary(json, "tasks", "ambiguous", "Personal Tasks", "Work Tasks");
+    }
+
+    [Fact]
+    public async Task FindTaskInListAsync_WithExplicitListName_ReturnsStructuredJsonWhenResolutionFails()
+    {
+        _taskService.GetTaskListsAsync(Arg.Any<CancellationToken>())
+            .Returns([
+                new TaskList { Href = "/personal-tasks/", DisplayName = "Personal Tasks" },
+                new TaskList { Href = "/work-tasks/", DisplayName = "Work Tasks" }
+            ]);
+        _taskListResolver.ResolveAsync(Arg.Any<IReadOnlyList<TaskList>>(), "tasks", Arg.Any<CancellationToken>())
+            .Returns<Task<TaskList>>(_ => throw new TaskListResolutionException(
+                "tasks",
+                ["Personal Tasks", "Work Tasks"],
+                "Task list alias 'tasks' is ambiguous."));
+
+        var json = await _sut.FindTaskInListAsync("tasks", "Review", CancellationToken.None);
+
+        AssertListResolutionErrorWithSummary(json, "tasks", "Review", "ambiguous", "Personal Tasks", "Work Tasks");
+    }
+
+    [Fact]
+    public async Task CompleteTaskInListAsync_WithExplicitListName_ReturnsStructuredJsonWhenResolutionFails()
+    {
+        _taskService.GetTaskListsAsync(Arg.Any<CancellationToken>())
+            .Returns([
+                new TaskList { Href = "/personal-tasks/", DisplayName = "Personal Tasks" },
+                new TaskList { Href = "/work-tasks/", DisplayName = "Work Tasks" }
+            ]);
+        _taskListResolver.ResolveAsync(Arg.Any<IReadOnlyList<TaskList>>(), "tasks", Arg.Any<CancellationToken>())
+            .Returns<Task<TaskList>>(_ => throw new TaskListResolutionException(
+                "tasks",
+                ["Personal Tasks", "Work Tasks"],
+                "Task list alias 'tasks' is ambiguous."));
+
+        var json = await _sut.CompleteTaskInListAsync("tasks", "Review", cancellationToken: CancellationToken.None);
+
+        AssertListResolutionErrorWithSummary(json, "tasks", "Review", "ambiguous", "Personal Tasks", "Work Tasks");
+    }
+
+    [Fact]
+    public async Task DeleteTaskInListAsync_WithExplicitListName_ReturnsStructuredJsonWhenResolutionFails()
+    {
+        _taskService.GetTaskListsAsync(Arg.Any<CancellationToken>())
+            .Returns([
+                new TaskList { Href = "/personal-tasks/", DisplayName = "Personal Tasks" },
+                new TaskList { Href = "/work-tasks/", DisplayName = "Work Tasks" }
+            ]);
+        _taskListResolver.ResolveAsync(Arg.Any<IReadOnlyList<TaskList>>(), "tasks", Arg.Any<CancellationToken>())
+            .Returns<Task<TaskList>>(_ => throw new TaskListResolutionException(
+                "tasks",
+                ["Personal Tasks", "Work Tasks"],
+                "Task list alias 'tasks' is ambiguous."));
+
+        var json = await _sut.DeleteTaskInListAsync("tasks", "Review", cancellationToken: CancellationToken.None);
+
+        AssertListResolutionErrorWithSummary(json, "tasks", "Review", "ambiguous", "Personal Tasks", "Work Tasks");
     }
 
     [Fact]
@@ -208,6 +398,7 @@ public class ChatTaskToolsTests
         using var doc = JsonDocument.Parse(json);
 
         doc.RootElement.GetArrayLength().ShouldBe(2);
+        await _taskListResolver.DidNotReceiveWithAnyArgs().ResolveAsync(default!, default, TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -233,6 +424,28 @@ public class ChatTaskToolsTests
         candidates[0].GetProperty("summary").GetString().ShouldBe("Strawberry");
         candidates[0].GetProperty("taskListName").GetString().ShouldBe("Tasks");
         candidates[0].GetProperty("href").GetString().ShouldBe("/tasks/1.ics");
+        await _taskListResolver.DidNotReceiveWithAnyArgs().ResolveAsync(default!, default, TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task CompleteTaskInListAsync_AmbiguousAcrossLists_TrimsSummaryInStructuredResponse()
+    {
+        _taskService.GetTaskListsAsync(Arg.Any<CancellationToken>())
+            .Returns([
+                new TaskList { Href = "/tasks/", DisplayName = "Tasks" },
+                new TaskList { Href = "/shopping/", DisplayName = "Shopping" }
+            ]);
+        _taskService.GetTasksAsync("/tasks/", Arg.Any<TaskQuery>(), Arg.Any<CancellationToken>())
+            .Returns([new TaskItem { Href = "/tasks/1.ics", Summary = "Strawberry", ETag = "\"1\"" }]);
+        _taskService.GetTasksAsync("/shopping/", Arg.Any<TaskQuery>(), Arg.Any<CancellationToken>())
+            .Returns([new TaskItem { Href = "/shopping/1.ics", Summary = "Strawberry", ETag = "\"2\"" }]);
+
+        var json = await _sut.CompleteTaskInListAsync(null, "  Strawberry  ", cancellationToken: CancellationToken.None);
+        using var doc = JsonDocument.Parse(json);
+
+        doc.RootElement.GetProperty("status").GetString().ShouldBe("ambiguous");
+        doc.RootElement.GetProperty("summary").GetString().ShouldBe("Strawberry");
+        doc.RootElement.GetProperty("message").GetString()!.ShouldContain("'Strawberry'");
     }
 
     [Fact]
@@ -318,6 +531,55 @@ public class ChatTaskToolsTests
         doc.RootElement.GetProperty("message").GetString()!.ShouldContain("not found");
         var availableLists = doc.RootElement.GetProperty("availableLists");
         availableLists.GetArrayLength().ShouldBe(2);
+        await _taskListResolver.DidNotReceiveWithAnyArgs().ResolveAsync(default!, default, TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task DeleteTaskInListAsync_NotFound_WithoutListName_TrimsSummaryInStructuredResponse()
+    {
+        _taskService.GetTaskListsAsync(Arg.Any<CancellationToken>())
+            .Returns([
+                new TaskList { Href = "/tasks/", DisplayName = "Tasks" },
+                new TaskList { Href = "/shopping/", DisplayName = "Shopping" }
+            ]);
+        _taskService.GetTasksAsync("/tasks/", Arg.Any<TaskQuery>(), Arg.Any<CancellationToken>())
+            .Returns([new TaskItem { Href = "/tasks/1.ics", Summary = "Other task" }]);
+        _taskService.GetTasksAsync("/shopping/", Arg.Any<TaskQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<TaskItem>());
+
+        var json = await _sut.DeleteTaskInListAsync(null, "  Nonexistent  ", cancellationToken: CancellationToken.None);
+        using var doc = JsonDocument.Parse(json);
+
+        doc.RootElement.GetProperty("status").GetString().ShouldBe("not_found");
+        doc.RootElement.GetProperty("summary").GetString().ShouldBe("Nonexistent");
+        doc.RootElement.GetProperty("message").GetString()!.ShouldContain("'Nonexistent'");
+    }
+
+    [Fact]
+    public async Task CompleteTaskInListAsync_NotFound_WithoutListName_ReturnsStructuredJsonWithAvailableLists()
+    {
+        _taskService.GetTaskListsAsync(Arg.Any<CancellationToken>())
+            .Returns([
+                new TaskList { Href = "/tasks/", DisplayName = "Tasks" },
+                new TaskList { Href = "/shopping/", DisplayName = "Shopping" }
+            ]);
+        _taskService.GetTasksAsync("/tasks/", Arg.Any<TaskQuery>(), Arg.Any<CancellationToken>())
+            .Returns([new TaskItem { Href = "/tasks/1.ics", Summary = "Other task" }]);
+        _taskService.GetTasksAsync("/shopping/", Arg.Any<TaskQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<TaskItem>());
+
+        var json = await _sut.CompleteTaskInListAsync(null, "  Nonexistent  ", cancellationToken: CancellationToken.None);
+        using var doc = JsonDocument.Parse(json);
+
+        doc.RootElement.GetProperty("status").GetString().ShouldBe("not_found");
+        doc.RootElement.GetProperty("summary").GetString().ShouldBe("Nonexistent");
+        doc.RootElement.GetProperty("message").GetString()!.ShouldContain("not found");
+        doc.RootElement.GetProperty("message").GetString()!.ShouldContain("Nonexistent");
+        var availableLists = doc.RootElement.GetProperty("availableLists");
+        availableLists.GetArrayLength().ShouldBe(2);
+        availableLists[0].GetString().ShouldBe("Tasks");
+        availableLists[1].GetString().ShouldBe("Shopping");
+        await _taskListResolver.DidNotReceiveWithAnyArgs().ResolveAsync(default!, default, TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -365,6 +627,28 @@ public class ChatTaskToolsTests
         doc.RootElement.GetProperty("message").GetString()!.ShouldContain("Work");
         var availableLists = doc.RootElement.GetProperty("availableLists");
         availableLists.GetArrayLength().ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task DeleteTaskInListAsync_NotFound_WithExplicitListName_ReturnsStructuredJson()
+    {
+        _taskService.GetTaskListsAsync(Arg.Any<CancellationToken>())
+            .Returns([new TaskList { Href = "/work/", DisplayName = "Work" }]);
+        _taskListResolver.ResolveAsync(Arg.Any<IReadOnlyList<TaskList>>(), "Work", Arg.Any<CancellationToken>())
+            .Returns(new TaskList { Href = "/work/", DisplayName = "Work" });
+        _taskService.GetTasksAsync("/work/", Arg.Any<TaskQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<TaskItem>());
+
+        var json = await _sut.DeleteTaskInListAsync("Work", "Missing task", cancellationToken: CancellationToken.None);
+        using var doc = JsonDocument.Parse(json);
+
+        doc.RootElement.GetProperty("status").GetString().ShouldBe("not_found");
+        doc.RootElement.GetProperty("summary").GetString().ShouldBe("Missing task");
+        doc.RootElement.GetProperty("message").GetString()!.ShouldContain("not found");
+        doc.RootElement.GetProperty("message").GetString()!.ShouldContain("Work");
+        var availableLists = doc.RootElement.GetProperty("availableLists");
+        availableLists.GetArrayLength().ShouldBe(1);
+        availableLists[0].GetString().ShouldBe("Work");
     }
 
     [Fact]
@@ -416,5 +700,50 @@ public class ChatTaskToolsTests
         await _sut.DeleteTaskInListAsync("Work", "Review", etag: "\"override\"", cancellationToken: CancellationToken.None);
 
         await _taskService.Received(1).DeleteTaskAsync("/work/1.ics", "\"override\"", Arg.Any<CancellationToken>());
+    }
+
+    private static void AssertListResolutionErrorWithSummary(
+        string json,
+        string? expectedTaskListName,
+        string expectedSummary,
+        string expectedMessageFragment,
+        params string[] expectedAvailableLists)
+    {
+        using var doc = JsonDocument.Parse(json);
+
+        doc.RootElement.GetProperty("status").GetString().ShouldBe("list_resolution_error");
+        doc.RootElement.GetProperty("taskListName").GetString().ShouldBe(expectedTaskListName);
+        doc.RootElement.GetProperty("summary").GetString().ShouldBe(expectedSummary);
+        doc.RootElement.GetProperty("message").GetString()!.ShouldContain(expectedMessageFragment, Case.Insensitive);
+
+        var availableLists = doc.RootElement.GetProperty("availableLists");
+        availableLists.GetArrayLength().ShouldBe(expectedAvailableLists.Length);
+
+        for (var index = 0; index < expectedAvailableLists.Length; index++)
+        {
+            availableLists[index].GetString().ShouldBe(expectedAvailableLists[index]);
+        }
+    }
+
+    private static void AssertListResolutionErrorWithoutSummary(
+        string json,
+        string? expectedTaskListName,
+        string expectedMessageFragment,
+        params string[] expectedAvailableLists)
+    {
+        using var doc = JsonDocument.Parse(json);
+
+        doc.RootElement.GetProperty("status").GetString().ShouldBe("list_resolution_error");
+        doc.RootElement.GetProperty("taskListName").GetString().ShouldBe(expectedTaskListName);
+        doc.RootElement.GetProperty("message").GetString()!.ShouldContain(expectedMessageFragment, Case.Insensitive);
+        doc.RootElement.TryGetProperty("summary", out _).ShouldBeFalse();
+
+        var availableLists = doc.RootElement.GetProperty("availableLists");
+        availableLists.GetArrayLength().ShouldBe(expectedAvailableLists.Length);
+
+        for (var index = 0; index < expectedAvailableLists.Length; index++)
+        {
+            availableLists[index].GetString().ShouldBe(expectedAvailableLists[index]);
+        }
     }
 }

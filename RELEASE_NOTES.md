@@ -1,5 +1,17 @@
 # Release Notes
 
+## 0.1.4 — 2026-04-21
+
+### Fixed
+- Chat tools now return structured JSON errors for task list resolution failures instead of generic MCP exceptions
+- `show_tasks` and `add_task` catch `TaskListResolutionException` and return `list_resolution_error` payload with `availableLists`
+- `find_tasks`, `complete_task_by_summary`, and `delete_task_by_summary` handle explicit list name resolution failures with structured errors
+- Normalize `taskListName` and `summary` consistently across all chat tool response payloads
+
+### Changed
+- Coverage pipeline now filters out test assemblies from coverage reports to ensure accurate production code metrics
+- Updated `reportgenerator` invocation to use proper assembly filters
+
 ## 0.1.3 — 2026-04-21
 
 ### Fixed

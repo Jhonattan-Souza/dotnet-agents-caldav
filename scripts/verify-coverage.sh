@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-TEST_RESULTS_PATH="${1:-TestResults}"
+TEST_RESULTS_PATH="${1:-coverage-report}"
 LINE_THRESHOLD="${2:-0.90}"
 BRANCH_THRESHOLD="${3:-0.90}"
 
 COBERTURA_FILE=$(find "$TEST_RESULTS_PATH" \( -name "coverage.cobertura.xml" -o -name "Cobertura.xml" \) -print -quit)
 
 if [ -z "$COBERTURA_FILE" ]; then
-  echo "::error::No coverage.cobertura.xml found in $TEST_RESULTS_PATH"
+  echo "::error::No Cobertura coverage file found in $TEST_RESULTS_PATH"
   exit 1
 fi
 

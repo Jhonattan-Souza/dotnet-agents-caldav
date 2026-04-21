@@ -41,7 +41,7 @@ jobs:
         run: dotnet test -c Release --settings coverage.runsettings --collect:"XPlat Code Coverage" --results-directory TestResults
 
       - name: Generate coverage report
-        run: dotnet reportgenerator -reports:"TestResults/**/coverage.cobertura.xml" -targetdir:"coverage-report" -reporttypes:Cobertura -assemblyfilters:"+DotnetAgents.CalDav.Core;+DotnetAgents.CalDav.Mcp;-*Tests*"
+        run: dotnet reportgenerator -reports:"TestResults/**/coverage.cobertura.xml" -targetdir:"coverage-report" -reporttypes:Cobertura -assemblyfilters:"+DotnetAgents.CalDav.Core;+DotnetAgents.CalDav.Mcp;-*Tests*;-xunit*;-testhost*"
 
       - name: Verify coverage gate
         run: bash scripts/verify-coverage.sh coverage-report 0.90 0.85
@@ -58,8 +58,8 @@ jobs:
 
       - name: Post coverage summary
         run: |
-          LINE_RATE=$(grep -oP 'line-rate="[^"]*"' TestResults/**/coverage.cobertura.xml | head -1 | grep -oP '[\d.]+')
-          BRANCH_RATE=$(grep -oP 'branch-rate="[^"]*"' TestResults/**/coverage.cobertura.xml | head -1 | grep -oP '[\d.]+')
+          LINE_RATE=$(grep -oP 'line-rate="[^"]*"' coverage-report/Cobertura.xml | head -1 | grep -oP '[\d.]+')
+          BRANCH_RATE=$(grep -oP 'branch-rate="[^"]*"' coverage-report/Cobertura.xml | head -1 | grep -oP '[\d.]+')
           LINE_PCT=$(echo "$LINE_RATE * 100" | bc)
           BRANCH_PCT=$(echo "$BRANCH_RATE * 100" | bc | xargs printf "%.1f")
           LINE_PCT_FMT=$(echo "$LINE_RATE * 100" | bc | xargs printf "%.1f")
