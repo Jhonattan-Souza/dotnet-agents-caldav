@@ -653,17 +653,25 @@ public class TaskMutationToolsTests
         method.ShouldNotBeNull();
 
         var parameters = method.GetParameters();
+        var relevantParams = parameters
+            .Where(p => p.Name is not "href" and not "cancellationToken")
+            .ToList();
 
-        foreach (var param in parameters)
-        {
-            if (param.Name is "href" or "cancellationToken")
-                continue; // required param and system param — not relevant for null-preservation
+        var missingDescription = relevantParams
+            .Where(p => p.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>() is null)
+            .Select(p => p.Name)
+            .ToList();
+        missingDescription.ShouldBeEmpty($"Parameters missing [Description]: {string.Join(", ", missingDescription)}");
 
-            var descAttr = param.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>();
-            descAttr.ShouldNotBeNull($"Parameter '{param.Name}' must have a [Description] attribute");
-            descAttr.Description.ShouldContain("null", Case.Insensitive,
-                $"Parameter '{param.Name}' description must mention null behavior for partial-update clarity");
-        }
+        var missingNull = relevantParams
+            .Where(p =>
+            {
+                var attr = p.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>();
+                return attr is not null && !attr.Description.Contains("null", StringComparison.OrdinalIgnoreCase);
+            })
+            .Select(p => p.Name)
+            .ToList();
+        missingNull.ShouldBeEmpty($"Parameter descriptions missing 'null' mention: {string.Join(", ", missingNull)}");
     }
 
     [Fact]
