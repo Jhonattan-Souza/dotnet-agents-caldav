@@ -170,7 +170,7 @@ public class TaskItemMapperTests
         var todo = new Todo
         {
             Uid = "recurring",
-            RecurrenceRules = [new RecurrencePattern(FrequencyType.Daily, 1) { Count = 5 }],
+            RecurrenceRule = new RecurrencePattern(FrequencyType.Daily, 1) { Count = 5 },
         };
 
         var task = TaskItemMapper.FromTodo(todo);
@@ -287,7 +287,7 @@ Priority = CalDavTaskPriority.High,
     }
 
     [Fact]
-    public void ToTodo_WithRecurrenceRule_SetsRecurrenceRules()
+    public void ToTodo_WithRecurrenceRule_SetsRecurrenceRule()
     {
         var task = new TaskItem
         {
@@ -297,12 +297,11 @@ Priority = CalDavTaskPriority.High,
         };
 
         var todo = TaskItemMapper.ToTodo(task);
-        todo.RecurrenceRules.ShouldNotBeNull();
-        todo.RecurrenceRules.Count.ShouldBe(1);
+        todo.RecurrenceRule.ShouldNotBeNull();
     }
 
     [Fact]
-    public void ToTodo_NullRecurrenceRule_NoRecurrenceRules()
+    public void ToTodo_NullRecurrenceRule_NoRecurrenceRule()
     {
         var task = new TaskItem
         {
@@ -312,8 +311,7 @@ Priority = CalDavTaskPriority.High,
         };
 
         var todo = TaskItemMapper.ToTodo(task);
-        // RecurrenceRules should be null or empty when no recurrence is set
-        (todo.RecurrenceRules == null || todo.RecurrenceRules.Count == 0).ShouldBeTrue();
+        todo.RecurrenceRule.ShouldBeNull();
     }
 
     [Fact]
