@@ -10,17 +10,20 @@ using System.Text.Json.Serialization;
 namespace DotnetAgents.CalDav.Mcp.Tools;
 
 [McpServerToolType]
-public sealed class ChatTaskTools
+internal sealed class ChatTaskTools
 {
     private readonly ITaskService _taskService;
     private readonly ITaskListResolver _taskListResolver;
-    private readonly TimeProvider _timeProvider;
+    private readonly TaskCompletion _taskCompletion;
 
-    public ChatTaskTools(ITaskService taskService, ITaskListResolver taskListResolver, TimeProvider timeProvider)
+    public ChatTaskTools(
+        ITaskService taskService,
+        ITaskListResolver taskListResolver,
+        TaskCompletion taskCompletion)
     {
         _taskService = taskService;
         _taskListResolver = taskListResolver;
-        _timeProvider = timeProvider;
+        _taskCompletion = taskCompletion;
     }
 
     [McpServerTool(Name = "show_tasks"), Description("List tasks in a user-facing task list name. If the user says 'task list' or 'my tasks', omit listName to use the configured default list. Never guess based on task content; this tool resolves list names deterministically and fails with candidates when ambiguous.")]
@@ -123,7 +126,8 @@ public sealed class ChatTaskTools
 
             return result switch
             {
-                ResolvedMatch match => await CompleteTask(match.Task, etag, cancellationToken),
+                ResolvedMatch match => JsonSerializer.Serialize(
+                    await _taskCompletion.CompleteAsync(match.Task, etag, cancellationToken)),
                 AmbiguousResult a => ReturnAmbiguous(summary, a.Matches),
                 NotFoundResult => ReturnNotFound(summary, normalizedTaskListName, availableLists),
                 _ => throw new InvalidOperationException($"Unexpected resolve result: {result.GetType().Name}")
@@ -133,19 +137,6 @@ public sealed class ChatTaskTools
         {
             return ReturnTaskListResolutionError(normalizedTaskListName, ex.Message, ex.AvailableLists, summary);
         }
-    }
-
-    private async Task<string> CompleteTask(TaskItem task, string? etag, CancellationToken cancellationToken)
-    {
-        var updated = task with
-        {
-            Status = CalDavTaskStatus.Completed,
-            Completed = _timeProvider.GetUtcNow(),
-            ETag = etag ?? task.ETag
-        };
-
-        var completed = await _taskService.UpdateTaskAsync(updated, cancellationToken);
-        return JsonSerializer.Serialize(completed);
     }
 
     [McpServerTool(Name = "delete_task_by_summary"), Description("Delete a task by summary. If the user named a list, only that list is searched. If they did not name a list, all visible lists are searched. If zero tasks match, returns not_found. If multiple tasks match, returns ambiguous with candidates instead of guessing. This is a single-target tool: never delete multiple tasks in one call or by repeating this tool for a bulk request without explicit per-target confirmation.")]
