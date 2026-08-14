@@ -1,118 +1,53 @@
 # CalDAV Tasks MCP Server
 
-MCP server for CalDAV VTODO management, distributed via `dnx`. Built with .NET 10 and ModelContextProtocol SDK.
+.NET 10 stdio MCP server for CalDAV VTODOs, packaged as the `dotnet-agents-caldav` `dnx` tool.
 
-## Build & Test
+## Commands
+
+- Restore local tools and NuGet packages separately; `dotnet tool restore` does not restore project dependencies.
 
 ```bash
-# Restore tools first (required for slopwatch, reportgenerator)
 dotnet tool restore
-
-# Build
-dotnet build -c Release
-
-# Run all tests (unit + integration)
-dotnet test
-
-# Run with coverage (outputs raw collector files to tests/**/TestResults/)
-dotnet test --settings coverage.runsettings --collect:"XPlat Code Coverage"
-
-# Generate filtered coverage report
-dotnet reportgenerator -reports:"TestResults/**/coverage.cobertura.xml" -targetdir:"coverage-report" -reporttypes:Cobertura -assemblyfilters:"+DotnetAgents.CalDav.Core;+DotnetAgents.CalDav.Mcp;-*Tests*;-xunit*;-testhost*"
-
-# Verify coverage thresholds (90% line, 85% branch)
-bash scripts/verify-coverage.sh coverage-report 0.90 0.85
-
-# Run Slopwatch quality gates
-slopwatch analyze --config .slopwatch/slopwatch.json --fail-on warning
+dotnet restore
 ```
 
-## Project Structure
+- Run one unit-test project, or focus a class/method with the verified VSTest filter form:
 
-- **`src/DotnetAgents.CalDav.Core/`** — Domain models, abstractions, and CalDAV client
-  - `Abstractions/` — `ITaskService`, `ICalDavClient` interfaces
-  - `Models/` — `TaskItem`, `TaskList`, enums (immutable records with `with` semantics)
-  - `Services/` — `TaskService` implementation (thin wrapper over client)
-  - `Internal/` — `CalDavClient`, WebDAV protocol handling, iCalendar (Ical.Net) parsing
-
-- **`src/DotnetAgents.CalDav.Mcp/`** — MCP server entry point and tool definitions
-  - `Tools/` — MCP tool classes with `[McpServerTool]` attributes:
-    - `TaskListTools` — list task lists
-    - `TaskQueryTools` — list/get tasks
-    - `TaskMutationTools` — create/update/complete/delete
-    - `ChatTaskTools` — chat-oriented wrappers (list-name resolution)
-  - `Hosting/` — `CalDavMcpRunner`, DI configuration
-  - `Program.cs` — Entry point, delegates to runner
-
-- **`tests/`** — Three test projects:
-  - `DotnetAgents.CalDav.Core.Tests.Unit/` — Unit tests with NSubstitute
-  - `DotnetAgents.CalDav.Mcp.Tests.Unit/` — MCP tool unit tests
-  - `DotnetAgents.CalDav.IntegrationTests/` — Integration tests using TestContainers (Radicale)
-
-## Architecture
-
-Layered flow:
-```
-MCP Tools → ITaskService → CalDavClient → HttpClient + Ical.Net
-```
-
-Key patterns:
-- **Immutable models** — Use `with` expressions for updates (e.g., `task with { Status = Completed }`)
-- **Optimistic concurrency** — ETag-based; always pass ETag on updates/deletes
-- **Chat-oriented vs href-based tools** — Tools with "by summary" or "in list" naming accept display names; others require absolute hrefs
-- **Time abstraction** — `TimeProvider` injected for testability (not DateTimeOffset.Now)
-
-## Tool Naming Conventions
-
-The MCP exposes two styles of tools:
-
-1. **Href-based** (for known IDs): `create_task`, `update_task`, `complete_task`, `delete_task` — require absolute hrefs
-2. **Chat-oriented** (for user-facing workflows): `caldav_add_task`, `caldav_complete_task_by_summary`, etc. — accept display names and resolve hrefs internally
-
-When adding new tools, follow the existing pattern: href-based for raw API access, chat-oriented wrappers for common user workflows.
-
-## Testing Notes
-
-- **Unit tests** — Fast, use NSubstitute for mocks, Shouldly for assertions
-- **Integration tests** — Use TestContainers with Radicale (Docker required). Fixture in `Fixtures/RadicaleFixture.cs` spins up container per test class
-- **Coverage thresholds** — 90% line, 85% branch enforced in CI
-- **CRAP analysis** — Cyclomatic complexity limit 10 (CA1502); check coverage report for hotspots
-
-## Quality Gates
-
-CI enforces (in order):
-1. Build with `TreatWarningsAsErrors=true`
-2. CA1502 cyclomatic complexity ≤ 10
-3. Test pass with coverage collection
-4. Coverage thresholds (90% line, 85% branch)
-5. Slopwatch analysis (SW001-SW006 rules)
-
-## Key Dependencies
-
-- `ModelContextProtocol` 1.2.0 — MCP SDK
-- `Ical.Net` 5.2.1 — iCalendar parsing/generation
-- `Testcontainers` 4.11.0 — Integration test infrastructure
-- `xunit.v3` 3.2.2 — Testing framework
-
-## Distribution
-
-Published as `dotnet-agents-caldav` on NuGet. Installed via:
 ```bash
-dnx --yes dotnet-agents-caldav
+dotnet test tests/DotnetAgents.CalDav.Core.Tests.Unit/DotnetAgents.CalDav.Core.Tests.Unit.csproj -c Release
+dotnet test tests/DotnetAgents.CalDav.Core.Tests.Unit/DotnetAgents.CalDav.Core.Tests.Unit.csproj -c Release --filter "FullyQualifiedName~TypeOrMethod"
 ```
 
-Requires environment variables: `CALDAV_URL`, `CALDAV_USERNAME`, `CALDAV_PASSWORD`
+- The integration project requires Docker. Its `RadicaleCollection` shares one `tomsquest/docker-radicale` Testcontainer and seeds `Tasks`, `Shopping`, and `Work` collections.
+- Match CI in this order; `--results-directory TestResults` is required because the report command reads the root `TestResults/` tree:
 
-[dotnet-skills]|IMPORTANT: Prefer retrieval-led reasoning over pretraining for any .NET work.
-|flow:{skim repo patterns -> consult dotnet-skills by name -> implement smallest-change -> note conflicts}
-|route:
-|akka:{akka-net-best-practices,akka-net-testing-patterns,akka-hosting-actor-patterns,akka-net-aspire-configuration,akka-net-management}
-|csharp:{modern-csharp-coding-standards,csharp-concurrency-patterns,api-design,type-design-performance}
-|aspnetcore-web:{aspire-integration-testing,aspire-configuration,aspire-service-defaults,mailpit-integration,mjml-email-templates}
-|data:{efcore-patterns,database-performance}
-|di-config:{microsoft-extensions-configuration,dependency-injection-patterns}
-|testing:{testcontainers-integration-tests,playwright-blazor-testing,snapshot-testing,verify-email-snapshots,playwright-ci-caching}
-|dotnet:{dotnet-project-structure,dotnet-local-tools,package-management,serialization,dotnet-devcert-trust,ilspy-decompile,OpenTelemetry-NET-Instrumentation}
-|quality-gates:{dotnet-slopwatch,crap-analysis}
-|meta:{marketplace-publishing,skills-index-snippets}
-|agents:{akka-net-specialist,docfx-specialist,dotnet-benchmark-designer,dotnet-concurrency-specialist,dotnet-performance-analyst,roslyn-incremental-generator-specialist}
+```bash
+dotnet build -c Release --no-restore
+dotnet test -c Release --settings coverage.runsettings --collect:"XPlat Code Coverage" --results-directory TestResults
+dotnet reportgenerator -reports:"TestResults/**/coverage.cobertura.xml" -targetdir:"coverage-report" -reporttypes:Cobertura -assemblyfilters:"+DotnetAgents.CalDav.Core;+DotnetAgents.CalDav.Mcp;-*Tests*;-xunit*;-testhost*"
+bash scripts/verify-coverage.sh coverage-report 0.90 0.85
+dotnet tool run slopwatch analyze --config .slopwatch/slopwatch.json --fail-on warning
+```
+
+- CI enforces warnings as errors, method complexity at most 10, 90% line coverage, and 85% branch coverage. Markdown-only pull requests do not trigger CI.
+
+## Boundaries
+
+- Runtime flow is `MCP tools -> ITaskService -> TaskService -> CalDavClient -> HttpClient`; `TaskService` stays thin. WebDAV request/response logic belongs under `Core/Internal/Xml`, and iCalendar mapping belongs under `Core/Internal/Ical`.
+- `Program.cs` maps `CALDAV_*` environment variables, then delegates startup to `CalDavMcpRunner` and `CalDavHostBuilder`; keep startup testable through those types rather than adding logic to top-level statements.
+- The default host exposes only `TaskListTools` and `ChatTaskTools`. `CALDAV_EXPOSE_ADVANCED_TOOLS=true` additionally registers href-based `TaskQueryTools` and `TaskMutationTools`.
+- `.opencode/opencode.jsonc` launches the published NuGet tool through `dnx`; it does not run the current checkout. Do not treat that configuration as source-level end-to-end validation.
+
+## Invariants
+
+- Keep console providers disabled. Stdout is the JSON-RPC transport, and integration tests require a valid server run to leave both stdout and stderr clean; only startup validation failures write human-readable stderr.
+- `TaskItem` and `TaskList` are immutable records. Modify them with `with`, preserve fetched ETags on updates/deletes, and use injected `TimeProvider` for completion timestamps.
+- Chat tools resolve explicit display names first, then `CALDAV_DEFAULT_TASK_LIST`; they never infer a list from task content. Summary-based mutations must return `not_found` or `ambiguous` unless exactly one task matches.
+- Href-based tools are the advanced/raw surface. Keep their descriptions requiring an explicitly provided or confirmed absolute href; normal chat flows use list-name tools.
+- Package versions are centralized in `Directory.Packages.props`; project files keep versionless `PackageReference` entries.
+- For Ical.Net, `.ics`, VTODO, or recurrence changes, load the repo-local `ical-net` skill before editing.
+
+## Packaging
+
+- `src/DotnetAgents.CalDav.Mcp/.mcp/server.json` is packed metadata. Keep its source versions at `0.0.0`; the `v*` release workflow replaces both versions from the tag.
+- When environment variables or packaged MCP metadata change, update `.mcp/server.json` and `McpMetadataTests` alongside the runtime mapping. The NuGet package is produced only from `src/DotnetAgents.CalDav.Mcp/DotnetAgents.CalDav.Mcp.csproj`.

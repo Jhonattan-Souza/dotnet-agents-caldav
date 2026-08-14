@@ -48,7 +48,7 @@ internal static class TaskItemMapper
             Categories = todo.Categories?
                 .SelectMany(c => c?.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries) ?? [])
                 .ToList() as IReadOnlyList<string> ?? [],
-            RecurrenceRule = todo.RecurrenceRules?.FirstOrDefault()?.ToString(),
+            RecurrenceRule = todo.RecurrenceRule?.ToString(),
             ETag = etag,
             Href = href ?? string.Empty
         };
@@ -94,7 +94,7 @@ internal static class TaskItemMapper
         {
             var recurrence = RecurrenceMapper.FromString(task.RecurrenceRule);
             if (recurrence is not null)
-                todo.RecurrenceRules = [recurrence];
+                todo.RecurrenceRule = recurrence;
         }
 
         return todo;
