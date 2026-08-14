@@ -4,6 +4,7 @@ using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Core.DependencyInjection;
 using DotnetAgents.CalDav.Core.Models;
 using DotnetAgents.CalDav.IntegrationTests.Fixtures;
+using DotnetAgents.CalDav.Mcp;
 using DotnetAgents.CalDav.Mcp.Tests.Unit;
 using DotnetAgents.CalDav.Mcp.Tools;
 using Microsoft.Extensions.DependencyInjection;
@@ -41,8 +42,9 @@ public sealed class McpToolsIntegrationTests : IAsyncLifetime
         var taskListResolver = serviceProvider.GetRequiredService<Core.Abstractions.ITaskListResolver>();
         _taskListTools = new TaskListTools(_fixture.TaskService, taskListResolver);
         _taskQueryTools = new TaskQueryTools(_fixture.TaskService);
-        _taskMutationTools = new TaskMutationTools(_fixture.TaskService, new FixedTimeProvider(FixedNow));
-        _chatTaskTools = new ChatTaskTools(_fixture.TaskService, taskListResolver, new FixedTimeProvider(FixedNow));
+        var taskCompletion = new TaskCompletion(_fixture.TaskService, new FixedTimeProvider(FixedNow));
+        _taskMutationTools = new TaskMutationTools(_fixture.TaskService, taskCompletion);
+        _chatTaskTools = new ChatTaskTools(_fixture.TaskService, taskListResolver, taskCompletion);
     }
 
     public ValueTask InitializeAsync() => ValueTask.CompletedTask;

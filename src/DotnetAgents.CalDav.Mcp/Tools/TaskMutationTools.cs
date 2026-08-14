@@ -11,15 +11,15 @@ namespace DotnetAgents.CalDav.Mcp.Tools;
 /// MCP mutation tools for creating, updating, completing, and deleting tasks.
 /// </summary>
 [McpServerToolType]
-public sealed class TaskMutationTools
+internal sealed class TaskMutationTools
 {
     private readonly ITaskService _taskService;
-    private readonly TimeProvider _timeProvider;
+    private readonly TaskCompletion _taskCompletion;
 
-    public TaskMutationTools(ITaskService taskService, TimeProvider timeProvider)
+    public TaskMutationTools(ITaskService taskService, TaskCompletion taskCompletion)
     {
         _taskService = taskService;
-        _timeProvider = timeProvider;
+        _taskCompletion = taskCompletion;
     }
 
     [McpServerTool(Name = "create_task"), Description("Create a new task in a CalDAV task list by absolute href. Only use this when the user explicitly provides or confirms the exact href. Prefer the chat-oriented add-to-list tool for normal agent workflows.")]
@@ -82,14 +82,7 @@ public sealed class TaskMutationTools
         var existing = await _taskService.GetTaskAsync(href, cancellationToken)
             ?? throw new InvalidOperationException($"Task not found: {href}");
 
-        var task = existing with
-        {
-            Status = CalDavTaskStatus.Completed,
-            Completed = _timeProvider.GetUtcNow(),
-            ETag = etag ?? existing.ETag
-        };
-
-        var completed = await _taskService.UpdateTaskAsync(task, cancellationToken);
+        var completed = await _taskCompletion.CompleteAsync(existing, etag, cancellationToken);
         return JsonSerializer.Serialize(completed);
     }
 

@@ -42,6 +42,7 @@ public sealed class CalDavHostBuilder
         }
 
         builder.Services.AddSingleton(TimeProvider.System);
+        builder.Services.AddTransient<TaskCompletion>();
 
         return builder;
     }

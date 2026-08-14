@@ -16,15 +16,15 @@ public class TaskMutationToolsTests
 {
     private readonly ITaskService _taskService;
     private readonly TaskMutationTools _sut;
-    private readonly TimeProvider _timeProvider;
 
     private static readonly DateTimeOffset FixedNow = new(2025, 6, 15, 12, 30, 0, TimeSpan.Zero);
 
     public TaskMutationToolsTests()
     {
         _taskService = Substitute.For<ITaskService>();
-        _timeProvider = new FixedTimeProvider(FixedNow);
-        _sut = new TaskMutationTools(_taskService, _timeProvider);
+        _sut = new TaskMutationTools(
+            _taskService,
+            new TaskCompletion(_taskService, new FixedTimeProvider(FixedNow)));
     }
 
     // ─── create_task ────────────────────────────────────────────────────────
@@ -357,103 +357,6 @@ public class TaskMutationToolsTests
         root.GetProperty("ETag").GetString().ShouldBe("\"etag-done\"");
     }
 
-    [Fact]
-    public async Task CompleteTaskAsync_SetsStatusToCompletedAndCompletedTimestamp()
-    {
-        // Arrange
-        var existingTask = new TaskItem
-        {
-            Href = "/calendars/user/tasks/task-7.ics",
-            Uid = "task-7",
-            Summary = "Some task",
-            Status = CalDavTaskStatus.InProcess,
-            ETag = "\"etag-v0\""
-        };
-
-        _taskService.GetTaskAsync("/calendars/user/tasks/task-7.ics", Arg.Any<CancellationToken>())
-            .Returns(existingTask);
-        _taskService.UpdateTaskAsync(Arg.Any<TaskItem>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(new TaskItem { Uid = "c1", Summary = "C", Href = "/c" }));
-
-        // Act
-        await _sut.CompleteTaskAsync(
-            href: "/calendars/user/tasks/task-7.ics",
-            etag: "\"etag-v1\"",
-            cancellationToken: CancellationToken.None);
-
-        // Assert — Status must be Completed, Completed timestamp must be the fixed time,
-        // and the explicit etag overrides the fetched task's etag
-        await _taskService.Received(1).UpdateTaskAsync(
-            Arg.Is<TaskItem>(t =>
-                t.Href == "/calendars/user/tasks/task-7.ics" &&
-                t.Uid == existingTask.Uid &&
-                t.Summary == existingTask.Summary &&
-                t.Status == CalDavTaskStatus.Completed &&
-                t.Completed == FixedNow &&
-                t.ETag == "\"etag-v1\""),
-            Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task CompleteTaskAsync_WithNoEtag_PreservesFetchedEtag()
-    {
-        // Arrange
-        var existingTask = new TaskItem
-        {
-            Href = "/calendars/user/tasks/task-8.ics",
-            Uid = "task-8",
-            Summary = "Another task",
-            Status = CalDavTaskStatus.InProcess,
-            ETag = "\"etag-existing\""
-        };
-
-        _taskService.GetTaskAsync("/calendars/user/tasks/task-8.ics", Arg.Any<CancellationToken>())
-            .Returns(existingTask);
-        _taskService.UpdateTaskAsync(Arg.Any<TaskItem>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(new TaskItem { Uid = "c2", Summary = "C", Href = "/c" }));
-
-        // Act — no explicit etag, so fetched task's etag should be preserved
-        await _sut.CompleteTaskAsync(
-            href: "/calendars/user/tasks/task-8.ics",
-            etag: null,
-            cancellationToken: CancellationToken.None);
-
-        // Assert
-        await _taskService.Received(1).UpdateTaskAsync(
-            Arg.Is<TaskItem>(t =>
-                t.Href == "/calendars/user/tasks/task-8.ics" &&
-                t.Status == CalDavTaskStatus.Completed &&
-                t.Completed == FixedNow &&
-                t.ETag == existingTask.ETag),
-            Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task CompleteTaskAsync_ServiceThrowsException_ExceptionPropagates()
-    {
-        // Arrange
-        var existingTask = new TaskItem
-        {
-            Href = "/calendars/user/tasks/missing.ics",
-            Summary = "Missing",
-            Status = CalDavTaskStatus.NeedsAction,
-            ETag = "\"etag-x\""
-        };
-        _taskService.GetTaskAsync("/calendars/user/tasks/missing.ics", Arg.Any<CancellationToken>())
-            .Returns(existingTask);
-        _taskService.UpdateTaskAsync(Arg.Any<TaskItem>(), Arg.Any<CancellationToken>())
-            .ThrowsAsync(new InvalidOperationException("Not found"));
-
-        // Act & Assert
-        var ex = await Should.ThrowAsync<InvalidOperationException>(
-            () => _sut.CompleteTaskAsync(
-                href: "/calendars/user/tasks/missing.ics",
-                etag: null,
-                cancellationToken: CancellationToken.None));
-
-        ex.Message.ShouldBe("Not found");
-    }
-
     // ─── delete_task ──────────────────────────────────────────────────────────
 
     [Fact]
@@ -530,76 +433,6 @@ public class TaskMutationToolsTests
                 cancellationToken: CancellationToken.None));
 
         ex.Message.ShouldBe("Server error");
-    }
-
-    // ─── complete_task data-preservation tests ──────────────────────────────
-
-    [Fact]
-    public async Task CompleteTaskAsync_PreservesExistingFieldsFromFetchedTask()
-    {
-        // Arrange — simulate an existing task with meaningful data
-        var existingTask = new TaskItem
-        {
-            Href = "/calendars/user/tasks/task-7.ics",
-            Uid = "task-7",
-            Summary = "Important task",
-            Description = "Detailed description",
-            Status = CalDavTaskStatus.InProcess,
-            Priority = TaskPriority.High,
-            Due = new DateTimeOffset(2025, 12, 31, 17, 0, 0, TimeSpan.Zero),
-            Categories = ["work", "urgent"],
-            Start = new DateTimeOffset(2025, 6, 1, 9, 0, 0, TimeSpan.Zero),
-            RecurrenceRule = "FREQ=WEEKLY;COUNT=4",
-            ETag = "\"etag-original\""
-        };
-
-        _taskService.GetTaskAsync(existingTask.Href, Arg.Any<CancellationToken>())
-            .Returns(existingTask);
-        _taskService.UpdateTaskAsync(Arg.Any<TaskItem>(), Arg.Any<CancellationToken>())
-            .Returns(ci => ci.ArgAt<TaskItem>(0) with { ETag = "\"etag-done\"" });
-
-        // Act
-        await _sut.CompleteTaskAsync(
-            href: existingTask.Href,
-            etag: null,
-            cancellationToken: CancellationToken.None);
-
-        // Assert — existing fields must be preserved; only Status and Completed change
-        await _taskService.Received(1).UpdateTaskAsync(
-            Arg.Is<TaskItem>(t => MatchesCompletedTaskPreservingExistingFields(t, existingTask)),
-            Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task CompleteTaskAsync_ExplicitEtagOverridesFetchedEtag()
-    {
-        // Arrange
-        var existingTask = new TaskItem
-        {
-            Href = "/calendars/user/tasks/task-7.ics",
-            Uid = "task-7",
-            Summary = "Some task",
-            Status = CalDavTaskStatus.InProcess,
-            ETag = "\"etag-original\""
-        };
-
-        _taskService.GetTaskAsync(existingTask.Href, Arg.Any<CancellationToken>())
-            .Returns(existingTask);
-        _taskService.UpdateTaskAsync(Arg.Any<TaskItem>(), Arg.Any<CancellationToken>())
-            .Returns(ci => ci.ArgAt<TaskItem>(0));
-
-        // Act — caller provides an explicit etag
-        await _sut.CompleteTaskAsync(
-            href: existingTask.Href,
-            etag: "\"etag-caller\"",
-            cancellationToken: CancellationToken.None);
-
-        // Assert — the explicit etag overrides the fetched task's etag
-        await _taskService.Received(1).UpdateTaskAsync(
-            Arg.Is<TaskItem>(t =>
-                t.ETag == "\"etag-caller\"" &&
-                t.Status == CalDavTaskStatus.Completed),
-            Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -736,21 +569,6 @@ public class TaskMutationToolsTests
             Arg.Is<TaskItem>(t => MatchesUpdatedTaskPreservingExistingFields(t, existingTask)),
             Arg.Any<CancellationToken>());
     }
-
-    private static bool MatchesCompletedTaskPreservingExistingFields(TaskItem actual, TaskItem existingTask) =>
-        All(
-            actual.Href == existingTask.Href,
-            actual.Uid == existingTask.Uid,
-            actual.Summary == existingTask.Summary,
-            actual.Description == existingTask.Description,
-            actual.Priority == existingTask.Priority,
-            actual.Due == existingTask.Due,
-            actual.Start == existingTask.Start,
-            actual.Categories.SequenceEqual(existingTask.Categories),
-            actual.RecurrenceRule == existingTask.RecurrenceRule,
-            actual.Status == CalDavTaskStatus.Completed,
-            actual.Completed == FixedNow,
-            actual.ETag == existingTask.ETag);
 
     private static bool MatchesUpdatedTaskPreservingExistingFields(TaskItem actual, TaskItem existingTask) =>
         All(

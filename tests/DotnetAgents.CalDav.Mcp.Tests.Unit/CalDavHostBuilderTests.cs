@@ -121,6 +121,18 @@ public class CalDavHostBuilderTests
     }
 
     [Fact]
+    public void CreateBuilder_RegistersTaskCompletionAsTransient()
+    {
+        var builder = CalDavHostBuilder.CreateBuilder();
+
+        var registration = builder.Services.SingleOrDefault(
+            descriptor => descriptor.ServiceType == typeof(TaskCompletion));
+
+        registration.ShouldNotBeNull();
+        registration.Lifetime.ShouldBe(ServiceLifetime.Transient);
+    }
+
+    [Fact]
     public void CreateBuilder_HasNoConsoleLoggingProviders()
     {
         // The MCP server uses stdio transport (JSON-RPC over stdin/stdout).

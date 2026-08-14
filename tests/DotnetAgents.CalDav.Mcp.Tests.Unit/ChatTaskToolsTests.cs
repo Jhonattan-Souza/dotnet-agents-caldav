@@ -21,7 +21,10 @@ public class ChatTaskToolsTests
     {
         _taskService = Substitute.For<ITaskService>();
         _taskListResolver = Substitute.For<ITaskListResolver>();
-        _sut = new ChatTaskTools(_taskService, _taskListResolver, TimeProvider.System);
+        _sut = new ChatTaskTools(
+            _taskService,
+            _taskListResolver,
+            new TaskCompletion(_taskService, TimeProvider.System));
     }
 
     [Fact]
@@ -668,6 +671,13 @@ public class ChatTaskToolsTests
     [Fact]
     public async Task CompleteTaskInListAsync_UniqueMatch_CompletesSuccessfully()
     {
+        var persisted = new TaskItem
+        {
+            Href = "/tasks/1.ics",
+            Summary = "Buy milk",
+            Status = CalDavTaskStatus.Completed,
+            ETag = "\"etag-persisted\""
+        };
         _taskService.GetTaskListsAsync(Arg.Any<CancellationToken>())
             .Returns([new TaskList { Href = "/tasks/", DisplayName = "Tasks" }]);
         _taskListResolver.ResolveAsync(Arg.Any<IReadOnlyList<TaskList>>(), "Tasks", Arg.Any<CancellationToken>())
@@ -675,13 +685,14 @@ public class ChatTaskToolsTests
         _taskService.GetTasksAsync("/tasks/", Arg.Any<TaskQuery>(), Arg.Any<CancellationToken>())
             .Returns([new TaskItem { Href = "/tasks/1.ics", Summary = "Buy milk", ETag = "\"etag1\"" }]);
         _taskService.UpdateTaskAsync(Arg.Any<TaskItem>(), Arg.Any<CancellationToken>())
-            .Returns(ci => ci.Arg<TaskItem>());
+            .Returns(persisted);
 
         var json = await _sut.CompleteTaskInListAsync("Tasks", "Buy milk", cancellationToken: CancellationToken.None);
+        using var doc = JsonDocument.Parse(json);
 
-        json.ShouldContain("Completed");
+        doc.RootElement.GetProperty("ETag").GetString().ShouldBe(persisted.ETag);
         await _taskService.Received(1).UpdateTaskAsync(
-            Arg.Is<TaskItem>(t => t.Status == CalDavTaskStatus.Completed && t.ETag == "\"etag1\""),
+            Arg.Is<TaskItem>(task => task.Href == "/tasks/1.ics"),
             Arg.Any<CancellationToken>());
     }
 
