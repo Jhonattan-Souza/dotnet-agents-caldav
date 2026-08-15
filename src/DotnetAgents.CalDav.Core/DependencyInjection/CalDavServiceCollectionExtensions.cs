@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Configuration;
@@ -8,8 +10,6 @@ using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Polly;
-using System.Net;
-using System.Net.Http.Headers;
 
 namespace DotnetAgents.CalDav.Core.DependencyInjection;
 
@@ -51,13 +51,13 @@ public static class CalDavServiceCollectionExtensions
         // - PooledConnectionIdleTimeout: close idle connections that Radicale may have already closed
         //
         // Auto-redirect is disabled because CalDAV uses non-standard HTTP methods (PROPFIND, REPORT,
-        // MKCOL) that must be preserved across redirects. SocketsHttpHandler does not follow
-        // redirects by default, so no AllowAutoRedirect setting is needed.
+        // MKCOL) that must be preserved across redirects. Disable automatic redirects explicitly
+        // so a cross-origin Location cannot receive the configured Basic credentials.
         //
         // Standard resilience handler adds retry with exponential backoff (handles HttpRequestException
         // including HttpIOException/ResponseEnded from transient connection drops), circuit breaker,
         // attempt timeout, and total request timeout — all configured via Polly v8 resilience pipeline.
-        services.AddHttpClient<ICalDavClient, CalDavClient>((serviceProvider, client) =>
+        services.AddHttpClient<CalDavClient>((serviceProvider, client) =>
         {
             var options = serviceProvider.GetRequiredService<IOptions<CalDavOptions>>().Value;
             client.BaseAddress = new Uri(options.BaseUrl.TrimEnd('/') + "/");
@@ -71,6 +71,7 @@ public static class CalDavServiceCollectionExtensions
         })
         .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
         {
+            AllowAutoRedirect = false,
             AutomaticDecompression = DecompressionMethods.All,
             PooledConnectionLifetime = TimeSpan.FromMinutes(2),
             PooledConnectionIdleTimeout = TimeSpan.FromMinutes(1)
@@ -94,7 +95,11 @@ public static class CalDavServiceCollectionExtensions
             options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(30);
         });
 
-        // ITaskService is transient to match the ICalDavClient typed-client lifetime.
+        services.AddTransient<ICalDavClient>(serviceProvider => serviceProvider.GetRequiredService<CalDavClient>());
+        services.AddTransient<ICalendarClient>(serviceProvider => serviceProvider.GetRequiredService<CalDavClient>());
+        services.AddTransient<ICalendarService, CalendarService>();
+
+        // ITaskService is retained internally during the staged 0.2.0 replacement.
         services.AddTransient<ITaskService, TaskService>();
         services.AddSingleton<ITaskListResolver, TaskListResolver>();
 

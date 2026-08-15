@@ -10,9 +10,7 @@ namespace DotnetAgents.CalDav.Mcp.Hosting;
 public static class CalDavEnvironmentMapper
 {
     /// <summary>
-    /// Creates a configure action that reads CALDAV_URL, CALDAV_USERNAME,
-    /// CALDAV_PASSWORD, CALDAV_TASK_LISTS, and CALDAV_DEFAULT_TASK_LIST
-    /// from environment variables.
+    /// Creates a configure action that reads the 0.2.0 Calendar and legacy task environment variables.
     /// </summary>
     /// <param name="envProvider">
     /// Override for environment variable access. Defaults to <see cref="Environment.GetEnvironmentVariable"/>.
@@ -26,6 +24,9 @@ public static class CalDavEnvironmentMapper
             options.BaseUrl = getEnv("CALDAV_URL") ?? string.Empty;
             options.Username = getEnv("CALDAV_USERNAME") ?? string.Empty;
             options.Password = getEnv("CALDAV_PASSWORD") ?? string.Empty;
+            options.CalendarHrefs = getEnv("CALDAV_CALENDAR_HREFS");
+            options.DefaultTodoCalendarName = getEnv("CALDAV_DEFAULT_TODO_CALENDAR_NAME");
+            options.DefaultEventCalendarName = getEnv("CALDAV_DEFAULT_EVENT_CALENDAR_NAME");
             options.TaskLists = getEnv("CALDAV_TASK_LISTS");
             options.DefaultTaskList = getEnv("CALDAV_DEFAULT_TASK_LIST");
         };

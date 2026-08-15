@@ -22,6 +22,16 @@ internal static class DavResponseParser
             .ToList();
     }
 
+    /// <summary>Parses every discovered Calendar collection with independent component evidence.</summary>
+    public static IReadOnlyList<CalendarDescriptor> ParseCalendars(string multistatusXml)
+    {
+        var doc = XDocument.Parse(multistatusXml);
+        return doc.Descendants(Dav + "response")
+            .Select(TryParseCalendar)
+            .OfType<CalendarDescriptor>()
+            .ToList();
+    }
+
     /// <summary>Parses a multistatus response to extract the calendar-home-set URL.</summary>
     public static string? ParseCalendarHomeSet(string multistatusXml)
     {
@@ -76,6 +86,37 @@ internal static class DavResponseParser
         };
     }
 
+    private static CalendarDescriptor? TryParseCalendar(XElement response)
+    {
+        var href = response.Element(Dav + "href")?.Value?.Trim() ?? string.Empty;
+        if (string.IsNullOrEmpty(href) || !IsCalendarCollection(response))
+            return null;
+
+        var displayNameProperty = GetSuccessfulProperty(response, Dav + "displayname");
+        var displayName = displayNameProperty?.Value.Trim();
+        var (name, provenance) = GetDisplayName(displayName, href, displayNameProperty is not null);
+        var componentsProperty = GetSuccessfulProperty(response, CalDav + "supported-calendar-component-set");
+        var components = componentsProperty is null
+            ? []
+            : componentsProperty.Descendants(CalDav + "comp")
+                .Select(component => component.Attribute("name")?.Value)
+                .OfType<string>()
+                .ToArray();
+
+        return new CalendarDescriptor
+        {
+            Href = href,
+            DisplayName = name,
+            DisplayNameProvenance = provenance,
+            Description = GetPropValue(response, CalDav + "calendar-description"),
+            Color = GetPropValue(response, AppleCs + "calendar-color"),
+            EventSupport = GetComponentSupport(componentsProperty, components, "VEVENT"),
+            TodoSupport = GetComponentSupport(componentsProperty, components, "VTODO"),
+            EventEvidence = GetComponentEvidence(componentsProperty, components),
+            TodoEvidence = GetComponentEvidence(componentsProperty, components)
+        };
+    }
+
     private static (string Href, string? ETag, string ICalData)? TryParseCalendarDataResponse(XElement response)
     {
         var href = response.Element(Dav + "href")?.Value?.Trim() ?? string.Empty;
@@ -105,6 +146,46 @@ internal static class DavResponseParser
         GetPropValue(response, Dav + "displayname")
         ?? href.TrimEnd('/').Split('/').Last();
 
+    private static (string? Name, DisplayNameProvenance Provenance) GetDisplayName(
+        string? displayName,
+        string href,
+        bool displayNameWasPresent)
+    {
+        if (!string.IsNullOrWhiteSpace(displayName))
+            return (displayName, DisplayNameProvenance.DavDisplayName);
+
+        if (displayNameWasPresent)
+            return (null, DisplayNameProvenance.Missing);
+
+        var derivedName = href.TrimEnd('/').Split('/').LastOrDefault();
+        return string.IsNullOrWhiteSpace(derivedName)
+            ? (null, DisplayNameProvenance.Missing)
+            : (derivedName, DisplayNameProvenance.DerivedFromHref);
+    }
+
+    private static EntityKindSupport GetComponentSupport(
+        XElement? componentsProperty,
+        IReadOnlyCollection<string> components,
+        string componentName)
+    {
+        if (componentsProperty is null)
+            return EntityKindSupport.Unknown;
+
+        return components.Contains(componentName, StringComparer.OrdinalIgnoreCase)
+            ? EntityKindSupport.Advertised
+            : EntityKindSupport.NotAdvertised;
+    }
+
+    private static IReadOnlyList<CapabilityEvidence> GetComponentEvidence(
+        XElement? componentsProperty,
+        IReadOnlyCollection<string> components)
+    {
+        if (componentsProperty is null)
+            return [];
+
+        return [new CapabilityEvidence("supported-calendar-component-set", string.Join(',', components))];
+    }
+
     private static bool HasSuccessStatus(XElement response)
     {
         var status = response.Element(Dav + "status")?.Value;
@@ -112,6 +193,11 @@ internal static class DavResponseParser
     }
 
     private static string? GetPropValue(XElement response, XName propertyName)
+    {
+        return GetSuccessfulProperty(response, propertyName)?.Value;
+    }
+
+    private static XElement? GetSuccessfulProperty(XElement response, XName propertyName)
     {
         var propStats = response.Descendants(Dav + "propstat");
         foreach (var propStat in propStats)
@@ -121,7 +207,7 @@ internal static class DavResponseParser
             {
                 var prop = propStat.Element(Dav + "prop")?.Element(propertyName);
                 if (prop is not null)
-                    return prop.Value;
+                    return prop;
             }
         }
 

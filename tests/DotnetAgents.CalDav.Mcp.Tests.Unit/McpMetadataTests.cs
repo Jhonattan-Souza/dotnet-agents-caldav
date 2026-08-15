@@ -76,6 +76,7 @@ public class McpMetadataTests
             .ToList();
 
         envVarNames.ShouldContain("CALDAV_TASK_LISTS");
+        envVarNames.ShouldContain("CALDAV_CALENDAR_HREFS");
     }
 
     [Fact]
@@ -95,6 +96,8 @@ public class McpMetadataTests
             .ToList();
 
         envVarNames.ShouldContain("CALDAV_DEFAULT_TASK_LIST");
+        envVarNames.ShouldContain("CALDAV_DEFAULT_TODO_CALENDAR_NAME");
+        envVarNames.ShouldContain("CALDAV_DEFAULT_EVENT_CALENDAR_NAME");
     }
 
     // ─── packaging metadata ─────────────────────────────────────────────────────

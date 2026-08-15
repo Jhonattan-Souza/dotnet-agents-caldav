@@ -52,6 +52,7 @@ public class DavRequestBuilderTests
         prop.Element(Dav + "displayname").ShouldNotBeNull();
         prop.Element(Dav + "resourcetype").ShouldNotBeNull();
         prop.Element(CalDav + "supported-calendar-component-set").ShouldNotBeNull();
+        prop.Element(CalDav + "calendar-description").ShouldNotBeNull();
         prop.Element(Dav + "description").ShouldNotBeNull();
         prop.Element(AppleCs + "calendar-color").ShouldNotBeNull();
         prop.Element(CalServer + "getctag").ShouldNotBeNull();

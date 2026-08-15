@@ -37,7 +37,8 @@ internal static class DavRequestBuilder
                     new XElement(Dav + "displayname"),
                     new XElement(Dav + "resourcetype"),
                     new XElement(CalDav + "supported-calendar-component-set"),
-                    new XElement(Dav + "description", new XAttribute(XNamespace.Xmlns + "d", Dav.NamespaceName)),
+                    new XElement(CalDav + "calendar-description"),
+                    new XElement(Dav + "description"),
                     new XElement(AppleCs + "calendar-color"),
                     new XElement(CalServer + "getctag")
                 )
