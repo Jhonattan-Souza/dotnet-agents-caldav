@@ -1,0 +1,18 @@
+{
+  "profile": "radicale-3.7.8",
+  "image": "ghcr.io/kozea/radicale@sha256:3a0080ea51ac69dcd74e345b9587dc14a8c8af0652046069005749f9a75c5c80",
+  "ociIndexDigest": "sha256:3a0080ea51ac69dcd74e345b9587dc14a8c8af0652046069005749f9a75c5c80",
+  "platformManifests": {
+    "linux/amd64": "sha256:7e2d729c434574762b058d57c7c81641ade11655da6d0eede948512d53873e71",
+    "linux/arm64": "sha256:1691eb75474f38f9c0ce75e60a026a3c338b7c91a1cd9ed622557f141b0eb5b8"
+  },
+  "runtime": { "radicale": "3.7.8", "python": "3.14.7", "vobject": "0.9.9" },
+  "variants": [
+    { "name": "baseline", "timeZone": "UTC", "strictPreconditions": false },
+    { "name": "strict-preconditions", "timeZone": "UTC", "strictPreconditions": true },
+    { "name": "alternate-time-zone", "timeZone": "America/New_York", "strictPreconditions": false }
+  ],
+  "selector": "RADICALE_CONFORMANCE_VARIANT",
+  "evidenceFixture": "RadicaleConformanceFixture",
+  "legacyTaskFixturesAreEvidence": false
+}

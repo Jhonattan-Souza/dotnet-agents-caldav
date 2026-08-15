@@ -1,0 +1,1215 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contractVersion": "0.2.0-draft.1",
+  "protocolRevision": "2026-07-28",
+  "transport": {
+    "discover": "server/discover",
+    "stateless": true,
+    "tasksExtension": false,
+    "listChangedNotifications": false
+  },
+  "outcomeContract": {
+    "structuredContent": "authoritative",
+    "textContent": "concise compatible summary",
+    "expectedFailure": {
+      "isError": true,
+      "schema": "#/$defs/errorOutcome"
+    },
+    "nonMutatingSuccesses": [
+      "no_change",
+      "confirmation_declined"
+    ]
+  },
+  "environment": [
+    {
+      "name": "CALDAV_URL",
+      "required": true
+    },
+    {
+      "name": "CALDAV_USERNAME",
+      "required": true
+    },
+    {
+      "name": "CALDAV_PASSWORD",
+      "required": true,
+      "secret": true
+    },
+    {
+      "name": "CALDAV_CALENDAR_HREFS",
+      "required": false,
+      "description": "Exact canonical-href allowlist"
+    },
+    {
+      "name": "CALDAV_DEFAULT_TODO_CALENDAR_NAME",
+      "required": false
+    },
+    {
+      "name": "CALDAV_DEFAULT_EVENT_CALENDAR_NAME",
+      "required": false
+    },
+    {
+      "name": "CALDAV_EXPOSE_EXACT_TOOLS",
+      "required": false,
+      "type": "boolean"
+    }
+  ],
+  "retiredEnvironment": [
+    "CALDAV_TASK_LISTS",
+    "CALDAV_DEFAULT_TASK_LIST",
+    "CALDAV_EXPOSE_ADVANCED_TOOLS"
+  ],
+  "discoveryOrder": [
+    "calendars.list",
+    "calendar_entities.query",
+    "calendar_occurrences.query",
+    "calendar_resources.get",
+    "events.create",
+    "events.patch",
+    "todos.create",
+    "todos.patch",
+    "todos.complete",
+    "calendar_occurrences.add",
+    "calendar_occurrences.exclude",
+    "calendar_occurrences.restore_exclusion",
+    "calendar_occurrences.cancel",
+    "calendar_occurrences.restore_cancellation",
+    "calendar_resources.move",
+    "calendar_resources.delete"
+  ],
+  "exactTools": [
+    "calendar_resources.exact_get",
+    "calendar_resources.exact_create",
+    "calendar_resources.exact_replace",
+    "calendar_resources.exact_move"
+  ],
+  "tools": [
+    {
+      "name": "calendars.list",
+      "cache": {
+        "ttlMs": 30000,
+        "cacheScope": "private"
+      },
+      "inputSchema": {
+        "$ref": "#/$defs/calendarScopeInput"
+      },
+      "outputSchema": {
+        "$ref": "#/$defs/queryOutcome"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "calendar_entities.query",
+      "cache": {
+        "ttlMs": 5000,
+        "cacheScope": "private"
+      },
+      "inputSchema": {
+        "$ref": "#/$defs/entityQueryInput"
+      },
+      "outputSchema": {
+        "$ref": "#/$defs/queryOutcome"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "calendar_occurrences.query",
+      "cache": {
+        "ttlMs": 5000,
+        "cacheScope": "private"
+      },
+      "inputSchema": {
+        "$ref": "#/$defs/occurrenceQueryInput"
+      },
+      "outputSchema": {
+        "$ref": "#/$defs/queryOutcome"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "calendar_resources.get",
+      "cache": {
+        "ttlMs": 0,
+        "cacheScope": "private"
+      },
+      "inputSchema": {
+        "$ref": "#/$defs/resourceAddressInput"
+      },
+      "outputSchema": {
+        "$ref": "#/$defs/resourceOutcome"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "events.create",
+      "cache": {
+        "ttlMs": 0,
+        "cacheScope": "private"
+      },
+      "inputSchema": {
+        "$ref": "#/$defs/semanticCreateInput"
+      },
+      "outputSchema": {
+        "$ref": "#/$defs/mutationOutcome"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "events.patch",
+      "cache": {
+        "ttlMs": 0,
+        "cacheScope": "private"
+      },
+      "inputSchema": {
+        "$ref": "#/$defs/patchInput"
+      },
+      "outputSchema": {
+        "$ref": "#/$defs/mutationOutcome"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "todos.create",
+      "cache": {
+        "ttlMs": 0,
+        "cacheScope": "private"
+      },
+      "inputSchema": {
+        "$ref": "#/$defs/semanticCreateInput"
+      },
+      "outputSchema": {
+        "$ref": "#/$defs/mutationOutcome"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "todos.patch",
+      "cache": {
+        "ttlMs": 0,
+        "cacheScope": "private"
+      },
+      "inputSchema": {
+        "$ref": "#/$defs/patchInput"
+      },
+      "outputSchema": {
+        "$ref": "#/$defs/mutationOutcome"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "todos.complete",
+      "cache": {
+        "ttlMs": 0,
+        "cacheScope": "private"
+      },
+      "inputSchema": {
+        "$ref": "#/$defs/completionInput"
+      },
+      "outputSchema": {
+        "$ref": "#/$defs/mutationOutcome"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "calendar_occurrences.add",
+      "cache": {
+        "ttlMs": 0,
+        "cacheScope": "private"
+      },
+      "inputSchema": {
+        "$ref": "#/$defs/occurrenceMutationInput"
+      },
+      "outputSchema": {
+        "$ref": "#/$defs/mutationOutcome"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "calendar_occurrences.exclude",
+      "cache": {
+        "ttlMs": 0,
+        "cacheScope": "private"
+      },
+      "inputSchema": {
+        "$ref": "#/$defs/occurrenceMutationInput"
+      },
+      "outputSchema": {
+        "$ref": "#/$defs/mutationOutcome"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "calendar_occurrences.restore_exclusion",
+      "cache": {
+        "ttlMs": 0,
+        "cacheScope": "private"
+      },
+      "inputSchema": {
+        "$ref": "#/$defs/occurrenceMutationInput"
+      },
+      "outputSchema": {
+        "$ref": "#/$defs/mutationOutcome"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "calendar_occurrences.cancel",
+      "cache": {
+        "ttlMs": 0,
+        "cacheScope": "private"
+      },
+      "inputSchema": {
+        "$ref": "#/$defs/occurrenceMutationInput"
+      },
+      "outputSchema": {
+        "$ref": "#/$defs/mutationOutcome"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "calendar_occurrences.restore_cancellation",
+      "cache": {
+        "ttlMs": 0,
+        "cacheScope": "private"
+      },
+      "inputSchema": {
+        "$ref": "#/$defs/occurrenceMutationInput"
+      },
+      "outputSchema": {
+        "$ref": "#/$defs/mutationOutcome"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "calendar_resources.move",
+      "cache": {
+        "ttlMs": 0,
+        "cacheScope": "private"
+      },
+      "inputSchema": {
+        "$ref": "#/$defs/moveInput"
+      },
+      "outputSchema": {
+        "$ref": "#/$defs/mutationOutcome"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "calendar_resources.delete",
+      "cache": {
+        "ttlMs": 0,
+        "cacheScope": "private"
+      },
+      "inputSchema": {
+        "$ref": "#/$defs/resourceAddressInput"
+      },
+      "outputSchema": {
+        "$ref": "#/$defs/mutationOutcome"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "calendar_resources.exact_get",
+      "cache": {
+        "ttlMs": 0,
+        "cacheScope": "private"
+      },
+      "optIn": true,
+      "inputSchema": {
+        "$ref": "#/$defs/revisionReferenceInput"
+      },
+      "outputSchema": {
+        "$ref": "#/$defs/exactGetOutcome"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "calendar_resources.exact_create",
+      "cache": {
+        "ttlMs": 0,
+        "cacheScope": "private"
+      },
+      "optIn": true,
+      "inputSchema": {
+        "$ref": "#/$defs/exactCreateInput"
+      },
+      "outputSchema": {
+        "$ref": "#/$defs/mutationOutcome"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "calendar_resources.exact_replace",
+      "cache": {
+        "ttlMs": 0,
+        "cacheScope": "private"
+      },
+      "optIn": true,
+      "inputSchema": {
+        "$ref": "#/$defs/exactReplaceInput"
+      },
+      "outputSchema": {
+        "$ref": "#/$defs/mutationOutcome"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "calendar_resources.exact_move",
+      "cache": {
+        "ttlMs": 0,
+        "cacheScope": "private"
+      },
+      "optIn": true,
+      "inputSchema": {
+        "$ref": "#/$defs/moveInput"
+      },
+      "outputSchema": {
+        "$ref": "#/$defs/mutationOutcome"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    }
+  ],
+  "$defs": {
+    "calendarReference": { "oneOf": [
+      { "type": "object", "additionalProperties": false, "required": ["by", "name"], "properties": { "by": { "const": "name" }, "name": { "type": "string", "minLength": 1 } } },
+      { "type": "object", "additionalProperties": false, "required": ["by", "href"], "properties": { "by": { "const": "href" }, "href": { "type": "string", "format": "uri" } } }
+    ] },
+    "calendarScope": { "oneOf": [
+      { "type": "object", "additionalProperties": false, "required": ["mode"], "properties": { "mode": { "const": "default" } } },
+      { "type": "object", "additionalProperties": false, "required": ["mode", "calendar"], "properties": { "mode": { "const": "selected" }, "calendar": { "$ref": "#/$defs/calendarReference" } } },
+      { "type": "object", "additionalProperties": false, "required": ["mode"], "properties": { "mode": { "const": "all" } } }
+    ] },
+    "revisionReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "href",
+        "entityUid",
+        "entityKind",
+        "entityTag"
+      ],
+      "properties": {
+        "href": {
+          "type": "string",
+          "format": "uri"
+        },
+        "entityUid": {
+          "type": "string",
+          "minLength": 1
+        },
+        "entityKind": {
+          "enum": [
+            "event",
+            "todo"
+          ]
+        },
+        "entityTag": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "temporalValue": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "date"
+            },
+            "value": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "floatingDateTime"
+            },
+            "value": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "utcDateTime"
+            },
+            "value": {
+              "type": "string",
+              "pattern": "Z$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value",
+            "timeZoneId"
+          ],
+          "properties": {
+            "kind": {
+              "const": "zonedDateTime"
+            },
+            "value": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?$"
+            },
+            "timeZoneId": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      ]
+    },
+    "utcTemporalValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ],
+      "properties": {
+        "kind": {
+          "const": "utcDateTime"
+        },
+        "value": {
+          "type": "string",
+          "pattern": "Z$"
+        }
+      }
+    },
+    "calendarScopeInput": { "type": "object", "additionalProperties": false },
+    "entityQueryInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "entityKinds"
+      ],
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/calendarScope"
+        },
+        "entityKinds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "event",
+              "todo"
+            ]
+          }
+        },
+        "pageSize": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "cursor": {
+          "type": "string"
+        }
+      }
+    },
+    "occurrenceQueryInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "from",
+        "to"
+      ],
+      "properties": {
+        "scope": {
+          "$ref": "#/$defs/calendarScope"
+        },
+        "from": {
+          "$ref": "#/$defs/utcTemporalValue"
+        },
+        "to": {
+          "$ref": "#/$defs/utcTemporalValue"
+        },
+        "evaluationTimeZone": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pageSize": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "cursor": {
+          "type": "string"
+        }
+      }
+    },
+    "revisionReferenceInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision"
+      ],
+      "properties": {
+        "revision": {
+          "$ref": "#/$defs/revisionReference"
+        }
+      }
+    },
+    "resourceAddressInput": { "type": "object", "additionalProperties": false, "required": ["href"], "properties": { "href": { "type": "string", "format": "uri" } } },
+    "eventFields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "summary": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "start": {
+          "$ref": "#/$defs/temporalValue"
+        },
+        "end": {
+          "$ref": "#/$defs/temporalValue"
+        },
+        "duration": {
+          "type": "string"
+        },
+        "location": {
+          "type": "string"
+        },
+        "geo": {
+          "type": "object"
+        },
+        "status": {
+          "type": "string"
+        },
+        "transparency": {
+          "type": "string"
+        },
+        "classification": {
+          "type": "string"
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9
+        },
+        "categories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "recurrenceSet": {
+          "type": "object"
+        },
+        "structuredData": {
+          "type": "object"
+        }
+      }
+    },
+    "todoFields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "summary": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "start": {
+          "$ref": "#/$defs/temporalValue"
+        },
+        "due": {
+          "$ref": "#/$defs/temporalValue"
+        },
+        "duration": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9
+        },
+        "categories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "recurrenceSet": {
+          "type": "object"
+        },
+        "structuredData": {
+          "type": "object"
+        }
+      }
+    },
+    "eventCreateEntity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "fields"
+      ],
+      "properties": {
+        "kind": {
+          "const": "event"
+        },
+        "uid": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fields": {
+          "$ref": "#/$defs/eventFields"
+        }
+      }
+    },
+    "todoCreateEntity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "fields"
+      ],
+      "properties": {
+        "kind": {
+          "const": "todo"
+        },
+        "uid": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fields": {
+          "$ref": "#/$defs/todoFields"
+        }
+      }
+    },
+    "semanticCreateInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "calendar",
+        "entity"
+      ],
+      "properties": {
+        "calendar": {
+          "$ref": "#/$defs/calendarReference"
+        },
+        "entity": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/eventCreateEntity"
+            },
+            {
+              "$ref": "#/$defs/todoCreateEntity"
+            }
+          ]
+        }
+      }
+    },
+    "patchInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "snapshot",
+        "target",
+        "patch"
+      ],
+      "properties": {
+        "snapshot": {
+          "$ref": "#/$defs/revisionReference"
+        },
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "scope"
+          ],
+          "properties": {
+            "scope": {
+              "enum": [
+                "master",
+                "one-occurrence",
+                "this-and-future",
+                "entire-set"
+              ]
+            },
+            "recurrenceIdentity": {
+              "type": "object"
+            }
+          }
+        },
+        "patch": {
+          "type": "object",
+          "additionalProperties": false
+        }
+      }
+    },
+    "completionInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "snapshot",
+        "completedAt"
+      ],
+      "properties": {
+        "snapshot": {
+          "$ref": "#/$defs/revisionReference"
+        },
+        "completedAt": {
+          "$ref": "#/$defs/utcTemporalValue"
+        },
+        "recurrenceIdentity": {
+          "type": "object"
+        }
+      }
+    },
+    "occurrenceMutationInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "snapshot",
+        "recurrenceIdentity"
+      ],
+      "properties": {
+        "snapshot": {
+          "$ref": "#/$defs/revisionReference"
+        },
+        "recurrenceIdentity": {
+          "type": "object"
+        }
+      }
+    },
+    "moveInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision",
+        "destinationCalendar"
+      ],
+      "properties": {
+        "revision": {
+          "$ref": "#/$defs/revisionReference"
+        },
+        "destinationCalendar": {
+          "$ref": "#/$defs/calendarReference"
+        }
+      }
+    },
+    "exactCreateInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "calendar",
+        "utf8Resource"
+      ],
+      "properties": {
+        "calendar": {
+          "$ref": "#/$defs/calendarReference"
+        },
+        "utf8Resource": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "exactReplaceInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision",
+        "utf8Resource"
+      ],
+      "properties": {
+        "revision": {
+          "$ref": "#/$defs/revisionReference"
+        },
+        "utf8Resource": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "querySuccess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcome",
+        "items",
+        "diagnostics",
+        "pagination"
+      ],
+      "properties": {
+        "outcome": {
+          "const": "success"
+        },
+        "items": {
+          "type": "array"
+        },
+        "diagnostics": {
+          "type": "array"
+        },
+        "pagination": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "nextCursor"
+          ],
+          "properties": {
+            "mode": {
+              "const": "non_snapshot"
+            },
+            "nextCursor": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "resourceSuccess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcome",
+        "snapshot"
+      ],
+      "properties": {
+        "outcome": {
+          "const": "success"
+        },
+        "snapshot": {
+          "type": "object"
+        }
+      }
+    },
+    "exactGetSuccess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcome",
+        "resourceLink"
+      ],
+      "properties": {
+        "outcome": {
+          "const": "success"
+        },
+        "resourceLink": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "uri",
+            "name"
+          ],
+          "properties": {
+            "type": {
+              "const": "resource_link"
+            },
+            "uri": {
+              "type": "string",
+              "format": "uri"
+            },
+            "name": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "mutationSuccess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcome",
+        "mutationState"
+      ],
+      "properties": {
+        "outcome": {
+          "enum": [
+            "success",
+            "no_change",
+            "confirmation_declined"
+          ]
+        },
+        "mutationState": {
+          "enum": [
+            "not_attempted",
+            "not_committed",
+            "committed",
+            "unknown"
+          ]
+        },
+        "snapshot": {
+          "type": "object"
+        },
+        "deletionReceipt": {
+          "type": "object"
+        }
+      }
+    },
+    "errorOutcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "category",
+        "message",
+        "retryable",
+        "phase"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "invalid_input",
+            "invalid_calendar_data",
+            "not_found",
+            "ambiguous",
+            "outside_scope",
+            "entity_kind_mismatch",
+            "unsupported_capability",
+            "opaque_resource",
+            "temporal_unresolved",
+            "recurrence_unevaluable",
+            "conflict",
+            "destination_conflict",
+            "concurrency_unavailable",
+            "limit_exhausted",
+            "payload_too_large",
+            "busy",
+            "upstream_unauthorized",
+            "upstream_forbidden",
+            "upstream_rate_limited",
+            "upstream_unavailable",
+            "upstream_protocol_error",
+            "confirmation_expired",
+            "confirmation_mismatch",
+            "fidelity_failure",
+            "committed_but_unverified",
+            "committed_but_concurrency_unavailable",
+            "indeterminate"
+          ]
+        },
+        "category": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "phase": {
+          "type": "string"
+        }
+      }
+    },
+    "inputRequiredOutcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resultType",
+        "requestState",
+        "preview",
+        "inputRequest"
+      ],
+      "properties": {
+        "resultType": {
+          "const": "input_required"
+        },
+        "requestState": {
+          "type": "string",
+          "minLength": 1
+        },
+        "preview": {
+          "type": "string"
+        },
+        "inputRequest": {
+          "type": "object"
+        }
+      }
+    },
+    "queryOutcome": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/querySuccess"
+        },
+        {
+          "$ref": "#/$defs/errorOutcome"
+        }
+      ]
+    },
+    "resourceOutcome": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/resourceSuccess"
+        },
+        {
+          "$ref": "#/$defs/errorOutcome"
+        }
+      ]
+    },
+    "exactGetOutcome": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/exactGetSuccess"
+        },
+        {
+          "$ref": "#/$defs/errorOutcome"
+        }
+      ]
+    },
+    "mutationOutcome": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/mutationSuccess"
+        },
+        {
+          "$ref": "#/$defs/errorOutcome"
+        },
+        {
+          "$ref": "#/$defs/inputRequiredOutcome"
+        }
+      ]
+    }
+  }
+}

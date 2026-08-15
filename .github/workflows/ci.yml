@@ -68,3 +68,31 @@ jobs:
           echo "|--------|----------|" >> $GITHUB_STEP_SUMMARY
           echo "| Lines  | ${LINE_PCT_FMT}% |" >> $GITHUB_STEP_SUMMARY
           echo "| Branches | ${BRANCH_PCT}% |" >> $GITHUB_STEP_SUMMARY
+
+  radicale-conformance:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [baseline, strict-preconditions, alternate-time-zone]
+    env:
+      RADICALE_CONFORMANCE_VARIANT: ${{ matrix.variant }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+          cache: false
+
+      - name: Restore packages
+        run: dotnet restore
+
+      - name: Run pinned Radicale conformance harness
+        run: >
+          dotnet test tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj
+          -c Release
+          --filter "FullyQualifiedName~RadicaleConformanceHarnessTests"
