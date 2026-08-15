@@ -1,3 +1,4 @@
+using System.Xml;
 using System.Xml.Linq;
 using DotnetAgents.CalDav.Core.Models;
 
@@ -8,6 +9,8 @@ namespace DotnetAgents.CalDav.Core.Internal.Xml;
 /// </summary>
 internal static class DavResponseParser
 {
+    private const long MaxXmlCharacters = 4L * 1024 * 1024;
+    private const int MaxXmlDepth = 64;
     private static readonly XNamespace Dav = "DAV:";
     private static readonly XNamespace CalDav = "urn:ietf:params:xml:ns:caldav";
     private static readonly XNamespace AppleCs = "http://apple.com/ns/ical/";
@@ -15,7 +18,7 @@ internal static class DavResponseParser
     /// <summary>Parses a multistatus XML body into a list of <see cref="TaskList"/> records.</summary>
     public static IReadOnlyList<TaskList> ParseTaskLists(string multistatusXml)
     {
-        var doc = XDocument.Parse(multistatusXml);
+        var doc = ParseDocument(multistatusXml);
         return doc.Descendants(Dav + "response")
             .Select(TryParseTaskList)
             .OfType<TaskList>()
@@ -25,7 +28,7 @@ internal static class DavResponseParser
     /// <summary>Parses every discovered Calendar collection with independent component evidence.</summary>
     public static IReadOnlyList<CalendarDescriptor> ParseCalendars(string multistatusXml)
     {
-        var doc = XDocument.Parse(multistatusXml);
+        var doc = ParseDocument(multistatusXml);
         return doc.Descendants(Dav + "response")
             .Select(TryParseCalendar)
             .OfType<CalendarDescriptor>()
@@ -35,7 +38,7 @@ internal static class DavResponseParser
     /// <summary>Parses a multistatus response to extract the calendar-home-set URL.</summary>
     public static string? ParseCalendarHomeSet(string multistatusXml)
     {
-        var doc = XDocument.Parse(multistatusXml);
+        var doc = ParseDocument(multistatusXml);
         return doc.Descendants(CalDav + "calendar-home-set")
             .Descendants(Dav + "href")
             .FirstOrDefault()?.Value?.Trim();
@@ -44,7 +47,7 @@ internal static class DavResponseParser
     /// <summary>Parses a multistatus response to extract the current-user-principal URL.</summary>
     public static string? ParseCurrentUserPrincipal(string multistatusXml)
     {
-        var doc = XDocument.Parse(multistatusXml);
+        var doc = ParseDocument(multistatusXml);
         return doc.Descendants(Dav + "current-user-principal")
             .Descendants(Dav + "href")
             .FirstOrDefault()?.Value?.Trim();
@@ -55,7 +58,7 @@ internal static class DavResponseParser
     /// </summary>
     public static IReadOnlyList<(string Href, string? ETag, string ICalData)> ParseCalendarData(string multistatusXml)
     {
-        var doc = XDocument.Parse(multistatusXml);
+        var doc = ParseDocument(multistatusXml);
         return doc.Descendants(Dav + "response")
             .Select(TryParseCalendarDataResponse)
             .Where(entry => entry.HasValue)
@@ -84,6 +87,23 @@ internal static class DavResponseParser
             Color = GetPropValue(response, AppleCs + "calendar-color"),
             SupportedComponents = supportedComponents
         };
+    }
+
+    private static XDocument ParseDocument(string xml)
+    {
+        var settings = new XmlReaderSettings
+        {
+            DtdProcessing = DtdProcessing.Prohibit,
+            XmlResolver = null,
+            MaxCharactersInDocument = MaxXmlCharacters,
+            MaxCharactersFromEntities = 0
+        };
+        using var textReader = new StringReader(xml);
+        using var xmlReader = XmlReader.Create(textReader, settings);
+        var document = XDocument.Load(xmlReader, LoadOptions.PreserveWhitespace);
+        if (document.Descendants().Any(element => element.Ancestors().Count() > MaxXmlDepth))
+            throw new XmlException("The WebDAV response exceeds the safe XML depth limit.");
+        return document;
     }
 
     private static CalendarDescriptor? TryParseCalendar(XElement response)

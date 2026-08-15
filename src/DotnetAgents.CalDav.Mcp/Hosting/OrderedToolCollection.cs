@@ -8,12 +8,14 @@ internal sealed class OrderedToolCollection : McpServerPrimitiveCollection<McpSe
     private static readonly IReadOnlyDictionary<string, int> Ranks = new Dictionary<string, int>(StringComparer.Ordinal)
     {
         ["calendars.list"] = 0,
-        ["list_task_lists"] = 1,
-        ["show_tasks"] = 2,
-        ["add_task"] = 3,
-        ["find_tasks"] = 4,
-        ["complete_task_by_summary"] = 5,
-        ["delete_task_by_summary"] = 6
+        ["calendar_resources.get"] = 1,
+        ["calendar_resources.exact_get"] = 2,
+        ["list_task_lists"] = 3,
+        ["show_tasks"] = 4,
+        ["add_task"] = 5,
+        ["find_tasks"] = 6,
+        ["complete_task_by_summary"] = 7,
+        ["delete_task_by_summary"] = 8
     };
 
     public OrderedToolCollection(IEnumerable<McpServerTool> tools)

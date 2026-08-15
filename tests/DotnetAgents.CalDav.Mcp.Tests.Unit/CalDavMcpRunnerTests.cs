@@ -19,6 +19,16 @@ public class CalDavMcpRunnerTests
         result.ShouldBeTrue();
     }
 
+    [Theory]
+    [InlineData("true", true)]
+    [InlineData("TRUE", true)]
+    [InlineData("false", false)]
+    [InlineData(null, false)]
+    public void ShouldExposeExactTools_UsesIndependentOptIn(string? envValue, bool expected)
+    {
+        CalDavMcpRunner.ShouldExposeExactTools(_ => envValue).ShouldBe(expected);
+    }
+
     [Fact]
     public async Task RunAsync_WithAllConfigMissing_ReturnsExitCode1()
     {

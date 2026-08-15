@@ -14,6 +14,113 @@ namespace DotnetAgents.CalDav.Core.Tests.Unit.Services;
 public sealed class CalendarServiceTests
 {
     [Fact]
+    public async Task GetResourceAsync_ReturnsOneRevisionCoherentEventSnapshot()
+    {
+        const string calendarHref = "https://cal.example/events/";
+        const string resourceHref = "https://cal.example/events/standup.ics";
+        const string content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260815T120000Z\r\nDTSTART:20260816T090000Z\r\nSUMMARY:Standup\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var client = Substitute.For<ICalendarClient>();
+        var options = Options.Create(new CalDavOptions
+        {
+            BaseUrl = "https://cal.example",
+            CalendarHrefs = calendarHref
+        });
+        var sut = new CalendarService(client, options, Substitute.For<ILogger<CalendarService>>());
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(
+            [Calendar(calendarHref, "Events", EntityKindSupport.NotAdvertised)]);
+        client.GetCalendarResourceAsync(resourceHref, Arg.Any<CancellationToken>()).Returns(
+            CalendarResourceRead.Success(resourceHref, "\"revision-1\"", System.Text.Encoding.UTF8.GetBytes(content)));
+
+        var result = await sut.GetResourceAsync(resourceHref, CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceReadCode.Success);
+        result.Snapshot!.CalendarHref.ShouldBe(calendarHref);
+        result.Snapshot.ResourceHref.ShouldBe(resourceHref);
+        result.Snapshot.EntityTag.ShouldBe("\"revision-1\"");
+        result.Snapshot.AuthoritativeUtf8.ToArray().ShouldBe(System.Text.Encoding.UTF8.GetBytes(content));
+        result.Snapshot.Projection.Kind.ShouldBe(CalendarResourceProjectionKind.Event);
+        result.Snapshot.Projection.EntityUid.ShouldBe("event-1");
+        result.Snapshot.Projection.Summary.ShouldBe("Standup");
+    }
+
+    [Fact]
+    public async Task GetResourceAsync_ReturnsMixedEntityKindsAsOpaqueWithSafeDiagnostic()
+    {
+        const string calendarHref = "https://cal.example/mixed/";
+        const string resourceHref = "https://cal.example/mixed/mixed.ics";
+        const string content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260815T120000Z\r\nDTSTART:20260816T090000Z\r\nEND:VEVENT\r\nBEGIN:VTODO\r\nUID:todo-1\r\nDTSTAMP:20260815T120000Z\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+        var client = Substitute.For<ICalendarClient>();
+        var options = Options.Create(new CalDavOptions { BaseUrl = "https://cal.example", CalendarHrefs = calendarHref });
+        var sut = new CalendarService(client, options, Substitute.For<ILogger<CalendarService>>());
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(
+            [Calendar(calendarHref, "Mixed", EntityKindSupport.Advertised)]);
+        client.GetCalendarResourceAsync(resourceHref, Arg.Any<CancellationToken>()).Returns(
+            CalendarResourceRead.Success(resourceHref, "\"revision-1\"", System.Text.Encoding.UTF8.GetBytes(content)));
+
+        var result = await sut.GetResourceAsync(resourceHref, CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceReadCode.Success);
+        result.Snapshot!.Projection.Kind.ShouldBe(CalendarResourceProjectionKind.Opaque);
+        result.Snapshot.Projection.EntityUid.ShouldBeNull();
+        result.Snapshot.SemanticMutationAvailable.ShouldBeFalse();
+        result.Snapshot.Diagnostics.Select(item => item.Code).ShouldBe(["mixed_entity_kinds"]);
+        JsonSerializer.Serialize(result.Snapshot.Diagnostics).ShouldNotContain("event-1");
+        JsonSerializer.Serialize(result.Snapshot.Diagnostics).ShouldNotContain("todo-1");
+    }
+
+    [Fact]
+    public async Task GetResourceAsync_TreatsContentUrisAsInertData()
+    {
+        const string calendarHref = "https://cal.example/events/";
+        const string resourceHref = "https://cal.example/events/inert.ics";
+        const string content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260815T120000Z\r\nDTSTART:20260816T090000Z\r\nURL:https://attacker.invalid/url\r\nATTACH;VALUE=URI:https://attacker.invalid/attachment\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var client = Substitute.For<ICalendarClient>();
+        var sut = new CalendarService(
+            client,
+            Options.Create(new CalDavOptions { BaseUrl = "https://cal.example", CalendarHrefs = calendarHref }),
+            Substitute.For<ILogger<CalendarService>>());
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(
+            [Calendar(calendarHref, "Events", EntityKindSupport.NotAdvertised)]);
+        client.GetCalendarResourceAsync(resourceHref, Arg.Any<CancellationToken>()).Returns(
+            CalendarResourceRead.Success(resourceHref, "\"revision-1\"", System.Text.Encoding.UTF8.GetBytes(content)));
+
+        var result = await sut.GetResourceAsync(resourceHref, CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceReadCode.Success);
+        result.Snapshot!.CalendarProperties.Single(property => property.Name == "ATTACH").RawEncodedValue
+            .ShouldBe("https://attacker.invalid/attachment");
+        await client.Received(1).GetCalendarsAsync(Arg.Any<CancellationToken>());
+        await client.Received(1).GetCalendarResourceAsync(resourceHref, Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("https://other.example/events/a.ics", CalendarResourceReadCode.InvalidInput)]
+    [InlineData("https://user:secret@cal.example/events/a.ics", CalendarResourceReadCode.InvalidInput)]
+    [InlineData("https://cal.example/events/a.ics#fragment", CalendarResourceReadCode.InvalidInput)]
+    [InlineData("/events/a.ics", CalendarResourceReadCode.InvalidInput)]
+    [InlineData("https://cal.example/events%2Fprivate/a.ics", CalendarResourceReadCode.InvalidInput)]
+    [InlineData("https://cal.example/events%5cprivate/a.ics", CalendarResourceReadCode.InvalidInput)]
+    [InlineData("https://cal.example/private/a.ics", CalendarResourceReadCode.OutsideScope)]
+    public async Task GetResourceAsync_RejectsInvalidOrOutOfScopeHrefBeforeNetwork(
+        string href,
+        CalendarResourceReadCode expectedCode)
+    {
+        var client = Substitute.For<ICalendarClient>();
+        var options = Options.Create(new CalDavOptions
+        {
+            BaseUrl = "https://cal.example",
+            CalendarHrefs = "https://cal.example/events/"
+        });
+        var sut = new CalendarService(client, options, Substitute.For<ILogger<CalendarService>>());
+
+        var result = await sut.GetResourceAsync(href, CancellationToken.None);
+
+        result.Code.ShouldBe(expectedCode);
+        await client.DidNotReceive().GetCalendarsAsync(Arg.Any<CancellationToken>());
+        await client.DidNotReceive().GetCalendarResourceAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task ResolveDefaultCalendarAsync_UsesIndependentEventAndTodoDefaults()
     {
         var client = Substitute.For<ICalendarClient>();

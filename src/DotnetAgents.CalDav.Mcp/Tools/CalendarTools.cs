@@ -190,6 +190,17 @@ public sealed record CalendarDiagnosticResult(
             CalendarDiagnosticSeverity.Error => "error",
             _ => throw new ArgumentOutOfRangeException(nameof(diagnostic), diagnostic.Severity, null)
         });
+
+    internal static CalendarDiagnosticResult FromResourceDiagnostic(CalendarResourceDiagnostic diagnostic) => new(
+        diagnostic.Code,
+        diagnostic.Message,
+        diagnostic.Severity switch
+        {
+            CalendarResourceDiagnosticSeverity.Info => "info",
+            CalendarResourceDiagnosticSeverity.Warning => "warning",
+            CalendarResourceDiagnosticSeverity.Error => "error",
+            _ => throw new ArgumentOutOfRangeException(nameof(diagnostic), diagnostic.Severity, null)
+        });
 }
 
 /// <summary>List pagination deliberately has no snapshot continuity guarantee.</summary>

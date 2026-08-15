@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using ModelContextProtocol.Protocol;
 
 namespace DotnetAgents.CalDav.Mcp.Hosting;
 
@@ -20,7 +21,8 @@ public sealed class CalDavHostBuilder
     /// before calling <see cref="HostApplicationBuilder.Build"/>.
     /// </summary>
     /// <param name="exposeAdvancedTools">Whether to retain the existing legacy href-based tool surface.</param>
-    public static HostApplicationBuilder CreateBuilder(bool exposeAdvancedTools = false)
+    /// <param name="exposeExactTools">Whether to expose protected exact resource reads.</param>
+    public static HostApplicationBuilder CreateBuilder(bool exposeAdvancedTools = false, bool exposeExactTools = false)
     {
         var builder = Host.CreateApplicationBuilder();
 
@@ -29,6 +31,7 @@ public sealed class CalDavHostBuilder
         var mcpBuilder = builder.Services.AddMcpServer(options => options.ProtocolVersion = "2026-07-28")
             .WithStdioServerTransport()
             .WithTools<CalendarTools>()
+            .WithTools<CalendarResourceTools>()
             .WithTools<TaskListTools>()
             .WithTools<ChatTaskTools>();
 
@@ -37,6 +40,21 @@ public sealed class CalDavHostBuilder
             mcpBuilder
                 .WithTools<TaskQueryTools>()
                 .WithTools<TaskMutationTools>();
+        }
+
+        if (exposeExactTools)
+        {
+            mcpBuilder
+                .WithTools<ExactCalendarResourceTools>()
+                .WithListResourcesHandler((_, _) => ValueTask.FromResult(ExactCalendarResourceHandler.List()))
+                .WithReadResourceHandler(async (request, cancellationToken) =>
+                {
+                    var service = request.Services!.GetRequiredService<DotnetAgents.CalDav.Core.Abstractions.ICalendarService>();
+                    return await ExactCalendarResourceHandler.ReadAsync(
+                        request.Params!.Uri,
+                        service,
+                        cancellationToken).ConfigureAwait(false);
+                });
         }
 
         builder.Services.PostConfigure<ModelContextProtocol.Server.McpServerOptions>(ConfigureCalendarToolContract);
@@ -49,15 +67,26 @@ public sealed class CalDavHostBuilder
 
     private static void ConfigureCalendarToolContract(ModelContextProtocol.Server.McpServerOptions options)
     {
-        if (options.ToolCollection is null || !options.ToolCollection.TryGetPrimitive("calendars.list", out var tool))
+        if (options.ToolCollection is null)
             return;
 
         options.ToolCollection = new OrderedToolCollection(options.ToolCollection.ToArray());
-        tool.ProtocolTool.InputSchema = CalendarToolContract.GetInputSchema();
-        tool.ProtocolTool.OutputSchema = CalendarToolContract.GetOutputSchema();
+        ConfigureTool(options.ToolCollection, "calendars.list");
+        ConfigureTool(options.ToolCollection, "calendar_resources.get");
+        ConfigureTool(options.ToolCollection, "calendar_resources.exact_get");
+    }
+
+    private static void ConfigureTool(
+        ModelContextProtocol.Server.McpServerPrimitiveCollection<ModelContextProtocol.Server.McpServerTool> tools,
+        string toolName)
+    {
+        if (!tools.TryGetPrimitive(toolName, out var tool))
+            return;
+        tool.ProtocolTool.InputSchema = CalendarToolContract.GetInputSchema(toolName);
+        tool.ProtocolTool.OutputSchema = CalendarToolContract.GetOutputSchema(toolName);
         tool.ProtocolTool.Meta = new System.Text.Json.Nodes.JsonObject
         {
-            ["cache"] = CalendarToolContract.GetCacheMetadata()
+            ["cache"] = CalendarToolContract.GetCacheMetadata(toolName)
         };
     }
 }

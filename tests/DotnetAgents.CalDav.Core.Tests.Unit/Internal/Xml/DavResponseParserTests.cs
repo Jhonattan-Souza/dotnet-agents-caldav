@@ -8,6 +8,30 @@ namespace DotnetAgents.CalDav.Core.Tests.Unit.Internal.Xml;
 
 public class DavResponseParserTests
 {
+    [Fact]
+    public void ParseCalendars_RejectsDtdAndEntityDeclarations()
+    {
+        const string xml = "<!DOCTYPE multistatus [<!ENTITY xxe SYSTEM 'file:///etc/passwd'>]><multistatus xmlns='DAV:'>&xxe;</multistatus>";
+
+        Should.Throw<System.Xml.XmlException>(() => DavResponseParser.ParseCalendars(xml));
+    }
+
+    [Fact]
+    public void ParseCalendars_RejectsExcessiveElementDepth()
+    {
+        var xml = "<multistatus xmlns='DAV:'>" + string.Concat(Enumerable.Repeat("<x>", 65))
+            + string.Concat(Enumerable.Repeat("</x>", 65)) + "</multistatus>";
+
+        Should.Throw<System.Xml.XmlException>(() => DavResponseParser.ParseCalendars(xml));
+    }
+
+    [Fact]
+    public void ParseCalendars_RejectsExcessiveCharacterCount()
+    {
+        var xml = "<multistatus xmlns='DAV:'><x>" + new string('a', 4 * 1024 * 1024) + "</x></multistatus>";
+
+        Should.Throw<System.Xml.XmlException>(() => DavResponseParser.ParseCalendars(xml));
+    }
     private static readonly XNamespace Dav = "DAV:";
     private static readonly XNamespace CalDav = "urn:ietf:params:xml:ns:caldav";
     private static readonly XNamespace AppleCs = "http://apple.com/ns/ical/";
