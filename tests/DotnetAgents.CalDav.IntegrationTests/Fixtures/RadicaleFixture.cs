@@ -67,8 +67,10 @@ public sealed class RadicaleFixture : IAsyncLifetime
         var configBytes = Encoding.UTF8.GetBytes(configContent);
         var usersBytes = Encoding.UTF8.GetBytes(usersContent);
 
-        _container = new ContainerBuilder("tomsquest/docker-radicale:latest")
+        _container = new ContainerBuilder("ghcr.io/kozea/radicale@sha256:3a0080ea51ac69dcd74e345b9587dc14a8c8af0652046069005749f9a75c5c80")
             .WithPortBinding(RadicalePort, true)
+            .WithEnvironment("TZ", "UTC")
+            .WithCommand("--config", "/config/config", "--hosts", "0.0.0.0:5232,[::]:5232")
             .WithResourceMapping(configBytes, "/config/config", 0, 0,
                 UnixFileModes.UserRead | UnixFileModes.UserWrite |
                 UnixFileModes.GroupRead | UnixFileModes.OtherRead)
@@ -144,7 +146,7 @@ public sealed class RadicaleFixture : IAsyncLifetime
         type = owner_write
 
         [storage]
-        filesystem_folder = /data/collections
+        filesystem_folder = /var/lib/radicale/collections
 
         [web]
         type = internal
