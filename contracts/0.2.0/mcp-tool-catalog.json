@@ -13,7 +13,10 @@
     "textContent": "concise compatible summary",
     "expectedFailure": {
       "isError": true,
-      "schema": "#/$defs/errorOutcome"
+      "schemas": [
+        "#/$defs/errorOutcome",
+        "#/$defs/mutationErrorOutcome"
+      ]
     },
     "nonMutatingSuccesses": [
       "no_change",
@@ -28,7 +31,7 @@
           "additionalProperties": false,
           "required": [
             "name",
-            "arguments"
+            "_meta"
           ],
           "properties": {
             "name": {
@@ -49,23 +52,39 @@
             },
             "_meta": {
               "type": "object",
-              "additionalProperties": false,
               "required": [
                 "io.modelcontextprotocol/protocolVersion",
                 "io.modelcontextprotocol/clientCapabilities"
               ],
               "properties": {
+                "progressToken": {
+                  "type": "number"
+                },
                 "io.modelcontextprotocol/protocolVersion": {
                   "type": "string",
                   "minLength": 1
                 },
                 "io.modelcontextprotocol/clientCapabilities": {
                   "type": "object",
-                  "additionalProperties": {
-                    "$ref": "#/$defs/mrtrCapability"
+                  "additionalProperties": true,
+                  "properties": {
+                    "elicitation": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "form": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "url": {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      }
+                    }
                   }
                 },
-                "clientInfo": {
+                "io.modelcontextprotocol/clientInfo": {
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
@@ -80,10 +99,40 @@
                     "version": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "websiteUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "icons": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
                     }
                   }
+                },
+                "io.modelcontextprotocol/logLevel": {
+                  "enum": [
+                    "debug",
+                    "info",
+                    "notice",
+                    "warning",
+                    "error",
+                    "critical",
+                    "alert",
+                    "emergency"
+                  ]
                 }
-              }
+              },
+              "additionalProperties": true
             }
           }
         },
@@ -92,6 +141,7 @@
           "additionalProperties": false,
           "required": [
             "name",
+            "_meta",
             "arguments"
           ],
           "properties": {
@@ -113,23 +163,39 @@
             },
             "_meta": {
               "type": "object",
-              "additionalProperties": false,
               "required": [
                 "io.modelcontextprotocol/protocolVersion",
                 "io.modelcontextprotocol/clientCapabilities"
               ],
               "properties": {
+                "progressToken": {
+                  "type": "number"
+                },
                 "io.modelcontextprotocol/protocolVersion": {
                   "type": "string",
                   "minLength": 1
                 },
                 "io.modelcontextprotocol/clientCapabilities": {
                   "type": "object",
-                  "additionalProperties": {
-                    "$ref": "#/$defs/mrtrCapability"
+                  "additionalProperties": true,
+                  "properties": {
+                    "elicitation": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "form": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "url": {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      }
+                    }
                   }
                 },
-                "clientInfo": {
+                "io.modelcontextprotocol/clientInfo": {
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
@@ -144,10 +210,40 @@
                     "version": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "websiteUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "icons": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
                     }
                   }
+                },
+                "io.modelcontextprotocol/logLevel": {
+                  "enum": [
+                    "debug",
+                    "info",
+                    "notice",
+                    "warning",
+                    "error",
+                    "critical",
+                    "alert",
+                    "emergency"
+                  ]
                 }
-              }
+              },
+              "additionalProperties": true
             }
           }
         },
@@ -156,6 +252,7 @@
           "additionalProperties": false,
           "required": [
             "name",
+            "_meta",
             "arguments"
           ],
           "properties": {
@@ -177,23 +274,39 @@
             },
             "_meta": {
               "type": "object",
-              "additionalProperties": false,
               "required": [
                 "io.modelcontextprotocol/protocolVersion",
                 "io.modelcontextprotocol/clientCapabilities"
               ],
               "properties": {
+                "progressToken": {
+                  "type": "number"
+                },
                 "io.modelcontextprotocol/protocolVersion": {
                   "type": "string",
                   "minLength": 1
                 },
                 "io.modelcontextprotocol/clientCapabilities": {
                   "type": "object",
-                  "additionalProperties": {
-                    "$ref": "#/$defs/mrtrCapability"
+                  "additionalProperties": true,
+                  "properties": {
+                    "elicitation": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "form": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "url": {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      }
+                    }
                   }
                 },
-                "clientInfo": {
+                "io.modelcontextprotocol/clientInfo": {
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
@@ -208,10 +321,40 @@
                     "version": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "websiteUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "icons": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
                     }
                   }
+                },
+                "io.modelcontextprotocol/logLevel": {
+                  "enum": [
+                    "debug",
+                    "info",
+                    "notice",
+                    "warning",
+                    "error",
+                    "critical",
+                    "alert",
+                    "emergency"
+                  ]
                 }
-              }
+              },
+              "additionalProperties": true
             }
           }
         },
@@ -220,6 +363,7 @@
           "additionalProperties": false,
           "required": [
             "name",
+            "_meta",
             "arguments"
           ],
           "properties": {
@@ -241,23 +385,39 @@
             },
             "_meta": {
               "type": "object",
-              "additionalProperties": false,
               "required": [
                 "io.modelcontextprotocol/protocolVersion",
                 "io.modelcontextprotocol/clientCapabilities"
               ],
               "properties": {
+                "progressToken": {
+                  "type": "number"
+                },
                 "io.modelcontextprotocol/protocolVersion": {
                   "type": "string",
                   "minLength": 1
                 },
                 "io.modelcontextprotocol/clientCapabilities": {
                   "type": "object",
-                  "additionalProperties": {
-                    "$ref": "#/$defs/mrtrCapability"
+                  "additionalProperties": true,
+                  "properties": {
+                    "elicitation": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "form": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "url": {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      }
+                    }
                   }
                 },
-                "clientInfo": {
+                "io.modelcontextprotocol/clientInfo": {
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
@@ -272,10 +432,40 @@
                     "version": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "websiteUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "icons": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
                     }
                   }
+                },
+                "io.modelcontextprotocol/logLevel": {
+                  "enum": [
+                    "debug",
+                    "info",
+                    "notice",
+                    "warning",
+                    "error",
+                    "critical",
+                    "alert",
+                    "emergency"
+                  ]
                 }
-              }
+              },
+              "additionalProperties": true
             }
           }
         },
@@ -284,6 +474,7 @@
           "additionalProperties": false,
           "required": [
             "name",
+            "_meta",
             "arguments"
           ],
           "properties": {
@@ -305,23 +496,39 @@
             },
             "_meta": {
               "type": "object",
-              "additionalProperties": false,
               "required": [
                 "io.modelcontextprotocol/protocolVersion",
                 "io.modelcontextprotocol/clientCapabilities"
               ],
               "properties": {
+                "progressToken": {
+                  "type": "number"
+                },
                 "io.modelcontextprotocol/protocolVersion": {
                   "type": "string",
                   "minLength": 1
                 },
                 "io.modelcontextprotocol/clientCapabilities": {
                   "type": "object",
-                  "additionalProperties": {
-                    "$ref": "#/$defs/mrtrCapability"
+                  "additionalProperties": true,
+                  "properties": {
+                    "elicitation": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "form": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "url": {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      }
+                    }
                   }
                 },
-                "clientInfo": {
+                "io.modelcontextprotocol/clientInfo": {
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
@@ -336,10 +543,40 @@
                     "version": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "websiteUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "icons": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
                     }
                   }
+                },
+                "io.modelcontextprotocol/logLevel": {
+                  "enum": [
+                    "debug",
+                    "info",
+                    "notice",
+                    "warning",
+                    "error",
+                    "critical",
+                    "alert",
+                    "emergency"
+                  ]
                 }
-              }
+              },
+              "additionalProperties": true
             }
           }
         },
@@ -348,6 +585,7 @@
           "additionalProperties": false,
           "required": [
             "name",
+            "_meta",
             "arguments"
           ],
           "properties": {
@@ -369,23 +607,39 @@
             },
             "_meta": {
               "type": "object",
-              "additionalProperties": false,
               "required": [
                 "io.modelcontextprotocol/protocolVersion",
                 "io.modelcontextprotocol/clientCapabilities"
               ],
               "properties": {
+                "progressToken": {
+                  "type": "number"
+                },
                 "io.modelcontextprotocol/protocolVersion": {
                   "type": "string",
                   "minLength": 1
                 },
                 "io.modelcontextprotocol/clientCapabilities": {
                   "type": "object",
-                  "additionalProperties": {
-                    "$ref": "#/$defs/mrtrCapability"
+                  "additionalProperties": true,
+                  "properties": {
+                    "elicitation": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "form": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "url": {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      }
+                    }
                   }
                 },
-                "clientInfo": {
+                "io.modelcontextprotocol/clientInfo": {
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
@@ -400,10 +654,40 @@
                     "version": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "websiteUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "icons": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
                     }
                   }
+                },
+                "io.modelcontextprotocol/logLevel": {
+                  "enum": [
+                    "debug",
+                    "info",
+                    "notice",
+                    "warning",
+                    "error",
+                    "critical",
+                    "alert",
+                    "emergency"
+                  ]
                 }
-              }
+              },
+              "additionalProperties": true
             }
           }
         },
@@ -412,6 +696,7 @@
           "additionalProperties": false,
           "required": [
             "name",
+            "_meta",
             "arguments"
           ],
           "properties": {
@@ -433,23 +718,39 @@
             },
             "_meta": {
               "type": "object",
-              "additionalProperties": false,
               "required": [
                 "io.modelcontextprotocol/protocolVersion",
                 "io.modelcontextprotocol/clientCapabilities"
               ],
               "properties": {
+                "progressToken": {
+                  "type": "number"
+                },
                 "io.modelcontextprotocol/protocolVersion": {
                   "type": "string",
                   "minLength": 1
                 },
                 "io.modelcontextprotocol/clientCapabilities": {
                   "type": "object",
-                  "additionalProperties": {
-                    "$ref": "#/$defs/mrtrCapability"
+                  "additionalProperties": true,
+                  "properties": {
+                    "elicitation": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "form": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "url": {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      }
+                    }
                   }
                 },
-                "clientInfo": {
+                "io.modelcontextprotocol/clientInfo": {
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
@@ -464,10 +765,40 @@
                     "version": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "websiteUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "icons": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
                     }
                   }
+                },
+                "io.modelcontextprotocol/logLevel": {
+                  "enum": [
+                    "debug",
+                    "info",
+                    "notice",
+                    "warning",
+                    "error",
+                    "critical",
+                    "alert",
+                    "emergency"
+                  ]
                 }
-              }
+              },
+              "additionalProperties": true
             }
           }
         },
@@ -476,6 +807,7 @@
           "additionalProperties": false,
           "required": [
             "name",
+            "_meta",
             "arguments"
           ],
           "properties": {
@@ -497,23 +829,39 @@
             },
             "_meta": {
               "type": "object",
-              "additionalProperties": false,
               "required": [
                 "io.modelcontextprotocol/protocolVersion",
                 "io.modelcontextprotocol/clientCapabilities"
               ],
               "properties": {
+                "progressToken": {
+                  "type": "number"
+                },
                 "io.modelcontextprotocol/protocolVersion": {
                   "type": "string",
                   "minLength": 1
                 },
                 "io.modelcontextprotocol/clientCapabilities": {
                   "type": "object",
-                  "additionalProperties": {
-                    "$ref": "#/$defs/mrtrCapability"
+                  "additionalProperties": true,
+                  "properties": {
+                    "elicitation": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "form": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "url": {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      }
+                    }
                   }
                 },
-                "clientInfo": {
+                "io.modelcontextprotocol/clientInfo": {
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
@@ -528,10 +876,40 @@
                     "version": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "websiteUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "icons": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
                     }
                   }
+                },
+                "io.modelcontextprotocol/logLevel": {
+                  "enum": [
+                    "debug",
+                    "info",
+                    "notice",
+                    "warning",
+                    "error",
+                    "critical",
+                    "alert",
+                    "emergency"
+                  ]
                 }
-              }
+              },
+              "additionalProperties": true
             }
           }
         },
@@ -540,6 +918,7 @@
           "additionalProperties": false,
           "required": [
             "name",
+            "_meta",
             "arguments"
           ],
           "properties": {
@@ -561,23 +940,39 @@
             },
             "_meta": {
               "type": "object",
-              "additionalProperties": false,
               "required": [
                 "io.modelcontextprotocol/protocolVersion",
                 "io.modelcontextprotocol/clientCapabilities"
               ],
               "properties": {
+                "progressToken": {
+                  "type": "number"
+                },
                 "io.modelcontextprotocol/protocolVersion": {
                   "type": "string",
                   "minLength": 1
                 },
                 "io.modelcontextprotocol/clientCapabilities": {
                   "type": "object",
-                  "additionalProperties": {
-                    "$ref": "#/$defs/mrtrCapability"
+                  "additionalProperties": true,
+                  "properties": {
+                    "elicitation": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "form": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "url": {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      }
+                    }
                   }
                 },
-                "clientInfo": {
+                "io.modelcontextprotocol/clientInfo": {
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
@@ -592,10 +987,40 @@
                     "version": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "websiteUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "icons": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
                     }
                   }
+                },
+                "io.modelcontextprotocol/logLevel": {
+                  "enum": [
+                    "debug",
+                    "info",
+                    "notice",
+                    "warning",
+                    "error",
+                    "critical",
+                    "alert",
+                    "emergency"
+                  ]
                 }
-              }
+              },
+              "additionalProperties": true
             }
           }
         },
@@ -604,6 +1029,7 @@
           "additionalProperties": false,
           "required": [
             "name",
+            "_meta",
             "arguments"
           ],
           "properties": {
@@ -625,23 +1051,39 @@
             },
             "_meta": {
               "type": "object",
-              "additionalProperties": false,
               "required": [
                 "io.modelcontextprotocol/protocolVersion",
                 "io.modelcontextprotocol/clientCapabilities"
               ],
               "properties": {
+                "progressToken": {
+                  "type": "number"
+                },
                 "io.modelcontextprotocol/protocolVersion": {
                   "type": "string",
                   "minLength": 1
                 },
                 "io.modelcontextprotocol/clientCapabilities": {
                   "type": "object",
-                  "additionalProperties": {
-                    "$ref": "#/$defs/mrtrCapability"
+                  "additionalProperties": true,
+                  "properties": {
+                    "elicitation": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "form": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "url": {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      }
+                    }
                   }
                 },
-                "clientInfo": {
+                "io.modelcontextprotocol/clientInfo": {
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
@@ -656,10 +1098,40 @@
                     "version": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "websiteUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "icons": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
                     }
                   }
+                },
+                "io.modelcontextprotocol/logLevel": {
+                  "enum": [
+                    "debug",
+                    "info",
+                    "notice",
+                    "warning",
+                    "error",
+                    "critical",
+                    "alert",
+                    "emergency"
+                  ]
                 }
-              }
+              },
+              "additionalProperties": true
             }
           }
         },
@@ -668,6 +1140,7 @@
           "additionalProperties": false,
           "required": [
             "name",
+            "_meta",
             "arguments"
           ],
           "properties": {
@@ -689,23 +1162,39 @@
             },
             "_meta": {
               "type": "object",
-              "additionalProperties": false,
               "required": [
                 "io.modelcontextprotocol/protocolVersion",
                 "io.modelcontextprotocol/clientCapabilities"
               ],
               "properties": {
+                "progressToken": {
+                  "type": "number"
+                },
                 "io.modelcontextprotocol/protocolVersion": {
                   "type": "string",
                   "minLength": 1
                 },
                 "io.modelcontextprotocol/clientCapabilities": {
                   "type": "object",
-                  "additionalProperties": {
-                    "$ref": "#/$defs/mrtrCapability"
+                  "additionalProperties": true,
+                  "properties": {
+                    "elicitation": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "form": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "url": {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      }
+                    }
                   }
                 },
-                "clientInfo": {
+                "io.modelcontextprotocol/clientInfo": {
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
@@ -720,10 +1209,40 @@
                     "version": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "websiteUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "icons": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
                     }
                   }
+                },
+                "io.modelcontextprotocol/logLevel": {
+                  "enum": [
+                    "debug",
+                    "info",
+                    "notice",
+                    "warning",
+                    "error",
+                    "critical",
+                    "alert",
+                    "emergency"
+                  ]
                 }
-              }
+              },
+              "additionalProperties": true
             }
           }
         },
@@ -732,6 +1251,7 @@
           "additionalProperties": false,
           "required": [
             "name",
+            "_meta",
             "arguments"
           ],
           "properties": {
@@ -753,23 +1273,39 @@
             },
             "_meta": {
               "type": "object",
-              "additionalProperties": false,
               "required": [
                 "io.modelcontextprotocol/protocolVersion",
                 "io.modelcontextprotocol/clientCapabilities"
               ],
               "properties": {
+                "progressToken": {
+                  "type": "number"
+                },
                 "io.modelcontextprotocol/protocolVersion": {
                   "type": "string",
                   "minLength": 1
                 },
                 "io.modelcontextprotocol/clientCapabilities": {
                   "type": "object",
-                  "additionalProperties": {
-                    "$ref": "#/$defs/mrtrCapability"
+                  "additionalProperties": true,
+                  "properties": {
+                    "elicitation": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "form": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "url": {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      }
+                    }
                   }
                 },
-                "clientInfo": {
+                "io.modelcontextprotocol/clientInfo": {
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
@@ -784,10 +1320,40 @@
                     "version": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "websiteUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "icons": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
                     }
                   }
+                },
+                "io.modelcontextprotocol/logLevel": {
+                  "enum": [
+                    "debug",
+                    "info",
+                    "notice",
+                    "warning",
+                    "error",
+                    "critical",
+                    "alert",
+                    "emergency"
+                  ]
                 }
-              }
+              },
+              "additionalProperties": true
             }
           }
         },
@@ -796,6 +1362,7 @@
           "additionalProperties": false,
           "required": [
             "name",
+            "_meta",
             "arguments"
           ],
           "properties": {
@@ -817,23 +1384,39 @@
             },
             "_meta": {
               "type": "object",
-              "additionalProperties": false,
               "required": [
                 "io.modelcontextprotocol/protocolVersion",
                 "io.modelcontextprotocol/clientCapabilities"
               ],
               "properties": {
+                "progressToken": {
+                  "type": "number"
+                },
                 "io.modelcontextprotocol/protocolVersion": {
                   "type": "string",
                   "minLength": 1
                 },
                 "io.modelcontextprotocol/clientCapabilities": {
                   "type": "object",
-                  "additionalProperties": {
-                    "$ref": "#/$defs/mrtrCapability"
+                  "additionalProperties": true,
+                  "properties": {
+                    "elicitation": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "form": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "url": {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      }
+                    }
                   }
                 },
-                "clientInfo": {
+                "io.modelcontextprotocol/clientInfo": {
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
@@ -848,10 +1431,40 @@
                     "version": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "websiteUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "icons": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
                     }
                   }
+                },
+                "io.modelcontextprotocol/logLevel": {
+                  "enum": [
+                    "debug",
+                    "info",
+                    "notice",
+                    "warning",
+                    "error",
+                    "critical",
+                    "alert",
+                    "emergency"
+                  ]
                 }
-              }
+              },
+              "additionalProperties": true
             }
           }
         },
@@ -860,6 +1473,7 @@
           "additionalProperties": false,
           "required": [
             "name",
+            "_meta",
             "arguments"
           ],
           "properties": {
@@ -881,23 +1495,39 @@
             },
             "_meta": {
               "type": "object",
-              "additionalProperties": false,
               "required": [
                 "io.modelcontextprotocol/protocolVersion",
                 "io.modelcontextprotocol/clientCapabilities"
               ],
               "properties": {
+                "progressToken": {
+                  "type": "number"
+                },
                 "io.modelcontextprotocol/protocolVersion": {
                   "type": "string",
                   "minLength": 1
                 },
                 "io.modelcontextprotocol/clientCapabilities": {
                   "type": "object",
-                  "additionalProperties": {
-                    "$ref": "#/$defs/mrtrCapability"
+                  "additionalProperties": true,
+                  "properties": {
+                    "elicitation": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "form": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "url": {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      }
+                    }
                   }
                 },
-                "clientInfo": {
+                "io.modelcontextprotocol/clientInfo": {
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
@@ -912,10 +1542,40 @@
                     "version": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "websiteUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "icons": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
                     }
                   }
+                },
+                "io.modelcontextprotocol/logLevel": {
+                  "enum": [
+                    "debug",
+                    "info",
+                    "notice",
+                    "warning",
+                    "error",
+                    "critical",
+                    "alert",
+                    "emergency"
+                  ]
                 }
-              }
+              },
+              "additionalProperties": true
             }
           }
         },
@@ -924,6 +1584,7 @@
           "additionalProperties": false,
           "required": [
             "name",
+            "_meta",
             "arguments"
           ],
           "properties": {
@@ -945,23 +1606,39 @@
             },
             "_meta": {
               "type": "object",
-              "additionalProperties": false,
               "required": [
                 "io.modelcontextprotocol/protocolVersion",
                 "io.modelcontextprotocol/clientCapabilities"
               ],
               "properties": {
+                "progressToken": {
+                  "type": "number"
+                },
                 "io.modelcontextprotocol/protocolVersion": {
                   "type": "string",
                   "minLength": 1
                 },
                 "io.modelcontextprotocol/clientCapabilities": {
                   "type": "object",
-                  "additionalProperties": {
-                    "$ref": "#/$defs/mrtrCapability"
+                  "additionalProperties": true,
+                  "properties": {
+                    "elicitation": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "form": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "url": {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      }
+                    }
                   }
                 },
-                "clientInfo": {
+                "io.modelcontextprotocol/clientInfo": {
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
@@ -976,10 +1653,40 @@
                     "version": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "websiteUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "icons": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
                     }
                   }
+                },
+                "io.modelcontextprotocol/logLevel": {
+                  "enum": [
+                    "debug",
+                    "info",
+                    "notice",
+                    "warning",
+                    "error",
+                    "critical",
+                    "alert",
+                    "emergency"
+                  ]
                 }
-              }
+              },
+              "additionalProperties": true
             }
           }
         },
@@ -988,6 +1695,7 @@
           "additionalProperties": false,
           "required": [
             "name",
+            "_meta",
             "arguments"
           ],
           "properties": {
@@ -1009,23 +1717,39 @@
             },
             "_meta": {
               "type": "object",
-              "additionalProperties": false,
               "required": [
                 "io.modelcontextprotocol/protocolVersion",
                 "io.modelcontextprotocol/clientCapabilities"
               ],
               "properties": {
+                "progressToken": {
+                  "type": "number"
+                },
                 "io.modelcontextprotocol/protocolVersion": {
                   "type": "string",
                   "minLength": 1
                 },
                 "io.modelcontextprotocol/clientCapabilities": {
                   "type": "object",
-                  "additionalProperties": {
-                    "$ref": "#/$defs/mrtrCapability"
+                  "additionalProperties": true,
+                  "properties": {
+                    "elicitation": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "form": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "url": {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      }
+                    }
                   }
                 },
-                "clientInfo": {
+                "io.modelcontextprotocol/clientInfo": {
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
@@ -1040,10 +1764,40 @@
                     "version": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "websiteUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "icons": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
                     }
                   }
+                },
+                "io.modelcontextprotocol/logLevel": {
+                  "enum": [
+                    "debug",
+                    "info",
+                    "notice",
+                    "warning",
+                    "error",
+                    "critical",
+                    "alert",
+                    "emergency"
+                  ]
                 }
-              }
+              },
+              "additionalProperties": true
             }
           }
         },
@@ -1052,6 +1806,7 @@
           "additionalProperties": false,
           "required": [
             "name",
+            "_meta",
             "arguments"
           ],
           "properties": {
@@ -1073,23 +1828,39 @@
             },
             "_meta": {
               "type": "object",
-              "additionalProperties": false,
               "required": [
                 "io.modelcontextprotocol/protocolVersion",
                 "io.modelcontextprotocol/clientCapabilities"
               ],
               "properties": {
+                "progressToken": {
+                  "type": "number"
+                },
                 "io.modelcontextprotocol/protocolVersion": {
                   "type": "string",
                   "minLength": 1
                 },
                 "io.modelcontextprotocol/clientCapabilities": {
                   "type": "object",
-                  "additionalProperties": {
-                    "$ref": "#/$defs/mrtrCapability"
+                  "additionalProperties": true,
+                  "properties": {
+                    "elicitation": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "form": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "url": {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      }
+                    }
                   }
                 },
-                "clientInfo": {
+                "io.modelcontextprotocol/clientInfo": {
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
@@ -1104,10 +1875,40 @@
                     "version": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "websiteUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "icons": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
                     }
                   }
+                },
+                "io.modelcontextprotocol/logLevel": {
+                  "enum": [
+                    "debug",
+                    "info",
+                    "notice",
+                    "warning",
+                    "error",
+                    "critical",
+                    "alert",
+                    "emergency"
+                  ]
                 }
-              }
+              },
+              "additionalProperties": true
             }
           }
         },
@@ -1116,6 +1917,7 @@
           "additionalProperties": false,
           "required": [
             "name",
+            "_meta",
             "arguments"
           ],
           "properties": {
@@ -1137,23 +1939,39 @@
             },
             "_meta": {
               "type": "object",
-              "additionalProperties": false,
               "required": [
                 "io.modelcontextprotocol/protocolVersion",
                 "io.modelcontextprotocol/clientCapabilities"
               ],
               "properties": {
+                "progressToken": {
+                  "type": "number"
+                },
                 "io.modelcontextprotocol/protocolVersion": {
                   "type": "string",
                   "minLength": 1
                 },
                 "io.modelcontextprotocol/clientCapabilities": {
                   "type": "object",
-                  "additionalProperties": {
-                    "$ref": "#/$defs/mrtrCapability"
+                  "additionalProperties": true,
+                  "properties": {
+                    "elicitation": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "form": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "url": {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      }
+                    }
                   }
                 },
-                "clientInfo": {
+                "io.modelcontextprotocol/clientInfo": {
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
@@ -1168,10 +1986,40 @@
                     "version": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "websiteUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "icons": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
                     }
                   }
+                },
+                "io.modelcontextprotocol/logLevel": {
+                  "enum": [
+                    "debug",
+                    "info",
+                    "notice",
+                    "warning",
+                    "error",
+                    "critical",
+                    "alert",
+                    "emergency"
+                  ]
                 }
-              }
+              },
+              "additionalProperties": true
             }
           }
         },
@@ -1180,6 +2028,7 @@
           "additionalProperties": false,
           "required": [
             "name",
+            "_meta",
             "arguments"
           ],
           "properties": {
@@ -1201,23 +2050,39 @@
             },
             "_meta": {
               "type": "object",
-              "additionalProperties": false,
               "required": [
                 "io.modelcontextprotocol/protocolVersion",
                 "io.modelcontextprotocol/clientCapabilities"
               ],
               "properties": {
+                "progressToken": {
+                  "type": "number"
+                },
                 "io.modelcontextprotocol/protocolVersion": {
                   "type": "string",
                   "minLength": 1
                 },
                 "io.modelcontextprotocol/clientCapabilities": {
                   "type": "object",
-                  "additionalProperties": {
-                    "$ref": "#/$defs/mrtrCapability"
+                  "additionalProperties": true,
+                  "properties": {
+                    "elicitation": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "form": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "url": {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      }
+                    }
                   }
                 },
-                "clientInfo": {
+                "io.modelcontextprotocol/clientInfo": {
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
@@ -1232,10 +2097,40 @@
                     "version": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "websiteUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "icons": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
                     }
                   }
+                },
+                "io.modelcontextprotocol/logLevel": {
+                  "enum": [
+                    "debug",
+                    "info",
+                    "notice",
+                    "warning",
+                    "error",
+                    "critical",
+                    "alert",
+                    "emergency"
+                  ]
                 }
-              }
+              },
+              "additionalProperties": true
             }
           }
         },
@@ -1244,6 +2139,7 @@
           "additionalProperties": false,
           "required": [
             "name",
+            "_meta",
             "arguments"
           ],
           "properties": {
@@ -1265,23 +2161,39 @@
             },
             "_meta": {
               "type": "object",
-              "additionalProperties": false,
               "required": [
                 "io.modelcontextprotocol/protocolVersion",
                 "io.modelcontextprotocol/clientCapabilities"
               ],
               "properties": {
+                "progressToken": {
+                  "type": "number"
+                },
                 "io.modelcontextprotocol/protocolVersion": {
                   "type": "string",
                   "minLength": 1
                 },
                 "io.modelcontextprotocol/clientCapabilities": {
                   "type": "object",
-                  "additionalProperties": {
-                    "$ref": "#/$defs/mrtrCapability"
+                  "additionalProperties": true,
+                  "properties": {
+                    "elicitation": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "form": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "url": {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      }
+                    }
                   }
                 },
-                "clientInfo": {
+                "io.modelcontextprotocol/clientInfo": {
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
@@ -1296,10 +2208,40 @@
                     "version": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "websiteUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "icons": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
                     }
                   }
+                },
+                "io.modelcontextprotocol/logLevel": {
+                  "enum": [
+                    "debug",
+                    "info",
+                    "notice",
+                    "warning",
+                    "error",
+                    "critical",
+                    "alert",
+                    "emergency"
+                  ]
                 }
-              }
+              },
+              "additionalProperties": true
             }
           }
         }
@@ -4384,7 +5326,7 @@
       ],
       "properties": {
         "calendar": {
-          "$ref": "#/$defs/calendarReference"
+          "$ref": "#/$defs/calendarHref"
         },
         "displayName": {
           "type": [
@@ -4591,17 +5533,15 @@
       "additionalProperties": false,
       "required": [
         "calendar",
-        "revision",
+        "resourceRevision",
+        "authoritativePayload",
         "calendarProperties",
         "projection",
         "diagnostics"
       ],
       "properties": {
         "calendar": {
-          "$ref": "#/$defs/calendarReference"
-        },
-        "revision": {
-          "$ref": "#/$defs/revisionReference"
+          "$ref": "#/$defs/calendarHref"
         },
         "calendarProperties": {
           "type": "array",
@@ -4627,8 +5567,50 @@
           "items": {
             "$ref": "#/$defs/diagnostic"
           }
+        },
+        "resourceRevision": {
+          "$ref": "#/$defs/resourceRevision"
+        },
+        "authoritativePayload": {
+          "$ref": "#/$defs/authoritativePayload"
+        },
+        "entityRevision": {
+          "$ref": "#/$defs/revisionReference"
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "projection": {
+                "properties": {
+                  "kind": {
+                    "const": "opaque"
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              }
+            },
+            "required": [
+              "projection"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "entityRevision"
+              ]
+            }
+          },
+          "else": {
+            "required": [
+              "entityRevision"
+            ]
+          }
+        }
+      ]
     },
     "occurrenceSnapshot": {
       "type": "object",
@@ -4717,6 +5699,13 @@
                   "additionalProperties": {
                     "$ref": "#/$defs/mrtrRequestedProperty"
                   }
+                },
+                "required": {
+                  "type": "array",
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string"
+                  }
                 }
               }
             },
@@ -4728,39 +5717,42 @@
       }
     },
     "mrtrInputResponse": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "action"
-      ],
-      "properties": {
-        "action": {
-          "enum": [
-            "accept",
-            "decline",
-            "cancel"
-          ]
-        },
-        "content": {
-          "oneOf": [
-            {
-              "type": "string"
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "action",
+            "content"
+          ],
+          "properties": {
+            "action": {
+              "const": "accept"
             },
-            {
-              "type": "number"
-            },
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "array",
-              "items": {
-                "type": "string"
+            "content": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/mrtrResponseValue"
               }
             }
-          ]
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "action"
+          ],
+          "properties": {
+            "action": {
+              "enum": [
+                "decline",
+                "cancel"
+              ]
+            }
+          }
         }
-      }
+      ]
     },
     "calendarListOutcome": {
       "oneOf": [
@@ -4862,7 +5854,7 @@
       ],
       "properties": {
         "calendar": {
-          "$ref": "#/$defs/calendarReference"
+          "$ref": "#/$defs/calendarHref"
         },
         "displayName": {
           "type": [
@@ -5094,12 +6086,7 @@
       ],
       "properties": {
         "type": {
-          "enum": [
-            "string",
-            "boolean",
-            "integer",
-            "number"
-          ]
+          "const": "boolean"
         },
         "title": {
           "type": "string"
@@ -5107,16 +6094,8 @@
         "description": {
           "type": "string"
         },
-        "enum": {
-          "type": "array",
-          "items": {
-            "type": [
-              "string",
-              "boolean",
-              "integer",
-              "number"
-            ]
-          }
+        "default": {
+          "type": "boolean"
         }
       }
     },
@@ -5135,16 +6114,16 @@
           "type": "string"
         },
         {
-          "type": "boolean"
-        },
-        {
-          "type": "integer"
-        },
-        {
           "type": "number"
         },
         {
-          "type": "null"
+          "type": "boolean"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       ]
     },
@@ -5184,21 +6163,55 @@
           "type": "string",
           "minLength": 1
         }
-      },
-      "anyOf": [
-        {
-          "required": [
-            "sourceEnd",
-            "effectiveEnd"
-          ]
-        },
-        {
-          "required": [
-            "sourceDuration",
-            "effectiveDuration"
-          ]
+      }
+    },
+    "calendarHref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "href"
+      ],
+      "properties": {
+        "href": {
+          "type": "string",
+          "format": "uri"
         }
-      ]
+      }
+    },
+    "resourceRevision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "href",
+        "entityTag"
+      ],
+      "properties": {
+        "href": {
+          "type": "string",
+          "format": "uri"
+        },
+        "entityTag": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "authoritativePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "encoding",
+        "base64Utf8"
+      ],
+      "properties": {
+        "encoding": {
+          "const": "base64"
+        },
+        "base64Utf8": {
+          "type": "string",
+          "contentEncoding": "base64"
+        }
+      }
     }
   },
   "duplicatePropertyPolicy": {
