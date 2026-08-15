@@ -7,4 +7,7 @@ public interface ICalendarClient
 {
     /// <summary>Discovers every Calendar collection visible to the configured account.</summary>
     Task<IReadOnlyList<CalendarDescriptor>> GetCalendarsAsync(CancellationToken cancellationToken);
+
+    /// <summary>Reads one complete Calendar Object Resource revision by canonical absolute href.</summary>
+    Task<CalendarResourceRead> GetCalendarResourceAsync(string href, CancellationToken cancellationToken);
 }

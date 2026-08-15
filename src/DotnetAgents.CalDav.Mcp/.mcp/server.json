@@ -59,6 +59,11 @@
           "name": "CALDAV_EXPOSE_ADVANCED_TOOLS",
           "description": "Set to true to expose advanced href-based tools alongside the chat-safe surface (optional)",
           "isRequired": false
+        },
+        {
+          "name": "CALDAV_EXPOSE_EXACT_TOOLS",
+          "description": "Set to true to expose protected exact Calendar Object Resource tools (optional)",
+          "isRequired": false
         }
       ]
     }

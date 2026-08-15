@@ -12,4 +12,7 @@ public interface ICalendarService
     Task<CalendarSelectionResult> ResolveDefaultCalendarAsync(
         CalendarEntityKind entityKind,
         CancellationToken cancellationToken);
+
+    /// <summary>Reads one authoritative Calendar Object Resource snapshot.</summary>
+    Task<CalendarResourceRead> GetResourceAsync(string href, CancellationToken cancellationToken);
 }

@@ -10,15 +10,15 @@ internal static class CalendarToolContract
     private const string ResourceName = "DotnetAgents.CalDav.Mcp.CalendarToolCatalog.json";
     private static readonly JsonObject Catalog = LoadCatalog();
 
-    public static JsonElement GetInputSchema() => GetSchema("inputSchema");
+    public static JsonElement GetInputSchema(string toolName = "calendars.list") => GetSchema(toolName, "inputSchema");
 
-    public static JsonElement GetOutputSchema() => GetSchema("outputSchema");
+    public static JsonElement GetOutputSchema(string toolName = "calendars.list") => GetSchema(toolName, "outputSchema");
 
-    public static JsonObject GetCacheMetadata() => FindCalendarTool()["cache"]!.DeepClone().AsObject();
+    public static JsonObject GetCacheMetadata(string toolName = "calendars.list") => FindTool(toolName)["cache"]!.DeepClone().AsObject();
 
-    private static JsonElement GetSchema(string schemaProperty)
+    private static JsonElement GetSchema(string toolName, string schemaProperty)
     {
-        var reference = FindCalendarTool()[schemaProperty]!["$ref"]!.GetValue<string>();
+        var reference = FindTool(toolName)[schemaProperty]!["$ref"]!.GetValue<string>();
         var definitionName = reference.Split('/').Last();
         var schema = Catalog["$defs"]![definitionName]!.DeepClone().AsObject();
         var definitions = GetReferencedDefinitions(schema);
@@ -66,9 +66,9 @@ internal static class CalendarToolContract
         return direct.Concat(obj.Where(property => property.Key != "$ref").SelectMany(property => GetDefinitionReferences(property.Value)));
     }
 
-    private static JsonObject FindCalendarTool() => Catalog["tools"]!.AsArray()
+    private static JsonObject FindTool(string toolName) => Catalog["tools"]!.AsArray()
         .Select(item => item!.AsObject())
-        .Single(tool => tool["name"]!.GetValue<string>() == "calendars.list");
+        .Single(tool => tool["name"]!.GetValue<string>() == toolName);
 
     private static JsonObject LoadCatalog()
     {

@@ -195,10 +195,29 @@ public class CalDavHostBuilderTests
         registeredToolTypes.ShouldBe(
         [
             typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarTools),
+            typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarResourceTools),
             typeof(DotnetAgents.CalDav.Mcp.Tools.TaskListTools),
             typeof(DotnetAgents.CalDav.Mcp.Tools.ChatTaskTools)
         ]);
 
+    }
+
+    [Fact]
+    public void BuildHost_AdvertisesFrozenResourceOutcomeSchemaAndPrivateNoCacheHint()
+    {
+        var builder = CalDavHostBuilder.CreateBuilder();
+        builder.Services.ConfigureCalDav(ValidOptions);
+        using var host = builder.Build();
+
+        var options = host.Services.GetRequiredService<IOptions<ModelContextProtocol.Server.McpServerOptions>>().Value;
+        options.ToolCollection!.TryGetPrimitive("calendar_resources.get", out var tool).ShouldBeTrue();
+        var outputSchema = JsonNode.Parse(tool!.ProtocolTool.OutputSchema!.Value.GetRawText())!.AsObject();
+
+        outputSchema["oneOf"]!.AsArray().Count.ShouldBe(2);
+        outputSchema["$defs"]!.AsObject().ShouldContainKey("resourceSuccess");
+        outputSchema["$defs"]!.AsObject().ShouldContainKey("errorOutcome");
+        tool.ProtocolTool.Meta!["cache"]!["ttlMs"]!.GetValue<int>().ShouldBe(0);
+        tool.ProtocolTool.Meta!["cache"]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
     }
 
     [Fact]
@@ -238,6 +257,7 @@ public class CalDavHostBuilderTests
         tools.ShouldBe(
         [
             "calendars.list",
+            "calendar_resources.get",
             "list_task_lists",
             "show_tasks",
             "add_task",
@@ -274,6 +294,7 @@ public class CalDavHostBuilderTests
         tools.ShouldBe(
         [
             "calendars.list",
+            "calendar_resources.get",
             "list_task_lists",
             "show_tasks",
             "add_task",
@@ -287,6 +308,40 @@ public class CalDavHostBuilderTests
             "list_tasks",
             "update_task"
         ]);
+    }
+
+    [Fact]
+    public void CreateBuilder_ExactMode_RegistersExactToolIndependently()
+    {
+        var defaultBuilder = CalDavHostBuilder.CreateBuilder();
+        var exactBuilder = CalDavHostBuilder.CreateBuilder(exposeExactTools: true);
+
+        GetRegisteredMcpToolTypes(defaultBuilder.Services)
+            .ShouldNotContain(typeof(DotnetAgents.CalDav.Mcp.Tools.ExactCalendarResourceTools));
+        GetRegisteredMcpToolTypes(exactBuilder.Services)
+            .ShouldContain(typeof(DotnetAgents.CalDav.Mcp.Tools.ExactCalendarResourceTools));
+    }
+
+    [Fact]
+    public void BuildHost_ExactMode_AdvertisesFrozenClosedContractAndPrivateNoCacheHint()
+    {
+        var builder = CalDavHostBuilder.CreateBuilder(exposeExactTools: true);
+        builder.Services.ConfigureCalDav(ValidOptions);
+        using var host = builder.Build();
+        var options = host.Services.GetRequiredService<IOptions<ModelContextProtocol.Server.McpServerOptions>>().Value;
+        options.ToolCollection!.TryGetPrimitive("calendar_resources.exact_get", out var tool).ShouldBeTrue();
+
+        var inputSchema = JsonNode.Parse(tool!.ProtocolTool.InputSchema.GetRawText())!.AsObject();
+        var outputSchema = JsonNode.Parse(tool.ProtocolTool.OutputSchema!.Value.GetRawText())!.AsObject();
+        inputSchema["additionalProperties"]!.GetValue<bool>().ShouldBeFalse();
+        inputSchema["required"]!.AsArray().Select(item => item!.GetValue<string>()).ShouldBe(["href"]);
+        outputSchema["oneOf"]!.AsArray().Count.ShouldBe(2);
+        outputSchema["$defs"]!.AsObject().ShouldContainKey("exactGetSuccess");
+        outputSchema["$defs"]!.AsObject().ShouldContainKey("errorOutcome");
+        tool.ProtocolTool.Meta!["cache"]!["ttlMs"]!.GetValue<int>().ShouldBe(0);
+        tool.ProtocolTool.Meta!["cache"]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
+        tool.ProtocolTool.Annotations!.ReadOnlyHint.ShouldBe(true);
+        tool.ProtocolTool.Annotations.OpenWorldHint.ShouldBe(true);
     }
 
     private static IReadOnlyList<Type> GetRegisteredMcpToolTypes(IServiceCollection services)

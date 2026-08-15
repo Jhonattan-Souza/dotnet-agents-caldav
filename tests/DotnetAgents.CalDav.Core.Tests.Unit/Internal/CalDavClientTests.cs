@@ -15,6 +15,128 @@ namespace DotnetAgents.CalDav.Core.Tests.Unit.Internal;
 
 public class CalDavClientTests
 {
+    [Theory]
+    [InlineData(null)]
+    [InlineData("W/\"weak-revision\"")]
+    public async Task GetCalendarResourceAsync_ReturnsConcurrencyUnavailableForMissingOrWeakEntityTag(string? entityTag)
+    {
+        var handler = new StubHttpMessageHandler(_ =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n", Encoding.UTF8, "text/calendar")
+            };
+            if (entityTag is not null)
+                response.Headers.ETag = EntityTagHeaderValue.Parse(entityTag);
+            return response;
+        });
+        var sut = CreateSut(handler);
+
+        var result = await sut.GetCalendarResourceAsync(
+            "https://example.com/calendars/user/events/a.ics",
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceReadCode.ConcurrencyUnavailable);
+        result.EntityTag.ShouldBeNull();
+        result.AuthoritativeUtf8.IsEmpty.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task GetCalendarResourceAsync_RejectsInvalidUtf8WithoutReturningAResource()
+    {
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Headers = { ETag = new EntityTagHeaderValue("\"revision-1\"") },
+            Content = new ByteArrayContent([0x43, 0xC3, 0x28])
+        });
+        var sut = CreateSut(handler);
+
+        var result = await sut.GetCalendarResourceAsync(
+            "https://example.com/calendars/user/events/a.ics",
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceReadCode.UpstreamProtocolError);
+        result.EntityTag.ShouldBeNull();
+        result.AuthoritativeUtf8.IsEmpty.ShouldBeTrue();
+        result.Snapshot.ShouldBeNull();
+    }
+
+    [Theory]
+    [InlineData((4 * 1024 * 1024) - 1, CalendarResourceReadCode.Success)]
+    [InlineData(4 * 1024 * 1024, CalendarResourceReadCode.Success)]
+    [InlineData((4 * 1024 * 1024) + 1, CalendarResourceReadCode.PayloadTooLarge)]
+    public async Task GetCalendarResourceAsync_EnforcesDecompressedUtf8LimitPlusOne(
+        int byteCount,
+        CalendarResourceReadCode expectedCode)
+    {
+        var payload = Enumerable.Repeat((byte)'A', byteCount).ToArray();
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Headers = { ETag = new EntityTagHeaderValue("\"revision-1\"") },
+            Content = new ByteArrayContent(payload)
+        });
+        var sut = CreateSut(handler);
+
+        var result = await sut.GetCalendarResourceAsync(
+            "https://example.com/calendars/user/events/a.ics",
+            CancellationToken.None);
+
+        result.Code.ShouldBe(expectedCode);
+        if (expectedCode == CalendarResourceReadCode.Success)
+            result.AuthoritativeUtf8.Length.ShouldBe(byteCount);
+        else
+        {
+            result.AuthoritativeUtf8.IsEmpty.ShouldBeTrue();
+            result.Snapshot.ShouldBeNull();
+            result.ObservedByteCount.ShouldBe(byteCount);
+        }
+    }
+
+    [Fact]
+    public async Task GetCalendarResourceAsync_StopsUnknownLengthStreamAtLimitPlusOne()
+    {
+        var stream = new CountingNonSeekableStream(new byte[(4 * 1024 * 1024) + 128]);
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Headers = { ETag = new EntityTagHeaderValue("\"revision-1\"") },
+            Content = new StreamContent(stream)
+        });
+        var sut = CreateSut(handler);
+
+        var result = await sut.GetCalendarResourceAsync(
+            "https://example.com/calendars/user/events/a.ics",
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceReadCode.PayloadTooLarge);
+        result.ObservedByteCount.ShouldBe((4 * 1024 * 1024) + 1);
+        result.AuthoritativeUtf8.IsEmpty.ShouldBeTrue();
+        result.Snapshot.ShouldBeNull();
+        stream.BytesRead.ShouldBe((4 * 1024 * 1024) + 1);
+    }
+
+    [Theory]
+    [InlineData("https://other.example/calendars/user/events/a.ics")]
+    [InlineData("https://user:secret@example.com/calendars/user/events/a.ics")]
+    [InlineData("https://example.com/calendars/user/events/a.ics#fragment")]
+    [InlineData("https://example.com/calendars/user/events%2Fprivate/a.ics")]
+    [InlineData("https://example.com/calendars/user/events%5cprivate/a.ics")]
+    [InlineData("/calendars/user/events/a.ics")]
+    public async Task GetCalendarResourceAsync_RejectsUnsafeHrefWithoutSendingRequest(string href)
+    {
+        var requestCount = 0;
+        var handler = new StubHttpMessageHandler(_ =>
+        {
+            requestCount++;
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        });
+        var sut = CreateSut(handler);
+
+        var result = await sut.GetCalendarResourceAsync(href, CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceReadCode.InvalidInput);
+        requestCount.ShouldBe(0);
+    }
+
     #region CreateTaskAsync Tests
 
     [Fact]
@@ -1836,6 +1958,34 @@ public class CalDavClientTests
         {
             return Task.FromResult(handler(request));
         }
+    }
+
+    private sealed class CountingNonSeekableStream(byte[] content) : Stream
+    {
+        private readonly MemoryStream _inner = new(content);
+
+        public int BytesRead { get; private set; }
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            var read = _inner.Read(buffer, offset, count);
+            BytesRead += read;
+            return read;
+        }
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            var read = _inner.Read(buffer.Span);
+            BytesRead += read;
+            return ValueTask.FromResult(read);
+        }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     /// <summary>

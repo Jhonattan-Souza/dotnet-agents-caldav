@@ -57,6 +57,7 @@ public class McpMetadataTests
         envVarNames.ShouldContain("CALDAV_URL");
         envVarNames.ShouldContain("CALDAV_USERNAME");
         envVarNames.ShouldContain("CALDAV_PASSWORD");
+        envVarNames.ShouldContain("CALDAV_EXPOSE_EXACT_TOOLS");
     }
 
     [Fact]

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Buffers;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
@@ -19,6 +20,8 @@ namespace DotnetAgents.CalDav.Core.Internal;
 /// </summary>
 internal sealed class CalDavClient : ICalDavClient, ICalendarClient
 {
+    private const int MaximumCalendarResourceBytes = 4 * 1024 * 1024;
+    private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private static readonly ActivitySource ActivitySource = new("DotnetAgents.CalDav", "0.1.0");
     private static readonly HttpMethod PropFindMethod = new("PROPFIND");
     private static readonly HttpMethod ReportMethod = new("REPORT");
@@ -102,6 +105,108 @@ internal sealed class CalDavClient : ICalDavClient, ICalendarClient
             .OrderBy(calendar => calendar.Href, StringComparer.Ordinal)
             .ToArray();
     }
+
+    /// <inheritdoc />
+    public async Task<CalendarResourceRead> GetCalendarResourceAsync(string href, CancellationToken cancellationToken)
+    {
+        if (!TryValidateAbsoluteResourceHref(href, out var resourceUri))
+            return new CalendarResourceRead(CalendarResourceReadCode.InvalidInput);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, resourceUri);
+        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return new CalendarResourceRead(CalendarResourceReadCode.NotFound);
+
+        response.EnsureSuccessStatusCode();
+        var responseEntityTag = response.Headers.ETag;
+        if (responseEntityTag is null || responseEntityTag.IsWeak)
+            return new CalendarResourceRead(CalendarResourceReadCode.ConcurrencyUnavailable);
+
+        var entityTag = responseEntityTag.ToString();
+        var bounded = await ReadBoundedContentAsync(response.Content, cancellationToken);
+        if (bounded.Content is null)
+            return new CalendarResourceRead(CalendarResourceReadCode.PayloadTooLarge, ObservedByteCount: bounded.ObservedByteCount);
+        var content = bounded.Content;
+        try
+        {
+            _ = StrictUtf8.GetCharCount(content);
+        }
+        catch (DecoderFallbackException)
+        {
+            return new CalendarResourceRead(CalendarResourceReadCode.UpstreamProtocolError);
+        }
+
+        return CalendarResourceRead.Success(href, entityTag, content);
+    }
+
+    private bool TryValidateAbsoluteResourceHref(string href, out Uri resourceUri)
+    {
+        resourceUri = null!;
+        if (!Uri.TryCreate(href, UriKind.Absolute, out var candidate) || !IsSafeCanonicalUri(candidate, href))
+            return false;
+
+        var origin = new Uri(_options.Value.BaseUrl, UriKind.Absolute);
+        if (!HasSameOrigin(origin, candidate))
+            return false;
+
+        resourceUri = candidate;
+        return true;
+    }
+
+    private static bool IsSafeCanonicalUri(Uri candidate, string original) =>
+        (candidate.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+            || candidate.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        && string.IsNullOrEmpty(candidate.UserInfo)
+        && string.IsNullOrEmpty(candidate.Fragment)
+        && string.IsNullOrEmpty(candidate.Query)
+        && !candidate.AbsolutePath.Contains("%2F", StringComparison.OrdinalIgnoreCase)
+        && !candidate.AbsolutePath.Contains("%5C", StringComparison.OrdinalIgnoreCase)
+        && string.Equals(candidate.AbsoluteUri, original, StringComparison.Ordinal);
+
+    private static bool HasSameOrigin(Uri left, Uri right) =>
+        string.Equals(left.Scheme, right.Scheme, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(left.Host, right.Host, StringComparison.OrdinalIgnoreCase)
+        && left.Port == right.Port;
+
+    private static async Task<BoundedContentRead> ReadBoundedContentAsync(
+        HttpContent content,
+        CancellationToken cancellationToken)
+    {
+        if (content.Headers.ContentLength > MaximumCalendarResourceBytes)
+            return new BoundedContentRead(null, SaturateByteCount(content.Headers.ContentLength.Value));
+
+        await using var stream = await content.ReadAsStreamAsync(cancellationToken);
+        using var destination = new MemoryStream(
+            content.Headers.ContentLength is >= 0 and <= MaximumCalendarResourceBytes
+                ? (int)content.Headers.ContentLength.Value
+                : 0);
+        var buffer = ArrayPool<byte>.Shared.Rent(81920);
+        try
+        {
+            while (destination.Length <= MaximumCalendarResourceBytes)
+            {
+                var remainingPlusOne = (MaximumCalendarResourceBytes - (int)destination.Length) + 1;
+                var read = await stream.ReadAsync(
+                    buffer.AsMemory(0, Math.Min(buffer.Length, remainingPlusOne)),
+                    cancellationToken);
+                if (read == 0)
+                    return new BoundedContentRead(destination.ToArray(), (int)destination.Length);
+                if (destination.Length + read > MaximumCalendarResourceBytes)
+                    return new BoundedContentRead(null, (int)destination.Length + read);
+                await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+            }
+
+            return new BoundedContentRead(null, MaximumCalendarResourceBytes + 1);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    private static int SaturateByteCount(long byteCount) => byteCount > int.MaxValue ? int.MaxValue : (int)byteCount;
+
+    private sealed record BoundedContentRead(byte[]? Content, int ObservedByteCount);
 
     /// <inheritdoc/>
     public async Task<IReadOnlyList<TaskItem>> GetTasksAsync(string taskListHref, TaskQuery query, CancellationToken cancellationToken)

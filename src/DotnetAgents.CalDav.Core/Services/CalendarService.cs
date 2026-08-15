@@ -1,5 +1,6 @@
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Configuration;
+using DotnetAgents.CalDav.Core.Internal.Ical;
 using DotnetAgents.CalDav.Core.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -62,6 +63,93 @@ internal sealed class CalendarService : ICalendarService
             ? CalendarSelectionResult.Success(matchingScoped[0])
             : CalendarSelectionResult.Failure(CalendarSelectionCode.UnsupportedCapability, matchingScoped);
     }
+
+    /// <inheritdoc />
+    public async Task<CalendarResourceRead> GetResourceAsync(string href, CancellationToken cancellationToken)
+    {
+        if (!TryGetCanonicalResourceUri(href, out var resourceUri))
+            return new CalendarResourceRead(CalendarResourceReadCode.InvalidInput);
+
+        var configuredScope = ParseScope(_options.Value.CalendarHrefs);
+        if (configuredScope.Count > 0 && !configuredScope.Any(calendarHref => IsDirectResourceOf(resourceUri, calendarHref)))
+            return new CalendarResourceRead(CalendarResourceReadCode.OutsideScope);
+
+        var calendars = ApplyScope(await _calendarClient.GetCalendarsAsync(cancellationToken)).Items;
+        var calendar = calendars
+            .Where(candidate => IsDirectResourceOf(resourceUri, candidate.Href))
+            .OrderByDescending(candidate => candidate.Href.Length)
+            .FirstOrDefault();
+        if (calendar is null)
+            return new CalendarResourceRead(CalendarResourceReadCode.OutsideScope);
+
+        var read = await _calendarClient.GetCalendarResourceAsync(href, cancellationToken);
+        if (read.Code != CalendarResourceReadCode.Success)
+            return read;
+
+        var projection = CalendarResourceProjector.Project(read.AuthoritativeUtf8.Span);
+        var snapshot = new CalendarResourceSnapshot(
+            calendar.Href,
+            read.ResourceHref!,
+            read.EntityTag!,
+            read.AuthoritativeUtf8,
+            projection.Properties,
+            projection.Projection,
+            projection.Diagnostics);
+        return read with { Snapshot = snapshot };
+    }
+
+    private bool TryGetCanonicalResourceUri(string href, out Uri resourceUri)
+    {
+        resourceUri = null!;
+        if (!Uri.TryCreate(href, UriKind.Absolute, out var candidate)
+            || (!candidate.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+                && !candidate.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+            || !string.IsNullOrEmpty(candidate.UserInfo)
+            || !string.IsNullOrEmpty(candidate.Fragment)
+            || !string.IsNullOrEmpty(candidate.Query)
+            || HasEncodedPathSeparator(candidate)
+            || !string.Equals(candidate.AbsoluteUri, href, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var origin = new Uri(_options.Value.BaseUrl, UriKind.Absolute);
+        if (!HasSameOrigin(origin, candidate))
+            return false;
+
+        resourceUri = candidate;
+        return true;
+    }
+
+    private static bool IsDirectResourceOf(Uri resourceUri, string calendarHref)
+    {
+        if (!Uri.TryCreate(calendarHref, UriKind.Absolute, out var calendarUri)
+            || !HasSameOrigin(calendarUri, resourceUri)
+            || !string.IsNullOrEmpty(calendarUri.UserInfo)
+            || !string.IsNullOrEmpty(calendarUri.Fragment)
+            || !string.IsNullOrEmpty(calendarUri.Query))
+        {
+            return false;
+        }
+
+        var calendarPath = calendarUri.AbsolutePath.EndsWith('/')
+            ? calendarUri.AbsolutePath
+            : calendarUri.AbsolutePath + '/';
+        if (!resourceUri.AbsolutePath.StartsWith(calendarPath, StringComparison.Ordinal))
+            return false;
+
+        var relativePath = resourceUri.AbsolutePath[calendarPath.Length..];
+        return relativePath.Length > 0 && !relativePath.Contains('/');
+    }
+
+    private static bool HasSameOrigin(Uri left, Uri right) =>
+        string.Equals(left.Scheme, right.Scheme, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(left.Host, right.Host, StringComparison.OrdinalIgnoreCase)
+        && left.Port == right.Port;
+
+    private static bool HasEncodedPathSeparator(Uri uri) =>
+        uri.AbsolutePath.Contains("%2F", StringComparison.OrdinalIgnoreCase)
+        || uri.AbsolutePath.Contains("%5C", StringComparison.OrdinalIgnoreCase);
 
     private CalendarDiscoveryResult ApplyScope(IReadOnlyList<CalendarDescriptor> discovered)
     {

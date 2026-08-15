@@ -34,6 +34,7 @@ Add this MCP server to VS Code, Claude Desktop, Cursor, or any MCP client:
 | `CALDAV_PASSWORD` | Yes | Password for Basic auth |
 | `CALDAV_TASK_LISTS` | No | Comma-separated task list hrefs to expose; omit to auto-discover |
 | `CALDAV_EXPOSE_ADVANCED_TOOLS` | No | Set to `true` to expose href-based tools like `get_task`, `update_task`, `complete_task`, and `delete_task` |
+| `CALDAV_EXPOSE_EXACT_TOOLS` | No | Set to `true` to expose protected exact Calendar Object Resource tools |
 
 ## Available tools
 
@@ -53,7 +54,12 @@ Add this MCP server to VS Code, Claude Desktop, Cursor, or any MCP client:
 - `complete_task` — Mark a task complete.
 - `delete_task` — Delete a task.
 
-By default, the server exposes only the chat-safe tools: `list_task_lists`, `caldav_add_task`, `caldav_complete_task_by_summary`, and `caldav_delete_task_by_summary`. Set `CALDAV_EXPOSE_ADVANCED_TOOLS=true` to also expose the href-based advanced tools.
+### Calendar resource tools
+
+- `calendar_resources.get` — Read an authoritative semantic-or-opaque snapshot by confirmed absolute href.
+- `calendar_resources.exact_get` — Opt-in exact read through a protected MCP resource link; enable with `CALDAV_EXPOSE_EXACT_TOOLS=true`.
+
+By default, the server exposes `calendars.list` and `calendar_resources.get` alongside the legacy chat-safe tools retained during the staged migration. Set `CALDAV_EXPOSE_ADVANCED_TOOLS=true` to also expose the legacy href-based advanced tools.
 
 ## Supported servers
 

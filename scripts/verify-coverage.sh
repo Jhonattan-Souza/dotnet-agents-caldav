@@ -14,8 +14,8 @@ fi
 
 echo "Using coverage file: $COBERTURA_FILE"
 
-LINE_RATE=$(grep -oP 'line-rate="[^"]*"' "$COBERTURA_FILE" | head -1 | grep -oP '[\d.]+')
-BRANCH_RATE=$(grep -oP 'branch-rate="[^"]*"' "$COBERTURA_FILE" | head -1 | grep -oP '[\d.]+')
+LINE_RATE=$(grep -m1 -oP 'line-rate="[^"]*"' "$COBERTURA_FILE" | grep -oP '[\d.]+')
+BRANCH_RATE=$(grep -m1 -oP 'branch-rate="[^"]*"' "$COBERTURA_FILE" | grep -oP '[\d.]+')
 
 if [ -z "$LINE_RATE" ] || [ -z "$BRANCH_RATE" ]; then
   echo "::error::Failed to parse coverage rates from $COBERTURA_FILE"
