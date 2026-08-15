@@ -5315,6 +5315,22 @@
         }
       }
     },
+    "entityKinds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event",
+        "todo"
+      ],
+      "properties": {
+        "event": {
+          "$ref": "#/$defs/entityKindCapability"
+        },
+        "todo": {
+          "$ref": "#/$defs/entityKindCapability"
+        }
+      }
+    },
     "calendarDescriptor": {
       "type": "object",
       "additionalProperties": false,
@@ -5355,20 +5371,7 @@
           "pattern": "^#[0-9A-Fa-f]{6}$"
         },
         "entityKinds": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "event",
-            "todo"
-          ],
-          "properties": {
-            "event": {
-              "$ref": "#/$defs/entityKindCapability"
-            },
-            "todo": {
-              "$ref": "#/$defs/entityKindCapability"
-            }
-          }
+          "$ref": "#/$defs/entityKinds"
         }
       }
     },
@@ -5850,7 +5853,9 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "calendar"
+        "calendar",
+        "displayName",
+        "entityKinds"
       ],
       "properties": {
         "calendar": {
@@ -5861,6 +5866,9 @@
             "string",
             "null"
           ]
+        },
+        "entityKinds": {
+          "$ref": "#/$defs/entityKinds"
         }
       }
     },

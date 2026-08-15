@@ -308,7 +308,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/disc/cal-disc-002`.
-- Objective oracle: Given display names ` Work `, `work`, and absent on href `/third/`, when name selection uses `WORK`, then two authorized candidates cause `ambiguous`; `/third/` exposes `displayName=third` with `displayNameProvenance=derived-from-href`; unmatched name returns not_found.
+- Objective oracle: Given `/work/` named ` Work ` (Event advertised, To-do unknown), `/archive/` named `work` (Event not_advertised, To-do advertised), and nameless `/third/`, when selection uses `WORK`, then `ambiguous.authorizedCandidates` has exactly two entries, each with its displayName, canonical `calendar.href`, and both independently populated Entity Kind Support values; `/third/` exposes `displayName=third` with `displayNameProvenance=derived-from-href`; unmatched name returns not_found.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
