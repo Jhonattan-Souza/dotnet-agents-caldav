@@ -95,10 +95,8 @@ public sealed class ContractCatalogTests
         catalog["$defs"]!["exactMoveInput"]!["properties"]!.AsObject().ShouldNotContainKey("requestState");
         catalog["$defs"]!["exactGetSuccess"]!["properties"]!["resourceLink"]!["properties"]!["type"]!["const"]!
             .GetValue<string>().ShouldBe("resource_link");
-        var capabilities = catalog["$defs"]!["calendarDescriptor"]!["properties"]!["entityKinds"]!.AsObject();
-        capabilities["additionalProperties"]!.GetValue<bool>().ShouldBeFalse();
-        capabilities["required"]!.ToJsonString().ShouldContain("event");
-        capabilities["required"]!.ToJsonString().ShouldContain("todo");
+        catalog["$defs"]!["calendarDescriptor"]!["properties"]!["entityKinds"]!["$ref"]!.GetValue<string>()
+            .ShouldBe("#/$defs/entityKinds");
         var snapshot = catalog["$defs"]!["calendarSnapshot"]!["properties"]!.AsObject();
         snapshot.ShouldContainKey("calendarProperties");
         snapshot.ShouldContainKey("authoritativePayload");
@@ -108,6 +106,14 @@ public sealed class ContractCatalogTests
             .ShouldBe("#/$defs/calendarHref");
         catalog["$defs"]!["authorizedCandidate"]!["properties"]!["calendar"]!["$ref"]!.GetValue<string>()
             .ShouldBe("#/$defs/calendarHref");
+        var candidate = catalog["$defs"]!["authorizedCandidate"]!.AsObject();
+        candidate["required"]!.ToJsonString().ShouldContain("displayName");
+        candidate["required"]!.ToJsonString().ShouldContain("entityKinds");
+        candidate["properties"]!["entityKinds"]!["$ref"]!.GetValue<string>().ShouldBe("#/$defs/entityKinds");
+        var candidateKinds = catalog["$defs"]!["entityKinds"]!.AsObject();
+        candidateKinds["additionalProperties"]!.GetValue<bool>().ShouldBeFalse();
+        candidateKinds["required"]!.ToJsonString().ShouldContain("event");
+        candidateKinds["required"]!.ToJsonString().ShouldContain("todo");
         snapshot["entityRevision"]!.ShouldNotBeNull();
         catalog["$defs"]!["occurrenceTiming"]!["anyOf"].ShouldBeNull();
         catalog["$defs"]!["recurrenceSet"]!["properties"]!.AsObject().ShouldContainKey("overrides");
