@@ -41,6 +41,18 @@ public sealed class ContractCatalogTests
         var mrtr = catalog["mrtrWireContract"]!.AsObject();
         mrtr["toolsCallParams"]!["oneOf"]!.AsArray().Count.ShouldBe(20);
         mrtr["toolsCallParams"]!["oneOf"]![0]!["properties"]!["arguments"]!["$ref"].ShouldNotBeNull();
+        var callBranches = mrtr["toolsCallParams"]!["oneOf"]!.AsArray();
+        callBranches.All(branch => branch!["required"]!.ToJsonString().Contains("_meta", StringComparison.Ordinal)).ShouldBeTrue();
+        callBranches.Single(branch => branch!["properties"]!["name"]!["const"]!.GetValue<string>() == "calendars.list")!["required"]!
+            .ToJsonString().ShouldNotContain("arguments");
+        var metadata = callBranches[0]!["properties"]!["_meta"]!.AsObject();
+        metadata["properties"]!["progressToken"]!["type"]!.GetValue<string>().ShouldBe("number");
+        metadata["properties"]!["io.modelcontextprotocol/clientCapabilities"]!["properties"]!["elicitation"]!["properties"]!
+            .AsObject().ShouldContainKey("form");
+        metadata["properties"]!["io.modelcontextprotocol/clientInfo"]!["properties"]!.AsObject().ShouldContainKey("websiteUrl");
+        catalog["$defs"]!["mrtrRequestedProperty"]!["properties"]!["type"]!["const"]!.GetValue<string>().ShouldBe("boolean");
+        catalog["$defs"]!["mrtrResponseValue"]!["oneOf"]!.ToJsonString().ShouldContain("array");
+        catalog["$defs"]!["mrtrResponseValue"]!.ToJsonString().ShouldNotContain("\"null\"");
         mrtr["outerResult"]!["properties"]!["resultType"]!["const"]!.GetValue<string>()
             .ShouldBe("input_required");
         catalog["$defs"]!["eventCreateInput"]!["properties"]!["entity"]!["$ref"]!.GetValue<string>()
@@ -87,7 +99,17 @@ public sealed class ContractCatalogTests
         capabilities["additionalProperties"]!.GetValue<bool>().ShouldBeFalse();
         capabilities["required"]!.ToJsonString().ShouldContain("event");
         capabilities["required"]!.ToJsonString().ShouldContain("todo");
-        catalog["$defs"]!["calendarSnapshot"]!["properties"]!.AsObject().ShouldContainKey("calendarProperties");
+        var snapshot = catalog["$defs"]!["calendarSnapshot"]!["properties"]!.AsObject();
+        snapshot.ShouldContainKey("calendarProperties");
+        snapshot.ShouldContainKey("authoritativePayload");
+        snapshot.ShouldContainKey("resourceRevision");
+        snapshot["calendar"]!["$ref"]!.GetValue<string>().ShouldBe("#/$defs/calendarHref");
+        catalog["$defs"]!["calendarDescriptor"]!["properties"]!["calendar"]!["$ref"]!.GetValue<string>()
+            .ShouldBe("#/$defs/calendarHref");
+        catalog["$defs"]!["authorizedCandidate"]!["properties"]!["calendar"]!["$ref"]!.GetValue<string>()
+            .ShouldBe("#/$defs/calendarHref");
+        snapshot["entityRevision"]!.ShouldNotBeNull();
+        catalog["$defs"]!["occurrenceTiming"]!["anyOf"].ShouldBeNull();
         catalog["$defs"]!["recurrenceSet"]!["properties"]!.AsObject().ShouldContainKey("overrides");
         catalog["$defs"]!["structuredData"]!["properties"]!.AsObject().ShouldContainKey("attendees");
         catalog["$defs"]!["errorOutcome"]!["properties"]!["category"]!["enum"]!.AsArray().Count.ShouldBe(8);
@@ -120,6 +142,13 @@ public sealed class ContractCatalogTests
         var oracles = catalog.Split('\n').Where(line => line.StartsWith("- Objective oracle:", StringComparison.Ordinal)).ToArray();
         oracles.Length.ShouldBe(96);
         oracles.Distinct(StringComparer.Ordinal).Count().ShouldBe(96);
+        foreach (var row in catalog.Split("\n## CAL-", StringSplitOptions.None).Skip(1))
+        {
+            var statement = ExtractRowField(row, "Normative statement:");
+            var oracle = ExtractRowField(row, "Objective oracle:");
+            Normalize(statement).ShouldNotBe(Normalize(oracle));
+            Normalize(oracle).ShouldNotContain(Normalize(statement));
+        }
         rows.Length.ShouldBe(catalog.Split("Named scenario or fixture:", StringSplitOptions.None).Length - 1);
         foreach (var row in catalog.Split("\n## CAL-", StringSplitOptions.None).Skip(1))
         {
@@ -226,7 +255,8 @@ public sealed class ContractCatalogTests
         path.Contains(".inputRequests", StringComparison.Ordinal) ||
         path.Contains(".requestedSchema.properties.properties", StringComparison.Ordinal) ||
         path.Contains("io.modelcontextprotocol/clientCapabilities", StringComparison.Ordinal) ||
-        path.EndsWith(".content", StringComparison.Ordinal);
+        path.Contains(".properties._meta", StringComparison.Ordinal) ||
+        path.Contains("$defs.mrtrInputResponse.oneOf[0].properties.content", StringComparison.Ordinal);
 
     private static bool IsClosed(JsonObject obj) =>
         obj["additionalProperties"] is JsonValue value && value.TryGetValue<bool>(out var closed) && !closed;
@@ -268,4 +298,10 @@ public sealed class ContractCatalogTests
 
         return Path.Combine(directory!.FullName, "contracts", "0.2.0", fileName);
     }
+
+    private static string ExtractRowField(string row, string label) =>
+        row.Split('\n').Single(line => line.StartsWith($"- {label}", StringComparison.Ordinal))[($"- {label} ").Length..];
+
+    private static string Normalize(string value) =>
+        new(value.Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
 }

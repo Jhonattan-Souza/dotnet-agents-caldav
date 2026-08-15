@@ -1,21 +1,17 @@
 # Requirement-to-evidence catalog: unified Calendar contract 0.2.0
 This catalog freezes the 96 normative identifiers from issue #35. Each row is independently addressable, has a primary evidence layer, and remains a failing acceptance obligation until evidence is green. The current task establishes the catalog and the pinned Radicale harness; it does not represent task-specific 0.1.x fixtures as Calendar-contract evidence.
 ## Row schema
-
 Every requirement row contains the normative statement, source, interoperability profile and class, primary evidence layer, named scenario or fixture, objective oracle, implementation status, and evidence status. IDs are never renumbered or reused.
-
 ## CAL-BASE-001
-
 - Normative statement: RFC 5545, RFC 6868, verified errata, RFC 4791, RFC 4918/current HTTP conditionals, and RFC 8996 define the unconditional standards baseline. Valid registered and unknown Event data from applicable extensions, including RFCs 7986, 9073, 9074, and 9253, must be preserved. RFC 7529 and RFC 7809 behavior is capability-gated. Owner: [Establish the normative RFC baseline for Event support](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/issues/16).
 - Source and owning decision: issue #16, Establish the normative RFC baseline for Event support; normative sources are RFC 5545, RFC 6868, RFC 4791, RFC 4918, and RFC 8996.
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/base/cal-base-001`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-base-001.json` with its committed fixture input and require these exact observations: RFC 5545, RFC 6868, verified errata, RFC 4791, RFC 4918/current HTTP conditionals, and RFC 8996 define the unconditional standards baseline. Valid registered and unknown Event data from applicable extensions, including RFCs 7986, 9073, 9074, and 9253, must be preserved. RFC 7529 and RFC 7809 behavior is capability-gated. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given `base-001.ics` with `COLOR:#112233`, `IMAGE:https://e/x.png`, `CONFERENCE:https://e/c`, `LOCATION-TYPE:office`, and `X-KEEP:1`, when a SUMMARY patch is applied, then the five untouched original slices are byte-equal and RFC7529/RFC7809 calls return `unsupported_capability` before any PUT.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
-
 ## CAL-BASE-002
 
 - Normative statement: The first verified Interoperability Profile is Radicale 3.7.8. Standards define the product contract; Radicale accommodations are allowed only when standards-correct, semantically lossless, and explicitly classified. Other servers remain unverified profiles even when runtime capability negotiation allows them to operate. Owner: [Characterize the Radicale Event interoperability envelope](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/issues/17).
@@ -24,7 +20,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: Radicale 3.7.8 pinned profile; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: live pinned-Radicale integration.
 - Named scenario or fixture: `0.2.0/base/cal-base-002`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-base-002.json` with its committed fixture input and require these exact observations: The first verified Interoperability Profile is Radicale 3.7.8. Standards define the product contract; Radicale accommodations are allowed only when standards-correct, semantically lossless, and explicitly classified. Other servers remain unverified profiles even when runtime capability negotiation allows them to operate. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given Radicale 3.7.8 and an unverified server capability transcript, when the profile selector runs, then only `ghcr.io/kozea/radicale@sha256:3a008...5c80` is classified `pinned-profile-only`; the other transcript remains operable but carries no verified-profile claim.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -36,7 +32,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: Radicale 3.7.8 pinned profile; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: live pinned-Radicale integration.
 - Named scenario or fixture: `0.2.0/base/cal-base-003`.
-- Objective oracle: `RadicaleConformanceHarnessTests.Pinned_profile_records_the_runtime_and_selected_variant` asserts the exact index digest, amd64 and arm64 manifest digests, Radicale 3.7.8, CPython 3.14.7, vobject 0.9.9, selected `TZ`, and selected strict-precondition flag.
+- Objective oracle: Given each matrix container variant, when runtime evidence is emitted, then its TRX JSON contains the exact index digest, selected amd64/arm64 manifest, Radicale `3.7.8`, Python `3.14.7`, vobject `0.9.9`, requested TZ, and observed strict-precondition result.
 - Implementation status: implemented and passing: the digest-pinned fixture records the selected manifest from the running container architecture and observes the configured strict-precondition behavior.
 - Evidence status: passing locally in baseline, strict-preconditions, and alternate-time-zone; required in the same three CI matrix variants.
 
@@ -48,7 +44,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/base/cal-base-004`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-base-004.json` with its committed fixture input and require these exact observations: Use Ical.Net 5.2.3 as a typed parser/editor and bounded recurrence helper only. It must not be the lossless persistence authority, own `THISANDFUTURE` semantics, resolve unproven resource-local time zones, or regenerate unrelated content. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given a resource with `RANGE=THISANDFUTURE`, a local VTIMEZONE, and an unrelated X property, when Ical.Net projection is requested, then the service either preserves the raw slices or returns `recurrence_unevaluable`; it never PUTs regenerated Ical.Net text.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -60,7 +56,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/model/cal-model-001`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-model-001.json` with its committed fixture input and require these exact observations: A Calendar Object Resource is the immutable persistence and concurrency aggregate for exactly one logical Calendar Entity, and Calendar Entity is a closed union of Event or To-do. There is no generic calendar item abstraction. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given one VEVENT resource, one VTODO resource, and a resource containing both masters, when projected, then the first two have `projection.kind` exactly `event`/`todo` and the mixed resource has `projection.kind=opaque`, one diagnostic, and no entity revision.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -72,7 +68,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/model/cal-model-002`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-model-002.json` with its committed fixture input and require these exact observations: A projectable resource contains exactly one master Event or To-do, zero or more same-kind and same-UID Recurrence Overrides, and supporting calendar data such as VTIMEZONE. A resource outside that invariant is an Opaque Calendar Object Resource with diagnostics and no semantic mutation surface. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given a resource with one UID `u1` master plus same-UID override and VTIMEZONE, and a second fixture with two masters, when read, then the first exposes one projectable aggregate and the second is opaque with a cardinality diagnostic and zero semantic mutation routes.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -84,7 +80,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/model/cal-model-003`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-model-003.json` with its committed fixture input and require these exact observations: Keep identity layers distinct: Calendar and resource use canonical absolute hrefs; Entity UID is durable logical identity; Entity Tag identifies one resource revision; Recurrence Identity is the original recurrence value; names, summaries, current starts, and positions are never identities. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given href `https://cal.example/a.ics`, UID `u-1`, ETag `"e1"`, recurrence ID `2026-01-02T09:00:00`, duplicate name `Work`, and summary `Work`, when serialized, then href/UID/ETag/recurrence ID occupy distinct fields and name/summary never appear in mutation references.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -96,7 +92,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/model/cal-model-004`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-model-004.json` with its committed fixture input and require these exact observations: Event and To-do share only Entity UID and Entity Kind. Entity Kind is immutable; conversion requires an explicit delete and create. Only To-do has To-do Completion. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given a VEVENT and VTODO with UID `same`, when a conversion patch is attempted, then it returns `entity_kind_mismatch` with `category=selection`, `phase=completeResourceSemantics`, `mutationState=not_attempted`, and zero writes.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -108,7 +104,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/model/cal-model-005`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-model-005.json` with its committed fixture input and require these exact observations: Recurrence Set retains one typed RRULE at most for semantic creation or mutation, all RDATE and EXDATE values, and complete Recurrence Overrides. Standards-valid multiple RRULE resources are preserved but are Unevaluable Recurrence Sets. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given DTSTART, two RRULE lines, two RDATEs, one EXDATE, and two overrides, when read, then `rrules` has count 2, `evaluationState=unevaluable`, every RDATE/EXDATE/override remains ordered, and recurrence expansion returns `recurrence_unevaluable`.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -120,7 +116,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/model/cal-model-006`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-model-006.json` with its committed fixture input and require these exact observations: An Occurrence is a derived, immutable, read-only projection. It is never persisted or written back as a Calendar Object Resource. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given a recurring event expanded into three occurrences, when occurrence query returns them, then every item has `timing` and recurrence identity, none has a resource href/ETag mutation target, and a direct write attempt is rejected as `invalid_input`.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -132,7 +128,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/model/cal-model-007`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-model-007.json` with its committed fixture input and require these exact observations: Public contracts expose domain values, not Ical.Net, WebDAV, or HTTP implementation types. The Calendar Service replaces TaskItem, TaskList, ITaskService, and task-specific aliases in `0.2.0`. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given the public service and MCP schemas, when reflection and JSON serialization run, then no public member type namespace starts `Ical.Net`, `System.Net.Http`, or `System.Xml`, and the old `TaskItem`, `TaskList`, and `ITaskService` names are absent.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -144,7 +140,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/resource/cal-resource-001`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-resource-001.json` with its committed fixture input and require these exact observations: A direct read returns a Calendar Object Resource Snapshot whose canonical href, exact strong Entity Tag, server-returned UTF-8 bytes, lossless content-line representation, diagnostics, and typed projection all describe one revision. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given GET bytes containing folded `DESCRIPTION`, blank lines, and strong ETag `"r1"`, when `calendar_resources.get` reads it, then base64 payload decodes byte-equal, content-line hierarchy preserves fold/slices, and href/ETag/projection/diagnostics identify that same revision.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -156,7 +152,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/resource/cal-resource-002`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-resource-002.json` with its committed fixture input and require these exact observations: The lossless representation retains component hierarchy, every property and parameter occurrence, value type, raw encoded value, and original slices for untouched content. Semantic mutation replaces only addressed semantics and replays untouched slices. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given nested VCALENDAR/VTIMEZONE/STANDARD/VEVENT properties with repeated parameters and an unknown component, when SUMMARY changes, then component path, parameter occurrence order, raw encoded values, and untouched original slices are byte-equal.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -168,7 +164,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/resource/cal-resource-003`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-resource-003.json` with its committed fixture input and require these exact observations: Query and expanded projections are read-only. Semantic Patch requires the complete direct snapshot as its base; Exact Replacement, Move, and Delete require a Calendar Object Resource Revision Reference containing href, Entity UID, Entity Kind, and Entity Tag. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given a query snapshot with href `https://cal.example/a.ics`, UID `u1`, kind event, ETag `"r1"`, when patch/exact-replace/move/delete are invoked, then patch rejects anything but the complete snapshot and each existing-resource operation sends exactly one `If-Match: "r1"`.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -180,7 +176,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/resource/cal-resource-004`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-resource-004.json` with its committed fixture input and require these exact observations: Semantic Create builds one complete typed Event or To-do resource and generates UID when omitted. Exact Create accepts one complete UTF-8 resource with an existing UID. Both validate one master, consistent kind and UID, valid supporting components, and destination support before writing. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given semantic create payloads for UID `u1`, VTODO, and VEVENT plus exact UTF-8 resource UID `u2`, when destination capability lacks the requested kind or contains multiple masters, then creation returns `unsupported_capability` or `invalid_calendar_data` with zero PUT; valid create sends `If-None-Match: *`.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -192,7 +188,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/resource/cal-resource-005`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-resource-005.json` with its committed fixture input and require these exact observations: Create uses `If-None-Match: *`. Generated identity may retry for collision within the execution bound; caller-supplied UID or href returns conflict without changing identity. Success returns a verified server-read snapshot. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given generated UID `g1` colliding once and caller UID `u1` colliding once, when create runs, then generated create retries once with a new UID and `If-None-Match:*`; caller create returns `conflict` with UID `u1`, zero identity changes, and verified GET snapshot on success.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -204,7 +200,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/resource/cal-resource-006`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-resource-006.json` with its committed fixture input and require these exact observations: Semantic Patch uses explicit preserve, set, and clear for scalars and add/remove or destructive replace-all for collections. Removal must be unambiguous. Apply and validate the whole intent in memory; any failure prevents all writes. A semantically unchanged result returns `no_change` without a new revision. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given SUMMARY and `CATEGORIES:A,B`, when preserve/set/clear/add-remove/replaceAll variants run, then each expected field count matches; an invalid removal aborts the whole intent with zero PUT; unchanged intent returns `no_change` and replaceAll yields MRTR.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -216,7 +212,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/resource/cal-resource-007`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-resource-007.json` with its committed fixture input and require these exact observations: Semantic Patch may change only modeled first-class or structured registered data. It preserves unknown, unsupported, and unaddressed content. Exact Replacement is the only way to intentionally change the complete payload or unsupported properties. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given modeled SUMMARY plus unmodeled `X-KEEP:1` and unsupported `VLOCATION`, when semantic patch changes SUMMARY, then only SUMMARY bytes differ; X/VLOCATION slices are byte-equal; attempting either unmodeled change is rejected before PUT.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -228,7 +224,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/resource/cal-resource-008`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-resource-008.json` with its committed fixture input and require these exact observations: Exact Replacement requires the current strong Entity Tag, the same Entity UID and Entity Kind, one valid master, consistent overrides, and a complete payload. Send the caller's UTF-8 payload without Ical.Net regeneration. Only a byte-identical payload skips the write. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given current UID `u1`, kind event, ETag `"r1"`, and exact replacement bytes, when bytes are identical then PUT count is zero; when changed valid bytes retain UID/kind/one master, outbound bytes and If-Match are exact; invalid UID/kind/master returns invalid_calendar_data.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -240,7 +236,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/resource/cal-resource-009`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-resource-009.json` with its committed fixture input and require these exact observations: Every update, replacement, move, and delete uses the exact current strong Entity Tag. Missing or weak tags return `concurrency_unavailable`; stale tags return `conflict`, cause no write, and include the current authorized snapshot when available. There is no unsafe bypass or automatic merge. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given missing, weak, current, and stale ETags, when update runs, then missing/weak return `concurrency_unavailable`; stale 412 returns `conflict` plus authorized current snapshot and zero writes; current sends one exact strong If-Match without merge.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -252,7 +248,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/resource/cal-resource-010`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-resource-010.json` with its committed fixture input and require these exact observations: Never blindly retry a possibly dispatched mutation. Reconcile with reads and classify the result as committed, unchanged, or indeterminate. Every mutation reports Mutation State as `not_attempted`, `not_committed`, `committed`, or `unknown`. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given a dispatch timeout with subsequent GET states committed, unchanged, and differing, when reconciliation runs, then no retry PUT occurs and results report respectively committed, not_committed, and unknown mutationState.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -264,7 +260,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/resource/cal-resource-011`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-resource-011.json` with its committed fixture input and require these exact observations: Create, patch, replacement, and move succeed only after validating the observed post-write snapshot; delete succeeds only after verified absence. Semantic difference after commit is `fidelity_failure`; missing verification is `committed_but_unverified`; committed semantics without a usable strong tag is `committed_but_concurrency_unavailable`. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given post-write GET fixtures with matching semantics, missing GET, changed unknown slice, missing strong tag, and delete absence, when verification runs, then outputs are success, committed_but_unverified, fidelity_failure, committed_but_concurrency_unavailable, and deletion receipt only after 404 absence.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -276,7 +272,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/resource/cal-resource-012`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-resource-012.json` with its committed fixture input and require these exact observations: Move is atomic, preserves UID and complete semantics, refuses overwrite, verifies destination and source absence, and never degrades to copy-then-delete. Normal Move selects a destination Calendar; explicit href and same-Calendar rename are exact/raw only. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given source `s.ics`, destination `d.ics`, collision and successful MOVE responses, when move runs, then collision never overwrites; success preserves UID/bytes, verifies destination GET and source 404, and request trace contains MOVE rather than copy PUT plus DELETE.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -288,7 +284,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/resource/cal-resource-013`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-resource-013.json` with its committed fixture input and require these exact observations: Delete removes the entire resource, not one recurrence. It requires a revision reference, MRTR confirmation, and verified absence, and returns a deletion receipt with href, Entity UID, Entity Kind, and consumed Entity Tag. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given full resource `series.ics`, revision `"r1"`, MRTR accept/decline states, when delete runs, then decline makes zero DELETE; accept deletes the full href with exact If-Match, verifies absence, and returns href/UID/kind/consumed tag receipt.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -300,7 +296,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/disc/cal-disc-001`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-disc-001.json` with its committed fixture input and require these exact observations: Discover every Calendar in configured scope and expose Event and To-do Entity Kind Support independently as `advertised`, `not_advertised`, or `unknown`, including raw component evidence and provenance. Advertisement is policy evidence, not enforcement or inventory. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given calendars `/a/`, `/b/`, `/c/` advertising VEVENT, VTODO, and neither, when discovered, then each output has independent event/todo advertised/not_advertised/unknown state and raw `supported-calendar-component-set` evidence.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -312,7 +308,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/disc/cal-disc-002`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-disc-002.json` with its committed fixture input and require these exact observations: Calendar canonical href is identity. Calendar Name comes from displayname or a provenance-marked href derivation. Name selection uses trimmed case-insensitive exact equality: zero is `not_found`, one resolves, and multiple are `ambiguous` with authorized candidates. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given display names ` Work `, `work`, and absent on href `/third/`, when name selection uses `WORK`, then two authorized candidates cause `ambiguous`; `/third/` exposes `displayName=third` with `displayNameProvenance=derived-from-href`; unmatched name returns not_found.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -324,7 +320,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/disc/cal-disc-003`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-disc-003.json` with its committed fixture input and require these exact observations: Configured Calendar Scope is an exact canonical-href allowlist. Without an allowlist, all discovered Calendars are in scope. Missing or duplicate configured hrefs are explicit diagnostics. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given allowlist `[/a/,/missing/,/a/]` and discovery `/a/,/b/`, when scope applies, then output contains only `/a/` and diagnostics include one missing and one duplicate canonical href; empty allowlist returns both.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -336,7 +332,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/disc/cal-disc-004`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-disc-004.json` with its committed fixture input and require these exact observations: Event and To-do defaults are independent and apply only when no selection is supplied. Explicit missing, ambiguous, out-of-scope, or incompatible selection never falls back. Searching all Calendars is always explicit. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given event default `/events/`, todo default `/todos/`, and explicit missing/out-of-scope selections, when create resolves destinations, then omitted event/todo select their own defaults and every explicit bad selection returns typed failure without fallback.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -348,7 +344,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/disc/cal-disc-005`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-disc-005.json` with its committed fixture input and require these exact observations: Semantic entity queries declare one or both Entity Kinds and explicit Calendar Scope, return persisted snapshots, classify actual resource content locally, and report opaque resources and diagnostics separately. Occurrence queries are a separate read-only contract. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given event, todo, mixed, and malformed resources in selected scope, when entity query asks `[event,todo]`, then persisted snapshots are canonical-href ordered, malformed result is opaque with diagnostics, and occurrence endpoint is not invoked.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -360,7 +356,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/disc/cal-disc-006`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-disc-006.json` with its committed fixture input and require these exact observations: Server REPORT filters reduce candidates only. Retrieve complete unexpanded resources, perform final semantic filtering and recurrence evaluation locally, and never mutate an expanded or projected REPORT representation. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given REPORT returns an expanded occurrence missing an unknown line and full GET returns the resource, when query filters recurrence, then filtering uses GET bytes locally, output preserves the unknown line, and no mutation targets the REPORT body.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -372,7 +368,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/dav/cal-dav-001`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-dav-001.json` with its committed fixture input and require these exact observations: The writable capability floor is CalDAV/WebDAV discovery and collection PROPFIND, minimal component-filter calendar-query, calendar-multiget, full-resource GET, strong Entity Tags, and conditional create/update/delete. Missing mandatory REPORT support has no Depth-1 crawl fallback. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given servers missing REPORT, missing ETag, and complete DAV capability, when writable discovery runs, then missing mandatory capability returns unsupported_capability with no Depth-1 crawl; complete trace includes PROPFIND, calendar-query, multiget/GET and conditionals.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -384,7 +380,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/dav/cal-dav-002`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-dav-002.json` with its committed fixture input and require these exact observations: Use configured Calendar Home when provided and validated; otherwise follow well-known, principal, and calendar-home-set discovery. Validate transport and discovery initially, verify query capabilities on first use, and never probe with artificial writes. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given validated configured home `/cal/` and a no-home response chain well-known→principal→calendar-home-set, when discovery runs, then configured home skips chain; fallback emits exact three request order and makes zero artificial writes.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -396,7 +392,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/dav/cal-dav-003`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-dav-003.json` with its committed fixture input and require these exact observations: CalDAV Capability is scoped by origin, Calendar, resource, and operation and classified as advertised, verified, or unavailable. Process-lifetime capability state may be explicitly rediscovered and is invalidated by origin, credentials, or relevant configuration changes, not by transient failures or conflicts. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given same origin/calendar with advertised then verified capability, credential change, and 503, when cache is observed, then credential change invalidates/re-discovers; 503 retains state; keys differ by origin/calendar/resource/operation.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -408,7 +404,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/dav/cal-dav-004`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-dav-004.json` with its committed fixture input and require these exact observations: Explicit omission of an Entity Kind blocks create and move for that kind but does not hide existing resources. Unknown support permits reads and blocks writes until verified. Actual content always controls resource classification. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given calendar explicitly omitting VTODO, unknown VEVENT support, and existing VTODO resource, when operations run, then VTODO create/move returns unsupported_capability, unknown VEVENT write blocks, and existing VTODO GET remains visible/classified.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -420,7 +416,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/dav/cal-dav-005`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-dav-005.json` with its committed fixture input and require these exact observations: Only semantics-preserving fallbacks are permitted. Optional filters may fall back to a minimal kind query plus local filtering. Missing safe preconditions degrades the affected mutation capability to read-only. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given optional filter REPORT failure and absent precondition support, when query/mutation run, then query uses minimal kind REPORT plus local filter preserving result set; mutation is read-only unsupported_capability with zero PUT.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -432,7 +428,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/dav/cal-dav-006`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-dav-006.json` with its committed fixture input and require these exact observations: Reads may follow bounded same-origin 301, 302, 307, and 308 redirects while preserving method and body. Mutations may follow only same-origin 307 and 308. Cross-origin redirects require operator authorization and never receive credentials implicitly; 303 is rejected. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given same-origin 301/302/307/308, same-origin mutation 307/308, a 303, and cross-origin redirects, when requests run, then reads preserve method/body only on same-origin 301/302/307/308; mutations follow only 307/308; 303 is rejected; cross-origin sends no implicit credentials unless authorized.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -444,7 +440,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/event/cal-event-001`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-event-001.json` with its committed fixture input and require these exact observations: Event content has three layers: First-class Calendar Fields for common typed semantics, Structured Calendar Data for complete rich or repeatable standard values, and preserved Calendar Properties for everything valid not modeled. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given VEVENT fields split into first-class SUMMARY/DTSTART, structured ATTENDEE, and unknown `X-KEEP`, when SUMMARY patches, then first-class JSON changes once, attendee parameter/order stays equal, and X-KEEP original slice is byte-equal.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -456,7 +452,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/event/cal-event-002`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-event-002.json` with its committed fixture input and require these exact observations: First-class Event fields include optional SUMMARY, DESCRIPTION, start/end/duration, LOCATION, GEO, STATUS, TRANSP, CLASS, PRIORITY, CATEGORIES, URL, and Recurrence Set. Empty TEXT, clear, and omission remain distinct and no trimming is performed. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given DTSTART/DTEND/DURATION, SUMMARY, DESCRIPTION, LOCATION, GEO, STATUS, TRANSP, CLASS, PRIORITY, CATEGORIES and URL with empty, clear, omitted, and padded values, when create/patch validates, then empty/clear/omit produce distinct fields, padded input is not trimmed, and invalid end/duration combinations make zero PUT.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -468,7 +464,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/event/cal-event-003`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-event-003.json` with its committed fixture input and require these exact observations: Semantic Create generates UID, DTSTAMP, CREATED, and LAST-MODIFIED when omitted. Semantic Patch updates LAST-MODIFIED and preserves UID, DTSTAMP, CREATED, and SEQUENCE; scheduling is excluded, so it never auto-increments SEQUENCE. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given create without UID/DTSTAMP/CREATED/LAST-MODIFIED and a patch changing SUMMARY, when persisted, then create generates the four missing values; patch preserves UID, DTSTAMP, CREATED and SEQUENCE byte-for-byte and updates LAST-MODIFIED only.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -480,7 +476,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/event/cal-event-004`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-event-004.json` with its committed fixture input and require these exact observations: Structured data includes Organizer, Attendees, Participants, Alarms, Attachments, Comments, Contacts, Resources, Related-To, Request-Status, Styled Descriptions, Images, Conferences, Links, Concepts, Structured Data, VLOCATION, and VRESOURCE while retaining full parameters, multiplicity, meaningful ordering, and unmodeled properties. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given Organizer, Attendees, Participants, Alarms, Attachments, Comments, Contacts, Resources, Related-To, Request-Status, Styled Descriptions, Images, Conferences, Links, Concepts, Structured Data, VLOCATION, VRESOURCE and an X property each with repeated parameters, when unrelated patch runs, then every named collection preserves multiplicity/order/parameters and X slice is byte-equal.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -492,7 +488,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/event/cal-event-005`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-event-005.json` with its committed fixture input and require these exact observations: Organizer, Attendee, Participant, and related values are Storage-only Scheduling Data. Preserve every syntactically valid CAL-ADDRESS and explicit parameter; never restrict to mailto, deduplicate, infer identity, send invitations, access scheduling inboxes/outboxes, or propagate changes. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given ORGANIZER/ATTENDEE `mailto:` and non-mailto CAL-ADDRESS values, when stored or edited, then URI values and parameters round-trip unchanged, mail send/iTIP/network dispatch count is zero, and no mailto-only validation rejects the non-mailto address.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -504,7 +500,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/event/cal-event-006`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-event-006.json` with its committed fixture input and require these exact observations: Calendar Alarms and URI-bearing values are inert. Store typed supported forms only when explicitly requested, preserve existing valid forms on unrelated patches, never dereference or execute them, and require Exact Replacement for unsupported value grammars or inline binary typed mutation. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given DISPLAY/AUDIO/EMAIL alarms plus attachment/image/conference URI values, when semantic operation attempts unsupported alarm action or URI mutation, then read keeps them inert with zero dereference/execution and unsupported semantic change directs caller to exact replacement without PUT.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -516,7 +512,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/event/cal-event-007`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-event-007.json` with its committed fixture input and require these exact observations: Open enumerations preserve recognized cases or `Other(rawValue)`. Semantic Patch may create recognized values and valid `X-` extensions; changing other unknown values requires Exact Replacement. Derived Calendar Data is read-only to Semantic Patch. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given recognized STATUS, unrecognized registered enum, `X-FOO`, and derived occurrence fields, when read/patch runs, then recognized enum is typed, unrecognized/Other/X values preserve raw slice and require exact replacement to change, and derived occurrence field write returns invalid_input.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -528,7 +524,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/time/cal-time-001`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-time-001.json` with its committed fixture input and require these exact observations: Temporal Value is a closed union of date-only, floating date-time, UTC date-time, or named-time-zone date-time retaining the original TZID. These forms are never collapsed or silently converted. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given date `2026-02-03`, floating `2026-02-03T09:10:11`, UTC `2026-02-03T09:10:11Z`, and zoned `America/New_York`, when serialize/parse runs, then each kind/value/timeZoneId round-trips exactly with no offset normalization.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -540,7 +536,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/time/cal-time-002`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-time-002.json` with its committed fixture input and require these exact observations: Instant comparison and expansion for floating or date-only values requires a request-supplied IANA Temporal Evaluation Context. No Calendar, server, process, or host time zone is an implicit fallback. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given date/floating values and explicit request IANA `America/Sao_Paulo`, when comparison/expansion runs, then that context is recorded and used; omitted context returns temporal_unresolved and never reads calendar/server/process/host timezone.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -552,7 +548,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/time/cal-time-003`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-time-003.json` with its committed fixture input and require these exact observations: Resolve named zones first from one unambiguous resource-local VTIMEZONE and then from a recognized IANA TZID. Unknown or conflicting definitions are unresolved: preserve and diagnose them, permit unrelated semantic changes, and reject evaluation-dependent operations. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given unambiguous resource VTIMEZONE, recognized IANA, unknown `Mars/Base`, and conflicting VTIMEZONE, when evaluated, then unambiguous resource zone wins then IANA; unknown/conflicting values stay preserved with diagnostics, unrelated patch succeeds, and evaluation returns temporal_unresolved.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -564,7 +560,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/time/cal-time-004`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-time-004.json` with its committed fixture input and require these exact observations: Preserve RFC effective-span rules: DTEND and DURATION are exclusive; date-only Event without end lasts one day; date-time Event without end has zero duration; To-do DUE and DURATION are exclusive; and DURATION requires DTSTART. Rescheduling start preserves Effective Temporal Span unless end, due, or duration is explicitly changed. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given exclusive spans, default one-day event, zero-duration event, VTODO DUE/DURATION variants, missing DTSTART duration, and reschedule, when validated, then bounds/default/span/reschedule results match fixture; zero-duration has effective start=end and appears only when its start lies in range; invalid due/duration/start combinations reject before PUT.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -576,7 +572,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/recur/cal-recur-001`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-recur-001.json` with its committed fixture input and require these exact observations: Occurrence queries use non-empty half-open UTC windows `[from,to)`. Positive-duration Occurrences match overlap; zero-duration Occurrences match start. Moved Occurrences match effective span. Non-recurring To-dos follow their available DTSTART/DUE/DURATION semantics and may yield no temporal Occurrence. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given non-empty UTC `[from,to)` window, overlap event, zero-duration event, moved override, and nonrecurring VTODO fixtures with and without DTSTART/DUE/DURATION, when query runs, then overlap appears, zero-duration matches iff start is in range, moved effective span is returned, todo output follows timing presence, and invalid/empty window rejects.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -588,7 +584,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/recur/cal-recur-002`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-recur-002.json` with its committed fixture input and require these exact observations: Build recurrence from DTSTART, one typed RRULE at most, every RDATE, every EXDATE, and overrides; collapse duplicate identities and apply EXDATE precedence. Standards-valid RDATE PERIOD is preserved, but Radicale 3.7.8 writes reject it before PUT. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given DTSTART, one RRULE, all RDATE/EXDATE/overrides including duplicate identities and RDATE PERIOD, when expansion/create run, then duplicates collapse, EXDATE wins, overrides remain, and PERIOD is preserved but rejected before Radicale PUT.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -600,7 +596,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/recur/cal-recur-003`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-recur-003.json` with its committed fixture input and require these exact observations: Recurrence Identity retains the master's temporal family and original value when an Occurrence moves. Individual overrides win over the nearest applicable Range Override; a later Range Override supersedes an earlier range for later identities. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given master recurrence ID `2026-01-02T09:00:00`, moved override, and overlapping RANGE overrides, when expanded, then returned identity remains original master family/value and later applicable range override wins deterministically.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -612,7 +608,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/recur/cal-recur-004`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-recur-004.json` with its committed fixture input and require these exact observations: `one-occurrence` creates or updates one complete individual override. `this-and-future` applies addressed changes from its anchor while preserving relative exception offsets and unrelated properties. `entire-set` applies addressed changes to master and all overrides with the same preservation rules. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given master plus overrides, when one-occurrence, this-and-future, and entire-set patches run, then one creates one complete override, future changes anchor forward while preserving unrelated exceptions, and entire-set changes all same-UID overrides only.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -624,7 +620,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/recur/cal-recur-005`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-recur-005.json` with its committed fixture input and require these exact observations: Recurrence-definition changes require every exclusion and override to remain valid or be explicitly reconciled in the same intent. Temporal-family changes for recurring entities require Exact Replacement. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given recurrence-definition edit leaving an orphan EXDATE/override and a temporal-family change, when patch runs, then orphan case returns invalid_calendar_data unless reconciliation is supplied and family change requires exact replacement with zero semantic PUT.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -636,7 +632,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/recur/cal-recur-006`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-recur-006.json` with its committed fixture input and require these exact observations: Exclusion adds EXDATE; cancellation creates or updates a cancelled complete override; restoration removes only the exclusion or cancelled status. EXDATE suppresses but does not delete an override. Adding a nonexistent identity is an explicit RDATE operation. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given series with EXDATE, cancelled override, and missing identity, when exclude/cancel/restore/add run, then exclude adds EXDATE without deletion, cancellation creates cancelled override, restorations remove only named construct, and add creates explicit RDATE.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -648,7 +644,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/recur/cal-recur-007`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-recur-007.json` with its committed fixture input and require these exact observations: To-do Completion may target a non-recurring To-do or exactly one identified recurring Occurrence and records its completion instant. `this-and-future` and `entire-set` are invalid completion scopes. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given recurring VTODO identities and completion instant `2026-01-03T10:00:00Z`, when one occurrence completes, then only that override has COMPLETED/STATUS, future identities remain incomplete, and future/entire-set completion scopes return invalid_input.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -660,7 +656,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-001`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-mcp-001.json` with its committed fixture input and require these exact observations: Target stable MCP 2026-07-28 or a later stable revision verified at implementation time. Implement `server/discover`; requests are stateless and self-contained. Do not implement removed initialization/session lifecycle, sticky sessions, legacy SSE resumability, or proprietary protocol substitutes. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given `server/discover` request and removed initialization/SSE methods, when dispatched, then discover returns negotiated 2026-07-28 metadata, each request is stateless, and removed methods return protocol unknown-method without session state.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -672,7 +668,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-002`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-mcp-002.json` with its committed fixture input and require these exact observations: The default semantic catalog, in deterministic discovery/read/write order, is: `calendars.list`, `calendar_entities.query`, `calendar_occurrences.query`, `calendar_resources.get`, `events.create`, `events.patch`, `todos.create`, `todos.patch`, `todos.complete`, `calendar_occurrences.add`, `calendar_occurrences.exclude`, `calendar_occurrences.restore_exclusion`, `calendar_occurrences.cancel`, `calendar_occurrences.restore_cancellation`, `calendar_resources.move`, and `calendar_resources.delete`. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given tools/list, when catalog is emitted, then the 16 default names exactly equal the committed discovery order and no exact tool appears without opt-in.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -684,7 +680,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-003`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-mcp-003.json` with its committed fixture input and require these exact observations: The opt-in exact catalog is: `calendar_resources.exact_get`, `calendar_resources.exact_create`, `calendar_resources.exact_replace`, and `calendar_resources.exact_move`. Configuration exposure and authorization are independent gates. Normal results do not embed raw iCalendar; exact reads use protected MCP resource links and do not enumerate the CalDAV store through resources/list. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given exact tools disabled/enabled, authorized/unauthorized callers, and a raw resource read, when discovery/call runs, then disabled list omits four names; enabled unauthorized exact call is denied, authorized read returns readable protected resource_link, normal result contains no raw iCalendar, and resources/list is empty.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -696,7 +692,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-004`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-mcp-004.json` with its committed fixture input and require these exact observations: Inputs are strict JSON Schema 2020-12 closed camel-case objects with discriminated unions, explicit required values, and duplicate/unknown-property rejection. Every tool defines and validates an output schema and returns authoritative `structuredContent` plus concise compatible text content. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given valid closed input, unknown sibling, duplicate JSON member, and typed failure, when tool validates, then valid authoritative structuredContent matches output schema with concise compatible text content, invalid values return schema-valid invalid_input, and parser rejects duplicate/unknown members.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -708,7 +704,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-005`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-mcp-005.json` with its committed fixture input and require these exact observations: Calendar Reference selects exactly one Calendar by exact name or canonical href. Calendar Scope is `default`, `selected`, or explicit `all`. Existing-resource mutations always require a Calendar Object Resource Revision Reference and refetch the current revision before writing. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given by-name, by-href, default, selected, all scope, and a stale revision, when resolution/mutation runs, then exactly one selector branch is accepted, all is explicit, and mutation refetches expected href/UID/kind/ETag before write.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -720,7 +716,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-006`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-mcp-006.json` with its committed fixture input and require these exact observations: Scalar patch operations are set or clear; collection operations are addRemove or replaceAll. `replaceAll` and recurrence-definition changes are high-impact. A patch explicitly targets master or original Recurrence Identity plus Mutation Scope. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given scalar set/clear and categories addRemove/replaceAll with master/identity scopes, when patch runs, then modeled operation reaches only its target, replaceAll produces MRTR, and wrong scope/identity returns invalid_input with zero PUT.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -732,7 +728,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-007`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-mcp-007.json` with its committed fixture input and require these exact observations: Query envelopes contain items, diagnostics, pagination mode, and nextCursor. Entity ordering is canonical Calendar href then resource href; Occurrence ordering is effective start, Calendar href, Entity UID, then Recurrence Identity. Pagination is explicitly non-snapshot. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given paginated entity and occurrence results with equal timestamps, when query continues, then envelope has items/diagnostics/non_snapshot/nextCursor, entities sort calendar href/resource href and occurrences sort effective start/href/UID/identity.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -744,7 +740,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-008`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-mcp-008.json` with its committed fixture input and require these exact observations: Expected input, domain, capability, limit, concurrency, CalDAV, and execution failures remain schema-valid tool results with MCP `isError: true`. Invalid protocol messages, unknown methods/tools, incompatible versions, and MCP transport authentication/authorization use their protocol or HTTP channels. `no_change` and declined confirmation use `isError: false`. Unexpected failures are sanitized. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given invalid input, conflict, limit, upstream, unexpected exception, no_change, declined confirmation, invalid JSON, unknown method/tool, incompatible version and transport auth failure, when requests run, then tool failures use isError/schema-valid safe fields, protocol cases use their protocol/HTTP channel, and no_change/decline use isError false.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -756,7 +752,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-009`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-mcp-009.json` with its committed fixture input and require these exact observations: Use MCP Multi Round-Trip Requests for delete, all exact writes, replaceAll, recurrence-definition changes, this-and-future, entire-set, and any future multi-resource mutation. Preview resolves and validates read-only, binds opaque ten-minute requestState to normalized arguments, principal or credential context, fixed identity/destination, and Entity Tag, and revalidates everything before write. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given delete, exact write, replaceAll, recurrence change and future scope previews, when confirmation is requested/retried, then outer input_required has requestState/inputRequests, retry binds normalized args/principal/identity/ETag for ten minutes and revalidates before one write.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -768,7 +764,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-010`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-mcp-010.json` with its committed fixture input and require these exact observations: Decline, expiry, mismatch, changed arguments, changed revision, or invalid ownership writes nothing. A direct explicit Semantic Create, scalar single-resource patch, one-Occurrence mutation, or To-do Completion may execute without extra server-requested confirmation. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given declined, expired, mismatched arguments, changed ETag, invalid owner, direct semantic create, scalar single-resource patch, one-occurrence mutation and todo completion, when called, then first five have no write and typed confirmation failure; the four direct operations execute without MRTR.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -780,7 +776,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-011`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-mcp-011.json` with its committed fixture input and require these exact observations: One tool call mutates at most one Calendar Object Resource. There is no bulk mutation, implicit repeated mutation, search-then-destroy tool, or generic action/update tool. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given a request attempting two hrefs or a search-then-delete payload, when schema/service validates, then it returns invalid_input before network and trace has at most one resource mutation.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -792,7 +788,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-012`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-mcp-012.json` with its committed fixture input and require these exact observations: Cache hints are private: Calendars list uses 30 seconds, semantic queries 5 seconds, and direct snapshots and mutations 0. The fixed catalog does not advertise list-change notifications. Tool annotations describe behavior but never enforce policy. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given list/query/snapshot/mutation calls, when annotations/cache inspected, then ttlMs are 30000/5000/0, cacheScope private, no list-change notification is advertised, and all annotation booleans match external CalDAV behavior.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -804,7 +800,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-013`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-mcp-013.json` with its committed fixture input and require these exact observations: The initial server does not implement the MCP Tasks extension because operations are synchronous, bounded, and cancellable. Any future durable operation must use the officially negotiated extension rather than an application-specific async protocol. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given tasks extension method and bounded synchronous tool call, when dispatched, then task extension is absent/unknown-method and call completes/cancels within its budget without application-specific async result.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -816,7 +812,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/bound/cal-bound-001`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-bound-001.json` with its committed fixture input and require these exact observations: Validate in this order: transport authorization; admission and payload size; schema/lexical/discriminator; origin/scope/caller authorization; selection/discovery/capability; target revision; complete resource semantics; MRTR; execution; post-write verification or reconciliation. Return the earliest failing phase and at most 32 safe violations ordered by JSON Pointer. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given inputs failing authorization, payload, schema, origin, selection, revision, resource semantics, MRTR, execution and verification in combination, when validated, then only earliest phase is returned and at most 32 JSON-pointer-sorted safe violations appear.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -828,7 +824,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/bound/cal-bound-002`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-bound-002.json` with its committed fixture input and require these exact observations: Occurrence and entity temporal windows are non-empty and at most 366 days. pageSize defaults to 50 and is capped at 200. One query inspects at most 5,000 resources across 256 Calendars. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given 0-day, 366-day, 367-day windows; page sizes 0,50,200,201; 256 calendars and 5001 resources, when queried, then valid bounds/default 50/cap 200 apply and excess returns limit_exhausted before partial results.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -840,7 +836,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/bound/cal-bound-003`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-bound-003.json` with its committed fixture input and require these exact observations: Expansion derives at most 2,000 Occurrences per Calendar Entity, 5,000 per query, and 10,000 unmatched increments per Recurrence Set. Limit Exhaustion returns no partial items. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given recurrence fixtures producing 2000,2001 entity occurrences; 5000,5001 query occurrences; and 10000,10001 unmatched increments, when expanded, then ceilings pass exactly and plus-one returns limit_exhausted with items count zero.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -852,7 +848,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/bound/cal-bound-004`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-bound-004.json` with its committed fixture input and require these exact observations: Normal semantic arguments are at most 256 KiB; one authoritative resource or exact payload is at most 4 MiB; one structured page is at most 4 MiB; human-readable text plus diagnostics is at most 64 KiB. Measure final UTF-8 JSON, resource UTF-8 bytes, and decompressed HTTP bodies with streaming limit-plus-one enforcement. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given UTF-8 JSON at 256KiB±1, resource/exact payload/page at 4MiB±1, text/diagnostics at 64KiB±1, and compressed body expanding over limit, when streamed, then limit-plus-one rejects with payload_too_large and no partial serialization.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -864,7 +860,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/bound/cal-bound-005`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-bound-005.json` with its committed fixture input and require these exact observations: One HTTP attempt is 10 seconds; a read is 30 seconds; mutation before dispatch is 30 seconds; reconciliation may use another 30 seconds within a 60-second total. Reads have at most three transient attempts; mutations have none; generated-UID create has at most three collision attempts. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given reads with transient failures, mutations before/after dispatch, and fake clock at 10/30/60 seconds, when retries execute, then reads make at most three attempts, mutations no blind retries, and timeout code/phase reflects attempt, operation, or reconciliation bound.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -876,7 +872,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/bound/cal-bound-006`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-bound-006.json` with its committed fixture input and require these exact observations: Per origin, admit at most four operations and one mutation, queue at most 16 FIFO calls, and wait at most two seconds before `busy`. Requested progress begins after 500 ms, emits at most four notifications per second, uses aggregate phases, and never reveals names, hrefs, or content. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given five concurrent origin operations, two mutations, queue positions 1..17, and progress clock 499/500ms, when admitted, then max four/one run, seventeenth is busy after two seconds, and progress is <=4/s aggregate with no href/name/content.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -888,7 +884,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/bound/cal-bound-007`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-bound-007.json` with its committed fixture input and require these exact observations: Cancellation stops reads and pre-dispatch mutations promptly. After possible dispatch, bounded reconciliation continues despite caller cancellation so Mutation State remains truthful. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given cancelled read, cancelled pre-dispatch mutation, and cancelled post-dispatch mutation, when tokens fire, then first two stop promptly with zero/one dispatch respectively and post-dispatch continues bounded reconciliation to truthful mutationState.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -900,7 +896,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/bound/cal-bound-008`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-bound-008.json` with its committed fixture input and require these exact observations: Cursors and MRTR requestState are authenticated, encrypted, at most 2 KiB, expire after ten minutes, bind normalized inputs and credential context, and are invalidated by key rotation. Replay remains non-duplicating through fixed identity plus conditional writes and full revalidation. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given cursor/requestState exceeding 2KiB, expired at ten minutes, rotated key, changed arguments/principal/ETag, one-bit tamper, and replay, when consumed, then each invalid handle fails closed; serialized bytes reveal none of normalized args/principal/identity/ETag and valid replay remains nonduplicating through conditional write.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -912,7 +908,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/error/cal-error-001`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-error-001.json` with its committed fixture input and require these exact observations: Every typed error includes code, category, safe message, retryable, and phase, with optional capped violations, limits, retryAfterMs, authorized candidates, or current conflict snapshot. It never includes rejected raw values, complete arguments, resource content, credentials, HTTP bodies, cursors, requestState, or stack traces. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given each typed failure plus 33 violations, retry delay, candidates and conflict snapshot, when serialized, then required code/category/message/retryable/phase exist, optional fields cap at 32, and raw values/content/credentials/cursors/stack traces are absent.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -924,7 +920,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/error/cal-error-002`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-error-002.json` with its committed fixture input and require these exact observations: Closed codes are: `invalid_input`, `invalid_calendar_data`, `not_found`, `ambiguous`, `outside_scope`, `entity_kind_mismatch`, `unsupported_capability`, `opaque_resource`, `temporal_unresolved`, `recurrence_unevaluable`, `conflict`, `destination_conflict`, `concurrency_unavailable`, `limit_exhausted`, `payload_too_large`, `busy`, `upstream_unauthorized`, `upstream_forbidden`, `upstream_rate_limited`, `upstream_unavailable`, `upstream_protocol_error`, `confirmation_expired`, `confirmation_mismatch`, `fidelity_failure`, `committed_but_unverified`, `committed_but_concurrency_unavailable`, and `indeterminate`. `no_change` and declined confirmation are successful non-mutating results; MRTR `input_required` is a protocol result type. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given one fixture per closed error code plus no_change, confirmation_declined and input_required, when emitted, then code enum is exact, the first two are non-error mutation results, and input_required is outer protocol result not error code.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -936,7 +932,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/error/cal-error-003`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-error-003.json` with its committed fixture input and require these exact observations: Map CalDAV and HTTP outcomes deterministically: 401/403 to upstream authorization errors; direct-target 404 to `not_found`; discovery 404 and invalid successful responses to `upstream_protocol_error`; 409/412 to conflict; 413 to `payload_too_large`; 429 to `upstream_rate_limited`; 405/501 or explicit DAV capability errors to `unsupported_capability`; exhausted 5xx, timeouts, and transport failures to `upstream_unavailable`; and 507 to non-retryable `upstream_unavailable`. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given statuses 401,403,404 direct/discovery,409,412,413,429,405,501,507, malformed success and exhausted 5xx/timeout, when mapped, then each exact code/retryable value follows table and no response body appears in diagnostics.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -948,7 +944,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/sec/cal-sec-001`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-sec-001.json` with its committed fixture input and require these exact observations: Accept only canonical absolute resource hrefs without userinfo or fragments, validate configured origin and Calendar Scope before network access, and never construct a host from an agent-supplied href. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given absolute hrefs with userinfo, fragment, foreign origin, configured origin and authorized redirect origin, when validated, then invalid inputs make zero DNS/HTTP calls and valid origin request never derives a host from href text.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -960,7 +956,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/sec/cal-sec-002`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-sec-002.json` with its committed fixture input and require these exact observations: Disable XML DTDs and external entities, cap XML depth and characters, keep every calendar URI inert, and never expose out-of-scope existence through ambiguity or authorization diagnostics. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given XML with DTD/entity/deep/oversize nodes, out-of-scope candidate, and URI alarm/attachment, when parsed, then parser rejects unsafe XML within limits, ambiguity exposes no out-of-scope existence, and URI fetch/open count is zero.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -972,7 +968,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/sec/cal-sec-003`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-sec-003.json` with its committed fixture input and require these exact observations: Logs contain only safe codes, phases, durations, and correlation identifiers. Stdout remains the JSON-RPC transport; valid runs leave stderr clean. Credentials, raw requests/responses, complete arguments, calendar content, cursors, and requestState are never logged. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given successful stdio run and failures containing credentials, raw request/body, cursor and requestState markers, when logs/streams inspected, then stdout is JSON-RPC only, stderr is clean, and logs retain only code/phase/duration/correlation fields.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -984,7 +980,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: packed-artifact check.
 - Named scenario or fixture: `0.2.0/release/cal-release-001`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-release-001.json` with its committed fixture input and require these exact observations: Release the contract as `0.2.0` under the unchanged NuGet package and MCP server identities. Provide no legacy mode, compatibility aliases, parallel abstractions, or automatic Calendar Object Resource migration. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given packed NuGet metadata for version 0.2.0 and prior 0.1.x clients, when artifact inspection runs, then package/server identity is unchanged, version is 0.2.0, no legacy mode/alias/parallel abstraction appears, and no CalDAV data migration request is issued.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -996,7 +992,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: packed-artifact check.
 - Named scenario or fixture: `0.2.0/release/cal-release-002`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-release-002.json` with its committed fixture input and require these exact observations: Remove all twelve `0.1.x` tools. Migration is: list task lists to `calendars.list`; show/find/list tasks to To-do `calendar_entities.query`; get task to `calendar_resources.get`; add/create task to `todos.create`; update task to `todos.patch`; complete task to `todos.complete`; complete-by-summary to query then revision-bound completion; delete task to revision-bound confirmed `calendar_resources.delete`; delete-by-summary to query then revision-bound confirmed delete. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given the 12 removed 0.1.x tool names and migration table, when packed catalog/docs are inspected, then every old name is absent and each listed task operation maps to the exact calendars/entities/resources/todos 0.2 tool with revision-bound delete.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -1008,7 +1004,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: packed-artifact check.
 - Named scenario or fixture: `0.2.0/release/cal-release-003`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-release-003.json` with its committed fixture input and require these exact observations: Keep `CALDAV_URL`, `CALDAV_USERNAME`, and `CALDAV_PASSWORD`. Replace task list allowlisting with `CALDAV_CALENDAR_HREFS`, the task default with `CALDAV_DEFAULT_TODO_CALENDAR_NAME`, add `CALDAV_DEFAULT_EVENT_CALENDAR_NAME`, and replace the advanced gate with `CALDAV_EXPOSE_EXACT_TOOLS`. Old names are not interpreted. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given environment containing CALDAV_URL/USERNAME/PASSWORD, new calendar/default/exact variables and each old task variable, when startup validates, then required retained values map once, new names map once, old names are ignored/rejected, and metadata lists no old name.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -1020,7 +1016,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: packed-artifact check.
 - Named scenario or fixture: `0.2.0/release/cal-release-004`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-release-004.json` with its committed fixture input and require these exact observations: Packaged metadata describes Calendars, Events, and To-dos, declares only the new environment settings and actual protocol capabilities, and retains source server/package versions at `0.0.0` for tag substitution. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given packed server.json and package manifest, when release substitution simulation runs, then source versions are `0.0.0`, artifact descriptions mention Calendars/Events/To-dos, only declared new environment settings/capabilities appear, and tag substitution changes both versions.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -1032,7 +1028,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: packed-artifact check.
 - Named scenario or fixture: `0.2.0/release/cal-release-005`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-release-005.json` with its committed fixture input and require these exact observations: Migration documentation includes before/after configuration, the complete tool mapping, recipes for To-do reads and writes, revision references, structured outcomes, MRTR, deployment verification, and rollback to pinned `0.1.4`. It states that no CalDAV data migration occurs. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given migration guide and rollback fixture, when documentation assertions run, then before/after config, all tool mappings, To-do recipes, revision/MRTR/outcome/deploy steps exist, rollback pins `0.1.4`, and text explicitly says no CalDAV data migration.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -1044,7 +1040,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: catalog verifier.
 - Named scenario or fixture: `0.2.0/evidence/cal-evidence-001`.
-- Objective oracle: `ContractCatalogTests.Evidence_catalog_has_one_complete_row_for_every_normative_requirement` requires exactly 96 unique `## CAL-*` rows, including `CAL-BASE-003` and `CAL-EVIDENCE-010`, and requires every row field mandated by this catalog.
+- Objective oracle: Given requirement-evidence catalog fixture, when `Evidence_catalog_has_one_complete_row_for_every_normative_requirement` runs, then exactly 96 unique CAL IDs, required row fields, stable heading format, and no reused/renumbered identifier are asserted.
 - Implementation status: implemented and passing: this versioned catalog and `ContractCatalogTests.Evidence_catalog_has_one_complete_row_for_every_normative_requirement` verify the exact 96-ID set and required row fields.
 - Evidence status: focused catalog verifier passes locally and is included in the CI test run.
 
@@ -1056,7 +1052,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: catalog verifier.
 - Named scenario or fixture: `0.2.0/evidence/cal-evidence-002`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-evidence-002.json` with its committed fixture input and require these exact observations: Versioned semantic fixtures cover discovery/scope/defaults, snapshot coherence, strict schemas, patch operations, temporal kinds, recurrence and overrides, exclusions/cancellations/restoration, Event structured data, inert content, opaque resources, concurrency, post-write truth, limits, errors, and MRTR. Use equivalence partitions and pairwise coverage and explicitly cross recurrence with temporal kind, override with Mutation Scope, patch with opaque content, conditionals with ambiguous outcomes, MRTR with revision change, and limits with pagination. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given semantic fixture inventory, when manifest is counted, then it contains named cases for discovery, snapshots, strict schemas, patch, temporal, recurrence, structured/inert/opaque content, concurrency, truth, limits, errors and MRTR plus listed pairwise cross-products.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -1068,7 +1064,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: catalog verifier.
 - Named scenario or fixture: `0.2.0/evidence/cal-evidence-003`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-evidence-003.json` with its committed fixture input and require these exact observations: Semantic corpus tests prove lossless parsing/replay, domain invariants, recurrence, temporal evaluation, patch atomicity, error ordering, limits, reconciliation, and hardening. Existing mapper, recurrence, XML, and service tests are prior art, but regenerated Ical.Net output or snapshots are never the oracle for losslessness. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given corpus with lossless lines, invalid aggregates, recurrence/time, patch atomicity, error ordering, limits and reconciliation, when tests run, then byte/semantic assertions use source slices rather than regenerated Ical.Net output or snapshot approval.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -1080,7 +1076,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: catalog verifier.
 - Named scenario or fixture: `0.2.0/evidence/cal-evidence-004`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-evidence-004.json` with its committed fixture input and require these exact observations: Deterministic WebDAV contract tests prove discovery, REPORT candidate behavior, full-resource reads, conditional mutations, redirects, status mapping, XML safety, origin restrictions, limits, and redaction. Existing CalDAV client request/response tests are the preferred seam to extend. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given deterministic WebDAV request scripts covering discovery, REPORT, GET, conditionals, redirects, statuses, XML, origin, limits and redaction, when executed, then exact method/header/body/status assertions pass without live server dependency.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -1092,7 +1088,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: catalog verifier.
 - Named scenario or fixture: `0.2.0/evidence/cal-evidence-005`.
-- Objective oracle: `RadicaleConformanceHarnessTests.Pinned_profile_records_the_runtime_and_selected_variant` reads the running official image and compares its runtime facts with the committed profile; the CI matrix invokes it for baseline, strict-preconditions, and alternate-time-zone. The later behavioral cases remain owned by their named downstream scenarios.
+- Objective oracle: Given `RadicaleConformanceFixture` in baseline/strict/New_York variants, when `Pinned_profile_records_the_runtime_and_selected_variant` runs, then TRX records index/platform/runtime/TZ/strict facts and legacy task fixtures are never listed as evidence.
 - Implementation status: runtime-evidence slice implemented and passing; the broader behavioral cases remain planned for downstream tickets.
 - Evidence status: the runtime harness passes locally in all three variants and runs in the CI matrix; downstream behavioral cases are not represented by task fixtures.
 
@@ -1104,7 +1100,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: catalog verifier.
 - Named scenario or fixture: `0.2.0/evidence/cal-evidence-006`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-evidence-006.json` with its committed fixture input and require these exact observations: Packed-artifact tests inspect the final NuGet package, MCP metadata/schema, README, bundled skill, migration guide, CHANGELOG, and release notes. Existing MCP metadata tests are prior art and must be expanded with every environment or metadata change. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given packed nupkg inspection, when release test runs, then metadata/schema/README/skill/migration guide/CHANGELOG/release notes all exist and each environment/metadata change has a corresponding packed-artifact assertion.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -1116,7 +1112,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: catalog verifier.
 - Named scenario or fixture: `0.2.0/evidence/cal-evidence-007`.
-- Objective oracle: `ContractCatalogTests.Compatibility_matrix_uses_independent_component_classes` requires every matrix row to provide a project, Ical.Net 5.2.3, and Radicale 3.7.8 classification and rejects a matrix that equates preservation with support.
+- Objective oracle: Given compatibility matrix rows, when `Compatibility_matrix_uses_independent_component_classes` runs, then project/Ical.Net/Radicale cells each use one of five closed classes and no preserved-but-unevaluable cell is interpreted as supported.
 - Implementation status: matrix and independent-class verifier implemented and passing; behavior tests are planned by downstream tickets.
 - Evidence status: focused matrix verifier passes locally and is included in the CI test run.
 
@@ -1128,7 +1124,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: catalog verifier.
 - Named scenario or fixture: `0.2.0/evidence/cal-evidence-008`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-evidence-008.json` with its committed fixture input and require these exact observations: Boundary-sensitive limits are tested below, at, and above each boundary. Limit exhaustion never passes through partial results. Expected output is fixed; test runs never rewrite fixtures or snapshots. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given each numeric boundary at minus-one/exact/plus-one and immutable expected fixture, when tests execute, then only within-bound cases pass, excess has no partial output, and fixture hash remains unchanged after run.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -1140,7 +1136,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: catalog verifier.
 - Named scenario or fixture: `0.2.0/evidence/cal-evidence-009`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-evidence-009.json` with its committed fixture input and require these exact observations: Pull-request CI and the release workflow run every normative row. Missing, skipped, quarantined, or flaky normative evidence fails. Release build with warnings as errors, method complexity at most 10, at least 90% line and 85% branch coverage, all unit/integration tests, Slopwatch with no warnings, clean stdio, schema-valid metadata, and correct packed source-version substitution are mandatory. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given PR/release workflow definitions and a deliberately skipped normative test, when gate inspection runs, then all 96 rows are required, skipped/quarantined/flaky evidence fails, and build/warnings/complexity/coverage/tests/Slopwatch/stdio/schema/package checks are mandatory.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -1152,6 +1148,6 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: catalog verifier.
 - Named scenario or fixture: `0.2.0/evidence/cal-evidence-010`.
-- Objective oracle: Execute the versioned target `contracts/0.2.0/scenarios/cal-evidence-010.json` with its committed fixture input and require these exact observations: Before implementation acceptance, reverify MCP behavior against the selected stable specification, changelog, official feature documentation, and matching official C# SDK. Stable normative text wins over drafts, deprecated samples, and third-party examples. The assertion fails on any missing field, changed byte/status/order, extra result, or different typed outcome.
+- Objective oracle: Given selected MCP specification/changelog/feature docs/C# SDK revisions, when pre-acceptance audit runs, then stable 2026-07-28 text and matching SDK are recorded, drafts/deprecated samples are excluded, and drift blocks release.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
