@@ -523,6 +523,138 @@ public class CalDavClientTests
     #region PROPFIND and REPORT Tests
 
     [Fact]
+    public async Task GetCalendarsAsync_ReturnsCanonicalAbsoluteHrefsForEveryCalendar()
+    {
+        var requests = new List<HttpRequestMessage>();
+        var handler = CreateSequencedHandler(
+        [
+            CreateCalendarHomeSetResponse(),
+            new HttpResponseMessage(HttpStatusCode.MultiStatus)
+            {
+                Content = new StringContent("""
+                    <d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+                      <d:response><d:href>events/</d:href><d:propstat><d:prop><d:resourcetype><c:calendar/></d:resourcetype><c:supported-calendar-component-set><c:comp name="VEVENT"/></c:supported-calendar-component-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>
+                      <d:response><d:href>/calendars/user/todos/</d:href><d:propstat><d:prop><d:resourcetype><c:calendar/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>
+                      <d:response><d:href>https://example.com/calendars/user/shared/</d:href><d:propstat><d:prop><d:resourcetype><c:calendar/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>
+                    </d:multistatus>
+                    """, Encoding.UTF8, "application/xml")
+            }
+        ], requests);
+        var sut = CreateSut(handler, "https://example.com/remote.php/dav/");
+
+        var calendars = await sut.GetCalendarsAsync(CancellationToken.None);
+
+        calendars.Select(calendar => calendar.Href).ShouldBe(
+        [
+            "https://example.com/calendars/user/events/",
+            "https://example.com/calendars/user/shared/",
+            "https://example.com/calendars/user/todos/"
+        ]);
+        calendars[0].EventSupport.ShouldBe(EntityKindSupport.Advertised);
+        calendars[0].TodoSupport.ShouldBe(EntityKindSupport.NotAdvertised);
+        requests.Select(request => request.Headers.GetValues("Depth").Single()).ShouldBe(["0", "1"]);
+    }
+
+    [Fact]
+    public async Task GetCalendarsAsync_DoesNotFollowUnsafeCalendarHomeSetHref()
+    {
+        var requests = new List<HttpRequestMessage>();
+        var handler = CreateSequencedHandler(
+        [
+            new HttpResponseMessage(HttpStatusCode.MultiStatus)
+            {
+                Content = new StringContent("""
+                    <d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+                      <d:response><d:href>/</d:href><d:propstat><d:prop><c:calendar-home-set><d:href>https://other.example/calendars/user/</d:href></c:calendar-home-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>
+                    </d:multistatus>
+                    """, Encoding.UTF8, "application/xml")
+            }
+        ], requests);
+        var sut = CreateSut(handler, "https://example.com/remote.php/dav/");
+
+        await Should.ThrowAsync<CalendarDiscoveryProtocolException>(() =>
+            sut.GetCalendarsAsync(CancellationToken.None));
+        requests.Count.ShouldBe(1);
+        requests[0].RequestUri!.Host.ShouldBe("example.com");
+    }
+
+    [Fact]
+    public async Task GetCalendarsAsync_RejectsUnsafeCalendarHrefWithoutPartialItems()
+    {
+        var requests = new List<HttpRequestMessage>();
+        var handler = CreateSequencedHandler(
+        [
+            CreateCalendarHomeSetResponse(),
+            new HttpResponseMessage(HttpStatusCode.MultiStatus)
+            {
+                Content = new StringContent("""
+                    <d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+                      <d:response><d:href>/calendars/user/safe/</d:href><d:propstat><d:prop><d:resourcetype><c:calendar/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>
+                      <d:response><d:href>https://other.example/calendars/user/unsafe/</d:href><d:propstat><d:prop><d:resourcetype><c:calendar/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>
+                    </d:multistatus>
+                    """, Encoding.UTF8, "application/xml")
+            }
+        ], requests);
+        var sut = CreateSut(handler, "https://example.com/remote.php/dav/");
+
+        await Should.ThrowAsync<CalendarDiscoveryProtocolException>(() =>
+            sut.GetCalendarsAsync(CancellationToken.None));
+
+        requests.Count.ShouldBe(2);
+        requests.ShouldAllBe(request => request.RequestUri!.Host == "example.com");
+    }
+
+    [Theory]
+    [InlineData("https://user:secret@example.com/calendars/user/unsafe/")]
+    [InlineData("/calendars/user/unsafe/#fragment")]
+    public async Task GetCalendarsAsync_RejectsCredentialsAndFragmentsInCalendarHrefs(string unsafeHref)
+    {
+        var requests = new List<HttpRequestMessage>();
+        var handler = CreateSequencedHandler(
+        [
+            CreateCalendarHomeSetResponse(),
+            new HttpResponseMessage(HttpStatusCode.MultiStatus)
+            {
+                Content = new StringContent($"""
+                    <d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+                      <d:response><d:href>{unsafeHref}</d:href><d:propstat><d:prop><d:resourcetype><c:calendar/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>
+                    </d:multistatus>
+                    """, Encoding.UTF8, "application/xml")
+            }
+        ], requests);
+        var sut = CreateSut(handler, "https://example.com/remote.php/dav/");
+
+        await Should.ThrowAsync<CalendarDiscoveryProtocolException>(() =>
+            sut.GetCalendarsAsync(CancellationToken.None));
+
+        requests.Count.ShouldBe(2);
+        requests.All(request => request.RequestUri!.UserInfo.Length == 0).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task GetCalendarsAsync_DoesNotFollowUnsafeCurrentUserPrincipalHref()
+    {
+        var requests = new List<HttpRequestMessage>();
+        var handler = CreateSequencedHandler(
+        [
+            new HttpResponseMessage(HttpStatusCode.MultiStatus)
+            {
+                Content = new StringContent("""
+                    <d:multistatus xmlns:d="DAV:">
+                      <d:response><d:href>/</d:href><d:propstat><d:prop><d:current-user-principal><d:href>https://other.example/principals/user/</d:href></d:current-user-principal></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>
+                    </d:multistatus>
+                    """, Encoding.UTF8, "application/xml")
+            }
+        ], requests);
+        var sut = CreateSut(handler, "https://example.com/remote.php/dav/");
+
+        await Should.ThrowAsync<CalendarDiscoveryProtocolException>(() =>
+            sut.GetCalendarsAsync(CancellationToken.None));
+        requests.Count.ShouldBe(1);
+        requests.ShouldAllBe(request => request.RequestUri!.Host == "example.com");
+    }
+
+    [Fact]
     public async Task GetTaskListsAsync_SendsPropFindWithDepthHeader()
     {
         // Arrange
@@ -1752,6 +1884,16 @@ public class CalDavClientTests
             return responseFactory();
         });
     }
+
+    private static HttpResponseMessage CreateCalendarHomeSetResponse() =>
+        new(HttpStatusCode.MultiStatus)
+        {
+            Content = new StringContent("""
+                <d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+                  <d:response><d:href>/calendars/user/</d:href><d:propstat><d:prop><c:calendar-home-set><d:href>/calendars/user/</d:href></c:calendar-home-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>
+                </d:multistatus>
+                """, Encoding.UTF8, "application/xml")
+        };
 
     #endregion
 }

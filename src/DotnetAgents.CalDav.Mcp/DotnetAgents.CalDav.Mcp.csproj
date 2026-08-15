@@ -22,6 +22,7 @@
 
   <ItemGroup>
     <None Include="../../README.md" Pack="true" PackagePath="\" />
+    <EmbeddedResource Include="../../contracts/0.2.0/mcp-tool-catalog.json" LogicalName="DotnetAgents.CalDav.Mcp.CalendarToolCatalog.json" />
     <None Include=".mcp/server.json" Pack="true" PackagePath=".mcp/server.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

@@ -17,7 +17,7 @@ namespace DotnetAgents.CalDav.Core.Internal;
 /// HttpClient-based CalDAV client focused on VTODO operations.
 /// Handles PROPFIND, REPORT, GET, PUT, DELETE verbs with XML/iCalendar encoding.
 /// </summary>
-internal sealed class CalDavClient : ICalDavClient
+internal sealed class CalDavClient : ICalDavClient, ICalendarClient
 {
     private static readonly ActivitySource ActivitySource = new("DotnetAgents.CalDav", "0.1.0");
     private static readonly HttpMethod PropFindMethod = new("PROPFIND");
@@ -51,9 +51,9 @@ internal sealed class CalDavClient : ICalDavClient
 
         // Step 2: PROPFIND the calendar-home-set to list calendars (Depth: 1 to return child collections)
         var propfindBody = DavRequestBuilder.BuildPropFindCalendarProperties();
-        var responseXml = await SendPropFindAsync(homeSetHref, propfindBody, depth: 1, cancellationToken);
+        var response = await SendPropFindAsync(homeSetHref, propfindBody, depth: 1, cancellationToken);
 
-        var taskLists = DavResponseParser.ParseTaskLists(responseXml);
+        var taskLists = DavResponseParser.ParseTaskLists(response.Content);
 
         // Step 3: Filter to only calendars supporting VTODO
         var filtered = taskLists
@@ -70,6 +70,37 @@ internal sealed class CalDavClient : ICalDavClient
 
         _logger.LogInformation("Discovered {Count} task list(s)", filtered.Count);
         return filtered;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<CalendarDescriptor>> GetCalendarsAsync(CancellationToken cancellationToken)
+    {
+        using var activity = ActivitySource.StartActivity("caldav.get_calendars", ActivityKind.Client);
+
+        var homeSetHref = await DiscoverCalendarHomeSetAsync(cancellationToken, failOnNotFound: true);
+        if (homeSetHref is null)
+            return [];
+
+        var configuredBaseUri = new Uri(_options.Value.BaseUrl, UriKind.Absolute);
+        if (!TryCanonicalizeCalendarHref(configuredBaseUri, homeSetHref, out var canonicalHomeSetHref))
+            throw new CalendarDiscoveryProtocolException("Unsafe calendar-home-set href.");
+
+        var propfindBody = DavRequestBuilder.BuildPropFindCalendarProperties();
+        var response = await SendPropFindAsync(canonicalHomeSetHref, propfindBody, depth: 1, cancellationToken);
+        var homeSetUri = response.RequestUri;
+
+        var calendars = new List<CalendarDescriptor>();
+        foreach (var calendar in DavResponseParser.ParseCalendars(response.Content))
+        {
+            if (TryCanonicalizeCalendarHref(homeSetUri, calendar.Href, out var canonicalHref))
+                calendars.Add(calendar with { Href = canonicalHref });
+            else
+                throw new CalendarDiscoveryProtocolException("Unsafe Calendar href.");
+        }
+
+        return calendars
+            .OrderBy(calendar => calendar.Href, StringComparer.Ordinal)
+            .ToArray();
     }
 
     /// <inheritdoc/>
@@ -271,47 +302,61 @@ internal sealed class CalDavClient : ICalDavClient
         throw new CalDavConflictException(href, currentEtag);
     }
 
-    private async Task<string?> DiscoverCalendarHomeSetAsync(CancellationToken cancellationToken)
+    private async Task<string?> DiscoverCalendarHomeSetAsync(CancellationToken cancellationToken, bool failOnNotFound = false)
     {
         var principalBody = DavRequestBuilder.BuildPropFindCalendarHomeSet();
         var principalHref = "/.well-known/caldav";
 
-        var wellKnownResult = await TryDiscoverFromPathAsync(principalHref, principalBody, depth: 0, cancellationToken);
+        var suppressUpstreamFailures = !failOnNotFound;
+        var wellKnownResult = await TryDiscoverFromPathAsync(principalHref, principalBody, depth: 0, cancellationToken, suppressUpstreamFailures);
         if (wellKnownResult.HomeSet is not null)
             return wellKnownResult.HomeSet;
 
         if (wellKnownResult.PrincipalUrl is null)
         {
-            var baseUrlResult = await TryDiscoverFromBaseUrlAsync(principalBody, depth: 0, cancellationToken);
+            var baseUrlResult = await TryDiscoverFromBaseUrlAsync(principalBody, depth: 0, cancellationToken, suppressUpstreamFailures);
             if (baseUrlResult.HomeSet is not null)
                 return baseUrlResult.HomeSet;
 
             if (baseUrlResult.PrincipalUrl is null)
             {
                 _logger.LogWarning("Failed to discover calendar-home-set from {BaseUrl}", _options.Value.BaseUrl);
+                if (failOnNotFound)
+                    throw new CalendarDiscoveryProtocolException("Calendar-home-set was not discovered.");
                 return null;
             }
 
             wellKnownResult = baseUrlResult;
         }
 
-        return await TryDiscoverFromPrincipalAsync(wellKnownResult.PrincipalUrl!, principalBody, depth: 0, cancellationToken);
+        var discoveredHomeSet = await TryDiscoverFromPrincipalAsync(wellKnownResult.PrincipalUrl!, principalBody, depth: 0, cancellationToken, suppressUpstreamFailures);
+        if (discoveredHomeSet is null && failOnNotFound)
+            throw new CalendarDiscoveryProtocolException("Calendar-home-set was not discovered.");
+        return discoveredHomeSet;
     }
 
     private async Task<(string? HomeSet, string? PrincipalUrl)> TryDiscoverFromPathAsync(
-        string path, string body, int depth, CancellationToken cancellationToken)
+        string path, string body, int depth, CancellationToken cancellationToken, bool suppressUpstreamFailures)
     {
         try
         {
-            var responseXml = await SendPropFindAsync(path, body, depth, cancellationToken);
-            var homeSet = DavResponseParser.ParseCalendarHomeSet(responseXml);
+            var response = await SendPropFindAsync(path, body, depth, cancellationToken);
+            var homeSet = DavResponseParser.ParseCalendarHomeSet(response.Content);
             if (homeSet is not null)
-                return (homeSet, null);
+            {
+                if (!TryCanonicalizeCalendarHref(response.RequestUri, homeSet, out var canonicalHomeSet))
+                    throw new CalendarDiscoveryProtocolException("Unsafe calendar-home-set href.");
+                return (canonicalHomeSet, null);
+            }
 
-            var principalUrl = DavResponseParser.ParseCurrentUserPrincipal(responseXml);
-            return (null, principalUrl);
+            var principalUrl = DavResponseParser.ParseCurrentUserPrincipal(response.Content);
+            if (principalUrl is null)
+                return (null, null);
+            if (!TryCanonicalizeCalendarHref(response.RequestUri, principalUrl, out var canonicalPrincipal))
+                throw new CalendarDiscoveryProtocolException("Unsafe current-user-principal href.");
+            return (null, canonicalPrincipal);
         }
-        catch (HttpRequestException)
+        catch (HttpRequestException exception) when (suppressUpstreamFailures || exception.StatusCode == HttpStatusCode.NotFound)
         {
             _logger.LogDebug("CalDAV path not found: {Path}", path);
             return (null, null);
@@ -319,40 +364,50 @@ internal sealed class CalDavClient : ICalDavClient
     }
 
     private async Task<(string? HomeSet, string? PrincipalUrl)> TryDiscoverFromBaseUrlAsync(
-        string body, int depth, CancellationToken cancellationToken)
+        string body, int depth, CancellationToken cancellationToken, bool suppressUpstreamFailures)
     {
         var baseUrl = _options.Value.BaseUrl.TrimEnd('/');
         var uri = new Uri(baseUrl);
         var path = uri.AbsolutePath.TrimEnd('/') + "/";
-        return await TryDiscoverFromPathAsync(path, body, depth, cancellationToken);
+        return await TryDiscoverFromPathAsync(path, body, depth, cancellationToken, suppressUpstreamFailures);
     }
 
     private async Task<string?> TryDiscoverFromPrincipalAsync(
-        string principalUrl, string body, int depth, CancellationToken cancellationToken)
+        string principalUrl, string body, int depth, CancellationToken cancellationToken, bool suppressUpstreamFailures)
     {
         try
         {
             _logger.LogDebug("PROPFIND principal at {PrincipalUrl} for calendar-home-set", principalUrl);
-            var responseXml = await SendPropFindAsync(principalUrl, body, depth, cancellationToken);
-            return DavResponseParser.ParseCalendarHomeSet(responseXml);
+            var response = await SendPropFindAsync(principalUrl, body, depth, cancellationToken);
+            var homeSet = DavResponseParser.ParseCalendarHomeSet(response.Content);
+            if (homeSet is null)
+                return null;
+            if (!TryCanonicalizeCalendarHref(response.RequestUri, homeSet, out var canonicalHomeSet))
+                throw new CalendarDiscoveryProtocolException("Unsafe calendar-home-set href.");
+            return canonicalHomeSet;
         }
-        catch (HttpRequestException ex)
+        catch (HttpRequestException ex) when (suppressUpstreamFailures || ex.StatusCode == HttpStatusCode.NotFound)
         {
             _logger.LogWarning(ex, "Failed to discover calendar-home-set from principal at {PrincipalUrl}", principalUrl);
             return null;
         }
     }
 
-    private async Task<string> SendPropFindAsync(string href, string body, int depth, CancellationToken cancellationToken)
+    private async Task<(string Content, Uri RequestUri)> SendPropFindAsync(string href, string body, int depth, CancellationToken cancellationToken)
     {
-        var request = new HttpRequestMessage(PropFindMethod, BuildUrl(href))
+        if (!TryCanonicalizeCalendarHref(new Uri(_options.Value.BaseUrl, UriKind.Absolute), href, out var canonicalHref))
+            throw new CalendarDiscoveryProtocolException("Unsafe CalDAV discovery href.");
+
+        var request = new HttpRequestMessage(PropFindMethod, canonicalHref)
         {
             Content = new StringContent(body, Encoding.UTF8, "application/xml")
         };
         request.Headers.Add("Depth", depth.ToString(CultureInfo.InvariantCulture));
 
-        var response = await SendWithRedirectHandlingAsync(request, body, cancellationToken);
-        return await response.Content.ReadAsStringAsync(cancellationToken);
+        using var response = await SendWithRedirectHandlingAsync(request, body, cancellationToken);
+        var requestUri = response.RequestMessage?.RequestUri ?? new Uri(canonicalHref, UriKind.Absolute);
+        var content = await response.Content.ReadAsStringAsync(cancellationToken);
+        return (content, requestUri);
     }
 
     private async Task<string> SendReportAsync(string href, string body, CancellationToken cancellationToken)
@@ -363,7 +418,7 @@ internal sealed class CalDavClient : ICalDavClient
         };
         request.Headers.Add("Depth", "1");
 
-        var response = await SendWithRedirectHandlingAsync(request, body, cancellationToken);
+        using var response = await SendWithRedirectHandlingAsync(request, body, cancellationToken);
         return await response.Content.ReadAsStringAsync(cancellationToken);
     }
 
@@ -374,7 +429,7 @@ internal sealed class CalDavClient : ICalDavClient
     /// like PROPFIND and REPORT must be preserved across redirects.
     /// </summary>
     private async Task<HttpResponseMessage> SendWithRedirectHandlingAsync(
-        HttpRequestMessage originalRequest, string body, CancellationToken cancellationToken, int maxRedirects = 3)
+        HttpRequestMessage originalRequest, string body, CancellationToken cancellationToken, int maxRedirects = 5)
     {
         HttpResponseMessage? response = null;
         var currentRequest = originalRequest;
@@ -389,25 +444,56 @@ internal sealed class CalDavClient : ICalDavClient
             response?.Dispose();
             response = await _httpClient.SendAsync(currentRequest, cancellationToken);
 
-            var redirectUrl = GetRedirectUrl(response, currentRequest.RequestUri);
-            if (redirectUrl is null)
+            var redirectRequest = CreateRedirectRequest(response, currentRequest, method, body, contentType, depthValues, attempt, maxRedirects);
+            if (redirectRequest is null)
                 break;
-
-            _logger.LogDebug("{Method} redirect {StatusCode} -> {RedirectUrl}", method, (int)response.StatusCode, redirectUrl);
-
-            currentRequest = new HttpRequestMessage(method, redirectUrl)
-            {
-                Content = new StringContent(body, Encoding.UTF8, contentType)
-            };
-
-            foreach (var depthValue in depthValues)
-            {
-                currentRequest.Headers.Add("Depth", depthValue);
-            }
+            currentRequest = redirectRequest;
         }
 
-        response!.EnsureSuccessStatusCode();
+        try
+        {
+            response!.EnsureSuccessStatusCode();
+        }
+        catch
+        {
+            response!.Dispose();
+            throw;
+        }
         return response;
+    }
+
+    private HttpRequestMessage? CreateRedirectRequest(
+        HttpResponseMessage response,
+        HttpRequestMessage currentRequest,
+        HttpMethod method,
+        string body,
+        string contentType,
+        IReadOnlyList<string> depthValues,
+        int attempt,
+        int maxRedirects)
+    {
+        var redirectUrl = GetRedirectUrl(response, currentRequest.RequestUri);
+        if (redirectUrl is null)
+            return null;
+        if (attempt == maxRedirects)
+        {
+            response.Dispose();
+            throw new CalendarDiscoveryProtocolException("CalDAV redirect limit was exceeded.");
+        }
+        if (!TryCanonicalizeCalendarHref(new Uri(_options.Value.BaseUrl, UriKind.Absolute), redirectUrl, out var canonicalRedirectUrl))
+        {
+            response.Dispose();
+            throw new CalendarDiscoveryProtocolException("Unsafe CalDAV redirect href.");
+        }
+
+        _logger.LogDebug("{Method} redirect {StatusCode} within the configured origin", method, (int)response.StatusCode);
+        var redirectRequest = new HttpRequestMessage(method, canonicalRedirectUrl)
+        {
+            Content = new StringContent(body, Encoding.UTF8, contentType)
+        };
+        foreach (var depthValue in depthValues)
+            redirectRequest.Headers.Add("Depth", depthValue);
+        return redirectRequest;
     }
 
     private static string? GetRedirectUrl(HttpResponseMessage response, Uri? requestUri)
@@ -452,6 +538,29 @@ internal sealed class CalDavClient : ICalDavClient
         var baseWithPath = new Uri(baseUri, baseUri.AbsolutePath.TrimEnd('/') + "/");
         var resolved = new Uri(baseWithPath, href);
         return resolved.AbsoluteUri;
+    }
+
+    private bool TryCanonicalizeCalendarHref(Uri homeSetUri, string href, out string canonicalHref)
+    {
+        canonicalHref = string.Empty;
+        if (!Uri.TryCreate(homeSetUri, href, out var candidate)
+            || !candidate.IsAbsoluteUri
+            || !string.IsNullOrEmpty(candidate.UserInfo)
+            || !string.IsNullOrEmpty(candidate.Fragment))
+        {
+            return false;
+        }
+
+        var configuredBaseUri = new Uri(_options.Value.BaseUrl, UriKind.Absolute);
+        if (!string.Equals(candidate.Scheme, configuredBaseUri.Scheme, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(candidate.Host, configuredBaseUri.Host, StringComparison.OrdinalIgnoreCase)
+            || candidate.Port != configuredBaseUri.Port)
+        {
+            return false;
+        }
+
+        canonicalHref = candidate.AbsoluteUri;
+        return true;
     }
 
     private static bool MatchesQuery(TaskItem task, TaskQuery query)

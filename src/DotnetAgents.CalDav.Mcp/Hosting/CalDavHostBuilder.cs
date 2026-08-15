@@ -4,6 +4,7 @@ using DotnetAgents.CalDav.Mcp.Tools;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace DotnetAgents.CalDav.Mcp.Hosting;
 
@@ -18,19 +19,16 @@ public sealed class CalDavHostBuilder
     /// The caller must configure <see cref="CalDavOptions"/> via <see cref="ConfigureCalDav"/>
     /// before calling <see cref="HostApplicationBuilder.Build"/>.
     /// </summary>
-    /// <param name="exposeAdvancedTools">
-    /// When <c>true</c>, registers all tool classes including <see cref="TaskQueryTools"/> and
-    /// <see cref="TaskMutationTools"/> (href-based, advanced tools). When <c>false</c> (default),
-    /// registers only chat-safe tools: <see cref="TaskListTools"/> and <see cref="ChatTaskTools"/>.
-    /// </param>
+    /// <param name="exposeAdvancedTools">Whether to retain the existing legacy href-based tool surface.</param>
     public static HostApplicationBuilder CreateBuilder(bool exposeAdvancedTools = false)
     {
         var builder = Host.CreateApplicationBuilder();
 
         builder.Logging.ClearProviders();
 
-        var mcpBuilder = builder.Services.AddMcpServer()
+        var mcpBuilder = builder.Services.AddMcpServer(options => options.ProtocolVersion = "2026-07-28")
             .WithStdioServerTransport()
+            .WithTools<CalendarTools>()
             .WithTools<TaskListTools>()
             .WithTools<ChatTaskTools>();
 
@@ -41,10 +39,26 @@ public sealed class CalDavHostBuilder
                 .WithTools<TaskMutationTools>();
         }
 
+        builder.Services.PostConfigure<ModelContextProtocol.Server.McpServerOptions>(ConfigureCalendarToolContract);
+
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddTransient<TaskCompletion>();
 
         return builder;
+    }
+
+    private static void ConfigureCalendarToolContract(ModelContextProtocol.Server.McpServerOptions options)
+    {
+        if (options.ToolCollection is null || !options.ToolCollection.TryGetPrimitive("calendars.list", out var tool))
+            return;
+
+        options.ToolCollection = new OrderedToolCollection(options.ToolCollection.ToArray());
+        tool.ProtocolTool.InputSchema = CalendarToolContract.GetInputSchema();
+        tool.ProtocolTool.OutputSchema = CalendarToolContract.GetOutputSchema();
+        tool.ProtocolTool.Meta = new System.Text.Json.Nodes.JsonObject
+        {
+            ["cache"] = CalendarToolContract.GetCacheMetadata()
+        };
     }
 }
 

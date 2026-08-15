@@ -27,21 +27,22 @@ public class CalDavEnvironmentMapperTests
     }
 
     [Fact]
-    public void MapFromEnvironment_MapsOptionalTaskLists()
+    public void MapFromEnvironment_MapsOptionalCalendarScope()
     {
         var envVars = new Dictionary<string, string?>
         {
             ["CALDAV_URL"] = "https://caldav.example.com",
             ["CALDAV_USERNAME"] = "user",
             ["CALDAV_PASSWORD"] = "pass",
-            ["CALDAV_TASK_LISTS"] = "list1,list2",
+            ["CALDAV_CALENDAR_HREFS"] = "https://caldav.example.com/a/,https://caldav.example.com/b/",
         };
 
         var configure = CalDavEnvironmentMapper.MapFromEnvironment(key => envVars.GetValueOrDefault(key));
         var options = new CalDavOptions();
         configure(options);
 
-        options.TaskLists.ShouldBe("list1,list2");
+        options.CalendarHrefs.ShouldBe("https://caldav.example.com/a/,https://caldav.example.com/b/");
+        options.TaskLists.ShouldBeNull();
     }
 
     [Fact]
@@ -57,7 +58,7 @@ public class CalDavEnvironmentMapperTests
     }
 
     [Fact]
-    public void MapFromEnvironment_MissingTaskLists_DefaultsToNull()
+    public void MapFromEnvironment_MissingCalendarScope_DefaultsToNull()
     {
         var envVars = new Dictionary<string, string?>
         {
@@ -70,29 +71,31 @@ public class CalDavEnvironmentMapperTests
         var options = new CalDavOptions();
         configure(options);
 
-        options.TaskLists.ShouldBeNull();
+        options.CalendarHrefs.ShouldBeNull();
     }
 
     [Fact]
-    public void MapFromEnvironment_MapsDefaultTaskList()
+    public void MapFromEnvironment_MapsIndependentDefaultCalendarNames()
     {
         var envVars = new Dictionary<string, string?>
         {
             ["CALDAV_URL"] = "https://caldav.example.com",
             ["CALDAV_USERNAME"] = "user",
             ["CALDAV_PASSWORD"] = "pass",
-            ["CALDAV_DEFAULT_TASK_LIST"] = "My Tasks",
+            ["CALDAV_DEFAULT_TODO_CALENDAR_NAME"] = "My To-dos",
+            ["CALDAV_DEFAULT_EVENT_CALENDAR_NAME"] = "My Events",
         };
 
         var configure = CalDavEnvironmentMapper.MapFromEnvironment(key => envVars.GetValueOrDefault(key));
         var options = new CalDavOptions();
         configure(options);
 
-        options.DefaultTaskList.ShouldBe("My Tasks");
+        options.DefaultTodoCalendarName.ShouldBe("My To-dos");
+        options.DefaultEventCalendarName.ShouldBe("My Events");
     }
 
     [Fact]
-    public void MapFromEnvironment_MissingDefaultTaskList_DefaultsToNull()
+    public void MapFromEnvironment_MissingDefaultCalendarNames_DefaultToNull()
     {
         var envVars = new Dictionary<string, string?>
         {
@@ -105,7 +108,8 @@ public class CalDavEnvironmentMapperTests
         var options = new CalDavOptions();
         configure(options);
 
-        options.DefaultTaskList.ShouldBeNull();
+        options.DefaultTodoCalendarName.ShouldBeNull();
+        options.DefaultEventCalendarName.ShouldBeNull();
     }
 
 }

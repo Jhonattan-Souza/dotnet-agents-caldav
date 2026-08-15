@@ -13,6 +13,39 @@ public class DavResponseParserTests
     private static readonly XNamespace AppleCs = "http://apple.com/ns/ical/";
 
     [Fact]
+    public void ParseCalendars_PreservesEveryCalendarAndIndependentComponentEvidence()
+    {
+        var xml = BuildMultistatusXml(doc =>
+        {
+            doc.Element(Dav + "multistatus")!.Add(
+                BuildResponseElement("/calendars/user/events/",
+                    new XElement(Dav + "resourcetype", new XElement(CalDav + "calendar")),
+                    new XElement(CalDav + "calendar-description", "Calendar description"),
+                    new XElement(CalDav + "supported-calendar-component-set",
+                        new XElement(CalDav + "comp", new XAttribute("name", "VEVENT")))),
+                BuildResponseElement("/calendars/user/unknown/",
+                    new XElement(Dav + "displayname", "  "),
+                    new XElement(Dav + "resourcetype", new XElement(CalDav + "calendar"))));
+        });
+
+        var result = DavResponseParser.ParseCalendars(xml);
+
+        result.Count.ShouldBe(2);
+        result[0].Href.ShouldBe("/calendars/user/events/");
+        result[0].DisplayName.ShouldBe("events");
+        result[0].DisplayNameProvenance.ShouldBe(DisplayNameProvenance.DerivedFromHref);
+        result[0].Description.ShouldBe("Calendar description");
+        result[0].EventSupport.ShouldBe(EntityKindSupport.Advertised);
+        result[0].TodoSupport.ShouldBe(EntityKindSupport.NotAdvertised);
+        result[0].EventEvidence.Single().Value.ShouldBe("VEVENT");
+        result[1].DisplayName.ShouldBeNull();
+        result[1].DisplayNameProvenance.ShouldBe(DisplayNameProvenance.Missing);
+        result[1].EventSupport.ShouldBe(EntityKindSupport.Unknown);
+        result[1].TodoSupport.ShouldBe(EntityKindSupport.Unknown);
+        result[1].EventEvidence.ShouldBeEmpty();
+    }
+
+    [Fact]
     public void ParseTaskLists_ValidCalendarCollection_ReturnsTaskList()
     {
         // Arrange

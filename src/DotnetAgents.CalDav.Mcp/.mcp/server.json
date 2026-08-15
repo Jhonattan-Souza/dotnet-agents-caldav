@@ -31,6 +31,21 @@
           "isSecret": true
         },
         {
+          "name": "CALDAV_CALENDAR_HREFS",
+          "description": "Comma-separated exact canonical Calendar href allowlist (optional; omit to discover every Calendar)",
+          "isRequired": false
+        },
+        {
+          "name": "CALDAV_DEFAULT_TODO_CALENDAR_NAME",
+          "description": "Display name of the default Calendar for To-do operations (optional)",
+          "isRequired": false
+        },
+        {
+          "name": "CALDAV_DEFAULT_EVENT_CALENDAR_NAME",
+          "description": "Display name of the default Calendar for Event operations (optional)",
+          "isRequired": false
+        },
+        {
           "name": "CALDAV_TASK_LISTS",
           "description": "Comma-separated list of task list hrefs to expose (optional; omit to auto-discover)",
           "isRequired": false

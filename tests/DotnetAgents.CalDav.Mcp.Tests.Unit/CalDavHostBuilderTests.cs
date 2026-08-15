@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text.Json.Nodes;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Mcp.Hosting;
@@ -184,35 +185,108 @@ public class CalDavHostBuilderTests
     }
 
     [Fact]
-    public void CreateBuilder_DefaultMode_RegistersOnlyChatSafeTools()
+    public void CreateBuilder_DefaultMode_RegistersCalendarDiscoveryAlongsideChatSafeLegacyTools()
     {
         // Arrange & Act
         var builder = CalDavHostBuilder.CreateBuilder();
 
-        // Assert — only TaskListTools and ChatTaskTools should be registered as tool types
         var registeredToolTypes = GetRegisteredMcpToolTypes(builder.Services);
 
-        registeredToolTypes.ShouldContain(typeof(DotnetAgents.CalDav.Mcp.Tools.TaskListTools));
-        registeredToolTypes.ShouldContain(typeof(DotnetAgents.CalDav.Mcp.Tools.ChatTaskTools));
-        registeredToolTypes.ShouldNotContain(typeof(DotnetAgents.CalDav.Mcp.Tools.TaskQueryTools),
-            "TaskQueryTools should not be registered in default (chat-safe) mode");
-        registeredToolTypes.ShouldNotContain(typeof(DotnetAgents.CalDav.Mcp.Tools.TaskMutationTools),
-            "TaskMutationTools should not be registered in default (chat-safe) mode");
+        registeredToolTypes.ShouldBe(
+        [
+            typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarTools),
+            typeof(DotnetAgents.CalDav.Mcp.Tools.TaskListTools),
+            typeof(DotnetAgents.CalDav.Mcp.Tools.ChatTaskTools)
+        ]);
+
     }
 
     [Fact]
-    public void CreateBuilder_AdvancedMode_RegistersAllToolTypes()
+    public void BuildHost_AdvertisesFrozenCalendarListSchemasAndPrivateCacheHint()
     {
-        // Arrange & Act
+        var builder = CalDavHostBuilder.CreateBuilder();
+        builder.Services.ConfigureCalDav(ValidOptions);
+        using var host = builder.Build();
+
+        var options = host.Services.GetRequiredService<IOptions<ModelContextProtocol.Server.McpServerOptions>>().Value;
+        options.ToolCollection!.TryGetPrimitive("calendars.list", out var tool).ShouldBeTrue();
+
+        var inputSchema = JsonNode.Parse(tool!.ProtocolTool.InputSchema.GetRawText())!.AsObject();
+        var outputSchema = JsonNode.Parse(tool.ProtocolTool.OutputSchema!.Value.GetRawText())!.AsObject();
+        inputSchema["type"]!.GetValue<string>().ShouldBe("object");
+        inputSchema["additionalProperties"]!.GetValue<bool>().ShouldBeFalse();
+        outputSchema["oneOf"]!.AsArray().Count.ShouldBe(2);
+        outputSchema["$defs"]!.AsObject().ShouldContainKey("calendarListSuccess");
+        inputSchema["$defs"].ShouldBeNull();
+        outputSchema["$defs"]!.AsObject().ShouldNotContainKey("deleteInput");
+        tool.ProtocolTool.Meta!["cache"]!["ttlMs"]!.GetValue<int>().ShouldBe(30000);
+        tool.ProtocolTool.Meta!["cache"]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
+    }
+
+    [Fact]
+    public void BuildHost_DefaultMode_ListsToolsInCanonicalWireOrder()
+    {
+        var builder = CalDavHostBuilder.CreateBuilder();
+        builder.Services.ConfigureCalDav(ValidOptions);
+        using var host = builder.Build();
+
+        var tools = host.Services.GetRequiredService<IOptions<ModelContextProtocol.Server.McpServerOptions>>().Value
+            .ToolCollection!
+            .ToArray()
+            .Select(tool => tool.ProtocolTool.Name);
+
+        tools.ShouldBe(
+        [
+            "calendars.list",
+            "list_task_lists",
+            "show_tasks",
+            "add_task",
+            "find_tasks",
+            "complete_task_by_summary",
+            "delete_task_by_summary"
+        ]);
+    }
+
+    [Fact]
+    public void CreateBuilder_AdvancedMode_KeepsLegacyAdvancedTools()
+    {
         var builder = CalDavHostBuilder.CreateBuilder(exposeAdvancedTools: true);
 
-        // Assert — all 4 tool classes should be registered
         var registeredToolTypes = GetRegisteredMcpToolTypes(builder.Services);
 
-        registeredToolTypes.ShouldContain(typeof(DotnetAgents.CalDav.Mcp.Tools.TaskListTools));
-        registeredToolTypes.ShouldContain(typeof(DotnetAgents.CalDav.Mcp.Tools.ChatTaskTools));
+        registeredToolTypes.ShouldContain(typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarTools));
         registeredToolTypes.ShouldContain(typeof(DotnetAgents.CalDav.Mcp.Tools.TaskQueryTools));
         registeredToolTypes.ShouldContain(typeof(DotnetAgents.CalDav.Mcp.Tools.TaskMutationTools));
+    }
+
+    [Fact]
+    public void BuildHost_AdvancedMode_ListsRankedToolsThenOrdinalFallback()
+    {
+        var builder = CalDavHostBuilder.CreateBuilder(exposeAdvancedTools: true);
+        builder.Services.ConfigureCalDav(ValidOptions);
+        using var host = builder.Build();
+
+        var tools = host.Services.GetRequiredService<IOptions<ModelContextProtocol.Server.McpServerOptions>>().Value
+            .ToolCollection!
+            .ToArray()
+            .Select(tool => tool.ProtocolTool.Name);
+
+        tools.ShouldBe(
+        [
+            "calendars.list",
+            "list_task_lists",
+            "show_tasks",
+            "add_task",
+            "find_tasks",
+            "complete_task_by_summary",
+            "delete_task_by_summary",
+            "complete_task",
+            "create_task",
+            "delete_task",
+            "get_task",
+            "list_tasks",
+            "update_task"
+        ]);
     }
 
     private static IReadOnlyList<Type> GetRegisteredMcpToolTypes(IServiceCollection services)

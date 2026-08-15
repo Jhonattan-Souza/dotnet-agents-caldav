@@ -25,6 +25,15 @@ public sealed class CalDavOptions
     /// <summary>Display name of the default task list used when no explicit list is specified by the user.</summary>
     public string? DefaultTaskList { get; set; }
 
+    /// <summary>Comma-separated exact canonical Calendar href allowlist. Empty means every discovered Calendar.</summary>
+    public string? CalendarHrefs { get; set; }
+
+    /// <summary>Display name of the default Calendar for To-do operations.</summary>
+    public string? DefaultTodoCalendarName { get; set; }
+
+    /// <summary>Display name of the default Calendar for Event operations.</summary>
+    public string? DefaultEventCalendarName { get; set; }
+
     /// <summary>Optional timeout for HTTP requests. Defaults to 30 seconds.</summary>
     public TimeSpan RequestTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
