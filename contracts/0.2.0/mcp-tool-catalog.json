@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "contractVersion": "0.2.0-draft.1",
+  "contractVersion": "0.2.0",
   "protocolRevision": "2026-07-28",
   "transport": {
     "discover": "server/discover",
@@ -19,6 +19,1326 @@
       "no_change",
       "confirmation_declined"
     ]
+  },
+  "mrtrWireContract": {
+    "toolsCallParams": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "arguments"
+          ],
+          "properties": {
+            "name": {
+              "const": "calendars.list"
+            },
+            "arguments": {
+              "$ref": "#/$defs/calendarScopeInput"
+            },
+            "requestState": {
+              "type": "string",
+              "minLength": 1
+            },
+            "inputResponses": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/mrtrInputResponse"
+              }
+            },
+            "_meta": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "io.modelcontextprotocol/protocolVersion",
+                "io.modelcontextprotocol/clientCapabilities"
+              ],
+              "properties": {
+                "io.modelcontextprotocol/protocolVersion": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "io.modelcontextprotocol/clientCapabilities": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/$defs/mrtrCapability"
+                  }
+                },
+                "clientInfo": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "version"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "arguments"
+          ],
+          "properties": {
+            "name": {
+              "const": "calendar_entities.query"
+            },
+            "arguments": {
+              "$ref": "#/$defs/entityQueryInput"
+            },
+            "requestState": {
+              "type": "string",
+              "minLength": 1
+            },
+            "inputResponses": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/mrtrInputResponse"
+              }
+            },
+            "_meta": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "io.modelcontextprotocol/protocolVersion",
+                "io.modelcontextprotocol/clientCapabilities"
+              ],
+              "properties": {
+                "io.modelcontextprotocol/protocolVersion": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "io.modelcontextprotocol/clientCapabilities": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/$defs/mrtrCapability"
+                  }
+                },
+                "clientInfo": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "version"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "arguments"
+          ],
+          "properties": {
+            "name": {
+              "const": "calendar_occurrences.query"
+            },
+            "arguments": {
+              "$ref": "#/$defs/occurrenceQueryInput"
+            },
+            "requestState": {
+              "type": "string",
+              "minLength": 1
+            },
+            "inputResponses": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/mrtrInputResponse"
+              }
+            },
+            "_meta": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "io.modelcontextprotocol/protocolVersion",
+                "io.modelcontextprotocol/clientCapabilities"
+              ],
+              "properties": {
+                "io.modelcontextprotocol/protocolVersion": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "io.modelcontextprotocol/clientCapabilities": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/$defs/mrtrCapability"
+                  }
+                },
+                "clientInfo": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "version"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "arguments"
+          ],
+          "properties": {
+            "name": {
+              "const": "calendar_resources.get"
+            },
+            "arguments": {
+              "$ref": "#/$defs/resourceAddressInput"
+            },
+            "requestState": {
+              "type": "string",
+              "minLength": 1
+            },
+            "inputResponses": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/mrtrInputResponse"
+              }
+            },
+            "_meta": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "io.modelcontextprotocol/protocolVersion",
+                "io.modelcontextprotocol/clientCapabilities"
+              ],
+              "properties": {
+                "io.modelcontextprotocol/protocolVersion": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "io.modelcontextprotocol/clientCapabilities": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/$defs/mrtrCapability"
+                  }
+                },
+                "clientInfo": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "version"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "arguments"
+          ],
+          "properties": {
+            "name": {
+              "const": "events.create"
+            },
+            "arguments": {
+              "$ref": "#/$defs/eventCreateInput"
+            },
+            "requestState": {
+              "type": "string",
+              "minLength": 1
+            },
+            "inputResponses": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/mrtrInputResponse"
+              }
+            },
+            "_meta": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "io.modelcontextprotocol/protocolVersion",
+                "io.modelcontextprotocol/clientCapabilities"
+              ],
+              "properties": {
+                "io.modelcontextprotocol/protocolVersion": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "io.modelcontextprotocol/clientCapabilities": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/$defs/mrtrCapability"
+                  }
+                },
+                "clientInfo": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "version"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "arguments"
+          ],
+          "properties": {
+            "name": {
+              "const": "events.patch"
+            },
+            "arguments": {
+              "$ref": "#/$defs/eventPatchInput"
+            },
+            "requestState": {
+              "type": "string",
+              "minLength": 1
+            },
+            "inputResponses": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/mrtrInputResponse"
+              }
+            },
+            "_meta": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "io.modelcontextprotocol/protocolVersion",
+                "io.modelcontextprotocol/clientCapabilities"
+              ],
+              "properties": {
+                "io.modelcontextprotocol/protocolVersion": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "io.modelcontextprotocol/clientCapabilities": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/$defs/mrtrCapability"
+                  }
+                },
+                "clientInfo": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "version"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "arguments"
+          ],
+          "properties": {
+            "name": {
+              "const": "todos.create"
+            },
+            "arguments": {
+              "$ref": "#/$defs/todoCreateInput"
+            },
+            "requestState": {
+              "type": "string",
+              "minLength": 1
+            },
+            "inputResponses": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/mrtrInputResponse"
+              }
+            },
+            "_meta": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "io.modelcontextprotocol/protocolVersion",
+                "io.modelcontextprotocol/clientCapabilities"
+              ],
+              "properties": {
+                "io.modelcontextprotocol/protocolVersion": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "io.modelcontextprotocol/clientCapabilities": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/$defs/mrtrCapability"
+                  }
+                },
+                "clientInfo": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "version"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "arguments"
+          ],
+          "properties": {
+            "name": {
+              "const": "todos.patch"
+            },
+            "arguments": {
+              "$ref": "#/$defs/todoPatchInput"
+            },
+            "requestState": {
+              "type": "string",
+              "minLength": 1
+            },
+            "inputResponses": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/mrtrInputResponse"
+              }
+            },
+            "_meta": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "io.modelcontextprotocol/protocolVersion",
+                "io.modelcontextprotocol/clientCapabilities"
+              ],
+              "properties": {
+                "io.modelcontextprotocol/protocolVersion": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "io.modelcontextprotocol/clientCapabilities": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/$defs/mrtrCapability"
+                  }
+                },
+                "clientInfo": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "version"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "arguments"
+          ],
+          "properties": {
+            "name": {
+              "const": "todos.complete"
+            },
+            "arguments": {
+              "$ref": "#/$defs/completionInput"
+            },
+            "requestState": {
+              "type": "string",
+              "minLength": 1
+            },
+            "inputResponses": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/mrtrInputResponse"
+              }
+            },
+            "_meta": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "io.modelcontextprotocol/protocolVersion",
+                "io.modelcontextprotocol/clientCapabilities"
+              ],
+              "properties": {
+                "io.modelcontextprotocol/protocolVersion": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "io.modelcontextprotocol/clientCapabilities": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/$defs/mrtrCapability"
+                  }
+                },
+                "clientInfo": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "version"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "arguments"
+          ],
+          "properties": {
+            "name": {
+              "const": "calendar_occurrences.add"
+            },
+            "arguments": {
+              "$ref": "#/$defs/occurrenceMutationInput"
+            },
+            "requestState": {
+              "type": "string",
+              "minLength": 1
+            },
+            "inputResponses": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/mrtrInputResponse"
+              }
+            },
+            "_meta": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "io.modelcontextprotocol/protocolVersion",
+                "io.modelcontextprotocol/clientCapabilities"
+              ],
+              "properties": {
+                "io.modelcontextprotocol/protocolVersion": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "io.modelcontextprotocol/clientCapabilities": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/$defs/mrtrCapability"
+                  }
+                },
+                "clientInfo": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "version"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "arguments"
+          ],
+          "properties": {
+            "name": {
+              "const": "calendar_occurrences.exclude"
+            },
+            "arguments": {
+              "$ref": "#/$defs/occurrenceMutationInput"
+            },
+            "requestState": {
+              "type": "string",
+              "minLength": 1
+            },
+            "inputResponses": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/mrtrInputResponse"
+              }
+            },
+            "_meta": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "io.modelcontextprotocol/protocolVersion",
+                "io.modelcontextprotocol/clientCapabilities"
+              ],
+              "properties": {
+                "io.modelcontextprotocol/protocolVersion": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "io.modelcontextprotocol/clientCapabilities": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/$defs/mrtrCapability"
+                  }
+                },
+                "clientInfo": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "version"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "arguments"
+          ],
+          "properties": {
+            "name": {
+              "const": "calendar_occurrences.restore_exclusion"
+            },
+            "arguments": {
+              "$ref": "#/$defs/occurrenceMutationInput"
+            },
+            "requestState": {
+              "type": "string",
+              "minLength": 1
+            },
+            "inputResponses": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/mrtrInputResponse"
+              }
+            },
+            "_meta": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "io.modelcontextprotocol/protocolVersion",
+                "io.modelcontextprotocol/clientCapabilities"
+              ],
+              "properties": {
+                "io.modelcontextprotocol/protocolVersion": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "io.modelcontextprotocol/clientCapabilities": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/$defs/mrtrCapability"
+                  }
+                },
+                "clientInfo": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "version"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "arguments"
+          ],
+          "properties": {
+            "name": {
+              "const": "calendar_occurrences.cancel"
+            },
+            "arguments": {
+              "$ref": "#/$defs/occurrenceMutationInput"
+            },
+            "requestState": {
+              "type": "string",
+              "minLength": 1
+            },
+            "inputResponses": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/mrtrInputResponse"
+              }
+            },
+            "_meta": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "io.modelcontextprotocol/protocolVersion",
+                "io.modelcontextprotocol/clientCapabilities"
+              ],
+              "properties": {
+                "io.modelcontextprotocol/protocolVersion": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "io.modelcontextprotocol/clientCapabilities": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/$defs/mrtrCapability"
+                  }
+                },
+                "clientInfo": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "version"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "arguments"
+          ],
+          "properties": {
+            "name": {
+              "const": "calendar_occurrences.restore_cancellation"
+            },
+            "arguments": {
+              "$ref": "#/$defs/occurrenceMutationInput"
+            },
+            "requestState": {
+              "type": "string",
+              "minLength": 1
+            },
+            "inputResponses": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/mrtrInputResponse"
+              }
+            },
+            "_meta": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "io.modelcontextprotocol/protocolVersion",
+                "io.modelcontextprotocol/clientCapabilities"
+              ],
+              "properties": {
+                "io.modelcontextprotocol/protocolVersion": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "io.modelcontextprotocol/clientCapabilities": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/$defs/mrtrCapability"
+                  }
+                },
+                "clientInfo": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "version"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "arguments"
+          ],
+          "properties": {
+            "name": {
+              "const": "calendar_resources.move"
+            },
+            "arguments": {
+              "$ref": "#/$defs/semanticMoveInput"
+            },
+            "requestState": {
+              "type": "string",
+              "minLength": 1
+            },
+            "inputResponses": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/mrtrInputResponse"
+              }
+            },
+            "_meta": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "io.modelcontextprotocol/protocolVersion",
+                "io.modelcontextprotocol/clientCapabilities"
+              ],
+              "properties": {
+                "io.modelcontextprotocol/protocolVersion": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "io.modelcontextprotocol/clientCapabilities": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/$defs/mrtrCapability"
+                  }
+                },
+                "clientInfo": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "version"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "arguments"
+          ],
+          "properties": {
+            "name": {
+              "const": "calendar_resources.delete"
+            },
+            "arguments": {
+              "$ref": "#/$defs/deleteInput"
+            },
+            "requestState": {
+              "type": "string",
+              "minLength": 1
+            },
+            "inputResponses": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/mrtrInputResponse"
+              }
+            },
+            "_meta": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "io.modelcontextprotocol/protocolVersion",
+                "io.modelcontextprotocol/clientCapabilities"
+              ],
+              "properties": {
+                "io.modelcontextprotocol/protocolVersion": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "io.modelcontextprotocol/clientCapabilities": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/$defs/mrtrCapability"
+                  }
+                },
+                "clientInfo": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "version"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "arguments"
+          ],
+          "properties": {
+            "name": {
+              "const": "calendar_resources.exact_get"
+            },
+            "arguments": {
+              "$ref": "#/$defs/resourceAddressInput"
+            },
+            "requestState": {
+              "type": "string",
+              "minLength": 1
+            },
+            "inputResponses": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/mrtrInputResponse"
+              }
+            },
+            "_meta": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "io.modelcontextprotocol/protocolVersion",
+                "io.modelcontextprotocol/clientCapabilities"
+              ],
+              "properties": {
+                "io.modelcontextprotocol/protocolVersion": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "io.modelcontextprotocol/clientCapabilities": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/$defs/mrtrCapability"
+                  }
+                },
+                "clientInfo": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "version"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "arguments"
+          ],
+          "properties": {
+            "name": {
+              "const": "calendar_resources.exact_create"
+            },
+            "arguments": {
+              "$ref": "#/$defs/exactCreateInput"
+            },
+            "requestState": {
+              "type": "string",
+              "minLength": 1
+            },
+            "inputResponses": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/mrtrInputResponse"
+              }
+            },
+            "_meta": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "io.modelcontextprotocol/protocolVersion",
+                "io.modelcontextprotocol/clientCapabilities"
+              ],
+              "properties": {
+                "io.modelcontextprotocol/protocolVersion": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "io.modelcontextprotocol/clientCapabilities": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/$defs/mrtrCapability"
+                  }
+                },
+                "clientInfo": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "version"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "arguments"
+          ],
+          "properties": {
+            "name": {
+              "const": "calendar_resources.exact_replace"
+            },
+            "arguments": {
+              "$ref": "#/$defs/exactReplaceInput"
+            },
+            "requestState": {
+              "type": "string",
+              "minLength": 1
+            },
+            "inputResponses": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/mrtrInputResponse"
+              }
+            },
+            "_meta": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "io.modelcontextprotocol/protocolVersion",
+                "io.modelcontextprotocol/clientCapabilities"
+              ],
+              "properties": {
+                "io.modelcontextprotocol/protocolVersion": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "io.modelcontextprotocol/clientCapabilities": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/$defs/mrtrCapability"
+                  }
+                },
+                "clientInfo": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "version"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "arguments"
+          ],
+          "properties": {
+            "name": {
+              "const": "calendar_resources.exact_move"
+            },
+            "arguments": {
+              "$ref": "#/$defs/exactMoveInput"
+            },
+            "requestState": {
+              "type": "string",
+              "minLength": 1
+            },
+            "inputResponses": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/mrtrInputResponse"
+              }
+            },
+            "_meta": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "io.modelcontextprotocol/protocolVersion",
+                "io.modelcontextprotocol/clientCapabilities"
+              ],
+              "properties": {
+                "io.modelcontextprotocol/protocolVersion": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "io.modelcontextprotocol/clientCapabilities": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/$defs/mrtrCapability"
+                  }
+                },
+                "clientInfo": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "version"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "outerResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resultType"
+      ],
+      "properties": {
+        "resultType": {
+          "const": "input_required"
+        },
+        "requestState": {
+          "type": "string",
+          "minLength": 1
+        },
+        "inputRequests": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/mrtrInputRequest"
+          }
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "inputRequests"
+          ]
+        },
+        {
+          "required": [
+            "requestState"
+          ]
+        }
+      ]
+    }
   },
   "environment": [
     {
@@ -93,14 +1413,15 @@
         "$ref": "#/$defs/calendarScopeInput"
       },
       "outputSchema": {
-        "$ref": "#/$defs/queryOutcome"
+        "$ref": "#/$defs/calendarListOutcome"
       },
       "annotations": {
         "readOnlyHint": true,
         "destructiveHint": false,
         "idempotentHint": true,
-        "openWorldHint": false
-      }
+        "openWorldHint": true
+      },
+      "description": "List every configured Calendar with independent Event and To-do capability evidence."
     },
     {
       "name": "calendar_entities.query",
@@ -112,14 +1433,15 @@
         "$ref": "#/$defs/entityQueryInput"
       },
       "outputSchema": {
-        "$ref": "#/$defs/queryOutcome"
+        "$ref": "#/$defs/entityQueryOutcome"
       },
       "annotations": {
         "readOnlyHint": true,
         "destructiveHint": false,
         "idempotentHint": true,
-        "openWorldHint": false
-      }
+        "openWorldHint": true
+      },
+      "description": "Query persisted Event or To-do resource snapshots within an explicit Calendar Scope."
     },
     {
       "name": "calendar_occurrences.query",
@@ -131,14 +1453,15 @@
         "$ref": "#/$defs/occurrenceQueryInput"
       },
       "outputSchema": {
-        "$ref": "#/$defs/queryOutcome"
+        "$ref": "#/$defs/occurrenceQueryOutcome"
       },
       "annotations": {
         "readOnlyHint": true,
         "destructiveHint": false,
         "idempotentHint": true,
-        "openWorldHint": false
-      }
+        "openWorldHint": true
+      },
+      "description": "Query bounded derived occurrences over a half-open UTC range."
     },
     {
       "name": "calendar_resources.get",
@@ -156,8 +1479,9 @@
         "readOnlyHint": true,
         "destructiveHint": false,
         "idempotentHint": true,
-        "openWorldHint": false
-      }
+        "openWorldHint": true
+      },
+      "description": "Read one semantic Calendar Object Resource by an explicitly confirmed absolute href."
     },
     {
       "name": "events.create",
@@ -166,17 +1490,18 @@
         "cacheScope": "private"
       },
       "inputSchema": {
-        "$ref": "#/$defs/semanticCreateInput"
+        "$ref": "#/$defs/eventCreateInput"
       },
       "outputSchema": {
-        "$ref": "#/$defs/mutationOutcome"
+        "$ref": "#/$defs/snapshotMutationOutcome"
       },
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
         "idempotentHint": false,
-        "openWorldHint": false
-      }
+        "openWorldHint": true
+      },
+      "description": "Create one typed Event in the default or explicitly selected Calendar."
     },
     {
       "name": "events.patch",
@@ -185,17 +1510,18 @@
         "cacheScope": "private"
       },
       "inputSchema": {
-        "$ref": "#/$defs/patchInput"
+        "$ref": "#/$defs/eventPatchInput"
       },
       "outputSchema": {
-        "$ref": "#/$defs/mutationOutcome"
+        "$ref": "#/$defs/snapshotMutationOutcome"
       },
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": true,
         "idempotentHint": false,
-        "openWorldHint": false
-      }
+        "openWorldHint": true
+      },
+      "description": "Apply a revision-bound semantic patch to one Event resource."
     },
     {
       "name": "todos.create",
@@ -204,17 +1530,18 @@
         "cacheScope": "private"
       },
       "inputSchema": {
-        "$ref": "#/$defs/semanticCreateInput"
+        "$ref": "#/$defs/todoCreateInput"
       },
       "outputSchema": {
-        "$ref": "#/$defs/mutationOutcome"
+        "$ref": "#/$defs/snapshotMutationOutcome"
       },
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
         "idempotentHint": false,
-        "openWorldHint": false
-      }
+        "openWorldHint": true
+      },
+      "description": "Create one typed To-do in the default or explicitly selected Calendar."
     },
     {
       "name": "todos.patch",
@@ -223,17 +1550,18 @@
         "cacheScope": "private"
       },
       "inputSchema": {
-        "$ref": "#/$defs/patchInput"
+        "$ref": "#/$defs/todoPatchInput"
       },
       "outputSchema": {
-        "$ref": "#/$defs/mutationOutcome"
+        "$ref": "#/$defs/snapshotMutationOutcome"
       },
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": true,
         "idempotentHint": false,
-        "openWorldHint": false
-      }
+        "openWorldHint": true
+      },
+      "description": "Apply a revision-bound semantic patch to one To-do resource."
     },
     {
       "name": "todos.complete",
@@ -245,14 +1573,15 @@
         "$ref": "#/$defs/completionInput"
       },
       "outputSchema": {
-        "$ref": "#/$defs/mutationOutcome"
+        "$ref": "#/$defs/snapshotMutationOutcome"
       },
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
         "idempotentHint": false,
-        "openWorldHint": false
-      }
+        "openWorldHint": true
+      },
+      "description": "Record completion for one revision-bound To-do or identified To-do occurrence."
     },
     {
       "name": "calendar_occurrences.add",
@@ -264,14 +1593,15 @@
         "$ref": "#/$defs/occurrenceMutationInput"
       },
       "outputSchema": {
-        "$ref": "#/$defs/mutationOutcome"
+        "$ref": "#/$defs/snapshotMutationOutcome"
       },
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
         "idempotentHint": false,
-        "openWorldHint": false
-      }
+        "openWorldHint": true
+      },
+      "description": "Add one explicit recurrence identity through recurrence data."
     },
     {
       "name": "calendar_occurrences.exclude",
@@ -283,14 +1613,15 @@
         "$ref": "#/$defs/occurrenceMutationInput"
       },
       "outputSchema": {
-        "$ref": "#/$defs/mutationOutcome"
+        "$ref": "#/$defs/snapshotMutationOutcome"
       },
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": true,
         "idempotentHint": false,
-        "openWorldHint": false
-      }
+        "openWorldHint": true
+      },
+      "description": "Add one explicit exclusion to a revision-bound recurrence set."
     },
     {
       "name": "calendar_occurrences.restore_exclusion",
@@ -302,14 +1633,15 @@
         "$ref": "#/$defs/occurrenceMutationInput"
       },
       "outputSchema": {
-        "$ref": "#/$defs/mutationOutcome"
+        "$ref": "#/$defs/snapshotMutationOutcome"
       },
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
         "idempotentHint": false,
-        "openWorldHint": false
-      }
+        "openWorldHint": true
+      },
+      "description": "Remove only one explicit recurrence exclusion."
     },
     {
       "name": "calendar_occurrences.cancel",
@@ -321,14 +1653,15 @@
         "$ref": "#/$defs/occurrenceMutationInput"
       },
       "outputSchema": {
-        "$ref": "#/$defs/mutationOutcome"
+        "$ref": "#/$defs/snapshotMutationOutcome"
       },
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": true,
         "idempotentHint": false,
-        "openWorldHint": false
-      }
+        "openWorldHint": true
+      },
+      "description": "Create or update one cancelled recurrence override."
     },
     {
       "name": "calendar_occurrences.restore_cancellation",
@@ -340,14 +1673,15 @@
         "$ref": "#/$defs/occurrenceMutationInput"
       },
       "outputSchema": {
-        "$ref": "#/$defs/mutationOutcome"
+        "$ref": "#/$defs/snapshotMutationOutcome"
       },
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
         "idempotentHint": false,
-        "openWorldHint": false
-      }
+        "openWorldHint": true
+      },
+      "description": "Restore only one cancelled recurrence override."
     },
     {
       "name": "calendar_resources.move",
@@ -356,17 +1690,18 @@
         "cacheScope": "private"
       },
       "inputSchema": {
-        "$ref": "#/$defs/moveInput"
+        "$ref": "#/$defs/semanticMoveInput"
       },
       "outputSchema": {
-        "$ref": "#/$defs/mutationOutcome"
+        "$ref": "#/$defs/snapshotMutationOutcome"
       },
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": true,
         "idempotentHint": false,
-        "openWorldHint": false
-      }
+        "openWorldHint": true
+      },
+      "description": "Move one revision-bound semantic resource to the default or selected Calendar."
     },
     {
       "name": "calendar_resources.delete",
@@ -375,17 +1710,18 @@
         "cacheScope": "private"
       },
       "inputSchema": {
-        "$ref": "#/$defs/resourceAddressInput"
+        "$ref": "#/$defs/deleteInput"
       },
       "outputSchema": {
-        "$ref": "#/$defs/mutationOutcome"
+        "$ref": "#/$defs/deleteMutationOutcome"
       },
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": true,
         "idempotentHint": false,
-        "openWorldHint": false
-      }
+        "openWorldHint": true
+      },
+      "description": "Confirm and delete one revision-bound Calendar Object Resource."
     },
     {
       "name": "calendar_resources.exact_get",
@@ -395,7 +1731,7 @@
       },
       "optIn": true,
       "inputSchema": {
-        "$ref": "#/$defs/revisionReferenceInput"
+        "$ref": "#/$defs/resourceAddressInput"
       },
       "outputSchema": {
         "$ref": "#/$defs/exactGetOutcome"
@@ -404,8 +1740,9 @@
         "readOnlyHint": true,
         "destructiveHint": false,
         "idempotentHint": true,
-        "openWorldHint": false
-      }
+        "openWorldHint": true
+      },
+      "description": "Read one confirmed absolute href through a protected MCP resource link."
     },
     {
       "name": "calendar_resources.exact_create",
@@ -418,14 +1755,15 @@
         "$ref": "#/$defs/exactCreateInput"
       },
       "outputSchema": {
-        "$ref": "#/$defs/mutationOutcome"
+        "$ref": "#/$defs/snapshotMutationOutcome"
       },
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
         "idempotentHint": false,
-        "openWorldHint": false
-      }
+        "openWorldHint": true
+      },
+      "description": "Create an exact UTF-8 resource at an explicit destination resource href."
     },
     {
       "name": "calendar_resources.exact_replace",
@@ -438,14 +1776,15 @@
         "$ref": "#/$defs/exactReplaceInput"
       },
       "outputSchema": {
-        "$ref": "#/$defs/mutationOutcome"
+        "$ref": "#/$defs/snapshotMutationOutcome"
       },
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": true,
         "idempotentHint": false,
-        "openWorldHint": false
-      }
+        "openWorldHint": true
+      },
+      "description": "Confirm and replace one revision-bound resource with exact UTF-8 content."
     },
     {
       "name": "calendar_resources.exact_move",
@@ -455,29 +1794,135 @@
       },
       "optIn": true,
       "inputSchema": {
-        "$ref": "#/$defs/moveInput"
+        "$ref": "#/$defs/exactMoveInput"
       },
       "outputSchema": {
-        "$ref": "#/$defs/mutationOutcome"
+        "$ref": "#/$defs/snapshotMutationOutcome"
       },
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": true,
         "idempotentHint": false,
-        "openWorldHint": false
-      }
+        "openWorldHint": true
+      },
+      "description": "Confirm and move one revision-bound resource to an explicit destination href."
     }
   ],
   "$defs": {
-    "calendarReference": { "oneOf": [
-      { "type": "object", "additionalProperties": false, "required": ["by", "name"], "properties": { "by": { "const": "name" }, "name": { "type": "string", "minLength": 1 } } },
-      { "type": "object", "additionalProperties": false, "required": ["by", "href"], "properties": { "by": { "const": "href" }, "href": { "type": "string", "format": "uri" } } }
-    ] },
-    "calendarScope": { "oneOf": [
-      { "type": "object", "additionalProperties": false, "required": ["mode"], "properties": { "mode": { "const": "default" } } },
-      { "type": "object", "additionalProperties": false, "required": ["mode", "calendar"], "properties": { "mode": { "const": "selected" }, "calendar": { "$ref": "#/$defs/calendarReference" } } },
-      { "type": "object", "additionalProperties": false, "required": ["mode"], "properties": { "mode": { "const": "all" } } }
-    ] },
+    "calendarReference": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "by",
+            "name"
+          ],
+          "properties": {
+            "by": {
+              "const": "name"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "by",
+            "href"
+          ],
+          "properties": {
+            "by": {
+              "const": "href"
+            },
+            "href": {
+              "type": "string",
+              "format": "uri"
+            }
+          }
+        }
+      ]
+    },
+    "calendarScope": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode"
+          ],
+          "properties": {
+            "mode": {
+              "const": "default"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "calendar"
+          ],
+          "properties": {
+            "mode": {
+              "const": "selected"
+            },
+            "calendar": {
+              "$ref": "#/$defs/calendarReference"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode"
+          ],
+          "properties": {
+            "mode": {
+              "const": "all"
+            }
+          }
+        }
+      ]
+    },
+    "calendarDestination": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode"
+          ],
+          "properties": {
+            "mode": {
+              "const": "default"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "calendar"
+          ],
+          "properties": {
+            "mode": {
+              "const": "selected"
+            },
+            "calendar": {
+              "$ref": "#/$defs/calendarReference"
+            }
+          }
+        }
+      ]
+    },
     "revisionReference": {
       "type": "object",
       "additionalProperties": false,
@@ -508,6 +1953,60 @@
         }
       }
     },
+    "eventRevisionReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "href",
+        "entityUid",
+        "entityKind",
+        "entityTag"
+      ],
+      "properties": {
+        "href": {
+          "type": "string",
+          "format": "uri"
+        },
+        "entityUid": {
+          "type": "string",
+          "minLength": 1
+        },
+        "entityKind": {
+          "const": "event"
+        },
+        "entityTag": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "todoRevisionReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "href",
+        "entityUid",
+        "entityKind",
+        "entityTag"
+      ],
+      "properties": {
+        "href": {
+          "type": "string",
+          "format": "uri"
+        },
+        "entityUid": {
+          "type": "string",
+          "minLength": 1
+        },
+        "entityKind": {
+          "const": "todo"
+        },
+        "entityTag": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
     "temporalValue": {
       "oneOf": [
         {
@@ -523,7 +2022,7 @@
             },
             "value": {
               "type": "string",
-              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])$"
             }
           }
         },
@@ -540,7 +2039,7 @@
             },
             "value": {
               "type": "string",
-              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?$"
+              "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?$"
             }
           }
         },
@@ -557,7 +2056,7 @@
             },
             "value": {
               "type": "string",
-              "pattern": "Z$"
+              "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?Z$"
             }
           }
         },
@@ -575,7 +2074,7 @@
             },
             "value": {
               "type": "string",
-              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?$"
+              "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?$"
             },
             "timeZoneId": {
               "type": "string",
@@ -598,11 +2097,14 @@
         },
         "value": {
           "type": "string",
-          "pattern": "Z$"
+          "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?Z$"
         }
       }
     },
-    "calendarScopeInput": { "type": "object", "additionalProperties": false },
+    "calendarScopeInput": {
+      "type": "object",
+      "additionalProperties": false
+    },
     "entityQueryInput": {
       "type": "object",
       "additionalProperties": false,
@@ -625,6 +2127,12 @@
             ]
           }
         },
+        "from": {
+          "$ref": "#/$defs/utcTemporalValue"
+        },
+        "to": {
+          "$ref": "#/$defs/utcTemporalValue"
+        },
         "pageSize": {
           "type": "integer",
           "minimum": 1,
@@ -633,7 +2141,33 @@
         "cursor": {
           "type": "string"
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "from"
+            ]
+          },
+          "then": {
+            "required": [
+              "to"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "to"
+            ]
+          },
+          "then": {
+            "required": [
+              "from"
+            ]
+          }
+        }
+      ]
     },
     "occurrenceQueryInput": {
       "type": "object",
@@ -667,19 +2201,19 @@
         }
       }
     },
-    "revisionReferenceInput": {
+    "resourceAddressInput": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "revision"
+        "href"
       ],
       "properties": {
-        "revision": {
-          "$ref": "#/$defs/revisionReference"
+        "href": {
+          "type": "string",
+          "format": "uri"
         }
       }
     },
-    "resourceAddressInput": { "type": "object", "additionalProperties": false, "required": ["href"], "properties": { "href": { "type": "string", "format": "uri" } } },
     "eventFields": {
       "type": "object",
       "additionalProperties": false,
@@ -704,7 +2238,7 @@
           "type": "string"
         },
         "geo": {
-          "type": "object"
+          "$ref": "#/$defs/geo"
         },
         "status": {
           "type": "string"
@@ -731,10 +2265,10 @@
           "format": "uri"
         },
         "recurrenceSet": {
-          "type": "object"
+          "$ref": "#/$defs/recurrenceSet"
         },
         "structuredData": {
-          "type": "object"
+          "$ref": "#/$defs/structuredData"
         }
       }
     },
@@ -773,10 +2307,108 @@
           }
         },
         "recurrenceSet": {
-          "type": "object"
+          "$ref": "#/$defs/recurrenceSet"
         },
         "structuredData": {
-          "type": "object"
+          "$ref": "#/$defs/structuredData"
+        }
+      }
+    },
+    "eventInputFields": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "start": {
+          "$ref": "#/$defs/temporalValue"
+        },
+        "end": {
+          "$ref": "#/$defs/temporalValue"
+        },
+        "duration": {
+          "type": "string"
+        },
+        "location": {
+          "type": "string"
+        },
+        "geo": {
+          "$ref": "#/$defs/geo"
+        },
+        "status": {
+          "type": "string"
+        },
+        "transparency": {
+          "type": "string"
+        },
+        "classification": {
+          "type": "string"
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9
+        },
+        "categories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "recurrenceSet": {
+          "$ref": "#/$defs/recurrenceSetInput"
+        },
+        "structuredData": {
+          "$ref": "#/$defs/structuredData"
+        }
+      }
+    },
+    "todoInputFields": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "start": {
+          "$ref": "#/$defs/temporalValue"
+        },
+        "due": {
+          "$ref": "#/$defs/temporalValue"
+        },
+        "duration": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9
+        },
+        "categories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "recurrenceSet": {
+          "$ref": "#/$defs/recurrenceSetInput"
+        },
+        "structuredData": {
+          "$ref": "#/$defs/structuredData"
         }
       }
     },
@@ -796,7 +2428,7 @@
           "minLength": 1
         },
         "fields": {
-          "$ref": "#/$defs/eventFields"
+          "$ref": "#/$defs/eventInputFields"
         }
       }
     },
@@ -816,34 +2448,43 @@
           "minLength": 1
         },
         "fields": {
-          "$ref": "#/$defs/todoFields"
+          "$ref": "#/$defs/todoInputFields"
         }
       }
     },
-    "semanticCreateInput": {
+    "eventCreateInput": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "calendar",
+        "destination",
         "entity"
       ],
       "properties": {
-        "calendar": {
-          "$ref": "#/$defs/calendarReference"
+        "destination": {
+          "$ref": "#/$defs/calendarDestination"
         },
         "entity": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/eventCreateEntity"
-            },
-            {
-              "$ref": "#/$defs/todoCreateEntity"
-            }
-          ]
+          "$ref": "#/$defs/eventCreateEntity"
         }
       }
     },
-    "patchInput": {
+    "todoCreateInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "destination",
+        "entity"
+      ],
+      "properties": {
+        "destination": {
+          "$ref": "#/$defs/calendarDestination"
+        },
+        "entity": {
+          "$ref": "#/$defs/todoCreateEntity"
+        }
+      }
+    },
+    "eventPatchInput": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -853,31 +2494,33 @@
       ],
       "properties": {
         "snapshot": {
-          "$ref": "#/$defs/revisionReference"
+          "$ref": "#/$defs/eventRevisionReference"
         },
         "target": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "scope"
-          ],
-          "properties": {
-            "scope": {
-              "enum": [
-                "master",
-                "one-occurrence",
-                "this-and-future",
-                "entire-set"
-              ]
-            },
-            "recurrenceIdentity": {
-              "type": "object"
-            }
-          }
+          "$ref": "#/$defs/mutationTarget"
         },
         "patch": {
-          "type": "object",
-          "additionalProperties": false
+          "$ref": "#/$defs/eventSemanticPatch"
+        }
+      }
+    },
+    "todoPatchInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "snapshot",
+        "target",
+        "patch"
+      ],
+      "properties": {
+        "snapshot": {
+          "$ref": "#/$defs/todoRevisionReference"
+        },
+        "target": {
+          "$ref": "#/$defs/mutationTarget"
+        },
+        "patch": {
+          "$ref": "#/$defs/todoSemanticPatch"
         }
       }
     },
@@ -896,7 +2539,7 @@
           "$ref": "#/$defs/utcTemporalValue"
         },
         "recurrenceIdentity": {
-          "type": "object"
+          "$ref": "#/$defs/recurrenceIdentity"
         }
       }
     },
@@ -912,23 +2555,23 @@
           "$ref": "#/$defs/revisionReference"
         },
         "recurrenceIdentity": {
-          "type": "object"
+          "$ref": "#/$defs/recurrenceIdentity"
         }
       }
     },
-    "moveInput": {
+    "semanticMoveInput": {
       "type": "object",
       "additionalProperties": false,
       "required": [
         "revision",
-        "destinationCalendar"
+        "destination"
       ],
       "properties": {
         "revision": {
           "$ref": "#/$defs/revisionReference"
         },
-        "destinationCalendar": {
-          "$ref": "#/$defs/calendarReference"
+        "destination": {
+          "$ref": "#/$defs/calendarDestination"
         }
       }
     },
@@ -936,12 +2579,13 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "calendar",
+        "destinationHref",
         "utf8Resource"
       ],
       "properties": {
-        "calendar": {
-          "$ref": "#/$defs/calendarReference"
+        "destinationHref": {
+          "type": "string",
+          "format": "uri"
         },
         "utf8Resource": {
           "type": "string",
@@ -966,7 +2610,36 @@
         }
       }
     },
-    "querySuccess": {
+    "exactMoveInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision",
+        "destinationHref"
+      ],
+      "properties": {
+        "revision": {
+          "$ref": "#/$defs/revisionReference"
+        },
+        "destinationHref": {
+          "type": "string",
+          "format": "uri"
+        }
+      }
+    },
+    "deleteInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision"
+      ],
+      "properties": {
+        "revision": {
+          "$ref": "#/$defs/revisionReference"
+        }
+      }
+    },
+    "calendarListSuccess": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -980,29 +2653,79 @@
           "const": "success"
         },
         "items": {
-          "type": "array"
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/calendarDescriptor"
+          }
         },
         "diagnostics": {
-          "type": "array"
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
         },
         "pagination": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "mode",
-            "nextCursor"
-          ],
-          "properties": {
-            "mode": {
-              "const": "non_snapshot"
-            },
-            "nextCursor": {
-              "type": [
-                "string",
-                "null"
-              ]
-            }
+          "$ref": "#/$defs/pagination"
+        }
+      }
+    },
+    "entityQuerySuccess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcome",
+        "items",
+        "diagnostics",
+        "pagination"
+      ],
+      "properties": {
+        "outcome": {
+          "const": "success"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/calendarSnapshot"
           }
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        },
+        "pagination": {
+          "$ref": "#/$defs/pagination"
+        }
+      }
+    },
+    "occurrenceQuerySuccess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcome",
+        "items",
+        "diagnostics",
+        "pagination"
+      ],
+      "properties": {
+        "outcome": {
+          "const": "success"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/occurrenceSnapshot"
+          }
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        },
+        "pagination": {
+          "$ref": "#/$defs/pagination"
         }
       }
     },
@@ -1018,7 +2741,7 @@
           "const": "success"
         },
         "snapshot": {
-          "type": "object"
+          "$ref": "#/$defs/calendarSnapshot"
         }
       }
     },
@@ -1053,37 +2776,6 @@
               "type": "string"
             }
           }
-        }
-      }
-    },
-    "mutationSuccess": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "outcome",
-        "mutationState"
-      ],
-      "properties": {
-        "outcome": {
-          "enum": [
-            "success",
-            "no_change",
-            "confirmation_declined"
-          ]
-        },
-        "mutationState": {
-          "enum": [
-            "not_attempted",
-            "not_committed",
-            "committed",
-            "unknown"
-          ]
-        },
-        "snapshot": {
-          "type": "object"
-        },
-        "deletionReceipt": {
-          "type": "object"
         }
       }
     },
@@ -1130,7 +2822,16 @@
           ]
         },
         "category": {
-          "type": "string"
+          "enum": [
+            "input",
+            "selection",
+            "capabilityAndProjection",
+            "state",
+            "limitsAndAdmission",
+            "upstream",
+            "confirmation",
+            "postWriteTruth"
+          ]
         },
         "message": {
           "type": "string"
@@ -1139,39 +2840,1952 @@
           "type": "boolean"
         },
         "phase": {
-          "type": "string"
+          "enum": [
+            "transportAuthorization",
+            "admissionAndPayload",
+            "schemaLexicalDiscriminator",
+            "originScopeAuthorization",
+            "selectionDiscoveryCapability",
+            "targetRevision",
+            "completeResourceSemantics",
+            "mrtr",
+            "execution",
+            "postWriteVerificationOrReconciliation"
+          ]
+        },
+        "violations": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/violation"
+          }
+        },
+        "limits": {
+          "$ref": "#/$defs/executionLimits"
+        },
+        "retryAfterMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "authorizedCandidates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/authorizedCandidate"
+          }
+        },
+        "currentSnapshot": {
+          "$ref": "#/$defs/calendarSnapshot"
         }
       }
     },
-    "inputRequiredOutcome": {
+    "geo": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "resultType",
-        "requestState",
-        "preview",
-        "inputRequest"
+        "latitude",
+        "longitude"
       ],
       "properties": {
-        "resultType": {
-          "const": "input_required"
+        "latitude": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90
         },
-        "requestState": {
-          "type": "string",
-          "minLength": 1
-        },
-        "preview": {
-          "type": "string"
-        },
-        "inputRequest": {
-          "type": "object"
+        "longitude": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
         }
       }
     },
-    "queryOutcome": {
+    "recurrenceIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value"
+      ],
+      "properties": {
+        "value": {
+          "$ref": "#/$defs/temporalValue"
+        }
+      }
+    },
+    "recurrenceSetInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rrule": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rdates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/temporalValue"
+          }
+        },
+        "exdates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/temporalValue"
+          }
+        },
+        "overrides": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/recurrenceOverride"
+          }
+        }
+      }
+    },
+    "recurrenceSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evaluationState",
+        "rrules",
+        "rdates",
+        "exdates",
+        "overrides"
+      ],
+      "properties": {
+        "evaluationState": {
+          "enum": [
+            "evaluable",
+            "unevaluable"
+          ]
+        },
+        "rrules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/recurrenceRule"
+          }
+        },
+        "rdates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/temporalValue"
+          }
+        },
+        "exdates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/temporalValue"
+          }
+        },
+        "overrides": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/recurrenceOverride"
+          }
+        }
+      }
+    },
+    "recurrenceRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text"
+      ],
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "originalSlice": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "recurrenceOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recurrenceIdentity",
+        "entityKind",
+        "status"
+      ],
+      "properties": {
+        "recurrenceIdentity": {
+          "$ref": "#/$defs/recurrenceIdentity"
+        },
+        "entityKind": {
+          "enum": [
+            "event",
+            "todo"
+          ]
+        },
+        "range": {
+          "enum": [
+            "this-and-prior",
+            "this-and-future"
+          ]
+        },
+        "status": {
+          "enum": [
+            "active",
+            "cancelled"
+          ]
+        },
+        "movedStart": {
+          "$ref": "#/$defs/temporalValue"
+        },
+        "movedEnd": {
+          "$ref": "#/$defs/temporalValue"
+        }
+      }
+    },
+    "participant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uri",
+        "parameters"
+      ],
+      "properties": {
+        "uri": {
+          "type": "string",
+          "format": "uri"
+        },
+        "commonName": {
+          "type": "string"
+        },
+        "role": {
+          "enum": [
+            "chair",
+            "required",
+            "optional",
+            "non-participant"
+          ]
+        },
+        "partStat": {
+          "type": "string"
+        },
+        "cutype": {
+          "type": "string"
+        },
+        "rsvp": {
+          "type": "boolean"
+        },
+        "delegatedTo": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "delegatedFrom": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "sentBy": {
+          "type": "string",
+          "format": "uri"
+        },
+        "directory": {
+          "type": "string",
+          "format": "uri"
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/icalParameter"
+          }
+        }
+      }
+    },
+    "relation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value"
+      ],
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        },
+        "relationType": {
+          "type": "string"
+        }
+      }
+    },
+    "requestStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "description"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+$"
+        },
+        "description": {
+          "type": "string"
+        },
+        "exceptionData": {
+          "type": "string"
+        }
+      }
+    },
+    "namedUri": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uri",
+        "parameters"
+      ],
+      "properties": {
+        "uri": {
+          "type": "string",
+          "format": "uri"
+        },
+        "label": {
+          "type": "string"
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/icalParameter"
+          }
+        }
+      }
+    },
+    "textProperty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "parameters"
+      ],
+      "properties": {
+        "value": {
+          "type": "string"
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/icalParameter"
+          }
+        }
+      }
+    },
+    "structuredData": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "organizer": {
+          "$ref": "#/$defs/namedUri"
+        },
+        "attendees": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/participant"
+          }
+        },
+        "contacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/textProperty"
+          }
+        },
+        "resources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/textProperty"
+          }
+        },
+        "relatedTo": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/relation"
+          }
+        },
+        "requestStatuses": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/requestStatus"
+          }
+        },
+        "alarms": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/alarm"
+          }
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/namedUri"
+          }
+        },
+        "comments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/textProperty"
+          }
+        },
+        "styledDescriptions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/textProperty"
+          }
+        },
+        "images": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/namedUri"
+          }
+        },
+        "conferences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/namedUri"
+          }
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/namedUri"
+          }
+        },
+        "concepts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/textProperty"
+          }
+        },
+        "locationUris": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/namedUri"
+          }
+        },
+        "resourceUris": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/namedUri"
+          }
+        }
+      }
+    },
+    "alarm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "trigger"
+      ],
+      "properties": {
+        "action": {
+          "enum": [
+            "display",
+            "audio",
+            "email"
+          ]
+        },
+        "trigger": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "repeat": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "duration": {
+          "type": "string"
+        }
+      }
+    },
+    "collectionPatch": {
       "oneOf": [
         {
-          "$ref": "#/$defs/querySuccess"
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "enum": [
+                "categories"
+              ]
+            },
+            "operation": {
+              "const": "addRemove"
+            },
+            "add": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "remove": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "values"
+          ],
+          "properties": {
+            "field": {
+              "enum": [
+                "categories"
+              ]
+            },
+            "operation": {
+              "const": "replaceAll"
+            },
+            "values": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "eventScalarPatch": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "value"
+          ],
+          "properties": {
+            "field": {
+              "const": "summary"
+            },
+            "operation": {
+              "const": "set"
+            },
+            "value": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "summary"
+            },
+            "operation": {
+              "const": "clear"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "value"
+          ],
+          "properties": {
+            "field": {
+              "const": "description"
+            },
+            "operation": {
+              "const": "set"
+            },
+            "value": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "description"
+            },
+            "operation": {
+              "const": "clear"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "value"
+          ],
+          "properties": {
+            "field": {
+              "const": "start"
+            },
+            "operation": {
+              "const": "set"
+            },
+            "value": {
+              "$ref": "#/$defs/temporalValue"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "start"
+            },
+            "operation": {
+              "const": "clear"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "value"
+          ],
+          "properties": {
+            "field": {
+              "const": "end"
+            },
+            "operation": {
+              "const": "set"
+            },
+            "value": {
+              "$ref": "#/$defs/temporalValue"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "end"
+            },
+            "operation": {
+              "const": "clear"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "value"
+          ],
+          "properties": {
+            "field": {
+              "const": "duration"
+            },
+            "operation": {
+              "const": "set"
+            },
+            "value": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "duration"
+            },
+            "operation": {
+              "const": "clear"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "value"
+          ],
+          "properties": {
+            "field": {
+              "const": "location"
+            },
+            "operation": {
+              "const": "set"
+            },
+            "value": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "location"
+            },
+            "operation": {
+              "const": "clear"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "value"
+          ],
+          "properties": {
+            "field": {
+              "const": "geo"
+            },
+            "operation": {
+              "const": "set"
+            },
+            "value": {
+              "$ref": "#/$defs/geo"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "geo"
+            },
+            "operation": {
+              "const": "clear"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "value"
+          ],
+          "properties": {
+            "field": {
+              "const": "status"
+            },
+            "operation": {
+              "const": "set"
+            },
+            "value": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "status"
+            },
+            "operation": {
+              "const": "clear"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "value"
+          ],
+          "properties": {
+            "field": {
+              "const": "transparency"
+            },
+            "operation": {
+              "const": "set"
+            },
+            "value": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "transparency"
+            },
+            "operation": {
+              "const": "clear"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "value"
+          ],
+          "properties": {
+            "field": {
+              "const": "classification"
+            },
+            "operation": {
+              "const": "set"
+            },
+            "value": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "classification"
+            },
+            "operation": {
+              "const": "clear"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "value"
+          ],
+          "properties": {
+            "field": {
+              "const": "priority"
+            },
+            "operation": {
+              "const": "set"
+            },
+            "value": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "priority"
+            },
+            "operation": {
+              "const": "clear"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "value"
+          ],
+          "properties": {
+            "field": {
+              "const": "url"
+            },
+            "operation": {
+              "const": "set"
+            },
+            "value": {
+              "type": "string",
+              "format": "uri"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "url"
+            },
+            "operation": {
+              "const": "clear"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "value"
+          ],
+          "properties": {
+            "field": {
+              "const": "recurrenceSet"
+            },
+            "operation": {
+              "const": "set"
+            },
+            "value": {
+              "$ref": "#/$defs/recurrenceSetInput"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "recurrenceSet"
+            },
+            "operation": {
+              "const": "clear"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "value"
+          ],
+          "properties": {
+            "field": {
+              "const": "structuredData"
+            },
+            "operation": {
+              "const": "set"
+            },
+            "value": {
+              "$ref": "#/$defs/structuredData"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "structuredData"
+            },
+            "operation": {
+              "const": "clear"
+            }
+          }
+        }
+      ]
+    },
+    "todoScalarPatch": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "value"
+          ],
+          "properties": {
+            "field": {
+              "const": "summary"
+            },
+            "operation": {
+              "const": "set"
+            },
+            "value": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "summary"
+            },
+            "operation": {
+              "const": "clear"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "value"
+          ],
+          "properties": {
+            "field": {
+              "const": "description"
+            },
+            "operation": {
+              "const": "set"
+            },
+            "value": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "description"
+            },
+            "operation": {
+              "const": "clear"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "value"
+          ],
+          "properties": {
+            "field": {
+              "const": "start"
+            },
+            "operation": {
+              "const": "set"
+            },
+            "value": {
+              "$ref": "#/$defs/temporalValue"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "start"
+            },
+            "operation": {
+              "const": "clear"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "value"
+          ],
+          "properties": {
+            "field": {
+              "const": "due"
+            },
+            "operation": {
+              "const": "set"
+            },
+            "value": {
+              "$ref": "#/$defs/temporalValue"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "due"
+            },
+            "operation": {
+              "const": "clear"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "value"
+          ],
+          "properties": {
+            "field": {
+              "const": "duration"
+            },
+            "operation": {
+              "const": "set"
+            },
+            "value": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "duration"
+            },
+            "operation": {
+              "const": "clear"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "value"
+          ],
+          "properties": {
+            "field": {
+              "const": "status"
+            },
+            "operation": {
+              "const": "set"
+            },
+            "value": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "status"
+            },
+            "operation": {
+              "const": "clear"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "value"
+          ],
+          "properties": {
+            "field": {
+              "const": "priority"
+            },
+            "operation": {
+              "const": "set"
+            },
+            "value": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "priority"
+            },
+            "operation": {
+              "const": "clear"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "value"
+          ],
+          "properties": {
+            "field": {
+              "const": "recurrenceSet"
+            },
+            "operation": {
+              "const": "set"
+            },
+            "value": {
+              "$ref": "#/$defs/recurrenceSetInput"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "recurrenceSet"
+            },
+            "operation": {
+              "const": "clear"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "value"
+          ],
+          "properties": {
+            "field": {
+              "const": "structuredData"
+            },
+            "operation": {
+              "const": "set"
+            },
+            "value": {
+              "$ref": "#/$defs/structuredData"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "structuredData"
+            },
+            "operation": {
+              "const": "clear"
+            }
+          }
+        }
+      ]
+    },
+    "eventSemanticPatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "scalars": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/eventScalarPatch"
+          }
+        },
+        "collections": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/collectionPatch"
+          }
+        }
+      }
+    },
+    "todoSemanticPatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "scalars": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/todoScalarPatch"
+          }
+        },
+        "collections": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/collectionPatch"
+          }
+        }
+      }
+    },
+    "mutationTarget": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "scope"
+          ],
+          "properties": {
+            "scope": {
+              "enum": [
+                "master",
+                "entire-set"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "scope",
+            "recurrenceIdentity"
+          ],
+          "properties": {
+            "scope": {
+              "enum": [
+                "one-occurrence",
+                "this-and-future"
+              ]
+            },
+            "recurrenceIdentity": {
+              "$ref": "#/$defs/recurrenceIdentity"
+            }
+          }
+        }
+      ]
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message",
+        "severity"
+      ],
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "info",
+            "warning",
+            "error"
+          ]
+        }
+      }
+    },
+    "pagination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "nextCursor"
+      ],
+      "properties": {
+        "mode": {
+          "const": "non_snapshot"
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "capabilityEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "value"
+      ],
+      "properties": {
+        "source": {
+          "enum": [
+            "supported-calendar-component-set",
+            "DAV-resourcetype",
+            "probe",
+            "server-response"
+          ]
+        },
+        "value": {
+          "type": "string"
+        }
+      }
+    },
+    "entityKindCapability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "evidence"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "advertised",
+            "not_advertised",
+            "unknown"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/capabilityEvidence"
+          }
+        }
+      }
+    },
+    "calendarDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "calendar",
+        "displayName",
+        "displayNameProvenance",
+        "entityKinds"
+      ],
+      "properties": {
+        "calendar": {
+          "$ref": "#/$defs/calendarReference"
+        },
+        "displayName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "displayNameProvenance": {
+          "enum": [
+            "dav-displayname",
+            "derived-from-href",
+            "missing"
+          ]
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "color": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^#[0-9A-Fa-f]{6}$"
+        },
+        "entityKinds": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "event",
+            "todo"
+          ],
+          "properties": {
+            "event": {
+              "$ref": "#/$defs/entityKindCapability"
+            },
+            "todo": {
+              "$ref": "#/$defs/entityKindCapability"
+            }
+          }
+        }
+      }
+    },
+    "icalParameter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "values"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "values": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "componentPathSegment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "occurrence"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9-]+$"
+        },
+        "occurrence": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "calendarProperty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "componentPath",
+        "name",
+        "parameters",
+        "valueType",
+        "rawEncodedValue",
+        "originalSlice"
+      ],
+      "properties": {
+        "componentPath": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/componentPathSegment"
+          }
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/icalParameter"
+          }
+        },
+        "valueType": {
+          "enum": [
+            "text",
+            "uri",
+            "date",
+            "date-time",
+            "duration",
+            "integer",
+            "float",
+            "period",
+            "recur",
+            "binary",
+            "unknown"
+          ]
+        },
+        "rawEncodedValue": {
+          "type": "string"
+        },
+        "originalSlice": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "eventProjection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "uid",
+        "fields"
+      ],
+      "properties": {
+        "kind": {
+          "const": "event"
+        },
+        "uid": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fields": {
+          "$ref": "#/$defs/eventFields"
+        }
+      }
+    },
+    "todoProjection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "uid",
+        "fields"
+      ],
+      "properties": {
+        "kind": {
+          "const": "todo"
+        },
+        "uid": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fields": {
+          "$ref": "#/$defs/todoFields"
+        },
+        "completedAt": {
+          "$ref": "#/$defs/utcTemporalValue"
+        }
+      }
+    },
+    "opaqueProjection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "properties"
+      ],
+      "properties": {
+        "kind": {
+          "const": "opaque"
+        },
+        "properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/calendarProperty"
+          }
+        }
+      }
+    },
+    "calendarSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "calendar",
+        "revision",
+        "calendarProperties",
+        "projection",
+        "diagnostics"
+      ],
+      "properties": {
+        "calendar": {
+          "$ref": "#/$defs/calendarReference"
+        },
+        "revision": {
+          "$ref": "#/$defs/revisionReference"
+        },
+        "calendarProperties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/calendarProperty"
+          }
+        },
+        "projection": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/eventProjection"
+            },
+            {
+              "$ref": "#/$defs/todoProjection"
+            },
+            {
+              "$ref": "#/$defs/opaqueProjection"
+            }
+          ]
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        }
+      }
+    },
+    "occurrenceSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "snapshot",
+        "recurrenceIdentity",
+        "timing"
+      ],
+      "properties": {
+        "snapshot": {
+          "$ref": "#/$defs/calendarSnapshot"
+        },
+        "recurrenceIdentity": {
+          "$ref": "#/$defs/recurrenceIdentity"
+        },
+        "timing": {
+          "$ref": "#/$defs/occurrenceTiming"
+        }
+      }
+    },
+    "deletionReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "href",
+        "entityUid",
+        "entityKind",
+        "consumedEntityTag"
+      ],
+      "properties": {
+        "href": {
+          "type": "string",
+          "format": "uri"
+        },
+        "entityUid": {
+          "type": "string"
+        },
+        "entityKind": {
+          "enum": [
+            "event",
+            "todo"
+          ]
+        },
+        "consumedEntityTag": {
+          "type": "string"
+        }
+      }
+    },
+    "mrtrInputRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "params"
+      ],
+      "properties": {
+        "method": {
+          "const": "elicitation/create"
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "message",
+            "requestedSchema"
+          ],
+          "properties": {
+            "message": {
+              "type": "string"
+            },
+            "requestedSchema": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "type",
+                "properties"
+              ],
+              "properties": {
+                "type": {
+                  "const": "object"
+                },
+                "properties": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/$defs/mrtrRequestedProperty"
+                  }
+                }
+              }
+            },
+            "mode": {
+              "const": "form"
+            }
+          }
+        }
+      }
+    },
+    "mrtrInputResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action"
+      ],
+      "properties": {
+        "action": {
+          "enum": [
+            "accept",
+            "decline",
+            "cancel"
+          ]
+        },
+        "content": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "calendarListOutcome": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/calendarListSuccess"
+        },
+        {
+          "$ref": "#/$defs/errorOutcome"
+        }
+      ]
+    },
+    "entityQueryOutcome": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/entityQuerySuccess"
+        },
+        {
+          "$ref": "#/$defs/errorOutcome"
+        }
+      ]
+    },
+    "occurrenceQueryOutcome": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/occurrenceQuerySuccess"
         },
         {
           "$ref": "#/$defs/errorOutcome"
@@ -1198,18 +4812,398 @@
         }
       ]
     },
-    "mutationOutcome": {
+    "violation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pointer",
+        "code"
+      ],
+      "properties": {
+        "pointer": {
+          "type": "string",
+          "pattern": "^/"
+        },
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    },
+    "executionLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "resourcesInspected": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "calendarCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "occurrenceCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "byteCount": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "authorizedCandidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "calendar"
+      ],
+      "properties": {
+        "calendar": {
+          "$ref": "#/$defs/calendarReference"
+        },
+        "displayName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "mutationErrorOutcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "category",
+        "message",
+        "retryable",
+        "phase",
+        "mutationState"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "invalid_input",
+            "invalid_calendar_data",
+            "not_found",
+            "ambiguous",
+            "outside_scope",
+            "entity_kind_mismatch",
+            "unsupported_capability",
+            "opaque_resource",
+            "temporal_unresolved",
+            "recurrence_unevaluable",
+            "conflict",
+            "destination_conflict",
+            "concurrency_unavailable",
+            "limit_exhausted",
+            "payload_too_large",
+            "busy",
+            "upstream_unauthorized",
+            "upstream_forbidden",
+            "upstream_rate_limited",
+            "upstream_unavailable",
+            "upstream_protocol_error",
+            "confirmation_expired",
+            "confirmation_mismatch",
+            "fidelity_failure",
+            "committed_but_unverified",
+            "committed_but_concurrency_unavailable",
+            "indeterminate"
+          ]
+        },
+        "category": {
+          "enum": [
+            "input",
+            "selection",
+            "capabilityAndProjection",
+            "state",
+            "limitsAndAdmission",
+            "upstream",
+            "confirmation",
+            "postWriteTruth"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "phase": {
+          "enum": [
+            "transportAuthorization",
+            "admissionAndPayload",
+            "schemaLexicalDiscriminator",
+            "originScopeAuthorization",
+            "selectionDiscoveryCapability",
+            "targetRevision",
+            "completeResourceSemantics",
+            "mrtr",
+            "execution",
+            "postWriteVerificationOrReconciliation"
+          ]
+        },
+        "violations": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/violation"
+          }
+        },
+        "limits": {
+          "$ref": "#/$defs/executionLimits"
+        },
+        "retryAfterMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "authorizedCandidates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/authorizedCandidate"
+          }
+        },
+        "currentSnapshot": {
+          "$ref": "#/$defs/calendarSnapshot"
+        },
+        "mutationState": {
+          "enum": [
+            "not_attempted",
+            "not_committed",
+            "committed",
+            "unknown"
+          ]
+        }
+      }
+    },
+    "snapshotMutationSuccess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcome",
+        "mutationState",
+        "snapshot",
+        "diagnostics"
+      ],
+      "properties": {
+        "outcome": {
+          "const": "success"
+        },
+        "mutationState": {
+          "const": "committed"
+        },
+        "snapshot": {
+          "$ref": "#/$defs/calendarSnapshot"
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        }
+      }
+    },
+    "deleteMutationSuccess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcome",
+        "mutationState",
+        "deletionReceipt",
+        "diagnostics"
+      ],
+      "properties": {
+        "outcome": {
+          "const": "success"
+        },
+        "mutationState": {
+          "const": "committed"
+        },
+        "deletionReceipt": {
+          "$ref": "#/$defs/deletionReceipt"
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        }
+      }
+    },
+    "nonMutatingMutationSuccess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcome",
+        "mutationState",
+        "diagnostics"
+      ],
+      "properties": {
+        "outcome": {
+          "enum": [
+            "no_change",
+            "confirmation_declined"
+          ]
+        },
+        "mutationState": {
+          "const": "not_attempted"
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        }
+      }
+    },
+    "snapshotMutationOutcome": {
       "oneOf": [
         {
-          "$ref": "#/$defs/mutationSuccess"
+          "$ref": "#/$defs/snapshotMutationSuccess"
         },
         {
-          "$ref": "#/$defs/errorOutcome"
+          "$ref": "#/$defs/nonMutatingMutationSuccess"
         },
         {
-          "$ref": "#/$defs/inputRequiredOutcome"
+          "$ref": "#/$defs/mutationErrorOutcome"
+        }
+      ]
+    },
+    "deleteMutationOutcome": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/deleteMutationSuccess"
+        },
+        {
+          "$ref": "#/$defs/nonMutatingMutationSuccess"
+        },
+        {
+          "$ref": "#/$defs/mutationErrorOutcome"
+        }
+      ]
+    },
+    "mrtrRequestedProperty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "string",
+            "boolean",
+            "integer",
+            "number"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "enum": {
+          "type": "array",
+          "items": {
+            "type": [
+              "string",
+              "boolean",
+              "integer",
+              "number"
+            ]
+          }
+        }
+      }
+    },
+    "mrtrCapability": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "mrtrResponseValue": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "occurrenceTiming": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceStart",
+        "effectiveStart"
+      ],
+      "properties": {
+        "sourceStart": {
+          "$ref": "#/$defs/temporalValue"
+        },
+        "effectiveStart": {
+          "$ref": "#/$defs/temporalValue"
+        },
+        "sourceEnd": {
+          "$ref": "#/$defs/temporalValue"
+        },
+        "effectiveEnd": {
+          "$ref": "#/$defs/temporalValue"
+        },
+        "sourceDuration": {
+          "type": "string"
+        },
+        "effectiveDuration": {
+          "type": "string"
+        },
+        "evaluatedStartUtc": {
+          "$ref": "#/$defs/utcTemporalValue"
+        },
+        "evaluatedEndUtc": {
+          "$ref": "#/$defs/utcTemporalValue"
+        },
+        "evaluationTimeZone": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "sourceEnd",
+            "effectiveEnd"
+          ]
+        },
+        {
+          "required": [
+            "sourceDuration",
+            "effectiveDuration"
+          ]
         }
       ]
     }
+  },
+  "duplicatePropertyPolicy": {
+    "parser": "reject",
+    "scope": "all contract inputs and protocol envelopes",
+    "failureCode": "invalid_input"
   }
 }

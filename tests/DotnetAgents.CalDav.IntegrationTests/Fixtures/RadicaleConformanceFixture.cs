@@ -36,20 +36,26 @@ public sealed class RadicaleConformanceFixture : IAsyncLifetime
                 UnixFileModes.UserRead | UnixFileModes.UserWrite |
                 UnixFileModes.GroupRead | UnixFileModes.OtherRead)
             .WithWaitStrategy(Wait.ForUnixContainer()
-                .UntilHttpRequestIsSucceeded(request => request
-                    .ForPort(RadicalePort)
-                    .ForPath("/.well-known/caldav")))
+                .UntilInternalTcpPortIsAvailable(RadicalePort))
             .Build();
 
         await _container.StartAsync();
 
+        var configuredStrictPreconditions = await ReadConfigurationValueAsync("strict_preconditions");
+        var strictPreconditionsApplied = await ObserveStrictPreconditionsAsync();
+        if ((configuredStrictPreconditions == "true") != strictPreconditionsApplied)
+        {
+            throw new InvalidOperationException("Radicale strict_preconditions configuration was not applied by the running server.");
+        }
+
+        var manifest = await ReadResolvedManifestAsync();
         Runtime = new RadicaleRuntimeEvidence(
             IndexDigest,
-            Amd64ManifestDigest,
-            Arm64ManifestDigest,
+            manifest.Digest,
+            manifest.Architecture,
             Variant.Name,
             Variant.TimeZone,
-            Variant.StrictPreconditions,
+            strictPreconditionsApplied,
             await ReadRuntimeValueAsync("import importlib.metadata; print(importlib.metadata.version('Radicale'))"),
             await ReadRuntimeValueAsync("import sys; print('.'.join(map(str, sys.version_info[:3])))"),
             await ReadRuntimeValueAsync("import importlib.metadata; print(importlib.metadata.version('vobject'))"),
@@ -75,6 +81,64 @@ public sealed class RadicaleConformanceFixture : IAsyncLifetime
         return result.Stdout.Trim();
     }
 
+    private async Task<string> ReadConfigurationValueAsync(string key)
+    {
+        var result = await _container!.ExecAsync(["/bin/sh", "-c", $"sed -n 's/^{key} = //p' /config/config"]);
+        if (result.ExitCode != 0)
+        {
+            throw new InvalidOperationException($"Unable to inspect the Radicale configuration: {result.Stderr}");
+        }
+
+        return result.Stdout.Trim();
+    }
+
+    private async Task<RadicaleManifestEvidence> ReadResolvedManifestAsync()
+    {
+        var architecture = await ReadRuntimeValueAsync("import platform; print(platform.machine())");
+        return architecture switch
+        {
+            "x86_64" => new(architecture, Amd64ManifestDigest),
+            "aarch64" => new(architecture, Arm64ManifestDigest),
+            _ => throw new InvalidOperationException($"Unsupported Radicale runtime architecture '{architecture}'.")
+        };
+    }
+
+    private async Task<bool> ObserveStrictPreconditionsAsync()
+    {
+        const string script = """
+            import urllib.error
+            import urllib.request
+
+            base = 'http://127.0.0.1:5232/conformance/conformance/'
+            body = b'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:strict-precondition-probe\r\nDTSTAMP:20260815T000000Z\r\nDTSTART:20260816T000000Z\r\nSUMMARY:probe\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n'
+
+            def request(method, url, data=None, headers=None):
+                try:
+                    return urllib.request.urlopen(urllib.request.Request(url, data=data, headers=headers or {}, method=method)).status
+                except urllib.error.HTTPError as error:
+                    return error.code
+
+            credentials = {'Authorization': 'Basic Y29uZm9ybWFuY2U6'}
+            collection = request('MKCALENDAR', base, headers=credentials)
+            if collection not in (201, 405):
+                raise RuntimeError(f'MKCALENDAR returned {collection}')
+            created = request('PUT', base + 'probe.ics', body, credentials | {'Content-Type': 'text/calendar'})
+            if created not in (201, 204):
+                raise RuntimeError(f'initial PUT returned {created}')
+            replacement = request('PUT', base + 'probe.ics', body, credentials | {'Content-Type': 'text/calendar'})
+            if replacement not in (204, 412):
+                raise RuntimeError(f'unconditional replacement returned {replacement}')
+            print(replacement)
+            """;
+        var result = await _container!.ExecAsync(["/app/bin/python", "-c", script]);
+        if (result.ExitCode != 0)
+        {
+            throw new InvalidOperationException($"Unable to observe Radicale strict-precondition behavior: {result.Stderr}");
+        }
+
+        return result.Stdout.Trim() == "412";
+    }
+
     private static string BuildConfig(bool strictPreconditions) => $$"""
         [server]
         hosts = 0.0.0.0:5232
@@ -96,8 +160,8 @@ public sealed class RadicaleConformanceFixture : IAsyncLifetime
 
 public sealed record RadicaleRuntimeEvidence(
     string IndexDigest,
-    string Amd64ManifestDigest,
-    string Arm64ManifestDigest,
+    string ResolvedPlatformManifestDigest,
+    string RuntimeArchitecture,
     string Variant,
     string ConfiguredTimeZone,
     bool StrictPreconditions,
@@ -105,6 +169,8 @@ public sealed record RadicaleRuntimeEvidence(
     string PythonVersion,
     string VobjectVersion,
     string RuntimeTimeZone);
+
+internal sealed record RadicaleManifestEvidence(string Architecture, string Digest);
 
 public sealed record RadicaleConformanceVariant(string Name, string TimeZone, bool StrictPreconditions)
 {

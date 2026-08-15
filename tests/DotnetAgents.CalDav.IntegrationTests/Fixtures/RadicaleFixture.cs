@@ -78,9 +78,7 @@ public sealed class RadicaleFixture : IAsyncLifetime
                 UnixFileModes.UserRead | UnixFileModes.UserWrite |
                 UnixFileModes.GroupRead | UnixFileModes.OtherRead)
             .WithWaitStrategy(Wait.ForUnixContainer()
-                .UntilHttpRequestIsSucceeded(r => r
-                    .ForPort(RadicalePort)
-                    .ForPath("/.well-known/caldav")))
+                .UntilInternalTcpPortIsAvailable(RadicalePort))
             .Build();
 
         await _container.StartAsync();
