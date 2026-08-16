@@ -66,6 +66,50 @@ internal static class DavResponseParser
             .ToList();
     }
 
+    /// <summary>Parses successful Calendar Object Resource hrefs from a REPORT multistatus.</summary>
+    public static IReadOnlyList<string> ParseCalendarResourceHrefs(string multistatusXml)
+    {
+        var document = ParseDocument(multistatusXml);
+        return document.Descendants(Dav + "response")
+            .Select(TryParseCalendarResourceHref)
+            .OfType<string>()
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    /// <summary>Recognizes the bounded CalDAV precondition that rejects a REPORT filter.</summary>
+    public static bool IsSupportedFilterError(string responseXml)
+    {
+        try
+        {
+            var document = ParseDocument(responseXml);
+            return document.Descendants().Any(element =>
+                element.Name.Namespace == CalDav
+                && element.Name.LocalName is "supported-filter" or "supported-collation");
+        }
+        catch (XmlException)
+        {
+            return false;
+        }
+    }
+
+    private static string? TryParseCalendarResourceHref(XElement response)
+    {
+        var responseStatus = response.Element(Dav + "status");
+        var responseSucceeded = responseStatus is not null && IsSuccessStatus(responseStatus.Value);
+        var getEtagSucceeded = response.Elements(Dav + "propstat")
+            .Any(propStat => IsSuccessfulProperty(propStat, Dav + "getetag"));
+
+        if (!responseSucceeded && !getEtagSucceeded)
+            return null;
+
+        var href = response.Element(Dav + "href")?.Value?.Trim();
+        if (string.IsNullOrEmpty(href))
+            throw new XmlException("A successful WebDAV response is missing its href.");
+
+        return href;
+    }
+
     private static TaskList? TryParseTaskList(XElement response)
     {
         var href = response.Element(Dav + "href")?.Value?.Trim() ?? string.Empty;
@@ -209,7 +253,7 @@ internal static class DavResponseParser
     private static bool HasSuccessStatus(XElement response)
     {
         var status = response.Element(Dav + "status")?.Value;
-        return status is null || status.Contains("200");
+        return status is null || IsSuccessStatus(status);
     }
 
     private static string? GetPropValue(XElement response, XName propertyName)
@@ -222,15 +266,48 @@ internal static class DavResponseParser
         var propStats = response.Descendants(Dav + "propstat");
         foreach (var propStat in propStats)
         {
-            var status = propStat.Element(Dav + "status")?.Value;
-            if (status is not null && status.Contains("200"))
-            {
-                var prop = propStat.Element(Dav + "prop")?.Element(propertyName);
-                if (prop is not null)
-                    return prop;
-            }
+            if (IsSuccessfulProperty(propStat, propertyName))
+                return propStat.Element(Dav + "prop")!.Element(propertyName);
         }
 
         return null;
+    }
+
+    private static bool IsSuccessfulProperty(XElement propStat, XName propertyName)
+    {
+        var status = propStat.Element(Dav + "status")?.Value;
+        return status is not null
+            && IsSuccessStatus(status)
+            && propStat.Element(Dav + "prop")?.Element(propertyName) is not null;
+    }
+
+    private static bool IsSuccessStatus(string rawStatus)
+    {
+        var parts = rawStatus.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2
+            || !IsHttpVersion(parts[0])
+            || parts[1].Length != 3
+            || !int.TryParse(parts[1], System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture, out var statusCode)
+            || statusCode is < 100 or > 599)
+        {
+            throw new XmlException("The WebDAV response contains a malformed HTTP status line.");
+        }
+
+        return statusCode is >= 200 and <= 299;
+    }
+
+    private static bool IsHttpVersion(string value)
+    {
+        if (!value.StartsWith("HTTP/", StringComparison.OrdinalIgnoreCase))
+            return false;
+        var version = value.AsSpan(5);
+        var dot = version.IndexOf('.');
+        return dot < 0
+            ? !version.IsEmpty && version.ContainsAnyExceptInRange('0', '9') is false
+            : dot > 0
+                && dot < version.Length - 1
+                && version[..dot].ContainsAnyExceptInRange('0', '9') is false
+                && version[(dot + 1)..].ContainsAnyExceptInRange('0', '9') is false;
     }
 }

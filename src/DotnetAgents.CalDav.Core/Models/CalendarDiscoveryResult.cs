@@ -32,6 +32,9 @@ public sealed class CalendarDiscoveryLimitException(int calendarCount) : Excepti
 /// <summary>Signals a CalDAV discovery response that cannot be used safely.</summary>
 public sealed class CalendarDiscoveryProtocolException(string message) : Exception(message);
 
+/// <summary>Signals that a mandatory CalDAV REPORT filter is unsupported.</summary>
+public sealed class CalendarDiscoveryUnsupportedCapabilityException(string message) : Exception(message);
+
 /// <summary>Typed outcome of resolving a configured default Calendar.</summary>
 public sealed record CalendarSelectionResult(
     CalendarSelectionCode Code,

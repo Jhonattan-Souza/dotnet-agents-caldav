@@ -30,7 +30,10 @@ public sealed class CalDavHostBuilder
 
         var mcpBuilder = builder.Services.AddMcpServer(options => options.ProtocolVersion = "2026-07-28")
             .WithStdioServerTransport()
+            .WithMessageFilters(filters => filters.AddIncomingFilter(StrictToolInputGuard.Incoming))
+            .WithRequestFilters(filters => filters.AddCallToolFilter(StrictToolInputGuard.CallTool))
             .WithTools<CalendarTools>()
+            .WithTools<CalendarEntityTools>()
             .WithTools<CalendarResourceTools>()
             .WithTools<TaskListTools>()
             .WithTools<ChatTaskTools>();
@@ -60,6 +63,11 @@ public sealed class CalDavHostBuilder
         builder.Services.PostConfigure<ModelContextProtocol.Server.McpServerOptions>(ConfigureCalendarToolContract);
 
         builder.Services.AddSingleton(TimeProvider.System);
+        builder.Services.AddSingleton<CalendarEntityCursorProtector>();
+        builder.Services.AddTransient(serviceProvider => new CalendarEntityTools(
+            serviceProvider.GetRequiredService<DotnetAgents.CalDav.Core.Abstractions.ICalendarService>(),
+            serviceProvider.GetRequiredService<CalendarEntityCursorProtector>(),
+            serviceProvider.GetRequiredService<TimeProvider>()));
         builder.Services.AddTransient<TaskCompletion>();
 
         return builder;
@@ -72,6 +80,7 @@ public sealed class CalDavHostBuilder
 
         options.ToolCollection = new OrderedToolCollection(options.ToolCollection.ToArray());
         ConfigureTool(options.ToolCollection, "calendars.list");
+        ConfigureTool(options.ToolCollection, "calendar_entities.query");
         ConfigureTool(options.ToolCollection, "calendar_resources.get");
         ConfigureTool(options.ToolCollection, "calendar_resources.exact_get");
     }

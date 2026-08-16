@@ -17,7 +17,7 @@ internal static class CalendarResourceProjector
     {
         "UID", "RECURRENCE-ID", "SUMMARY", "DESCRIPTION", "DTSTART", "DTEND", "DUE", "DURATION",
         "LOCATION", "STATUS", "TRANSP", "CLASS", "PRIORITY", "URL", "COMPLETED", "DTSTAMP",
-        "CREATED", "LAST-MODIFIED", "GEO", "ORGANIZER", "PERCENT-COMPLETE", "SEQUENCE", "RRULE"
+        "CREATED", "LAST-MODIFIED", "GEO", "ORGANIZER", "PERCENT-COMPLETE", "SEQUENCE"
     };
 
     public static CalendarProjectionResult Project(ReadOnlySpan<byte> authoritativeUtf8)
@@ -31,6 +31,20 @@ internal static class CalendarResourceProjector
         {
             return Opaque([], "invalid_calendar_data");
         }
+    }
+
+    public static CalendarResourceRead AttachSnapshot(string calendarHref, CalendarResourceRead read)
+    {
+        var projection = Project(read.AuthoritativeUtf8.Span);
+        var snapshot = new CalendarResourceSnapshot(
+            calendarHref,
+            read.ResourceHref!,
+            read.EntityTag!,
+            read.AuthoritativeUtf8,
+            projection.Properties,
+            projection.Projection,
+            projection.Diagnostics);
+        return read with { Snapshot = snapshot };
     }
 
     private static CalendarProjectionResult ProjectDocument(CalendarContentDocument document)
@@ -130,9 +144,7 @@ internal static class CalendarResourceProjector
         var recurrenceError = ValidateRecurrenceFamily(entities, masters[0]);
         if (recurrenceError is not null)
             return recurrenceError;
-        return HasRecurrenceDefinition(masters[0]) || entities.Count == 1
-            ? null
-            : "recurrence_override_without_recurrence_set";
+        return null;
     }
 
     private static string? ValidateBasicEntityShape(IReadOnlyList<EntityComponent> entities)
@@ -169,10 +181,6 @@ internal static class CalendarResourceProjector
                 ? "recurrence_identity_family_mismatch"
                 : null;
     }
-
-    private static bool HasRecurrenceDefinition(EntityComponent entity) => entity.Properties.Any(property =>
-        property.Name.Equals("RRULE", StringComparison.OrdinalIgnoreCase)
-        || property.Name.Equals("RDATE", StringComparison.OrdinalIgnoreCase));
 
     private static string? ValidateCalendarProperties(IReadOnlyList<CalendarContentProperty> properties)
     {

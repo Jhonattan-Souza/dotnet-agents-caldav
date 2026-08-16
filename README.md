@@ -57,9 +57,10 @@ Add this MCP server to VS Code, Claude Desktop, Cursor, or any MCP client:
 ### Calendar resource tools
 
 - `calendar_resources.get` — Read an authoritative semantic-or-opaque snapshot by confirmed absolute href.
+- `calendar_entities.query` — Query bounded persisted Event and To-do snapshots across default, selected, or explicit-all Calendar Scope.
 - `calendar_resources.exact_get` — Opt-in exact read through a protected MCP resource link; enable with `CALDAV_EXPOSE_EXACT_TOOLS=true`.
 
-By default, the server exposes `calendars.list` and `calendar_resources.get` alongside the legacy chat-safe tools retained during the staged migration. Set `CALDAV_EXPOSE_ADVANCED_TOOLS=true` to also expose the legacy href-based advanced tools.
+By default, the server exposes `calendars.list`, `calendar_resources.get`, and `calendar_entities.query` alongside the legacy chat-safe tools retained during the staged migration. Set `CALDAV_EXPOSE_ADVANCED_TOOLS=true` to also expose the legacy href-based advanced tools.
 
 ## Supported servers
 

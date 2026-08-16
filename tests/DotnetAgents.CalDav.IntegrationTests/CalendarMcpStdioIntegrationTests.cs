@@ -49,6 +49,7 @@ public sealed class CalendarMcpStdioIntegrationTests
         listedTools.Tools.Select(tool => tool.Name).ShouldBe(
         [
             "calendars.list",
+            "calendar_entities.query",
             "calendar_resources.get",
             "list_task_lists",
             "show_tasks",
@@ -70,6 +71,133 @@ public sealed class CalendarMcpStdioIntegrationTests
         structured.GetProperty("items").GetArrayLength().ShouldBe(1);
         structured.GetProperty("items")[0].GetProperty("calendar").GetProperty("href").GetString()
             .ShouldBe($"{_fixture.BaseUrl}{_fixture.TaskListHref}");
+        stderr.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task CalendarEntityQuery_ReturnsSchemaValidSnapshotsAndTypedFailureOverStdio()
+    {
+        var stderr = new ConcurrentQueue<string>();
+        await using var client = await CreateClientAsync(stderr, exposeExact: false);
+        var tools = await client.ListToolsAsync(new ListToolsRequestParams(), TestContext.Current.CancellationToken);
+        var advertised = tools.Tools.Single(tool => tool.Name == "calendar_entities.query");
+        var selectedScope = new Dictionary<string, object?>
+        {
+            ["mode"] = "selected",
+            ["calendar"] = new Dictionary<string, object?>
+            {
+                ["by"] = "href",
+                ["href"] = $"{_fixture.BaseUrl}{_fixture.TaskListHref}"
+            }
+        };
+
+        var success = await client.CallToolAsync(
+            "calendar_entities.query",
+            new Dictionary<string, object?>
+            {
+                ["scope"] = selectedScope,
+                ["entityKinds"] = new[] { "todo" },
+                ["pageSize"] = 1
+            },
+            cancellationToken: TestContext.Current.CancellationToken);
+        var failure = await client.CallToolAsync(
+            "calendar_entities.query",
+            new Dictionary<string, object?>
+            {
+                ["scope"] = new Dictionary<string, object?>
+                {
+                    ["mode"] = "selected",
+                    ["calendar"] = new Dictionary<string, object?>
+                    {
+                        ["by"] = "name",
+                        ["name"] = "No such authorized calendar"
+                    }
+                },
+                ["entityKinds"] = new[] { "todo" }
+            },
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        success.IsError.ShouldBe(false);
+        var structured = success.StructuredContent!.Value;
+        structured.EnumerateObject().Select(property => property.Name)
+            .ShouldBe(["outcome", "items", "diagnostics", "pagination"]);
+        structured.GetProperty("outcome").GetString().ShouldBe("success");
+        structured.GetProperty("items").GetArrayLength().ShouldBe(1);
+        structured.GetProperty("items")[0].GetProperty("resourceRevision").GetProperty("entityTag").GetString()
+            .ShouldStartWith("\"");
+        structured.GetProperty("pagination").GetProperty("mode").GetString().ShouldBe("non_snapshot");
+        structured.GetProperty("diagnostics").ValueKind.ShouldBe(System.Text.Json.JsonValueKind.Array);
+        advertised.OutputSchema.ShouldNotBeNull();
+        advertised.OutputSchema.Value.GetProperty("oneOf").GetArrayLength().ShouldBe(2);
+        advertised.InputSchema.GetProperty("additionalProperties").GetBoolean().ShouldBeFalse();
+        failure.IsError.ShouldBe(true);
+        var error = failure.StructuredContent!.Value;
+        error.EnumerateObject().Select(property => property.Name)
+            .ShouldBe(["code", "category", "message", "retryable", "phase", "authorizedCandidates"]);
+        error.GetProperty("code").GetString().ShouldBe("not_found");
+        error.GetProperty("category").GetString().ShouldBe("selection");
+        error.GetProperty("message").GetString().ShouldNotBeNullOrWhiteSpace();
+        error.GetProperty("retryable").GetBoolean().ShouldBeFalse();
+        error.GetProperty("phase").GetString().ShouldBe("selectionDiscoveryCapability");
+        var candidate = error.GetProperty("authorizedCandidates").EnumerateArray().ShouldHaveSingleItem();
+        candidate.EnumerateObject().Select(property => property.Name)
+            .ShouldBe(["calendar", "displayName", "entityKinds"]);
+        candidate.GetProperty("calendar").GetProperty("href").GetString()
+            .ShouldBe($"{_fixture.BaseUrl}{_fixture.TaskListHref}");
+        candidate.GetProperty("displayName").GetString().ShouldBe("Tasks");
+        candidate.GetProperty("entityKinds").EnumerateObject().Select(property => property.Name)
+            .ShouldBe(["event", "todo"]);
+        error.TryGetProperty("items", out _).ShouldBeFalse();
+        stderr.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task CalendarEntityQuery_InvalidRawShapesReturnTypedErrorsWithoutNetwork()
+    {
+        var stderr = new ConcurrentQueue<string>();
+        await using var client = await CreateClientAsync(
+            stderr,
+            exposeExact: false,
+            baseUrl: "http://127.0.0.1:1");
+        using var duplicateScope = System.Text.Json.JsonDocument.Parse("""{"mode":"default","mode":"all"}""");
+        var invalidArguments = new Dictionary<string, object?>[]
+        {
+            new()
+            {
+                ["scope"] = new Dictionary<string, object?> { ["mode"] = "default" },
+                ["entityKinds"] = new[] { "event" },
+                ["unknown"] = true
+            },
+            new()
+            {
+                ["scope"] = new Dictionary<string, object?> { ["mode"] = "default", ["unknown"] = true },
+                ["entityKinds"] = new[] { "event" }
+            },
+            new() { ["scope"] = new Dictionary<string, object?> { ["mode"] = "default" } },
+            new()
+            {
+                ["scope"] = new Dictionary<string, object?> { ["mode"] = "default" },
+                ["entityKinds"] = "event"
+            },
+            new()
+            {
+                ["scope"] = duplicateScope.RootElement,
+                ["entityKinds"] = new[] { "event" }
+            }
+        };
+
+        for (var index = 0; index < invalidArguments.Length; index++)
+        {
+            var arguments = invalidArguments[index];
+            var result = await client.CallToolAsync(
+                "calendar_entities.query",
+                arguments,
+                cancellationToken: TestContext.Current.CancellationToken);
+            result.IsError.ShouldBe(true);
+            result.StructuredContent.ShouldNotBeNull($"invalid argument case {index}");
+            result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("invalid_input");
+            result.StructuredContent.Value.GetProperty("phase").GetString().ShouldBe("schemaLexicalDiscriminator");
+        }
         stderr.ShouldBeEmpty();
     }
 
@@ -118,6 +246,7 @@ public sealed class CalendarMcpStdioIntegrationTests
         tools.Tools.Select(tool => tool.Name).ShouldBe(
         [
             "calendars.list",
+            "calendar_entities.query",
             "calendar_resources.get",
             "calendar_resources.exact_get",
             "list_task_lists",
@@ -137,9 +266,17 @@ public sealed class CalendarMcpStdioIntegrationTests
         stderr.ShouldBeEmpty();
     }
 
-    private async Task<McpClient> CreateClientAsync(ConcurrentQueue<string> stderr, bool exposeExact)
+    private async Task<McpClient> CreateClientAsync(
+        ConcurrentQueue<string> stderr,
+        bool exposeExact,
+        string? baseUrl = null)
     {
         var environment = CreateEnvironment();
+        if (baseUrl is not null)
+        {
+            environment["CALDAV_URL"] = baseUrl;
+            environment["CALDAV_CALENDAR_HREFS"] = $"{baseUrl}/calendars/test/";
+        }
         environment["CALDAV_EXPOSE_EXACT_TOOLS"] = exposeExact ? "true" : "false";
         var transport = new StdioClientTransport(new StdioClientTransportOptions
         {
