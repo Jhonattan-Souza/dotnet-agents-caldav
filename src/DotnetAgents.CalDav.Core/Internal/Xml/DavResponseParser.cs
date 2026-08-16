@@ -93,6 +93,22 @@ internal static class DavResponseParser
         }
     }
 
+    /// <summary>Recognizes the CalDAV precondition that prevents duplicate UIDs in one Calendar.</summary>
+    public static bool IsNoUidConflictError(string responseXml)
+    {
+        try
+        {
+            var document = ParseDocument(responseXml);
+            return document.Descendants().Any(element =>
+                element.Name.Namespace == CalDav
+                && element.Name.LocalName == "no-uid-conflict");
+        }
+        catch (XmlException)
+        {
+            return false;
+        }
+    }
+
     private static string? TryParseCalendarResourceHref(XElement response)
     {
         var responseStatus = response.Element(Dav + "status");

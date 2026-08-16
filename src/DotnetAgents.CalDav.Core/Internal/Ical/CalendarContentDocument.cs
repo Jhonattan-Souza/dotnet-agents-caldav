@@ -43,6 +43,11 @@ internal sealed partial class CalendarContentDocument
     private static readonly FrozenSet<string> RegisteredPropertyNames = DefaultValueTypes.Keys
         .Concat(["TZOFFSETFROM", "TZOFFSETTO"])
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+    private static readonly FrozenSet<string> ProjectionExtensionsUnsupportedByIcalNet = new[]
+    {
+        "CALENDAR-ADDRESS", "CONCEPT", "CONFERENCE", "IMAGE", "LINK", "PARTICIPANT-TYPE",
+        "STRUCTURED-DATA", "STYLED-DESCRIPTION"
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private readonly byte[] _authoritativeUtf8;
     private readonly string _content;
@@ -61,8 +66,9 @@ internal sealed partial class CalendarContentDocument
         AddDefaultValueTypes(mappings, CalendarPropertyValueType.Recur, "EXRULE", "RRULE");
         AddDefaultValueTypes(mappings, CalendarPropertyValueType.Text,
             "ACTION", "CALSCALE", "CATEGORIES", "CLASS", "COLOR", "COMMENT", "CONTACT", "DESCRIPTION", "LOCATION",
-            "METHOD", "NAME", "PRODID", "PROXIMITY", "REFID", "RELATED-TO", "REQUEST-STATUS", "RESOURCES",
-            "RESOURCE-TYPE", "STATUS", "STRUCTURED-DATA", "SUMMARY", "TRANSP", "TZID", "TZNAME", "UID", "VERSION");
+            "METHOD", "NAME", "PARTICIPANT-TYPE", "PRODID", "PROXIMITY", "REFID", "RELATED-TO", "REQUEST-STATUS",
+            "RESOURCES", "RESOURCE-TYPE", "STATUS", "STRUCTURED-DATA", "STYLED-DESCRIPTION", "SUMMARY", "TRANSP",
+            "TZID", "TZNAME", "UID", "VERSION");
         return mappings.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
     }
 
@@ -104,6 +110,9 @@ internal sealed partial class CalendarContentDocument
 
     internal static bool IsRegisteredPropertyName(string name) => RegisteredPropertyNames.Contains(name);
 
+    internal static bool IsProjectionExtensionUnsupportedByIcalNet(string name) =>
+        ProjectionExtensionsUnsupportedByIcalNet.Contains(name);
+
     internal static bool IsValidRegisteredUnknownValue(CalendarContentProperty property) =>
         property.Name is "TZOFFSETFROM" or "TZOFFSETTO"
         && !property.Parameters.Any(parameter => parameter.Name.Equals("VALUE", StringComparison.OrdinalIgnoreCase))
@@ -115,7 +124,10 @@ internal sealed partial class CalendarContentDocument
 
     public byte[] ReplayForTypedValidation() => ReplayForTypedValidation(static _ => false);
 
-    public byte[] ReplayForProjectionValidation() => ReplayForTypedValidation(IsEntityPeriodRecurrenceDate);
+    public byte[] ReplayForProjectionValidation() => ReplayForTypedValidation(property =>
+        IsEntityPeriodRecurrenceDate(property)
+        || ProjectionExtensionsUnsupportedByIcalNet.Contains(property.Name)
+        || IsUnsupportedAttendeeAddressForIcalNet(property));
 
     public byte[] ReplayForOccurrenceEvaluation() => ReplayForTypedValidation(IsEntityPeriodRecurrenceDate);
 
@@ -124,6 +136,11 @@ internal sealed partial class CalendarContentDocument
         && property.ValueType == CalendarPropertyValueType.Period
         && property.ComponentPath.Count == 2
         && property.ComponentPath[1].Name is "VEVENT" or "VTODO";
+
+    private static bool IsUnsupportedAttendeeAddressForIcalNet(CalendarContentProperty property) =>
+        property.Name.Equals("ATTENDEE", StringComparison.OrdinalIgnoreCase)
+        && Uri.TryCreate(property.RawEncodedValue, UriKind.Absolute, out var address)
+        && !address.Scheme.Equals("mailto", StringComparison.OrdinalIgnoreCase);
 
     private byte[] ReplayForTypedValidation(Func<CalendarContentProperty, bool> removeAdditionalProperty)
     {

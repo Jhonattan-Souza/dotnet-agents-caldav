@@ -198,6 +198,7 @@ public class CalDavHostBuilderTests
             typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarEntityTools),
             typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarOccurrenceTools),
             typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarResourceTools),
+            typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarEntityCreateTools),
             typeof(DotnetAgents.CalDav.Mcp.Tools.TaskListTools),
             typeof(DotnetAgents.CalDav.Mcp.Tools.ChatTaskTools)
         ]);
@@ -266,6 +267,46 @@ public class CalDavHostBuilderTests
         tool.ProtocolTool.Meta!["cache"]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
     }
 
+    [Theory]
+    [InlineData("events.create", "eventCreateEntity")]
+    [InlineData("todos.create", "todoCreateEntity")]
+    public void BuildHost_AdvertisesFrozenCreateSchemasAnnotationsAndPrivateNoCacheHint(
+        string toolName,
+        string entityDefinition)
+    {
+        var builder = CalDavHostBuilder.CreateBuilder();
+        builder.Services.ConfigureCalDav(ValidOptions);
+        using var host = builder.Build();
+
+        var options = host.Services.GetRequiredService<IOptions<ModelContextProtocol.Server.McpServerOptions>>().Value;
+        options.ToolCollection!.TryGetPrimitive(toolName, out var tool).ShouldBeTrue();
+        var inputSchema = JsonNode.Parse(tool!.ProtocolTool.InputSchema.GetRawText())!.AsObject();
+        var outputSchema = JsonNode.Parse(tool.ProtocolTool.OutputSchema!.Value.GetRawText())!.AsObject();
+
+        inputSchema["additionalProperties"]!.GetValue<bool>().ShouldBeFalse();
+        inputSchema["required"]!.AsArray().Select(item => item!.GetValue<string>())
+            .ShouldBe(["destination", "entity"]);
+        inputSchema["$defs"]!.AsObject().ShouldContainKey(entityDefinition);
+        outputSchema["oneOf"]!.AsArray().Count.ShouldBe(3);
+        tool.ProtocolTool.Annotations!.ReadOnlyHint.ShouldBe(false);
+        tool.ProtocolTool.Annotations.DestructiveHint.ShouldBe(false);
+        tool.ProtocolTool.Annotations.IdempotentHint.ShouldBe(false);
+        tool.ProtocolTool.Annotations.OpenWorldHint.ShouldBe(true);
+        tool.ProtocolTool.Meta!["cache"]!["ttlMs"]!.GetValue<int>().ShouldBe(0);
+        tool.ProtocolTool.Meta!["cache"]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
+    }
+
+    [Fact]
+    public void BuildHost_ActivatesCalendarEntityCreateToolsThroughTheSdkConstructionPath()
+    {
+        var builder = CalDavHostBuilder.CreateBuilder();
+        builder.Services.ConfigureCalDav(ValidOptions);
+        using var host = builder.Build();
+
+        ActivatorUtilities.CreateInstance<DotnetAgents.CalDav.Mcp.Tools.CalendarEntityCreateTools>(host.Services)
+            .ShouldNotBeNull();
+    }
+
     [Fact]
     public void BuildHost_ActivatesCalendarEntityToolsThroughTheSdkConstructionPath()
     {
@@ -319,6 +360,8 @@ public class CalDavHostBuilderTests
             "calendar_entities.query",
             "calendar_occurrences.query",
             "calendar_resources.get",
+            "events.create",
+            "todos.create",
             "list_task_lists",
             "show_tasks",
             "add_task",
@@ -358,6 +401,8 @@ public class CalDavHostBuilderTests
             "calendar_entities.query",
             "calendar_occurrences.query",
             "calendar_resources.get",
+            "events.create",
+            "todos.create",
             "list_task_lists",
             "show_tasks",
             "add_task",

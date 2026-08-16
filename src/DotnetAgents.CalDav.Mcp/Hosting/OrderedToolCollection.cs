@@ -11,13 +11,15 @@ internal sealed class OrderedToolCollection : McpServerPrimitiveCollection<McpSe
         ["calendar_entities.query"] = 1,
         ["calendar_occurrences.query"] = 2,
         ["calendar_resources.get"] = 3,
-        ["calendar_resources.exact_get"] = 4,
-        ["list_task_lists"] = 5,
-        ["show_tasks"] = 6,
-        ["add_task"] = 7,
-        ["find_tasks"] = 8,
-        ["complete_task_by_summary"] = 9,
-        ["delete_task_by_summary"] = 10
+        ["events.create"] = 4,
+        ["todos.create"] = 6,
+        ["calendar_resources.exact_get"] = 16,
+        ["list_task_lists"] = 17,
+        ["show_tasks"] = 18,
+        ["add_task"] = 19,
+        ["find_tasks"] = 20,
+        ["complete_task_by_summary"] = 21,
+        ["delete_task_by_summary"] = 22
     };
 
     public OrderedToolCollection(IEnumerable<McpServerTool> tools)

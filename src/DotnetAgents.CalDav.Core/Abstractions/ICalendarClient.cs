@@ -18,4 +18,9 @@ public interface ICalendarClient
 
     /// <summary>Reads one complete Calendar Object Resource revision by canonical absolute href.</summary>
     Task<CalendarResourceRead> GetCalendarResourceAsync(string href, CancellationToken cancellationToken);
+
+    /// <summary>Conditionally creates one complete Calendar Object Resource without overwriting.</summary>
+    Task<CalendarResourceCreateResult> CreateCalendarResourceAsync(
+        CalendarResourceCreateRequest request,
+        CancellationToken cancellationToken);
 }

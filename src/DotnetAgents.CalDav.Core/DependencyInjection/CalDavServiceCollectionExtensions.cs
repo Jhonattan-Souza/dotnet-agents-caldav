@@ -98,6 +98,8 @@ public static class CalDavServiceCollectionExtensions
 
         services.AddTransient<ICalDavClient>(serviceProvider => serviceProvider.GetRequiredService<CalDavClient>());
         services.AddTransient<ICalendarClient>(serviceProvider => serviceProvider.GetRequiredService<CalDavClient>());
+        services.AddSingleton<TimeProvider>(TimeProvider.System);
+        services.AddSingleton<ICalendarEntityIdentityGenerator, CalendarEntityIdentityGenerator>();
         services.AddTransient<ICalendarService, CalendarService>();
 
         // ITaskService is retained internally during the staged 0.2.0 replacement.

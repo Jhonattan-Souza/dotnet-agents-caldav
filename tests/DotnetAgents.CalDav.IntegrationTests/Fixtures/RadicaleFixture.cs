@@ -25,6 +25,7 @@ public sealed class RadicaleFixture : IAsyncLifetime
     private const string TestPassword = "caldavtest123";
     private const int RadicalePort = 5232;
     private const string TaskCollectionName = "tasks";
+    private const string EventCollectionName = "events";
     private const string ShoppingCollectionName = "shopping";
     private const string WorkCollectionName = "work";
 
@@ -33,6 +34,9 @@ public sealed class RadicaleFixture : IAsyncLifetime
 
     /// <summary>The href of the seeded task collection (e.g. <c>/caldavtest/tasks/</c>).</summary>
     public string TaskListHref { get; private set; } = null!;
+
+    /// <summary>The href of the isolated seeded Event calendar.</summary>
+    public string EventCalendarHref { get; private set; } = null!;
 
     /// <summary>The href of the seeded shopping task collection.</summary>
     public string ShoppingListHref { get; private set; } = null!;
@@ -87,9 +91,26 @@ public sealed class RadicaleFixture : IAsyncLifetime
         // still uses the published BaseUrl and the production HTTP stack.
         var cancellationToken = TestContext.Current.CancellationToken;
         await CreateUserPrincipalAsync(cancellationToken);
-        TaskListHref = await CreateTaskCollectionAsync(TaskCollectionName, "Tasks", cancellationToken);
-        ShoppingListHref = await CreateTaskCollectionAsync(ShoppingCollectionName, "Shopping", cancellationToken);
-        WorkListHref = await CreateTaskCollectionAsync(WorkCollectionName, "Work", cancellationToken);
+        EventCalendarHref = await CreateCalendarCollectionAsync(
+            EventCollectionName,
+            "Events",
+            "VEVENT",
+            cancellationToken);
+        TaskListHref = await CreateCalendarCollectionAsync(
+            TaskCollectionName,
+            "Tasks",
+            "VTODO",
+            cancellationToken);
+        ShoppingListHref = await CreateCalendarCollectionAsync(
+            ShoppingCollectionName,
+            "Shopping",
+            "VTODO",
+            cancellationToken);
+        WorkListHref = await CreateCalendarCollectionAsync(
+            WorkCollectionName,
+            "Work",
+            "VTODO",
+            cancellationToken);
 
         // 3. Wire production DI (AddCalDavTasks) against the live container.
         var services = new ServiceCollection();
@@ -153,12 +174,14 @@ public sealed class RadicaleFixture : IAsyncLifetime
         return ProvisionCollectionAsync(principalPath, null, cancellationToken);
     }
 
-    private async Task<string> CreateTaskCollectionAsync(
+    private async Task<string> CreateCalendarCollectionAsync(
         string collectionName,
         string displayName,
+        string componentName,
         CancellationToken cancellationToken)
     {
-        // Extended MKCOL to create a VTODO-capable calendar collection.
+        // Extended MKCOL creates a single-component calendar collection through
+        // Radicale's internal loopback; product calls still use the mapped host URL.
         var collectionPath = $"/{TestUsername}/{collectionName}/";
         var body = $$"""
             <?xml version="1.0" encoding="utf-8" ?>
@@ -171,7 +194,7 @@ public sealed class RadicaleFixture : IAsyncLifetime
                   </D:resourcetype>
                   <D:displayname>{{displayName}}</D:displayname>
                   <C:supported-calendar-component-set>
-                    <C:comp name="VTODO"/>
+                    <C:comp name="{{componentName}}"/>
                   </C:supported-calendar-component-set>
                 </D:prop>
               </D:set>

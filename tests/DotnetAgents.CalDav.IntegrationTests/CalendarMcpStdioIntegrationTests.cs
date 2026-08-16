@@ -53,6 +53,8 @@ public sealed class CalendarMcpStdioIntegrationTests
             "calendar_entities.query",
             "calendar_occurrences.query",
             "calendar_resources.get",
+            "events.create",
+            "todos.create",
             "list_task_lists",
             "show_tasks",
             "add_task",
@@ -270,6 +272,132 @@ public sealed class CalendarMcpStdioIntegrationTests
     }
 
     [Fact]
+    public async Task CalendarEntityCreate_CreatesEventAndTodoAndRejectsCallerUidCollisionOverRealStdioAndRadicale()
+    {
+        var stderr = new ConcurrentQueue<string>();
+        var eventCalendarHref = $"{_fixture.BaseUrl}{_fixture.EventCalendarHref}";
+        var todoCalendarHref = $"{_fixture.BaseUrl}{_fixture.TaskListHref}";
+        await using var client = await CreateClientAsync(
+            stderr,
+            exposeExact: false,
+            calendarHrefs: $"{eventCalendarHref},{todoCalendarHref}");
+        var eventDestination = new Dictionary<string, object?>
+        {
+            ["mode"] = "selected",
+            ["calendar"] = new Dictionary<string, object?>
+            {
+                ["by"] = "href",
+                ["href"] = eventCalendarHref
+            }
+        };
+        var todoDestination = new Dictionary<string, object?>
+        {
+            ["mode"] = "selected",
+            ["calendar"] = new Dictionary<string, object?>
+            {
+                ["by"] = "href",
+                ["href"] = todoCalendarHref
+            }
+        };
+        var eventArguments = new Dictionary<string, object?>
+        {
+            ["destination"] = eventDestination,
+            ["entity"] = new Dictionary<string, object?>
+            {
+                ["kind"] = "event",
+                ["uid"] = "stdio-create-event",
+                ["fields"] = new Dictionary<string, object?>
+                {
+                    ["summary"] = "Stdio create event",
+                    ["start"] = new Dictionary<string, object?>
+                    {
+                        ["kind"] = "utcDateTime",
+                        ["value"] = "2026-08-18T13:00:00Z"
+                    },
+                    ["duration"] = "PT1H",
+                    ["structuredData"] = new Dictionary<string, object?>
+                    {
+                        ["attachments"] = new[]
+                        {
+                            new Dictionary<string, object?>
+                            {
+                                ["uri"] = "https://storage.example.test/stdio-event",
+                                ["label"] = "Agenda",
+                                ["parameters"] = Array.Empty<object>()
+                            }
+                        }
+                    }
+                }
+            }
+        };
+        var todoArguments = new Dictionary<string, object?>
+        {
+            ["destination"] = todoDestination,
+            ["entity"] = new Dictionary<string, object?>
+            {
+                ["kind"] = "todo",
+                ["uid"] = "stdio-create-todo",
+                ["fields"] = new Dictionary<string, object?>
+                {
+                    ["summary"] = "Stdio create todo",
+                    ["due"] = new Dictionary<string, object?>
+                    {
+                        ["kind"] = "date",
+                        ["value"] = "2026-08-19"
+                    },
+                    ["structuredData"] = new Dictionary<string, object?>
+                    {
+                        ["comments"] = new[]
+                        {
+                            new Dictionary<string, object?>
+                            {
+                                ["value"] = "Stored through stdio",
+                                ["parameters"] = Array.Empty<object>()
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        var createdEvent = await client.CallToolAsync(
+            "events.create",
+            eventArguments,
+            cancellationToken: TestContext.Current.CancellationToken);
+        var createdTodo = await client.CallToolAsync(
+            "todos.create",
+            todoArguments,
+            cancellationToken: TestContext.Current.CancellationToken);
+        var collisionEntity = (Dictionary<string, object?>)eventArguments["entity"]!;
+        var collisionFields = (Dictionary<string, object?>)collisionEntity["fields"]!;
+        collisionFields["summary"] = "Must not overwrite";
+        var collision = await client.CallToolAsync(
+            "events.create",
+            eventArguments,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        var eventRevision = AssertCommittedCreate(createdEvent, "event", "stdio-create-event", eventCalendarHref);
+        var todoRevision = AssertCommittedCreate(createdTodo, "todo", "stdio-create-todo", todoCalendarHref);
+        collision.IsError.ShouldBe(true);
+        collision.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("conflict");
+        collision.StructuredContent.Value.GetProperty("mutationState").GetString().ShouldBe("not_committed");
+        var observedEvent = await GetResourceAsync(eventRevision.Href);
+        var observedTodo = await GetResourceAsync(todoRevision.Href);
+        observedEvent.EntityTag.ShouldBe(eventRevision.EntityTag);
+        observedTodo.EntityTag.ShouldBe(todoRevision.EntityTag);
+        var storedEvent = Encoding.UTF8.GetString(observedEvent.Utf8);
+        var storedTodo = Encoding.UTF8.GetString(observedTodo.Utf8);
+        storedEvent.ShouldContain("SUMMARY:Stdio create event");
+        storedEvent.ShouldNotContain("Must not overwrite");
+        storedEvent.ShouldContain("ATTACH;LABEL=Agenda:https://storage.example.test/stdio-event");
+        storedTodo.ShouldContain("COMMENT:Stored through stdio");
+        stderr.ShouldBeEmpty();
+
+        await DeleteResourceAsync(eventRevision.Href, eventRevision.EntityTag);
+        await DeleteResourceAsync(todoRevision.Href, todoRevision.EntityTag);
+    }
+
+    [Fact]
     public async Task CalendarEntityQuery_InvalidRawShapesReturnTypedErrorsWithoutNetwork()
     {
         var stderr = new ConcurrentQueue<string>();
@@ -367,6 +495,8 @@ public sealed class CalendarMcpStdioIntegrationTests
             "calendar_entities.query",
             "calendar_occurrences.query",
             "calendar_resources.get",
+            "events.create",
+            "todos.create",
             "calendar_resources.exact_get",
             "list_task_lists",
             "show_tasks",
@@ -388,7 +518,8 @@ public sealed class CalendarMcpStdioIntegrationTests
     private async Task<McpClient> CreateClientAsync(
         ConcurrentQueue<string> stderr,
         bool exposeExact,
-        string? baseUrl = null)
+        string? baseUrl = null,
+        string? calendarHrefs = null)
     {
         var environment = CreateEnvironment();
         if (baseUrl is not null)
@@ -396,6 +527,8 @@ public sealed class CalendarMcpStdioIntegrationTests
             environment["CALDAV_URL"] = baseUrl;
             environment["CALDAV_CALENDAR_HREFS"] = $"{baseUrl}/calendars/test/";
         }
+        if (calendarHrefs is not null)
+            environment["CALDAV_CALENDAR_HREFS"] = calendarHrefs;
         environment["CALDAV_EXPOSE_EXACT_TOOLS"] = exposeExact ? "true" : "false";
         var transport = new StdioClientTransport(new StdioClientTransportOptions
         {
@@ -443,10 +576,13 @@ public sealed class CalendarMcpStdioIntegrationTests
             },
             cancellationToken: TestContext.Current.CancellationToken);
 
-    private async Task DeleteResourceAsync(string href)
+    private async Task DeleteResourceAsync(string href, string? entityTag = null)
     {
         using var client = CreateAuthenticatedClient();
-        using var response = await client.DeleteAsync(href, TestContext.Current.CancellationToken);
+        using var request = new HttpRequestMessage(HttpMethod.Delete, href);
+        if (entityTag is not null)
+            request.Headers.TryAddWithoutValidation("If-Match", entityTag).ShouldBeTrue();
+        using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
         response.StatusCode.ShouldBeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
     }
 
@@ -493,6 +629,49 @@ public sealed class CalendarMcpStdioIntegrationTests
         + "BEGIN:VTODO\r\nUID:occurrence-range\r\nDTSTAMP:20260815T120000Z\r\n"
         + "RECURRENCE-ID;RANGE=THISANDFUTURE:20260817T090000Z\r\n"
         + "DTSTART:20260817T130000Z\r\nDUE:20260817T150000Z\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+
+    private static ObservedRevision AssertCommittedCreate(
+        CallToolResult result,
+        string kind,
+        string uid,
+        string calendarHref)
+    {
+        result.IsError.ShouldBe(false, result.StructuredContent?.ToString());
+        var structured = result.StructuredContent!.Value;
+        structured.GetProperty("outcome").GetString().ShouldBe("success");
+        structured.GetProperty("mutationState").GetString().ShouldBe("committed");
+        var snapshot = structured.GetProperty("snapshot");
+        var revision = snapshot.GetProperty("resourceRevision");
+        var href = revision.GetProperty("href").GetString();
+        var entityTag = revision.GetProperty("entityTag").GetString();
+        href.ShouldNotBeNull();
+        entityTag.ShouldNotBeNull();
+        entityTag.ShouldStartWith("\"");
+        AssertCanonicalDirectChild(calendarHref, href);
+        var projection = snapshot.GetProperty("projection");
+        projection.GetProperty("kind").GetString().ShouldBe(kind);
+        projection.GetProperty("uid").GetString().ShouldBe(uid);
+        return new ObservedRevision(href, entityTag);
+    }
+
+    private static void AssertCanonicalDirectChild(string calendarHref, string resourceHref)
+    {
+        var calendar = new Uri(calendarHref, UriKind.Absolute);
+        var resource = new Uri(resourceHref, UriKind.Absolute);
+        resource.GetLeftPart(UriPartial.Authority).ShouldBe(calendar.GetLeftPart(UriPartial.Authority));
+        resource.Query.ShouldBeEmpty();
+        resource.Fragment.ShouldBeEmpty();
+        resource.UserInfo.ShouldBeEmpty();
+        resourceHref.ShouldNotContain("%2F", Case.Insensitive);
+        resourceHref.ShouldNotContain("%5C", Case.Insensitive);
+        var relative = calendar.MakeRelativeUri(resource).OriginalString;
+        relative.ShouldNotBeEmpty();
+        relative.ShouldNotContain("/");
+        relative.ShouldNotContain("\\");
+        new Uri(calendar, relative).AbsoluteUri.ShouldBe(resource.AbsoluteUri);
+    }
+
+    private sealed record ObservedRevision(string Href, string EntityTag);
 
     private static string GetServerAssemblyPath()
     {

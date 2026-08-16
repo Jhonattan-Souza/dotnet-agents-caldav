@@ -15,15 +15,29 @@ internal sealed class CalendarService : ICalendarService
     private readonly ICalendarClient _calendarClient;
     private readonly IOptions<CalDavOptions> _options;
     private readonly ILogger<CalendarService> _logger;
+    private readonly TimeProvider _timeProvider;
+    private readonly ICalendarEntityIdentityGenerator _identityGenerator;
 
     public CalendarService(
         ICalendarClient calendarClient,
         IOptions<CalDavOptions> options,
         ILogger<CalendarService> logger)
+        : this(calendarClient, options, logger, TimeProvider.System, new CalendarEntityIdentityGenerator())
+    {
+    }
+
+    public CalendarService(
+        ICalendarClient calendarClient,
+        IOptions<CalDavOptions> options,
+        ILogger<CalendarService> logger,
+        TimeProvider timeProvider,
+        ICalendarEntityIdentityGenerator identityGenerator)
     {
         _calendarClient = calendarClient;
         _options = options;
         _logger = logger;
+        _timeProvider = timeProvider;
+        _identityGenerator = identityGenerator;
     }
 
     /// <inheritdoc />
@@ -109,6 +123,24 @@ internal sealed class CalendarService : ICalendarService
 
         return await CreateSnapshotAsync(calendar, href, cancellationToken);
     }
+
+    /// <inheritdoc />
+    public async Task<CalendarEntityCreateResult> CreateEventAsync(
+        CalendarEventCreateRequest request,
+        CancellationToken cancellationToken) => await CreateEntityEngine().CreateEventAsync(request, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<CalendarEntityCreateResult> CreateTodoAsync(
+        CalendarTodoCreateRequest request,
+        CancellationToken cancellationToken) => await CreateEntityEngine().CreateTodoAsync(request, cancellationToken);
+
+    private CalendarEntityCreateEngine CreateEntityEngine() => new(
+        _calendarClient,
+        _options.Value,
+        _timeProvider,
+        _identityGenerator,
+        ApplyScope,
+        ResolveDefaultCalendar);
 
     private async Task<CalendarResourceRead> CreateSnapshotAsync(
         CalendarDescriptor calendar,

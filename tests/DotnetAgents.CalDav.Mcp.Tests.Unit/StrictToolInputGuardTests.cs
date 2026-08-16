@@ -44,6 +44,12 @@ public sealed class StrictToolInputGuardTests
     [InlineData("calendar_occurrences.query", 262_145, false, "payload_too_large")]
     [InlineData("calendar_occurrences.query", 262_145, true, "payload_too_large")]
     [InlineData("calendar_occurrences.query", 1, true, "invalid_input")]
+    [InlineData("events.create", 262_144, false, null)]
+    [InlineData("events.create", 262_145, true, "payload_too_large")]
+    [InlineData("events.create", 1, true, "invalid_input")]
+    [InlineData("todos.create", 262_144, false, null)]
+    [InlineData("todos.create", 262_145, true, "payload_too_large")]
+    [InlineData("todos.create", 1, true, "invalid_input")]
     public void Reject_AppliesQuerySpecificAdmissionBeforeDuplicateValidation(
         string toolName,
         int? argumentBytes,

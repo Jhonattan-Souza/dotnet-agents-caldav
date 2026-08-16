@@ -19,6 +19,11 @@ internal static class CalendarResourceProjector
         "LOCATION", "STATUS", "TRANSP", "CLASS", "PRIORITY", "URL", "COMPLETED", "DTSTAMP",
         "CREATED", "LAST-MODIFIED", "GEO", "ORGANIZER", "PERCENT-COMPLETE", "SEQUENCE"
     };
+    private static readonly HashSet<string> ExtensionSingletonProperties = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "UID", "PARTICIPANT-TYPE", "CALENDAR-ADDRESS", "CREATED", "DESCRIPTION", "DTSTAMP", "GEO",
+        "LAST-MODIFIED", "NAME", "PRIORITY", "SEQUENCE", "STATUS", "SUMMARY", "URL"
+    };
 
     public static CalendarProjectionResult Project(ReadOnlySpan<byte> authoritativeUtf8)
     {
@@ -47,6 +52,12 @@ internal static class CalendarResourceProjector
         return read with { Snapshot = snapshot };
     }
 
+    internal static bool ContainsEntityUid(CalendarProjectionResult result, string uid) => result.Properties.Any(property =>
+        property.Name.Equals("UID", StringComparison.OrdinalIgnoreCase)
+        && property.ComponentPath.Count == 2
+        && property.ComponentPath[1].Name is "VEVENT" or "VTODO"
+        && string.Equals(DecodeText(property.RawEncodedValue), uid, StringComparison.Ordinal));
+
     private static CalendarProjectionResult ProjectDocument(CalendarContentDocument document)
     {
         var properties = document.Properties.Select(ToPublicProperty).ToArray();
@@ -55,7 +66,13 @@ internal static class CalendarResourceProjector
             var diagnostic = ValidateComponents(document.Components);
             if (diagnostic is not null)
                 return Opaque(properties, diagnostic);
+            diagnostic = ValidateExtensionComponents(document.Components, document.Properties);
+            if (diagnostic is not null)
+                return Opaque(properties, diagnostic);
             diagnostic = ValidateCalendarProperties(document.Properties);
+            if (diagnostic is not null)
+                return Opaque(properties, diagnostic);
+            diagnostic = ValidateFilteredProjectionExtensions(document.Properties);
             if (diagnostic is not null)
                 return Opaque(properties, diagnostic);
 
@@ -119,8 +136,44 @@ internal static class CalendarResourceProjector
         "VEVENT" or "VTODO" or "VTIMEZONE" => path.Count == 2 && path[0].Name == "VCALENDAR",
         "STANDARD" or "DAYLIGHT" => path.Count == 3 && path[1].Name == "VTIMEZONE",
         "VALARM" => path.Count == 3 && path[1].Name is "VEVENT" or "VTODO",
+        "PARTICIPANT" => path.Count == 3 && path[1].Name is "VEVENT" or "VTODO",
+        "VLOCATION" or "VRESOURCE" => path.Count == 3 && path[1].Name is "VEVENT" or "VTODO"
+            || path.Count == 4 && path[2].Name == "PARTICIPANT",
         _ => true
     };
+
+    private static string? ValidateExtensionComponents(
+        IReadOnlyList<CalendarContentComponent> components,
+        IReadOnlyList<CalendarContentProperty> properties)
+    {
+        foreach (var component in components.Where(component => component.Path[^1].Name is
+                     "PARTICIPANT" or "VLOCATION" or "VRESOURCE"))
+        {
+            var owned = properties.Where(property => PathsEqual(property.ComponentPath, component.Path)).ToArray();
+            if (!HasValidExtensionShape(component.Path[^1].Name, owned))
+                return "extension_component_invalid";
+        }
+        return null;
+    }
+
+    private static bool HasValidExtensionShape(
+        string componentName,
+        IReadOnlyList<CalendarContentProperty> properties)
+    {
+        if (CountProperties(properties, "UID") != 1 || HasRepeatedExtensionSingleton(properties))
+            return false;
+        return componentName != "PARTICIPANT"
+            || CountProperties(properties, "PARTICIPANT-TYPE") == 1;
+    }
+
+    private static bool HasRepeatedExtensionSingleton(IReadOnlyList<CalendarContentProperty> properties) => properties
+        .Where(property => ExtensionSingletonProperties.Contains(property.Name))
+        .GroupBy(property => property.Name, StringComparer.OrdinalIgnoreCase)
+        .Any(group => group.Count() > 1);
+
+    private static int CountProperties(IReadOnlyList<CalendarContentProperty> properties, string name) =>
+        properties.Count(property => property.Name.Equals(name, StringComparison.OrdinalIgnoreCase)
+            && property.RawEncodedValue.Length > 0);
 
     private static bool IsEntityComponent(string name) =>
         name.Equals("VEVENT", StringComparison.OrdinalIgnoreCase)
@@ -196,6 +249,65 @@ internal static class CalendarResourceProjector
                 : null;
     }
 
+    private static string? ValidateFilteredProjectionExtensions(
+        IReadOnlyList<CalendarContentProperty> properties)
+    {
+        foreach (var property in properties.Where(property =>
+                     CalendarContentDocument.IsProjectionExtensionUnsupportedByIcalNet(property.Name)))
+        {
+            if (!HasAllowedExtensionPropertyPath(property))
+                return "extension_property_topology_invalid";
+            if (HasRepeatedParameterName(property) || HasInvalidFilteredExtensionValue(property))
+                return "extension_property_value_invalid";
+        }
+
+        return null;
+    }
+
+    private static bool HasAllowedExtensionPropertyPath(CalendarContentProperty property)
+    {
+        var component = property.ComponentPath[^1].Name;
+        var directEntity = property.ComponentPath.Count == 2 && component is "VEVENT" or "VTODO";
+        var directParticipant = property.ComponentPath.Count == 3 && component == "PARTICIPANT";
+        return property.Name switch
+        {
+            "CALENDAR-ADDRESS" or "PARTICIPANT-TYPE" => directParticipant,
+            "STRUCTURED-DATA" or "STYLED-DESCRIPTION" => directEntity || directParticipant,
+            _ => directEntity
+        };
+    }
+
+    private static bool HasRepeatedParameterName(CalendarContentProperty property) => property.Parameters
+        .GroupBy(parameter => parameter.Name, StringComparer.OrdinalIgnoreCase)
+        .Any(group => group.Count() > 1);
+
+    private static bool HasInvalidFilteredExtensionValue(CalendarContentProperty property) => property.Name switch
+    {
+        "PARTICIPANT-TYPE" => !IsToken(property.RawEncodedValue),
+        "IMAGE" or "STRUCTURED-DATA" when property.ValueType == CalendarPropertyValueType.Binary =>
+            !IsValidEncodedBinary(property),
+        _ => false
+    };
+
+    private static bool IsValidEncodedBinary(CalendarContentProperty property) =>
+        IsBase64(property.RawEncodedValue)
+        && GetSingleParameterValue(property, "ENCODING")?.Equals("BASE64", StringComparison.OrdinalIgnoreCase) == true;
+
+    private static string? GetSingleParameterValue(CalendarContentProperty property, string name)
+    {
+        var values = property.Parameters
+            .Where(parameter => parameter.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+            .SelectMany(parameter => parameter.Values)
+            .ToArray();
+        return values.Length == 1 ? values[0] : null;
+    }
+
+    private static bool IsToken(string value) => value.Length > 0
+        && value.All(character => character is >= 'A' and <= 'Z'
+            or >= 'a' and <= 'z'
+            or >= '0' and <= '9'
+            or '-');
+
     private static bool HasInvalidRegisteredValueType(CalendarContentProperty property)
     {
         if (property.Name is "TZOFFSETFROM" or "TZOFFSETTO")
@@ -232,7 +344,14 @@ internal static class CalendarResourceProjector
 
     private static bool HasInvalidKnownValue(CalendarContentProperty property) => property.Name switch
     {
-        "URL" or "ATTENDEE" or "ORGANIZER" => !Uri.TryCreate(property.RawEncodedValue, UriKind.Absolute, out _),
+        "URL" or "ATTENDEE" or "ORGANIZER" or "CALENDAR-ADDRESS" or "CONCEPT" or "CONFERENCE" or "LINK" =>
+            !Uri.TryCreate(property.RawEncodedValue, UriKind.Absolute, out _),
+        "IMAGE" when property.ValueType == CalendarPropertyValueType.Uri =>
+            !Uri.TryCreate(property.RawEncodedValue, UriKind.Absolute, out _),
+        "IMAGE" when property.ValueType == CalendarPropertyValueType.Binary => !IsBase64(property.RawEncodedValue),
+        "STRUCTURED-DATA" when property.ValueType == CalendarPropertyValueType.Uri =>
+            !Uri.TryCreate(property.RawEncodedValue, UriKind.Absolute, out _),
+        "STRUCTURED-DATA" when property.ValueType == CalendarPropertyValueType.Binary => !IsBase64(property.RawEncodedValue),
         "ATTACH" when property.ValueType == CalendarPropertyValueType.Uri =>
             !Uri.TryCreate(property.RawEncodedValue, UriKind.Absolute, out _),
         "ATTACH" when property.ValueType == CalendarPropertyValueType.Binary => !IsBase64(property.RawEncodedValue),
