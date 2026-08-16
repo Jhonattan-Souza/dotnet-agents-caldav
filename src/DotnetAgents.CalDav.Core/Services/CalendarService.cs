@@ -39,7 +39,14 @@ internal sealed class CalendarService : ICalendarService
         CancellationToken cancellationToken)
     {
         var discovered = await _calendarClient.GetCalendarsAsync(cancellationToken);
-        var scoped = ApplyScope(discovered).Items;
+        return ResolveDefaultCalendar(entityKind, discovered, ApplyScope(discovered).Items);
+    }
+
+    private CalendarSelectionResult ResolveDefaultCalendar(
+        CalendarEntityKind entityKind,
+        IReadOnlyList<CalendarDescriptor> discovered,
+        IReadOnlyList<CalendarDescriptor> scoped)
+    {
         var authorizedCandidates = scoped.Take(MaximumDiagnostics).ToArray();
         var name = GetDefaultName(entityKind);
         if (string.IsNullOrWhiteSpace(name))
@@ -65,6 +72,15 @@ internal sealed class CalendarService : ICalendarService
     }
 
     /// <inheritdoc />
+    public async Task<CalendarEntityQueryResult> QueryEntitiesAsync(
+        CalendarEntityQuery query,
+        CancellationToken cancellationToken) => await new CalendarEntityQueryEngine(
+            _calendarClient,
+            _options.Value,
+            ApplyScope,
+            ResolveDefaultCalendar).QueryAsync(query, cancellationToken);
+
+    /// <inheritdoc />
     public async Task<CalendarResourceRead> GetResourceAsync(string href, CancellationToken cancellationToken)
     {
         if (!TryGetCanonicalResourceUri(href, out var resourceUri))
@@ -82,20 +98,18 @@ internal sealed class CalendarService : ICalendarService
         if (calendar is null)
             return new CalendarResourceRead(CalendarResourceReadCode.OutsideScope);
 
+        return await CreateSnapshotAsync(calendar, href, cancellationToken);
+    }
+
+    private async Task<CalendarResourceRead> CreateSnapshotAsync(
+        CalendarDescriptor calendar,
+        string href,
+        CancellationToken cancellationToken)
+    {
         var read = await _calendarClient.GetCalendarResourceAsync(href, cancellationToken);
         if (read.Code != CalendarResourceReadCode.Success)
             return read;
-
-        var projection = CalendarResourceProjector.Project(read.AuthoritativeUtf8.Span);
-        var snapshot = new CalendarResourceSnapshot(
-            calendar.Href,
-            read.ResourceHref!,
-            read.EntityTag!,
-            read.AuthoritativeUtf8,
-            projection.Properties,
-            projection.Projection,
-            projection.Diagnostics);
-        return read with { Snapshot = snapshot };
+        return CalendarResourceProjector.AttachSnapshot(calendar.Href, read);
     }
 
     private bool TryGetCanonicalResourceUri(string href, out Uri resourceUri)

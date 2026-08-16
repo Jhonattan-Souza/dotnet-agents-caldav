@@ -1,4 +1,5 @@
 using System.Xml.Linq;
+using DotnetAgents.CalDav.Core.Models;
 
 namespace DotnetAgents.CalDav.Core.Internal.Xml;
 
@@ -87,4 +88,59 @@ internal static class DavRequestBuilder
 
         return doc.ToString(SaveOptions.DisableFormatting);
     }
+
+    /// <summary>Builds a minimal Calendar Entity candidate REPORT for one requested kind.</summary>
+    public static string BuildCalendarEntityQuery(
+        CalendarEntityKind entityKind,
+        DateTimeOffset? from = null,
+        DateTimeOffset? to = null)
+    {
+        var entityFilter = new XElement(CalDav + "comp-filter",
+            new XAttribute("name", entityKind == CalendarEntityKind.Event ? "VEVENT" : "VTODO"));
+        if (from is not null && to is not null && TryGetSafeReportRange(from.Value, to.Value, out var reportFrom, out var reportTo))
+        {
+            entityFilter.Add(new XElement(CalDav + "time-range",
+                new XAttribute("start", FormatUtcSecond(reportFrom)),
+                new XAttribute("end", FormatUtcSecond(reportTo))));
+        }
+
+        var document = new XDocument(
+            new XDeclaration("1.0", "utf-8", null),
+            new XElement(CalDav + "calendar-query",
+                new XAttribute(XNamespace.Xmlns + "d", Dav.NamespaceName),
+                new XAttribute(XNamespace.Xmlns + "c", CalDav.NamespaceName),
+                new XElement(Dav + "prop", new XElement(Dav + "getetag")),
+                new XElement(CalDav + "filter",
+                    new XElement(CalDav + "comp-filter",
+                        new XAttribute("name", "VCALENDAR"),
+                        entityFilter))));
+        return document.ToString(SaveOptions.DisableFormatting);
+    }
+
+    private static bool TryGetSafeReportRange(
+        DateTimeOffset from,
+        DateTimeOffset to,
+        out DateTimeOffset reportFrom,
+        out DateTimeOffset reportTo)
+    {
+        reportFrom = from.AddTicks(-(from.Ticks % TimeSpan.TicksPerSecond));
+        var remainder = to.Ticks % TimeSpan.TicksPerSecond;
+        if (remainder == 0)
+        {
+            reportTo = to;
+            return true;
+        }
+        var ticksToAdd = TimeSpan.TicksPerSecond - remainder;
+        if (to.Ticks > DateTimeOffset.MaxValue.Ticks - ticksToAdd)
+        {
+            reportTo = default;
+            return false;
+        }
+        reportTo = to.AddTicks(ticksToAdd);
+        return true;
+    }
+
+    private static string FormatUtcSecond(DateTimeOffset value) => value.UtcDateTime.ToString(
+        "yyyyMMdd'T'HHmmss'Z'",
+        System.Globalization.CultureInfo.InvariantCulture);
 }

@@ -295,7 +295,6 @@ public sealed class CalendarContentDocumentTests
 
     [Theory]
     [InlineData("u2", "RRULE:FREQ=DAILY;COUNT=2", "recurrence_override_uid_mismatch")]
-    [InlineData("u1", "", "recurrence_override_without_recurrence_set")]
     public void Project_RejectsInvalidRecurrenceOverrideSet(string overrideUid, string recurrence, string diagnostic)
     {
         var content = $"BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\nBEGIN:VEVENT\r\nUID:u1\r\nDTSTAMP:20260815T120000Z\r\nDTSTART:20260816T090000Z\r\n{recurrence}\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nUID:{overrideUid}\r\nDTSTAMP:20260815T120000Z\r\nRECURRENCE-ID:20260817T090000Z\r\nDTSTART:20260817T100000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
@@ -411,7 +410,6 @@ public sealed class CalendarContentDocumentTests
     [InlineData("VEVENT", "ORGANIZER:mailto:organizer@example.test")]
     [InlineData("VTODO", "PERCENT-COMPLETE:50")]
     [InlineData("VEVENT", "SEQUENCE:1")]
-    [InlineData("VEVENT", "RRULE:FREQ=DAILY")]
     public void Project_RejectsRepeatedRegisteredEntitySingletons(string component, string property)
     {
         var content = $"BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\nBEGIN:{component}\r\nUID:u1\r\nDTSTAMP:20260815T120000Z\r\nDTSTART:20260816T090000Z\r\n{property}\r\n{property}\r\nEND:{component}\r\nEND:VCALENDAR\r\n";

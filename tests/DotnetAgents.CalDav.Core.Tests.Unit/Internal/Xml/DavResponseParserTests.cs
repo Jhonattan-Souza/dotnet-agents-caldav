@@ -9,6 +9,39 @@ namespace DotnetAgents.CalDav.Core.Tests.Unit.Internal.Xml;
 public class DavResponseParserTests
 {
     [Fact]
+    public void ParseCalendarResourceHrefs_AcceptsOnlySuccessfulResponseOrGetEtagPropstatAndDeduplicates()
+    {
+        const string xml = """
+            <d:multistatus xmlns:d="DAV:">
+              <d:response><d:href>/cal/a.ics</d:href><d:status>HTTP/1.1 200 OK</d:status></d:response>
+              <d:response><d:href>/cal/a.ics</d:href><d:status>HTTP/1.1 200 OK</d:status></d:response>
+              <d:response><d:href>/cal/response-404.ics</d:href><d:status>HTTP/1.1 404 Not Found</d:status></d:response>
+              <d:response><d:href>/cal/response-403.ics</d:href><d:status>HTTP/1.1 403 Forbidden</d:status></d:response>
+              <d:response><d:href>/cal/etag-200.ics</d:href><d:propstat><d:prop><d:getetag>"r1"</d:getetag></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>
+              <d:response><d:href>/cal/etag-404.ics</d:href><d:propstat><d:prop><d:getetag/></d:prop><d:status>HTTP/1.1 404 Not Found</d:status></d:propstat></d:response>
+              <d:response><d:href>/cal/wrong-property.ics</d:href><d:propstat><d:prop><d:displayname>x</d:displayname></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat><d:propstat><d:prop><d:getetag/></d:prop><d:status>HTTP/1.1 404 Not Found</d:status></d:propstat></d:response>
+            </d:multistatus>
+            """;
+
+        var result = DavResponseParser.ParseCalendarResourceHrefs(xml);
+
+        result.ShouldBe(["/cal/a.ics", "/cal/etag-200.ics"]);
+    }
+
+    [Theory]
+    [InlineData("<d:response><d:href>/cal/a.ics</d:href><d:status>not-http</d:status></d:response>")]
+    [InlineData("<d:response><d:href>/cal/a.ics</d:href><d:status>HTTP/banana 200 OK</d:status></d:response>")]
+    [InlineData("<d:response><d:href>/cal/a.ics</d:href><d:status>HTTP/1.x 200 OK</d:status></d:response>")]
+    [InlineData("<d:response><d:href>/cal/a.ics</d:href><d:propstat><d:prop><d:getetag/></d:prop><d:status>HTTP/1.1 two-hundred OK</d:status></d:propstat></d:response>")]
+    [InlineData("<d:response><d:status>HTTP/1.1 200 OK</d:status></d:response>")]
+    public void ParseCalendarResourceHrefs_RejectsMalformedSuccessfulResponse(string response)
+    {
+        var xml = $"<d:multistatus xmlns:d=\"DAV:\">{response}</d:multistatus>";
+
+        Should.Throw<System.Xml.XmlException>(() => DavResponseParser.ParseCalendarResourceHrefs(xml));
+    }
+
+    [Fact]
     public void ParseCalendars_RejectsDtdAndEntityDeclarations()
     {
         const string xml = "<!DOCTYPE multistatus [<!ENTITY xxe SYSTEM 'file:///etc/passwd'>]><multistatus xmlns='DAV:'>&xxe;</multistatus>";

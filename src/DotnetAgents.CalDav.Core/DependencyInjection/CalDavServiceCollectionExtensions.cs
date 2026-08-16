@@ -78,10 +78,10 @@ public static class CalDavServiceCollectionExtensions
         })
         .AddStandardResilienceHandler(options =>
         {
-            // CalDAV operations use conditional headers (If-Match, If-None-Match) that make
-            // retries safe for all methods: duplicate creates get 412, duplicate updates get 412,
-            // and deletes are idempotent (404 on repeat). Keep default retry behavior for all methods.
-            options.Retry.MaxRetryAttempts = 3;
+            // Three total attempts are available only to idempotent reads. A conditional write can
+            // still have an ambiguous transport outcome and must be reconciled before another dispatch.
+            options.Retry.MaxRetryAttempts = 2;
+            options.Retry.DisableForUnsafeHttpMethods();
             options.Retry.BackoffType = DelayBackoffType.Exponential;
             options.Retry.UseJitter = true;
             options.Retry.Delay = TimeSpan.FromMilliseconds(200);
@@ -91,7 +91,7 @@ public static class CalDavServiceCollectionExtensions
             // circuit breaker is more useful for high-throughput service-to-service scenarios.
             // SamplingDuration must be >= 2x AttemptTimeout.Timeout (validation rule).
             options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(10);
-            options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(5);
+            options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(30);
             options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(30);
         });
 
