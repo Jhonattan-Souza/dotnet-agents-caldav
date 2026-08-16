@@ -3043,6 +3043,147 @@
         }
       }
     },
+    "utcTemporalProperty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "parameters"
+      ],
+      "properties": {
+        "value": {
+          "$ref": "#/$defs/utcTemporalValue"
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/icalParameter"
+          }
+        }
+      }
+    },
+    "geoProperty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "parameters"
+      ],
+      "properties": {
+        "value": {
+          "$ref": "#/$defs/geo"
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/icalParameter"
+          }
+        }
+      }
+    },
+    "nonNegativeIntegerProperty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "parameters"
+      ],
+      "properties": {
+        "value": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/icalParameter"
+          }
+        }
+      }
+    },
+    "positiveIntegerProperty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "parameters"
+      ],
+      "properties": {
+        "value": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/icalParameter"
+          }
+        }
+      }
+    },
+    "priorityProperty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "parameters"
+      ],
+      "properties": {
+        "value": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/icalParameter"
+          }
+        }
+      }
+    },
+    "textListProperty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "parameters"
+      ],
+      "properties": {
+        "value": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/icalParameter"
+          }
+        }
+      }
+    },
+    "durationProperty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "parameters"
+      ],
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/icalParameter"
+          }
+        }
+      }
+    },
     "calendarScopeInput": {
       "type": "object",
       "additionalProperties": false
@@ -3978,7 +4119,7 @@
         }
       }
     },
-    "participant": {
+    "attendee": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -3994,12 +4135,8 @@
           "type": "string"
         },
         "role": {
-          "enum": [
-            "chair",
-            "required",
-            "optional",
-            "non-participant"
-          ]
+          "type": "string",
+          "minLength": 1
         },
         "partStat": {
           "type": "string"
@@ -4040,11 +4177,130 @@
         }
       }
     },
+    "participant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uid",
+        "participantType"
+      ],
+      "properties": {
+        "uid": {
+          "$ref": "#/$defs/textProperty"
+        },
+        "participantType": {
+          "$ref": "#/$defs/textProperty"
+        },
+        "calendarAddress": {
+          "$ref": "#/$defs/uriProperty"
+        },
+        "created": {
+          "$ref": "#/$defs/utcTemporalProperty"
+        },
+        "description": {
+          "$ref": "#/$defs/textProperty"
+        },
+        "timestamp": {
+          "$ref": "#/$defs/utcTemporalProperty"
+        },
+        "geo": {
+          "$ref": "#/$defs/geoProperty"
+        },
+        "lastModified": {
+          "$ref": "#/$defs/utcTemporalProperty"
+        },
+        "priority": {
+          "$ref": "#/$defs/priorityProperty"
+        },
+        "sequence": {
+          "$ref": "#/$defs/nonNegativeIntegerProperty"
+        },
+        "status": {
+          "$ref": "#/$defs/textProperty"
+        },
+        "summary": {
+          "$ref": "#/$defs/textProperty"
+        },
+        "url": {
+          "$ref": "#/$defs/uriProperty"
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/namedUri"
+          }
+        },
+        "categories": {
+          "$ref": "#/$defs/textListProperty"
+        },
+        "comments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/textProperty"
+          }
+        },
+        "contacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/textProperty"
+          }
+        },
+        "locations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/textProperty"
+          }
+        },
+        "requestStatuses": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/requestStatus"
+          }
+        },
+        "relatedTo": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/relation"
+          }
+        },
+        "resources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/textProperty"
+          }
+        },
+        "styledDescriptions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/textProperty"
+          }
+        },
+        "structuredDataUris": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/uriProperty"
+          }
+        },
+        "locationUris": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/namedUri"
+          }
+        },
+        "resourceUris": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/namedUri"
+          }
+        }
+      }
+    },
     "relation": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "value"
+        "value",
+        "parameters"
       ],
       "properties": {
         "value": {
@@ -4053,6 +4309,12 @@
         },
         "relationType": {
           "type": "string"
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/icalParameter"
+          }
         }
       }
     },
@@ -4061,7 +4323,8 @@
       "additionalProperties": false,
       "required": [
         "code",
-        "description"
+        "description",
+        "parameters"
       ],
       "properties": {
         "code": {
@@ -4073,6 +4336,12 @@
         },
         "exceptionData": {
           "type": "string"
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/icalParameter"
+          }
         }
       }
     },
@@ -4090,6 +4359,26 @@
         },
         "label": {
           "type": "string"
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/icalParameter"
+          }
+        }
+      }
+    },
+    "uriProperty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uri",
+        "parameters"
+      ],
+      "properties": {
+        "uri": {
+          "type": "string",
+          "format": "uri"
         },
         "parameters": {
           "type": "array",
@@ -4126,6 +4415,12 @@
           "$ref": "#/$defs/namedUri"
         },
         "attendees": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/attendee"
+          }
+        },
+        "participants": {
           "type": "array",
           "items": {
             "$ref": "#/$defs/participant"
@@ -4200,7 +4495,13 @@
         "concepts": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/textProperty"
+            "$ref": "#/$defs/uriProperty"
+          }
+        },
+        "structuredDataUris": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/uriProperty"
           }
         },
         "locationUris": {
@@ -4217,6 +4518,29 @@
         }
       }
     },
+    "alarmActionProperty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "parameters"
+      ],
+      "properties": {
+        "value": {
+          "enum": [
+            "display",
+            "audio",
+            "email"
+          ]
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/icalParameter"
+          }
+        }
+      }
+    },
     "alarm": {
       "type": "object",
       "additionalProperties": false,
@@ -4226,25 +4550,34 @@
       ],
       "properties": {
         "action": {
-          "enum": [
-            "display",
-            "audio",
-            "email"
-          ]
+          "$ref": "#/$defs/alarmActionProperty"
         },
         "trigger": {
-          "type": "string",
-          "minLength": 1
+          "$ref": "#/$defs/textProperty"
         },
         "description": {
-          "type": "string"
+          "$ref": "#/$defs/textProperty"
         },
         "repeat": {
-          "type": "integer",
-          "minimum": 0
+          "$ref": "#/$defs/positiveIntegerProperty"
         },
         "duration": {
-          "type": "string"
+          "$ref": "#/$defs/durationProperty"
+        },
+        "summary": {
+          "$ref": "#/$defs/textProperty"
+        },
+        "attendees": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/attendee"
+          }
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/namedUri"
+          }
         }
       }
     },

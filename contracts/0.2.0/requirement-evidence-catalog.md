@@ -470,13 +470,13 @@ Every requirement row contains the normative statement, source, interoperability
 
 ## CAL-EVENT-004
 
-- Normative statement: Structured data includes Organizer, Attendees, Participants, Alarms, Attachments, Comments, Contacts, Resources, Related-To, Request-Status, Styled Descriptions, Images, Conferences, Links, Concepts, Structured Data, VLOCATION, and VRESOURCE while retaining full parameters, multiplicity, meaningful ordering, and unmodeled properties.
+- Normative statement: Structured data includes independent Organizer, ATTENDEE properties, RFC 9073 PARTICIPANT components, Alarms, Attachments, Comments, Contacts, Resources, Related-To, Request-Status, Styled Descriptions, Images, Conferences, Links, Concepts, URI-valued STRUCTURED-DATA, VLOCATION, and VRESOURCE while retaining full parameters, multiplicity, meaningful ordering, and unmodeled properties. ATTENDEE and PARTICIPANT are never synthesized from each other.
 - Source and owning decision: Owner: issue #22, Define Event content and scheduling-property policy; normative sources: RFC 5545 and applicable registered extensions.
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/event/cal-event-004`.
-- Objective oracle: Given Organizer, Attendees, Participants, Alarms, Attachments, Comments, Contacts, Resources, Related-To, Request-Status, Styled Descriptions, Images, Conferences, Links, Concepts, Structured Data, VLOCATION, VRESOURCE and an X property each with repeated parameters, when unrelated patch runs, then every named collection preserves multiplicity/order/parameters and X slice is byte-equal.
+- Objective oracle: Given distinct ATTENDEE and PARTICIPANT values, URI STRUCTURED-DATA, action-valid DISPLAY/AUDIO/EMAIL alarms, and the remaining named structured collections, when create runs, then every named collection preserves multiplicity/order/parameters, no ATTENDEE/PARTICIPANT value is synthesized, and every URI remains inert. Given a stored X property, when an unrelated patch runs, then its original slice is byte-equal; semantic create exposes no arbitrary property bag for unmodeled content.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -500,7 +500,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/event/cal-event-006`.
-- Objective oracle: Given DISPLAY/AUDIO/EMAIL alarms plus attachment/image/conference URI values, when semantic operation attempts unsupported alarm action or URI mutation, then read keeps them inert with zero dereference/execution and unsupported semantic change directs caller to exact replacement without PUT.
+- Objective oracle: Given DISPLAY with DESCRIPTION, AUDIO with at most one ATTACH, EMAIL with DESCRIPTION/SUMMARY/one-or-more ATTENDEE plus optional ATTACH, and other URI values, when semantic create validates them, then each action-specific shape is stored inertly with zero dereference/execution; missing required or forbidden fields cause invalid_calendar_data and zero PUT.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 

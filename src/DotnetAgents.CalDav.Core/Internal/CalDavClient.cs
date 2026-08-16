@@ -194,6 +194,13 @@ internal sealed class CalDavClient : ICalDavClient, ICalendarClient
         return CalendarResourceRead.Success(resourceUri.AbsoluteUri, entityTag, content);
     }
 
+    /// <inheritdoc />
+    public async Task<CalendarResourceCreateResult> CreateCalendarResourceAsync(
+        CalendarResourceCreateRequest request,
+        CancellationToken cancellationToken) => await new CalendarResourceCreateProtocol(
+            _httpClient,
+            new Uri(_options.Value.BaseUrl, UriKind.Absolute)).CreateAsync(request, cancellationToken);
+
     private async Task<HttpResponseMessage> SendGetWithRedirectHandlingAsync(
         Uri initialUri,
         CancellationToken cancellationToken,
@@ -272,6 +279,7 @@ internal sealed class CalDavClient : ICalDavClient, ICalendarClient
         && string.IsNullOrEmpty(candidate.Query)
         && !candidate.AbsolutePath.Contains("%2F", StringComparison.OrdinalIgnoreCase)
         && !candidate.AbsolutePath.Contains("%5C", StringComparison.OrdinalIgnoreCase)
+        && !original.Contains("%2e", StringComparison.OrdinalIgnoreCase)
         && string.Equals(candidate.AbsoluteUri, original, StringComparison.Ordinal);
 
     private static bool HasSameOrigin(Uri left, Uri right) =>

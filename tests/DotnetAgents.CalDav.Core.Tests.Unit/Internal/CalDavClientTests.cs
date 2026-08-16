@@ -16,6 +16,362 @@ namespace DotnetAgents.CalDav.Core.Tests.Unit.Internal;
 public class CalDavClientTests
 {
     [Fact]
+    public async Task CreateCalendarResourceAsync_UsesConditionalPutWithoutSchedulingHeaders()
+    {
+        var body = Encoding.UTF8.GetBytes("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n");
+        var requestCount = 0;
+        var handler = new AsyncStubHttpMessageHandler(async request =>
+        {
+            requestCount++;
+            request.Method.ShouldBe(HttpMethod.Put);
+            request.RequestUri!.AbsoluteUri.ShouldBe("https://example.com/calendars/user/events/new.ics");
+            request.Headers.IfNoneMatch.Select(value => value.ToString()).ShouldBe(["*"]);
+            request.Headers.Contains("Schedule-Reply").ShouldBeFalse();
+            request.Headers.Contains("Originator").ShouldBeFalse();
+            request.Headers.Contains("Recipient").ShouldBeFalse();
+            request.Content!.Headers.ContentType!.ToString().ShouldBe("text/calendar; charset=utf-8");
+            (await request.Content.ReadAsByteArrayAsync(CancellationToken.None)).ShouldBe(body);
+            return new HttpResponseMessage(HttpStatusCode.Created);
+        });
+        var sut = CreateSut(handler);
+
+        var result = await sut.CreateCalendarResourceAsync(
+            new CalendarResourceCreateRequest(
+                "https://example.com/calendars/user/events/",
+                "https://example.com/calendars/user/events/new.ics",
+                body),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceCreateCode.Dispatched);
+        requestCount.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task CreateCalendarResourceAsync_PreconditionFailureIsDefiniteConflict()
+    {
+        var sut = CreateSut(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.PreconditionFailed)));
+
+        var result = await sut.CreateCalendarResourceAsync(
+            CreateCalendarResourceRequest("collision.ics"),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceCreateCode.Conflict);
+    }
+
+    [Fact]
+    public async Task CreateCalendarResourceAsync_NoUidConflictPreconditionIsDefiniteConflict()
+    {
+        var requestCount = 0;
+        var sut = CreateSut(new StubHttpMessageHandler(_ =>
+        {
+            requestCount++;
+            return new HttpResponseMessage(HttpStatusCode.Forbidden)
+            {
+                Content = new StringContent(
+                    "<d:error xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\"><c:no-uid-conflict><d:href>/private/existing.ics</d:href></c:no-uid-conflict></d:error>",
+                    Encoding.UTF8,
+                    "application/xml")
+            };
+        }));
+
+        var result = await sut.CreateCalendarResourceAsync(
+            CreateCalendarResourceRequest("collision.ics"),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceCreateCode.Conflict);
+        result.ToString().ShouldNotContain("private");
+        requestCount.ShouldBe(1);
+    }
+
+    [Theory]
+    [InlineData("<d:error xmlns:d=\"DAV:\"><d:need-privileges/></d:error>")]
+    [InlineData("<c:no-uid-conflict xmlns:c=\"urn:not-caldav\"/>")]
+    [InlineData("<!DOCTYPE error [<!ENTITY xxe SYSTEM 'file:///etc/passwd'>]><c:no-uid-conflict xmlns:c=\"urn:ietf:params:xml:ns:caldav\">&xxe;</c:no-uid-conflict>")]
+    [InlineData("not xml")]
+    public async Task CreateCalendarResourceAsync_UnrelatedForbiddenRemainsForbidden(string responseBody)
+    {
+        var sut = CreateSut(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.Forbidden)
+        {
+            Content = new StringContent(responseBody, Encoding.UTF8, "application/xml")
+        }));
+
+        var result = await sut.CreateCalendarResourceAsync(
+            CreateCalendarResourceRequest("forbidden.ics"),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceCreateCode.UpstreamForbidden);
+    }
+
+    [Fact]
+    public async Task CreateCalendarResourceAsync_BoundsUnknownLengthForbiddenBodyBeforeParsing()
+    {
+        var stream = new CountingNonSeekableStream(new byte[(64 * 1024) + 8192]);
+        var sut = CreateSut(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.Forbidden)
+        {
+            Content = new StreamContent(stream)
+        }));
+
+        var result = await sut.CreateCalendarResourceAsync(
+            CreateCalendarResourceRequest("forbidden.ics"),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceCreateCode.UpstreamForbidden);
+        stream.BytesRead.ShouldBe((64 * 1024) + 1);
+    }
+
+    [Theory]
+    [InlineData("VEVENT", "private-event-marker")]
+    [InlineData("VTODO", "private-todo-marker")]
+    public async Task CreateCalendarResourceAsync_TransportFaultForEachEntityKindIsPossiblyDispatchedAndNeverLeaksContent(
+        string component,
+        string privateMarker)
+    {
+        var requestCount = 0;
+        var sut = CreateSut(new AsyncStubHttpMessageHandler(_ =>
+        {
+            requestCount++;
+            return Task.FromException<HttpResponseMessage>(new HttpRequestException(
+                $"response ended after dispatch: {privateMarker}"));
+        }));
+        var body = Encoding.UTF8.GetBytes(
+            $"BEGIN:VCALENDAR\r\nBEGIN:{component}\r\nSUMMARY:{privateMarker}\r\nEND:{component}\r\nEND:VCALENDAR\r\n");
+
+        var result = await sut.CreateCalendarResourceAsync(
+            CreateCalendarResourceRequest("ambiguous.ics") with { AuthoritativeUtf8 = body },
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceCreateCode.PossiblyDispatched);
+        result.ToString().ShouldNotContain(privateMarker);
+        requestCount.ShouldBe(1);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.TemporaryRedirect)]
+    [InlineData(HttpStatusCode.PermanentRedirect)]
+    public async Task CreateCalendarResourceAsync_FollowsOnlySameOriginMethodPreservingRedirect(HttpStatusCode redirectStatus)
+    {
+        var requestCount = 0;
+        var handler = new AsyncStubHttpMessageHandler(async request =>
+        {
+            requestCount++;
+            request.Method.ShouldBe(HttpMethod.Put);
+            request.Headers.IfNoneMatch.Select(value => value.ToString()).ShouldBe(["*"]);
+            (await request.Content!.ReadAsStringAsync(CancellationToken.None)).ShouldContain("BEGIN:VCALENDAR");
+            if (requestCount == 1)
+            {
+                return new HttpResponseMessage(redirectStatus)
+                {
+                    Headers = { Location = new Uri("https://example.com/calendars/user/events/canonical.ics") }
+                };
+            }
+            request.RequestUri!.AbsoluteUri.ShouldBe("https://example.com/calendars/user/events/canonical.ics");
+            return new HttpResponseMessage(HttpStatusCode.Created);
+        });
+        var sut = CreateSut(handler);
+
+        var result = await sut.CreateCalendarResourceAsync(
+            CreateCalendarResourceRequest("redirected.ics"),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceCreateCode.Dispatched);
+        result.ResourceHref.ShouldBe("https://example.com/calendars/user/events/canonical.ics");
+        requestCount.ShouldBe(2);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.MovedPermanently)]
+    [InlineData(HttpStatusCode.Redirect)]
+    [InlineData(HttpStatusCode.RedirectMethod)]
+    public async Task CreateCalendarResourceAsync_RejectsNonMethodPreservingRedirect(HttpStatusCode statusCode)
+    {
+        var requestCount = 0;
+        var sut = CreateSut(new StubHttpMessageHandler(_ =>
+        {
+            requestCount++;
+            return new HttpResponseMessage(statusCode)
+            {
+                Headers = { Location = new Uri("https://example.com/calendars/user/events/other.ics") }
+            };
+        }));
+
+        var result = await sut.CreateCalendarResourceAsync(
+            CreateCalendarResourceRequest("redirect.ics"),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceCreateCode.UpstreamProtocolError);
+        requestCount.ShouldBe(1);
+    }
+
+    [Theory]
+    [InlineData("https://other.example/calendars/user/events/other.ics")]
+    [InlineData("https://example.com/calendars/user/events/other.ics?secret=true")]
+    [InlineData("https://user@example.com/calendars/user/events/other.ics")]
+    [InlineData("https://example.com/calendars/user/events/nested%2Fother.ics")]
+    [InlineData("https://example.com/calendars/user/events/nested%5Cother.ics")]
+    [InlineData("https://example.com/calendars/user/events/%2e%2e/other.ics")]
+    [InlineData("https://example.com/calendars/user/events/nested/other.ics")]
+    [InlineData("https://example.com/calendars/user/events/other.ics#fragment")]
+    public async Task CreateCalendarResourceAsync_RejectsUnsafeMethodPreservingRedirect(string location)
+    {
+        var requestCount = 0;
+        var sut = CreateSut(new StubHttpMessageHandler(_ =>
+        {
+            requestCount++;
+            return new HttpResponseMessage(HttpStatusCode.TemporaryRedirect)
+            {
+                Headers = { Location = new Uri(location) }
+            };
+        }));
+
+        var result = await sut.CreateCalendarResourceAsync(
+            CreateCalendarResourceRequest("redirect.ics"),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceCreateCode.UpstreamProtocolError);
+        requestCount.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task CreateCalendarResourceAsync_RejectsMethodPreservingRedirectWithoutLocation()
+    {
+        var requestCount = 0;
+        var sut = CreateSut(new StubHttpMessageHandler(_ =>
+        {
+            requestCount++;
+            return new HttpResponseMessage(HttpStatusCode.TemporaryRedirect);
+        }));
+
+        var result = await sut.CreateCalendarResourceAsync(
+            CreateCalendarResourceRequest("redirect.ics"),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceCreateCode.UpstreamProtocolError);
+        requestCount.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task CreateCalendarResourceAsync_StopsAfterThreeMethodPreservingRedirects()
+    {
+        var requestCount = 0;
+        var sut = CreateSut(new StubHttpMessageHandler(_ =>
+        {
+            requestCount++;
+            return new HttpResponseMessage(HttpStatusCode.PermanentRedirect)
+            {
+                Headers = { Location = new Uri($"https://example.com/calendars/user/events/r{requestCount}.ics") }
+            };
+        }));
+
+        var result = await sut.CreateCalendarResourceAsync(
+            CreateCalendarResourceRequest("redirect.ics"),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceCreateCode.UpstreamProtocolError);
+        requestCount.ShouldBe(4);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized, CalendarResourceCreateCode.UpstreamUnauthorized)]
+    [InlineData(HttpStatusCode.Forbidden, CalendarResourceCreateCode.UpstreamForbidden)]
+    [InlineData(HttpStatusCode.NotFound, CalendarResourceCreateCode.NotFound)]
+    [InlineData(HttpStatusCode.MethodNotAllowed, CalendarResourceCreateCode.UnsupportedCapability)]
+    [InlineData(HttpStatusCode.NotImplemented, CalendarResourceCreateCode.UnsupportedCapability)]
+    [InlineData(HttpStatusCode.RequestEntityTooLarge, CalendarResourceCreateCode.PayloadTooLarge)]
+    [InlineData(HttpStatusCode.RequestTimeout, CalendarResourceCreateCode.PossiblyDispatched)]
+    [InlineData(HttpStatusCode.Conflict, CalendarResourceCreateCode.Conflict)]
+    [InlineData(HttpStatusCode.TooManyRequests, CalendarResourceCreateCode.UpstreamRateLimited)]
+    [InlineData(HttpStatusCode.InternalServerError, CalendarResourceCreateCode.PossiblyDispatched)]
+    [InlineData(HttpStatusCode.InsufficientStorage, CalendarResourceCreateCode.UpstreamUnavailable)]
+    [InlineData(HttpStatusCode.OK, CalendarResourceCreateCode.Dispatched)]
+    [InlineData(HttpStatusCode.NoContent, CalendarResourceCreateCode.Dispatched)]
+    public async Task CreateCalendarResourceAsync_MapsMutationHttpStatus(
+        HttpStatusCode statusCode,
+        CalendarResourceCreateCode expected)
+    {
+        var sut = CreateSut(new StubHttpMessageHandler(_ => new HttpResponseMessage(statusCode)));
+
+        var result = await sut.CreateCalendarResourceAsync(
+            CreateCalendarResourceRequest("status.ics"),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(expected);
+    }
+
+    [Theory]
+    [InlineData("https://other.example/calendars/user/events/new.ics")]
+    [InlineData("https://example.com/calendars/user/events/nested/new.ics")]
+    [InlineData("https://example.com/calendars/user/events/new.ics?secret=true")]
+    [InlineData("https://example.com/calendars/user/events/new.ics#fragment")]
+    [InlineData("https://user@example.com/calendars/user/events/new.ics")]
+    [InlineData("https://example.com/calendars/user/events/nested%2Fnew.ics")]
+    [InlineData("https://example.com/calendars/user/events/nested%5Cnew.ics")]
+    [InlineData("https://example.com/calendars/user/events/%2e%2e/new.ics")]
+    [InlineData("ftp://example.com/calendars/user/events/new.ics")]
+    [InlineData("https://example.com/calendars/user/events/")]
+    public async Task CreateCalendarResourceAsync_RejectsUnsafeResourceBeforeNetwork(string resourceHref)
+    {
+        var requestCount = 0;
+        var sut = CreateSut(new StubHttpMessageHandler(_ =>
+        {
+            requestCount++;
+            return new HttpResponseMessage(HttpStatusCode.Created);
+        }));
+
+        var result = await sut.CreateCalendarResourceAsync(
+            CreateCalendarResourceRequest("new.ics") with { ResourceHref = resourceHref },
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceCreateCode.InvalidInput);
+        requestCount.ShouldBe(0);
+    }
+
+    [Theory]
+    [InlineData("relative/calendar/")]
+    [InlineData("ftp://example.com/calendars/user/events/")]
+    [InlineData("https://other.example/calendars/user/events/")]
+    [InlineData("https://example.com/calendars/user/events/?secret=true")]
+    [InlineData("https://example.com/calendars/user/events/#fragment")]
+    [InlineData("https://user@example.com/calendars/user/events/")]
+    [InlineData("https://example.com/calendars/user/%2e%2e/events/")]
+    public async Task CreateCalendarResourceAsync_RejectsUnsafeCalendarBeforeNetwork(string calendarHref)
+    {
+        var requestCount = 0;
+        var sut = CreateSut(new StubHttpMessageHandler(_ =>
+        {
+            requestCount++;
+            return new HttpResponseMessage(HttpStatusCode.Created);
+        }));
+
+        var result = await sut.CreateCalendarResourceAsync(
+            CreateCalendarResourceRequest("new.ics") with { CalendarHref = calendarHref },
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceCreateCode.InvalidInput);
+        requestCount.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task CreateCalendarResourceAsync_AcceptsCanonicalCalendarWithoutTrailingSlash()
+    {
+        var requestCount = 0;
+        var sut = CreateSut(new StubHttpMessageHandler(_ =>
+        {
+            requestCount++;
+            return new HttpResponseMessage(HttpStatusCode.NoContent);
+        }));
+
+        var result = await sut.CreateCalendarResourceAsync(
+            CreateCalendarResourceRequest("new.ics") with
+            {
+                CalendarHref = "https://example.com/calendars/user/events"
+            },
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceCreateCode.Dispatched);
+        requestCount.ShouldBe(1);
+    }
+
+    [Fact]
     public async Task QueryCalendarResourceHrefsAsync_UsesMinimalBoundedReportAndCanonicalizesCandidates()
     {
         HttpRequestMessage? captured = null;
@@ -2017,6 +2373,11 @@ public class CalDavClientTests
 
         return new CalDavClient(httpClient, options, Substitute.For<ILogger<CalDavClient>>());
     }
+
+    private static CalendarResourceCreateRequest CreateCalendarResourceRequest(string name) => new(
+        "https://example.com/calendars/user/events/",
+        "https://example.com/calendars/user/events/" + name,
+        Encoding.UTF8.GetBytes("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n"));
 
     private static string BuildTasksResponseXml(params (string Href, string ICalData)[] tasks)
     {

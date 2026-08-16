@@ -176,6 +176,52 @@ public sealed class RadicaleConformanceFixture : IAsyncLifetime
         }
     }
 
+    public async Task DeleteResourceHrefAsync(
+        string resourceHref,
+        string entityTag,
+        CancellationToken cancellationToken)
+    {
+        var baseUri = new Uri(BaseUrl, UriKind.Absolute);
+        var resourceUri = new Uri(resourceHref, UriKind.Absolute);
+        if (!string.Equals(baseUri.Scheme, resourceUri.Scheme, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(baseUri.Host, resourceUri.Host, StringComparison.OrdinalIgnoreCase)
+            || baseUri.Port != resourceUri.Port
+            || !string.IsNullOrEmpty(resourceUri.UserInfo)
+            || !string.IsNullOrEmpty(resourceUri.Query)
+            || !string.IsNullOrEmpty(resourceUri.Fragment))
+        {
+            throw new ArgumentException("The observed resource href is outside the conformance origin.", nameof(resourceHref));
+        }
+
+        const string script = """
+            import sys
+            import urllib.request
+
+            authorization = 'Basic ' + sys.argv[3]
+            url = 'http://127.0.0.1:5232/' + sys.argv[1]
+            request = urllib.request.Request(
+                url,
+                headers={
+                    'Authorization': authorization,
+                    'Connection': 'close',
+                    'If-Match': sys.argv[2]
+                },
+                method='DELETE')
+            with urllib.request.urlopen(request) as response:
+                if response.status not in (200, 204):
+                    raise RuntimeError(f'DELETE returned {response.status}')
+            """;
+        var escapedPath = resourceUri.GetComponents(UriComponents.Path, UriFormat.UriEscaped);
+        var credentialsBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{Username}:{Password}"));
+        var result = await _container!.ExecAsync(
+            ["/app/bin/python", "-c", script, escapedPath, entityTag, credentialsBase64],
+            cancellationToken);
+        if (result.ExitCode != 0)
+        {
+            throw new InvalidOperationException($"Unable to delete the observed Radicale conformance resource: {result.Stderr}");
+        }
+    }
+
     private async Task<string> ReadRuntimeValueAsync(string script)
     {
         var result = await _container!.ExecAsync(["/app/bin/python", "-c", script]);

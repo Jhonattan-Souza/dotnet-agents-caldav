@@ -1,9 +1,11 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.DependencyInjection;
 using DotnetAgents.CalDav.Core.Models;
 using DotnetAgents.CalDav.IntegrationTests.Fixtures;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Http;
 using Shouldly;
 using Xunit;
 
@@ -100,7 +102,123 @@ public sealed class RadicaleConformanceHarnessTests(RadicaleConformanceFixture f
         await DeleteAsync(unevaluable, TestContext.Current.CancellationToken);
     }
 
-    internal static ServiceProvider CreateProvider(string baseUrl, string calendarHref)
+    [Fact]
+    public async Task Pinned_profile_creates_nonrecurring_event_and_todo_with_authoritative_strong_snapshots()
+    {
+        var calendarHref = $"{fixture.BaseUrl}/conformance/conformance/";
+        var requestTrace = new ConcurrentQueue<string>();
+        await using var provider = CreateProvider(fixture.BaseUrl, calendarHref, requestTrace);
+        var service = provider.GetRequiredService<ICalendarService>();
+        var destination = CalendarCreateDestination.Selected(new CalendarReference(Href: calendarHref));
+        var eventStructuredData = new CalendarStructuredData(
+            Organizer: new CalendarNamedUri(
+                "mailto:owner@example.test",
+                "Owner",
+                [new CalendarParameter("X-STORED", ["event-marker"])]),
+            Attachments:
+            [
+                new CalendarNamedUri(
+                    "https://storage.example.test/event-document",
+                    "Agenda",
+                    [new CalendarParameter("FMTTYPE", ["text/plain"])])
+            ]);
+        var todoStructuredData = new CalendarStructuredData(
+            Links:
+            [
+                new CalendarNamedUri(
+                    "https://storage.example.test/todo-reference",
+                    "Reference",
+                    [new CalendarParameter("X-STORED", ["todo-marker"])])
+            ],
+            Comments: [new CalendarTextValue("Keep this exact comment", [])]);
+
+        var createdEvent = await service.CreateEventAsync(
+            new CalendarEventCreateRequest(
+                destination,
+                "pinned-create-event",
+                new CalendarEventCreateFields(
+                    Summary: "Pinned create event",
+                    Start: new CalendarTemporalValue(
+                        CalendarTemporalKind.UtcDateTime,
+                        "2026-08-18T13:00:00Z"),
+                    End: new CalendarTemporalValue(
+                        CalendarTemporalKind.UtcDateTime,
+                        "2026-08-18T14:00:00Z"),
+                    StructuredData: eventStructuredData)),
+            TestContext.Current.CancellationToken);
+        var createdTodo = await service.CreateTodoAsync(
+            new CalendarTodoCreateRequest(
+                destination,
+                "pinned-create-todo",
+                new CalendarTodoCreateFields(
+                    Summary: "Pinned create todo",
+                    Due: new CalendarTemporalValue(CalendarTemporalKind.Date, "2026-08-19"),
+                    StructuredData: todoStructuredData)),
+            TestContext.Current.CancellationToken);
+
+        createdEvent.Code.ShouldBe(
+            CalendarEntityCreateCode.Success,
+            DescribeCreateResult(createdEvent, requestTrace));
+        createdTodo.Code.ShouldBe(
+            CalendarEntityCreateCode.Success,
+            DescribeCreateResult(createdTodo, requestTrace));
+        createdEvent.MutationState.ShouldBe(CalendarMutationState.Committed);
+        createdTodo.MutationState.ShouldBe(CalendarMutationState.Committed);
+        var eventHref = AssertAuthoritativeCreate(
+            createdEvent.Snapshot!,
+            calendarHref,
+            "pinned-create-event",
+            "VEVENT");
+        var todoHref = AssertAuthoritativeCreate(
+            createdTodo.Snapshot!,
+            calendarHref,
+            "pinned-create-todo",
+            "VTODO");
+        AssertLosslessProperty(
+            createdEvent.Snapshot!,
+            "VEVENT",
+            "ORGANIZER",
+            CalendarPropertyValueType.Uri,
+            "mailto:owner@example.test",
+            new CalendarParameter("CN", ["Owner"]),
+            new CalendarParameter("X-STORED", ["event-marker"]));
+        AssertLosslessProperty(
+            createdEvent.Snapshot!,
+            "VEVENT",
+            "ATTACH",
+            CalendarPropertyValueType.Uri,
+            "https://storage.example.test/event-document",
+            new CalendarParameter("LABEL", ["Agenda"]),
+            new CalendarParameter("FMTTYPE", ["text/plain"]));
+        AssertLosslessProperty(
+            createdTodo.Snapshot!,
+            "VTODO",
+            "LINK",
+            CalendarPropertyValueType.Uri,
+            "https://storage.example.test/todo-reference",
+            new CalendarParameter("LABEL", ["Reference"]),
+            new CalendarParameter("X-STORED", ["todo-marker"]));
+        AssertLosslessProperty(
+            createdTodo.Snapshot!,
+            "VTODO",
+            "COMMENT",
+            CalendarPropertyValueType.Text,
+            "Keep this exact comment");
+
+        await fixture.DeleteResourceHrefAsync(
+            eventHref,
+            createdEvent.Snapshot!.EntityTag,
+            TestContext.Current.CancellationToken);
+        await fixture.DeleteResourceHrefAsync(
+            todoHref,
+            createdTodo.Snapshot!.EntityTag,
+            TestContext.Current.CancellationToken);
+    }
+
+    internal static ServiceProvider CreateProvider(
+        string baseUrl,
+        string calendarHref,
+        ConcurrentQueue<string>? requestTrace = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -111,6 +229,8 @@ public sealed class RadicaleConformanceHarnessTests(RadicaleConformanceFixture f
             options.Username = ConformanceUsername;
             options.Password = ConformancePassword;
         });
+        if (requestTrace is not null)
+            services.AddSingleton<IHttpMessageHandlerBuilderFilter>(new SafeRequestTraceFilter(requestTrace));
         return services.BuildServiceProvider();
     }
 
@@ -147,7 +267,105 @@ public sealed class RadicaleConformanceHarnessTests(RadicaleConformanceFixture f
         + "RECURRENCE-ID;RANGE=THISANDFUTURE:20260817T090000Z\r\n"
         + "DTSTART:20260817T130000Z\r\nDURATION:PT2H\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
 
+    private static string AssertAuthoritativeCreate(
+        CalendarResourceSnapshot snapshot,
+        string calendarHref,
+        string uid,
+        string component)
+    {
+        AssertCanonicalDirectChild(calendarHref, snapshot.ResourceHref);
+        snapshot.EntityTag.ShouldStartWith("\"");
+        snapshot.EntityTag.ShouldEndWith("\"");
+        snapshot.Projection.EntityUid.ShouldBe(uid);
+        var content = System.Text.Encoding.UTF8.GetString(snapshot.AuthoritativeUtf8.Span);
+        content.ShouldContain($"BEGIN:{component}");
+        content.ShouldContain($"UID:{uid}");
+        return snapshot.ResourceHref;
+    }
+
+    private static void AssertLosslessProperty(
+        CalendarResourceSnapshot snapshot,
+        string component,
+        string propertyName,
+        CalendarPropertyValueType valueType,
+        string rawEncodedValue,
+        params CalendarParameter[] expectedParameters)
+    {
+        var property = snapshot.CalendarProperties.Single(candidate =>
+            candidate.ComponentPath[^1].Name.Equals(component, StringComparison.OrdinalIgnoreCase)
+            && candidate.Name.Equals(propertyName, StringComparison.OrdinalIgnoreCase));
+        property.ValueType.ShouldBe(valueType);
+        property.RawEncodedValue.ShouldBe(rawEncodedValue);
+        property.Parameters.Select(CanonicalParameter).Order(StringComparer.Ordinal).ToArray()
+            .ShouldBe(expectedParameters.Select(CanonicalParameter).Order(StringComparer.Ordinal).ToArray());
+    }
+
+    private static string CanonicalParameter(CalendarParameter parameter) => JsonSerializer.Serialize(new
+    {
+        Name = parameter.Name.ToUpperInvariant(),
+        Values = parameter.Values
+    });
+
+    private static string DescribeCreateResult(
+        CalendarEntityCreateResult result,
+        IEnumerable<string> requestTrace) => JsonSerializer.Serialize(new
+        {
+            Code = result.Code.ToString(),
+            MutationState = result.MutationState.ToString(),
+            SnapshotPresent = result.Snapshot is not null,
+            DiagnosticCodes = result.Snapshot?.Diagnostics.Select(diagnostic => diagnostic.Code).ToArray() ?? [],
+            RequestTrace = requestTrace.ToArray()
+        });
+
+    private static void AssertCanonicalDirectChild(string calendarHref, string resourceHref)
+    {
+        var calendar = new Uri(calendarHref, UriKind.Absolute);
+        var resource = new Uri(resourceHref, UriKind.Absolute);
+        resource.GetLeftPart(UriPartial.Authority).ShouldBe(calendar.GetLeftPart(UriPartial.Authority));
+        resource.Query.ShouldBeEmpty();
+        resource.Fragment.ShouldBeEmpty();
+        resource.UserInfo.ShouldBeEmpty();
+        resourceHref.ShouldNotContain("%2F", Case.Insensitive);
+        resourceHref.ShouldNotContain("%5C", Case.Insensitive);
+        var relative = calendar.MakeRelativeUri(resource).OriginalString;
+        relative.ShouldNotBeEmpty();
+        relative.ShouldNotContain("/");
+        relative.ShouldNotContain("\\");
+        new Uri(calendar, relative).AbsoluteUri.ShouldBe(resource.AbsoluteUri);
+    }
+
     private sealed record ObservedResource(string Name, string Href, string EntityTag, byte[] Utf8);
+
+    private sealed class SafeRequestTraceFilter(ConcurrentQueue<string> trace) : IHttpMessageHandlerBuilderFilter
+    {
+        public Action<HttpMessageHandlerBuilder> Configure(Action<HttpMessageHandlerBuilder> next) => builder =>
+        {
+            next(builder);
+            builder.AdditionalHandlers.Insert(0, new SafeRequestTraceHandler(trace));
+        };
+    }
+
+    private sealed class SafeRequestTraceHandler(ConcurrentQueue<string> trace) : DelegatingHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                var response = await base.SendAsync(request, cancellationToken);
+                trace.Enqueue($"{request.Method.Method}:{(int)response.StatusCode}");
+                return response;
+            }
+            catch (Exception exception) when (exception is HttpRequestException
+                or IOException
+                or OperationCanceledException)
+            {
+                trace.Enqueue($"{request.Method.Method}:{exception.GetType().Name}");
+                throw;
+            }
+        }
+    }
 }
 
 public sealed class RadicaleConformanceHarnessConfigurationTests

@@ -61,6 +61,26 @@ public sealed class CalendarContentDocumentTests
     }
 
     [Fact]
+    public void ProjectionReplayExcludesValidatedUnsupportedExtensionsWithoutChangingAuthority()
+    {
+        const string content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\n"
+            + "BEGIN:VEVENT\r\nUID:u1\r\nDTSTAMP:20260815T120000Z\r\nDTSTART:20260816T090000Z\r\n"
+            + "SUMMARY:kept\r\nATTENDEE;X-P=one:urn:uuid:guest\r\n"
+            + "STRUCTURED-DATA;VALUE=URI:https://example.test/data\r\n"
+            + "BEGIN:PARTICIPANT\r\nPARTICIPANT-TYPE:SPEAKER\r\nUID:p1\r\nEND:PARTICIPANT\r\n"
+            + "END:VEVENT\r\nEND:VCALENDAR\r\n";
+        var bytes = Encoding.UTF8.GetBytes(content);
+        var document = CalendarContentDocument.Parse(bytes);
+
+        document.Replay().ShouldBe(bytes);
+        var replay = Encoding.UTF8.GetString(document.ReplayForProjectionValidation());
+        replay.ShouldContain("SUMMARY:kept\r\n");
+        replay.ShouldNotContain("ATTENDEE;X-P=one:urn:uuid:guest\r\n");
+        replay.ShouldNotContain("STRUCTURED-DATA");
+        replay.ShouldNotContain("BEGIN:PARTICIPANT");
+    }
+
+    [Fact]
     public void Parse_DecodesRfc6868ParameterEscapesInOnePass()
     {
         const string content = "BEGIN:VCALENDAR\r\nX-PROP;X-P=^^n,^n,^',^^:value\r\nEND:VCALENDAR\r\n";
@@ -78,7 +98,7 @@ public sealed class CalendarContentDocumentTests
     [InlineData(CalendarPropertyValueType.Float, "GEO")]
     [InlineData(CalendarPropertyValueType.Period, "FREEBUSY")]
     [InlineData(CalendarPropertyValueType.Recur, "EXRULE,RRULE")]
-    [InlineData(CalendarPropertyValueType.Text, "ACTION,CALSCALE,CATEGORIES,CLASS,COLOR,COMMENT,CONTACT,DESCRIPTION,LOCATION,METHOD,NAME,PRODID,PROXIMITY,REFID,RELATED-TO,REQUEST-STATUS,RESOURCES,RESOURCE-TYPE,STATUS,STRUCTURED-DATA,SUMMARY,TRANSP,TZID,TZNAME,UID,VERSION")]
+    [InlineData(CalendarPropertyValueType.Text, "ACTION,CALSCALE,CATEGORIES,CLASS,COLOR,COMMENT,CONTACT,DESCRIPTION,LOCATION,METHOD,NAME,PARTICIPANT-TYPE,PRODID,PROXIMITY,REFID,RELATED-TO,REQUEST-STATUS,RESOURCES,RESOURCE-TYPE,STATUS,STRUCTURED-DATA,STYLED-DESCRIPTION,SUMMARY,TRANSP,TZID,TZNAME,UID,VERSION")]
     public void GetDefaultValueType_ExhaustivelyClassifiesRegisteredFrozenValues(
         CalendarPropertyValueType expected,
         string propertyNames)
@@ -386,6 +406,161 @@ public sealed class CalendarContentDocumentTests
 
         result.Projection.Kind.ShouldBe(CalendarResourceProjectionKind.Event);
         result.Properties.Single(property => property.Name == "DTSTART").ValueType.ShouldBe(CalendarPropertyValueType.Date);
+    }
+
+    [Theory]
+    [InlineData("ORGANIZER;CN=Owner;X-KEEP=One,one:urn:uuid:organizer")]
+    [InlineData("ATTENDEE:mailto:guest@example.test")]
+    [InlineData("ATTENDEE:urn:uuid:attendee")]
+    [InlineData("ATTENDEE;X-CUSTOM=a,b:urn:uuid:attendee")]
+    [InlineData("ATTENDEE;CN=Guest;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:urn:uuid:attendee")]
+    [InlineData("ATTENDEE;CN=Guest;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;X-CUSTOM=a,b:urn:uuid:attendee")]
+    [InlineData("CONTACT:Desk\r\nRESOURCES:Room 1")]
+    [InlineData("RELATED-TO;RELTYPE=PARENT:parent-uid")]
+    [InlineData("REQUEST-STATUS:2.0;Success")]
+    [InlineData("ATTACH;LABEL=Brief:https://files.example.test/a,b;c")]
+    [InlineData("COMMENT:Preserve me")]
+    [InlineData("BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER;RELATED=END:-PT15M\r\nDESCRIPTION:Reminder\r\nEND:VALARM")]
+    [InlineData("BEGIN:VALARM\r\nACTION:EMAIL\r\nTRIGGER:-PT30M\r\nSUMMARY:Subject\r\nDESCRIPTION:Body\r\nATTENDEE:mailto:recipient@example.test\r\nATTACH:https://files.example.test/agenda\r\nEND:VALARM")]
+    public void Project_CorroboratesEachValidRichRegisteredForm(string probe)
+    {
+        var content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\n"
+            + "BEGIN:VEVENT\r\nUID:u1\r\nDTSTAMP:20260815T120000Z\r\nDTSTART:20260816T090000Z\r\n"
+            + probe + "\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        var result = CalendarResourceProjector.Project(Encoding.UTF8.GetBytes(content));
+
+        result.Projection.Kind.ShouldBe(CalendarResourceProjectionKind.Event);
+        result.Diagnostics.ShouldBeEmpty();
+    }
+
+    [Theory]
+    [InlineData("STRUCTURED-DATA;VALUE=URI:not a uri")]
+    [InlineData("CONCEPT:not a uri")]
+    [InlineData("IMAGE;VALUE=BINARY;ENCODING=BASE64:not-base64!")]
+    [InlineData("IMAGE;VALUE=BINARY:aGVsbG8=")]
+    [InlineData("IMAGE;VALUE=BINARY;ENCODING=8BIT:aGVsbG8=")]
+    [InlineData("STRUCTURED-DATA;VALUE=BINARY;ENCODING=BASE64:not-base64!")]
+    [InlineData("STRUCTURED-DATA;VALUE=BINARY:e30=")]
+    [InlineData("STRUCTURED-DATA;VALUE=BINARY;ENCODING=BASE64;ENCODING=BASE64:e30=")]
+    [InlineData("BEGIN:PARTICIPANT\r\nPARTICIPANT-TYPE:SPEAKER\r\nUID:p1\r\nUID:p2\r\nEND:PARTICIPANT")]
+    [InlineData("BEGIN:PARTICIPANT\r\nPARTICIPANT-TYPE:NOT VALID\r\nUID:p1\r\nEND:PARTICIPANT")]
+    [InlineData("BEGIN:VLOCATION\r\nNAME:missing uid\r\nEND:VLOCATION")]
+    public void Project_KeepsMalformedRichExtensionsOpaque(string probe)
+    {
+        var content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\n"
+            + "BEGIN:VEVENT\r\nUID:u1\r\nDTSTAMP:20260815T120000Z\r\nDTSTART:20260816T090000Z\r\n"
+            + probe + "\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        var result = CalendarResourceProjector.Project(Encoding.UTF8.GetBytes(content));
+
+        result.Projection.Kind.ShouldBe(CalendarResourceProjectionKind.Opaque);
+        result.Diagnostics.ShouldNotBeEmpty();
+    }
+
+    [Theory]
+    [InlineData("CALENDAR-ADDRESS:urn:uuid:speaker")]
+    [InlineData("PARTICIPANT-TYPE:SPEAKER")]
+    [InlineData("CONCEPT:https://example.test/concept")]
+    [InlineData("CONFERENCE:https://example.test/conference")]
+    [InlineData("IMAGE:https://example.test/image")]
+    [InlineData("LINK:https://example.test/link")]
+    [InlineData("STRUCTURED-DATA;VALUE=URI:https://example.test/data")]
+    [InlineData("STYLED-DESCRIPTION:<b>wrong path</b>")]
+    public void Project_RejectsRemovedExtensionPropertiesOnUnsupportedComponentPaths(string property)
+    {
+        var content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\n"
+            + "BEGIN:VEVENT\r\nUID:u1\r\nDTSTAMP:20260815T120000Z\r\nDTSTART:20260816T090000Z\r\n"
+            + "BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-PT5M\r\nDESCRIPTION:Reminder\r\n"
+            + property + "\r\nEND:VALARM\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        var result = CalendarResourceProjector.Project(Encoding.UTF8.GetBytes(content));
+
+        result.Projection.Kind.ShouldBe(CalendarResourceProjectionKind.Opaque);
+        result.Diagnostics.ShouldNotBeEmpty();
+    }
+
+    [Theory]
+    [InlineData("CONCEPT:https://example.test/concept")]
+    [InlineData("CONFERENCE:https://example.test/conference")]
+    [InlineData("IMAGE:https://example.test/image")]
+    [InlineData("IMAGE;VALUE=BINARY;ENCODING=BASE64;FMTTYPE=image/png:aGVsbG8=")]
+    [InlineData("LINK:https://example.test/link")]
+    [InlineData("STRUCTURED-DATA;VALUE=URI:https://example.test/data")]
+    [InlineData("STRUCTURED-DATA;VALUE=BINARY;ENCODING=BASE64;FMTTYPE=application/json:e30=")]
+    [InlineData("STYLED-DESCRIPTION;FMTTYPE=text/html:<b>valid</b>")]
+    public void Project_ValidatesEachRemovedEntityExtensionBeforeProjecting(string property)
+    {
+        var content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\n"
+            + "BEGIN:VEVENT\r\nUID:u1\r\nDTSTAMP:20260815T120000Z\r\nDTSTART:20260816T090000Z\r\n"
+            + property + "\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        var result = CalendarResourceProjector.Project(Encoding.UTF8.GetBytes(content));
+
+        result.Projection.Kind.ShouldBe(CalendarResourceProjectionKind.Event);
+        result.Diagnostics.ShouldBeEmpty();
+    }
+
+    [Theory]
+    [MemberData(nameof(OrderedCreateCollections))]
+    public void CreateFidelityRejectsReorderedNamedCollectionsAndComponents(
+        string submittedProbe,
+        string observedProbe)
+    {
+        static byte[] Resource(string probe) => Encoding.UTF8.GetBytes(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\n"
+            + "BEGIN:VEVENT\r\nUID:u1\r\nDTSTAMP:20260815T120000Z\r\nDTSTART:20260816T090000Z\r\n"
+            + probe + "\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n");
+
+        CalendarEntityCreateFidelity.IsEquivalent(Resource(submittedProbe), Resource(observedProbe)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void CreateFidelityNormalizesOnlyParameterOrderTokenCaseAndDefaultValue()
+    {
+        var submitted = Encoding.UTF8.GetBytes(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\nBEGIN:VEVENT\r\n"
+            + "UID:u1\r\nDTSTAMP:20260815T120000Z\r\nDTSTART:20260816T090000Z\r\n"
+            + "ATTENDEE;VALUE=CAL-ADDRESS;ROLE=REQ-PARTICIPANT;X-A=one:mailto:a@example.test\r\n"
+            + "END:VEVENT\r\nEND:VCALENDAR\r\n");
+        var observed = Encoding.UTF8.GetBytes(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\nBEGIN:VEVENT\r\n"
+            + "UID:u1\r\nDTSTAMP:20260815T120000Z\r\nDTSTART:20260816T090000Z\r\n"
+            + "attendee;X-A=one;ROLE=req-participant:mailto:a@example.test\r\n"
+            + "END:VEVENT\r\nEND:VCALENDAR\r\n");
+
+        CalendarEntityCreateFidelity.IsEquivalent(submitted, observed).ShouldBeTrue();
+    }
+
+    public static IEnumerable<object[]> OrderedCreateCollections()
+    {
+        yield return ["COMMENT:first\r\nCOMMENT:second", "COMMENT:second\r\nCOMMENT:first"];
+        yield return
+        [
+            "ATTENDEE:mailto:first@example.test\r\nATTENDEE:mailto:second@example.test",
+            "ATTENDEE:mailto:second@example.test\r\nATTENDEE:mailto:first@example.test"
+        ];
+        yield return
+        [
+            Participant("first") + "\r\n" + Participant("second"),
+            Participant("second") + "\r\n" + Participant("first")
+        ];
+        yield return
+        [
+            Location("first") + "\r\n" + Location("second"),
+            Location("second") + "\r\n" + Location("first")
+        ];
+        yield return
+        [
+            Alarm("first") + "\r\n" + Alarm("second"),
+            Alarm("second") + "\r\n" + Alarm("first")
+        ];
+
+        static string Participant(string uid) =>
+            $"BEGIN:PARTICIPANT\r\nPARTICIPANT-TYPE:SPEAKER\r\nUID:{uid}\r\nEND:PARTICIPANT";
+        static string Location(string uid) => $"BEGIN:VLOCATION\r\nUID:{uid}\r\nEND:VLOCATION";
+        static string Alarm(string description) =>
+            $"BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-PT15M\r\nDESCRIPTION:{description}\r\nEND:VALARM";
     }
 
     [Theory]
