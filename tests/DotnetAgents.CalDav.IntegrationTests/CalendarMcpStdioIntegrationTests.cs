@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Text.Json;
 using DotnetAgents.CalDav.IntegrationTests.Fixtures;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
@@ -55,6 +56,7 @@ public sealed class CalendarMcpStdioIntegrationTests
             "calendar_resources.get",
             "events.create",
             "todos.create",
+            "calendar_resources.delete",
             "list_task_lists",
             "show_tasks",
             "add_task",
@@ -398,6 +400,42 @@ public sealed class CalendarMcpStdioIntegrationTests
     }
 
     [Fact]
+    public async Task CalendarResourceDelete_ConfirmedMrtrDeletesOneReviewedResourceOverStdio()
+    {
+        const string content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Integration//EN\r\nBEGIN:VTODO\r\nUID:stdio-delete-1\r\nDTSTAMP:20260815T120000Z\r\nSUMMARY:Reviewed delete\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+        var href = await PutResourceAsync("stdio-delete-1.ics", content);
+        var observed = await GetResourceAsync(href);
+        var stderr = new ConcurrentQueue<string>();
+        await using var client = await CreateClientAsync(stderr, exposeExact: false, confirmMutations: true);
+
+        var result = await client.CallToolAsync(
+            "calendar_resources.delete",
+            new Dictionary<string, object?>
+            {
+                ["revision"] = new Dictionary<string, object?>
+                {
+                    ["href"] = href,
+                    ["entityUid"] = "stdio-delete-1",
+                    ["entityKind"] = "todo",
+                    ["entityTag"] = observed.EntityTag
+                }
+            },
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        result.IsError.ShouldBe(false, result.StructuredContent?.ToString());
+        var structured = result.StructuredContent!.Value;
+        structured.GetProperty("outcome").GetString().ShouldBe("success");
+        structured.GetProperty("mutationState").GetString().ShouldBe("committed");
+        var receipt = structured.GetProperty("deletionReceipt");
+        receipt.GetProperty("href").GetString().ShouldBe(href);
+        receipt.GetProperty("entityUid").GetString().ShouldBe("stdio-delete-1");
+        receipt.GetProperty("entityKind").GetString().ShouldBe("todo");
+        receipt.GetProperty("consumedEntityTag").GetString().ShouldBe(observed.EntityTag);
+        (await GetStatusAsync(href)).ShouldBe(HttpStatusCode.NotFound);
+        stderr.ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task CalendarEntityQuery_InvalidRawShapesReturnTypedErrorsWithoutNetwork()
     {
         var stderr = new ConcurrentQueue<string>();
@@ -497,6 +535,7 @@ public sealed class CalendarMcpStdioIntegrationTests
             "calendar_resources.get",
             "events.create",
             "todos.create",
+            "calendar_resources.delete",
             "calendar_resources.exact_get",
             "list_task_lists",
             "show_tasks",
@@ -519,7 +558,8 @@ public sealed class CalendarMcpStdioIntegrationTests
         ConcurrentQueue<string> stderr,
         bool exposeExact,
         string? baseUrl = null,
-        string? calendarHrefs = null)
+        string? calendarHrefs = null,
+        bool confirmMutations = false)
     {
         var environment = CreateEnvironment();
         if (baseUrl is not null)
@@ -539,9 +579,28 @@ public sealed class CalendarMcpStdioIntegrationTests
             EnvironmentVariables = environment,
             StandardErrorLines = stderr.Enqueue
         });
+        var options = new McpClientOptions
+        {
+            ProtocolVersion = "2026-07-28",
+            DiscoverProbeTimeout = TimeSpan.FromSeconds(10)
+        };
+        if (confirmMutations)
+        {
+            options.Handlers = new McpClientHandlers
+            {
+                ElicitationHandler = (_, _) => ValueTask.FromResult(new ElicitResult
+                {
+                    Action = "accept",
+                    Content = new Dictionary<string, JsonElement>
+                    {
+                        ["confirm"] = JsonSerializer.SerializeToElement(true)
+                    }
+                })
+            };
+        }
         return await McpClient.CreateAsync(
             transport,
-            new McpClientOptions { ProtocolVersion = "2026-07-28", DiscoverProbeTimeout = TimeSpan.FromSeconds(10) },
+            options,
             cancellationToken: TestContext.Current.CancellationToken);
     }
 
@@ -596,6 +655,13 @@ public sealed class CalendarMcpStdioIntegrationTests
         return new ObservedResource(
             response.Headers.ETag.ToString(),
             await response.Content.ReadAsByteArrayAsync(TestContext.Current.CancellationToken));
+    }
+
+    private async Task<HttpStatusCode> GetStatusAsync(string href)
+    {
+        using var client = CreateAuthenticatedClient();
+        using var response = await client.GetAsync(href, TestContext.Current.CancellationToken);
+        return response.StatusCode;
     }
 
     private HttpClient CreateAuthenticatedClient()

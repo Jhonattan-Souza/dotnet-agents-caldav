@@ -35,4 +35,9 @@ public interface ICalendarService
     Task<CalendarEntityCreateResult> CreateTodoAsync(
         CalendarTodoCreateRequest request,
         CancellationToken cancellationToken);
+
+    /// <summary>Deletes one reviewed resource and succeeds only after verified absence.</summary>
+    Task<CalendarResourceDeleteResult> DeleteResourceAsync(
+        CalendarResourceRevisionReference revision,
+        CancellationToken cancellationToken);
 }

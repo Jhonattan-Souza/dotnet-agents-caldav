@@ -201,6 +201,13 @@ internal sealed class CalDavClient : ICalDavClient, ICalendarClient
             _httpClient,
             new Uri(_options.Value.BaseUrl, UriKind.Absolute)).CreateAsync(request, cancellationToken);
 
+    /// <inheritdoc />
+    public async Task<CalendarResourceDeleteDispatchResult> DeleteCalendarResourceAsync(
+        CalendarResourceDeleteRequest request,
+        CancellationToken cancellationToken) => await new CalendarResourceDeleteProtocol(
+            _httpClient,
+            new Uri(_options.Value.BaseUrl, UriKind.Absolute)).DeleteAsync(request, cancellationToken);
+
     private async Task<HttpResponseMessage> SendGetWithRedirectHandlingAsync(
         Uri initialUri,
         CancellationToken cancellationToken,

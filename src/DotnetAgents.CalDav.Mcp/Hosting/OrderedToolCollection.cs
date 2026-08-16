@@ -13,6 +13,7 @@ internal sealed class OrderedToolCollection : McpServerPrimitiveCollection<McpSe
         ["calendar_resources.get"] = 3,
         ["events.create"] = 4,
         ["todos.create"] = 6,
+        ["calendar_resources.delete"] = 15,
         ["calendar_resources.exact_get"] = 16,
         ["list_task_lists"] = 17,
         ["show_tasks"] = 18,
