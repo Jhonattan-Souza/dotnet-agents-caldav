@@ -1,6 +1,4 @@
 using System.Collections.Generic;
-using System.Net;
-using System.Net.Http.Headers;
 using System.Text;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Configurations;
@@ -22,7 +20,6 @@ public sealed class RadicaleFixture : IAsyncLifetime
 {
     private IContainer? _container;
     private ServiceProvider? _serviceProvider;
-    private HttpClient? _adminHttpClient;
 
     private const string TestUsername = "caldavtest";
     private const string TestPassword = "caldavtest123";
@@ -86,21 +83,15 @@ public sealed class RadicaleFixture : IAsyncLifetime
         var port = _container.GetMappedPublicPort(RadicalePort);
         BaseUrl = $"http://localhost:{port}";
 
-        // 2. Set up an admin HttpClient for fixture setup (MKCOL requests).
-        _adminHttpClient = new HttpClient
-        {
-            BaseAddress = new Uri(BaseUrl)
-        };
-        var credentials = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{TestUsername}:{TestPassword}"));
-        _adminHttpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", credentials);
+        // 2. Provision the fixture through Radicale's loopback interface. Product traffic below
+        // still uses the published BaseUrl and the production HTTP stack.
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await CreateUserPrincipalAsync(cancellationToken);
+        TaskListHref = await CreateTaskCollectionAsync(TaskCollectionName, "Tasks", cancellationToken);
+        ShoppingListHref = await CreateTaskCollectionAsync(ShoppingCollectionName, "Shopping", cancellationToken);
+        WorkListHref = await CreateTaskCollectionAsync(WorkCollectionName, "Work", cancellationToken);
 
-        // 3. Create user principal and task collections.
-        await CreateUserPrincipalAsync();
-        TaskListHref = await CreateTaskCollectionAsync(TaskCollectionName, "Tasks");
-        ShoppingListHref = await CreateTaskCollectionAsync(ShoppingCollectionName, "Shopping");
-        WorkListHref = await CreateTaskCollectionAsync(WorkCollectionName, "Work");
-
-        // 4. Wire production DI (AddCalDavTasks) against the live container.
+        // 3. Wire production DI (AddCalDavTasks) against the live container.
         var services = new ServiceCollection();
         services.AddLogging(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Debug));
         services.AddCalDavTasks(options =>
@@ -116,8 +107,6 @@ public sealed class RadicaleFixture : IAsyncLifetime
 
     public async ValueTask DisposeAsync()
     {
-        _adminHttpClient?.Dispose();
-
         if (_serviceProvider is not null)
         {
             await _serviceProvider.DisposeAsync();
@@ -157,24 +146,17 @@ public sealed class RadicaleFixture : IAsyncLifetime
 
     // ── Collection provisioning ─────────────────────────────────────────────
 
-    private async Task CreateUserPrincipalAsync()
+    private Task CreateUserPrincipalAsync(CancellationToken cancellationToken)
     {
         // MKCOL /caldavtest/ — creates the user's principal collection.
         var principalPath = $"/{TestUsername}/";
-        var response = await _adminHttpClient!.SendAsync(
-            new HttpRequestMessage(new HttpMethod("MKCOL"), principalPath));
-
-        // 201 Created = new, 405 Method Not Allowed = already exists — both are fine.
-        if (response.StatusCode != HttpStatusCode.Created &&
-            response.StatusCode != HttpStatusCode.MethodNotAllowed)
-        {
-            var body = await response.Content.ReadAsStringAsync();
-            throw new InvalidOperationException(
-                $"Failed to create user principal at {principalPath}. Status: {response.StatusCode}, Body: {body}");
-        }
+        return ProvisionCollectionAsync(principalPath, null, cancellationToken);
     }
 
-    private async Task<string> CreateTaskCollectionAsync(string collectionName, string displayName)
+    private async Task<string> CreateTaskCollectionAsync(
+        string collectionName,
+        string displayName,
+        CancellationToken cancellationToken)
     {
         // Extended MKCOL to create a VTODO-capable calendar collection.
         var collectionPath = $"/{TestUsername}/{collectionName}/";
@@ -195,19 +177,55 @@ public sealed class RadicaleFixture : IAsyncLifetime
               </D:set>
             </D:mkcol>
             """;
-        var content = new StringContent(body, Encoding.UTF8, "application/xml");
-        var request = new HttpRequestMessage(new HttpMethod("MKCOL"), collectionPath) { Content = content };
-        var response = await _adminHttpClient!.SendAsync(request);
-
-        if (response.StatusCode != HttpStatusCode.Created &&
-            response.StatusCode != HttpStatusCode.MethodNotAllowed)
-        {
-            var responseBody = await response.Content.ReadAsStringAsync();
-            throw new InvalidOperationException(
-                $"Failed to create task collection at {collectionPath}. Status: {response.StatusCode}, Body: {responseBody}");
-        }
-
+        await ProvisionCollectionAsync(collectionPath, body, cancellationToken);
         return collectionPath;
+    }
+
+    private async Task ProvisionCollectionAsync(
+        string collectionPath,
+        string? body,
+        CancellationToken cancellationToken)
+    {
+        const string script = """
+            import base64
+            import sys
+            import urllib.error
+            import urllib.parse
+            import urllib.request
+
+            path = urllib.parse.quote(sys.argv[1], safe='/')
+            body = base64.b64decode(sys.argv[2]) if sys.argv[2] else None
+            authorization = 'Basic ' + sys.argv[3]
+            headers = {'Authorization': authorization, 'Connection': 'close'}
+            if body is not None:
+                headers['Content-Type'] = 'application/xml; charset=utf-8'
+            request = urllib.request.Request(
+                'http://127.0.0.1:5232' + path,
+                data=body,
+                headers=headers,
+                method='MKCOL')
+            try:
+                with urllib.request.urlopen(request) as response:
+                    status = response.status
+            except urllib.error.HTTPError as error:
+                status = error.code
+            if status not in (201, 405):
+                raise RuntimeError(f'MKCOL {path} returned {status}')
+            print(status)
+            """;
+        var bodyBase64 = body is null
+            ? string.Empty
+            : Convert.ToBase64String(Encoding.UTF8.GetBytes(body));
+        var credentialsBase64 = Convert.ToBase64String(
+            Encoding.UTF8.GetBytes($"{TestUsername}:{TestPassword}"));
+        var result = await _container!.ExecAsync(
+            ["/app/bin/python", "-c", script, collectionPath, bodyBase64, credentialsBase64],
+            cancellationToken);
+        if (result.ExitCode != 0)
+        {
+            throw new InvalidOperationException(
+                $"Unable to provision Radicale collection '{collectionPath}': {result.Stderr}");
+        }
     }
 }
 

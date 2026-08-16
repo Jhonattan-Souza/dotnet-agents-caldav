@@ -18,6 +18,11 @@ public interface ICalendarService
         CalendarEntityQuery query,
         CancellationToken cancellationToken);
 
+    /// <summary>Queries bounded derived Event and To-do Occurrences.</summary>
+    Task<CalendarOccurrenceQueryResult> QueryOccurrencesAsync(
+        CalendarOccurrenceQuery query,
+        CancellationToken cancellationToken);
+
     /// <summary>Reads one authoritative Calendar Object Resource snapshot.</summary>
     Task<CalendarResourceRead> GetResourceAsync(string href, CancellationToken cancellationToken);
 }

@@ -58,9 +58,10 @@ Add this MCP server to VS Code, Claude Desktop, Cursor, or any MCP client:
 
 - `calendar_resources.get` — Read an authoritative semantic-or-opaque snapshot by confirmed absolute href.
 - `calendar_entities.query` — Query bounded persisted Event and To-do snapshots across default, selected, or explicit-all Calendar Scope.
+- `calendar_occurrences.query` — Expand Event and To-do occurrences locally within a required half-open UTC window, using an explicit IANA evaluation time zone only when floating or date-only values require it.
 - `calendar_resources.exact_get` — Opt-in exact read through a protected MCP resource link; enable with `CALDAV_EXPOSE_EXACT_TOOLS=true`.
 
-By default, the server exposes `calendars.list`, `calendar_resources.get`, and `calendar_entities.query` alongside the legacy chat-safe tools retained during the staged migration. Set `CALDAV_EXPOSE_ADVANCED_TOOLS=true` to also expose the legacy href-based advanced tools.
+By default, the server exposes `calendars.list`, `calendar_resources.get`, `calendar_entities.query`, and `calendar_occurrences.query` alongside the legacy chat-safe tools retained during the staged migration. Set `CALDAV_EXPOSE_ADVANCED_TOOLS=true` to also expose the legacy href-based advanced tools.
 
 ## Supported servers
 
@@ -70,7 +71,7 @@ Tested with Radicale (`tomsquest/docker-radicale`). It should work with any stan
 
 Layered design:
 
-`MCP tools` → `ITaskService` → `CalDavClient` → `HttpClient` + `Ical.Net`
+`MCP tools` → `ICalendarService`/`ITaskService` → thin service facade → `CalDavClient` → `HttpClient`; lossless iCalendar projection and bounded recurrence evaluation stay in Core's iCalendar modules.
 
 ## Development
 

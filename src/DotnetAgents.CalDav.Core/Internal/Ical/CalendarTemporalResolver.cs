@@ -18,14 +18,17 @@ internal sealed class CalendarTemporalResolver
     private readonly IReadOnlyList<CalendarProperty> _properties;
     private readonly IcalCalendar? _typedCalendar;
     private readonly CancellationToken _cancellationToken;
+    private readonly string? _evaluationTimeZone;
 
     public CalendarTemporalResolver(
         IReadOnlyList<CalendarProperty> properties,
         ReadOnlySpan<byte> authoritativeUtf8,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? evaluationTimeZone = null)
     {
         _properties = properties;
         _cancellationToken = cancellationToken;
+        _evaluationTimeZone = evaluationTimeZone;
         _typedCalendar = LoadTypedCalendar(authoritativeUtf8);
     }
 
@@ -35,7 +38,7 @@ internal sealed class CalendarTemporalResolver
         if (property is null)
             return new(null, false);
         if (property.ValueType == CalendarPropertyValueType.Date)
-            return new(null, true);
+            return ResolveDate(property.RawEncodedValue);
         return ResolveToken(property.RawEncodedValue, GetTimeZoneId(property));
     }
 
@@ -44,7 +47,9 @@ internal sealed class CalendarTemporalResolver
         _cancellationToken.ThrowIfCancellationRequested();
         return property.ValueType switch
         {
-            CalendarPropertyValueType.Date => false,
+            CalendarPropertyValueType.Date => property.RawEncodedValue
+                .Split(',', StringSplitOptions.None)
+                .All(token => ResolveDate(token).Value is not null),
             CalendarPropertyValueType.DateTime => property.RawEncodedValue
                 .Split(',', StringSplitOptions.None)
                 .All(token => ResolveToken(token, GetTimeZoneId(property)).Value is not null),
@@ -58,23 +63,53 @@ internal sealed class CalendarTemporalResolver
     public ResolvedCalendarInstant ResolveToken(CalendarProperty property, string raw) =>
         ResolveToken(raw, GetTimeZoneId(property));
 
-    public ResolvedCalendarInstant Resolve(CalDateTime value)
+    public ResolvedCalendarInstant Resolve(CalDateTime value, bool generated = false)
     {
         _cancellationToken.ThrowIfCancellationRequested();
         if (!value.HasTime)
-            return new(null, true);
+            return ResolveInEvaluationZone(value.Value.Date);
         if (value.IsUtc)
             return new(new DateTimeOffset(DateTime.SpecifyKind(value.Value, DateTimeKind.Utc)), false);
         return value.TzId is { Length: > 0 } timeZoneId
-            ? ResolveLocal(DateTime.SpecifyKind(value.Value, DateTimeKind.Unspecified), timeZoneId)
-            : new(null, true);
+            ? ResolveLocal(DateTime.SpecifyKind(value.Value, DateTimeKind.Unspecified), timeZoneId, generated)
+            : ResolveInEvaluationZone(DateTime.SpecifyKind(value.Value, DateTimeKind.Unspecified), generated);
+    }
+
+    public bool HasResourceLocalDefinition(string timeZoneId) => CountRawLocalDefinitions(timeZoneId) > 0;
+
+    public CalendarTemporalValue? Project(DateTimeOffset instant, CalendarTemporalValue template)
+    {
+        _cancellationToken.ThrowIfCancellationRequested();
+        if (template.Kind == CalendarTemporalKind.UtcDateTime)
+            return template with { Value = FormatUtc(instant) };
+        var timeZoneId = template.Kind == CalendarTemporalKind.ZonedDateTime
+            ? template.TimeZoneId
+            : _evaluationTimeZone;
+        if (timeZoneId is null)
+            return null;
+        var local = ProjectLocal(instant, timeZoneId);
+        if (local is null)
+            return null;
+        if (template.Kind != CalendarTemporalKind.Date)
+        {
+            return template with
+            {
+                Value = local.Value.ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture)
+            };
+        }
+        return local.Value.TimeOfDay == TimeSpan.Zero
+            ? template with { Value = local.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) }
+            : new CalendarTemporalValue(
+                CalendarTemporalKind.ZonedDateTime,
+                local.Value.ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture),
+                timeZoneId);
     }
 
     private static IcalCalendar? LoadTypedCalendar(ReadOnlySpan<byte> authoritativeUtf8)
     {
         try
         {
-            var replay = CalendarContentDocument.Parse(authoritativeUtf8).ReplayForTypedValidation();
+            var replay = CalendarContentDocument.Parse(authoritativeUtf8).ReplayForOccurrenceEvaluation();
             return IcalCalendar.Load(Encoding.UTF8.GetString(replay));
         }
         catch (Exception exception) when (exception is FormatException or ArgumentException or InvalidOperationException)
@@ -88,8 +123,7 @@ internal sealed class CalendarTemporalResolver
         var parts = period.Split('/', StringSplitOptions.None);
         return parts.Length == 2
             && ResolveToken(parts[0], timeZoneId).Value is not null
-            && (parts[1].StartsWith('P')
-                || parts[1].StartsWith("-P", StringComparison.Ordinal)
+            && (CalendarDurationArithmetic.LooksLikeDuration(parts[1])
                 || ResolveToken(parts[1], timeZoneId).Value is not null);
     }
 
@@ -106,25 +140,41 @@ internal sealed class CalendarTemporalResolver
                 out var instant);
             return new(parsed ? instant : null, false);
         }
-        if (timeZoneId is null
-            || !DateTime.TryParseExact(raw, "yyyyMMdd'T'HHmmss", CultureInfo.InvariantCulture,
+        if (!DateTime.TryParseExact(raw, "yyyyMMdd'T'HHmmss", CultureInfo.InvariantCulture,
                 DateTimeStyles.None, out var local))
             return new(null, true);
 
-        return ResolveLocal(local, timeZoneId);
+        return timeZoneId is null ? ResolveInEvaluationZone(local) : ResolveLocal(local, timeZoneId);
     }
 
-    private ResolvedCalendarInstant ResolveLocal(DateTime local, string timeZoneId)
+    private ResolvedCalendarInstant ResolveDate(string raw)
+    {
+        var parsed = DateTime.TryParseExact(
+            raw,
+            "yyyyMMdd",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.None,
+            out var date);
+        return parsed ? ResolveInEvaluationZone(date) : new(null, true);
+    }
+
+    private ResolvedCalendarInstant ResolveInEvaluationZone(DateTime local, bool generated = false) =>
+        _evaluationTimeZone is null
+            ? new(null, true)
+            : ResolveFromIana(
+                DateTime.SpecifyKind(local, DateTimeKind.Unspecified), _evaluationTimeZone, generated);
+
+    private ResolvedCalendarInstant ResolveLocal(DateTime local, string timeZoneId, bool generated = false)
     {
         _cancellationToken.ThrowIfCancellationRequested();
         var rawDefinitionCount = CountRawLocalDefinitions(timeZoneId);
         if (rawDefinitionCount > 1)
             return new(null, true);
         if (rawDefinitionCount == 0)
-            return ResolveFromIana(local, timeZoneId);
+            return ResolveFromIana(local, timeZoneId, generated);
         var typedDefinitions = FindTypedLocalDefinitions(timeZoneId);
         return typedDefinitions.Count == 1
-            ? ResolveFromLocalDefinition(local, typedDefinitions[0], _cancellationToken)
+            ? ResolveFromLocalDefinition(local, typedDefinitions[0], generated, _cancellationToken)
             : new(null, true);
     }
 
@@ -138,7 +188,67 @@ internal sealed class CalendarTemporalResolver
         .Where(zone => string.Equals(zone.TzId, timeZoneId, StringComparison.Ordinal))
         .ToArray() ?? [];
 
-    private static ResolvedCalendarInstant ResolveFromIana(DateTime local, string timeZoneId)
+    private DateTime? ProjectLocal(DateTimeOffset instant, string timeZoneId)
+    {
+        var rawDefinitionCount = CountRawLocalDefinitions(timeZoneId);
+        if (rawDefinitionCount > 1)
+            return null;
+        if (rawDefinitionCount == 0)
+            return ProjectFromIana(instant, timeZoneId);
+        var definitions = FindTypedLocalDefinitions(timeZoneId);
+        return definitions.Count == 1
+            ? ProjectFromLocalDefinition(instant, definitions[0], _cancellationToken)
+            : null;
+    }
+
+    private static DateTime? ProjectFromIana(DateTimeOffset instant, string timeZoneId)
+    {
+        var zone = DateTimeZoneProviders.Tzdb.GetZoneOrNull(timeZoneId);
+        return zone is null
+            ? null
+            : Instant.FromDateTimeOffset(instant).InZone(zone).LocalDateTime.ToDateTimeUnspecified();
+    }
+
+    private static DateTime? ProjectFromLocalDefinition(
+        DateTimeOffset instant,
+        VTimeZone zone,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (!TryGetConsistentTransitions(zone, instant.UtcDateTime, cancellationToken, out var transitions)
+                || transitions.Length == 0)
+                return null;
+            var previous = transitions.LastOrDefault(transition =>
+                GetTransitionInstant(transition) <= instant);
+            var offset = previous?.OffsetTo ?? transitions[0].OffsetFrom;
+            return DateTime.SpecifyKind(instant.UtcDateTime + offset, DateTimeKind.Unspecified);
+        }
+        catch (Exception exception) when (exception is EvaluationLimitExceededException
+            or EvaluationOutOfRangeException
+            or ZoneTransitionLimitException
+            or FormatException
+            or ArgumentException
+            or OverflowException
+            or InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    private static DateTimeOffset GetTransitionInstant(ZoneTransition transition)
+    {
+        var utcTicks = checked(transition.LocalStart.Ticks - transition.OffsetFrom.Ticks);
+        return new DateTimeOffset(new DateTime(utcTicks, DateTimeKind.Utc));
+    }
+
+    private static string FormatUtc(DateTimeOffset instant) =>
+        instant.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
+
+    private static ResolvedCalendarInstant ResolveFromIana(
+        DateTime local,
+        string timeZoneId,
+        bool generated = false)
     {
         try
         {
@@ -146,9 +256,14 @@ internal sealed class CalendarTemporalResolver
             if (zone is null)
                 return new(null, true);
             var mapping = zone.MapLocal(LocalDateTime.FromDateTime(local));
-            return mapping.Count == 1
-                ? new(mapping.Single().ToDateTimeOffset().ToUniversalTime(), false)
-                : new(null, true);
+            return mapping.Count switch
+            {
+                0 when generated => new(null, false, true),
+                0 => new(new DateTimeOffset(local, mapping.EarlyInterval.WallOffset.ToTimeSpan())
+                    .ToUniversalTime(), false),
+                1 => new(mapping.Single().ToDateTimeOffset().ToUniversalTime(), false),
+                _ => new(mapping.First().ToDateTimeOffset().ToUniversalTime(), false)
+            };
         }
         catch (ArgumentException)
         {
@@ -159,17 +274,18 @@ internal sealed class CalendarTemporalResolver
     private static ResolvedCalendarInstant ResolveFromLocalDefinition(
         DateTime local,
         VTimeZone zone,
+        bool generated,
         CancellationToken cancellationToken)
     {
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (!TryGetConsistentTransitions(zone, local, cancellationToken, out var transitions)
-                || transitions.Length == 0
-                || IsAmbiguousOrInvalid(local, transitions))
+                || transitions.Length == 0)
                 return new(null, true);
-            var previous = transitions.LastOrDefault(item => item.LocalStart <= local);
-            var offset = previous?.OffsetTo ?? transitions[0].OffsetFrom;
+            var offset = ResolveLocalOffset(local, transitions, generated, out var skipped);
+            if (skipped)
+                return new(null, false, true);
             var utcTicks = checked(local.Ticks - offset.Ticks);
             return new(new DateTimeOffset(new DateTime(utcTicks, DateTimeKind.Utc)), false);
         }
@@ -236,21 +352,30 @@ internal sealed class CalendarTemporalResolver
         return true;
     }
 
-    private static bool IsAmbiguousOrInvalid(DateTime local, IEnumerable<ZoneTransition> transitions)
+    private static TimeSpan ResolveLocalOffset(
+        DateTime local,
+        IReadOnlyList<ZoneTransition> transitions,
+        bool generated,
+        out bool skipped)
     {
+        skipped = false;
         foreach (var transition in transitions)
         {
             var change = transition.OffsetTo - transition.OffsetFrom;
             if (change > TimeSpan.Zero
                 && local >= transition.LocalStart
                 && local < transition.LocalStart + change)
-                return true;
+            {
+                skipped = generated;
+                return transition.OffsetFrom;
+            }
             if (change < TimeSpan.Zero
                 && local >= transition.LocalStart + change
                 && local < transition.LocalStart)
-                return true;
+                return transition.OffsetFrom;
         }
-        return false;
+        var previous = transitions.LastOrDefault(item => item.LocalStart <= local);
+        return previous?.OffsetTo ?? transitions[0].OffsetFrom;
     }
 
     private static string? GetTimeZoneId(CalendarProperty property) => property.Parameters
@@ -265,4 +390,7 @@ internal sealed class CalendarTemporalResolver
     }
 }
 
-internal readonly record struct ResolvedCalendarInstant(DateTimeOffset? Value, bool Unresolved);
+internal readonly record struct ResolvedCalendarInstant(
+    DateTimeOffset? Value,
+    bool Unresolved,
+    bool Skipped = false);

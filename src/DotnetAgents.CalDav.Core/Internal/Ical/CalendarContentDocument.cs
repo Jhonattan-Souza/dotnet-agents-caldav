@@ -113,11 +113,24 @@ internal sealed partial class CalendarContentDocument
     [GeneratedRegex("^[+-](?:[01][0-9]|2[0-3])[0-5][0-9](?:[0-5][0-9]|60)?$", RegexOptions.CultureInvariant)]
     private static partial Regex UtcOffsetPattern();
 
-    public byte[] ReplayForTypedValidation()
+    public byte[] ReplayForTypedValidation() => ReplayForTypedValidation(static _ => false);
+
+    public byte[] ReplayForProjectionValidation() => ReplayForTypedValidation(IsEntityPeriodRecurrenceDate);
+
+    public byte[] ReplayForOccurrenceEvaluation() => ReplayForTypedValidation(IsEntityPeriodRecurrenceDate);
+
+    private static bool IsEntityPeriodRecurrenceDate(CalendarContentProperty property) =>
+        property.Name.Equals("RDATE", StringComparison.OrdinalIgnoreCase)
+        && property.ValueType == CalendarPropertyValueType.Period
+        && property.ComponentPath.Count == 2
+        && property.ComponentPath[1].Name is "VEVENT" or "VTODO";
+
+    private byte[] ReplayForTypedValidation(Func<CalendarContentProperty, bool> removeAdditionalProperty)
     {
         var componentRemovals = Components.Where(component => !IsTypedValidationComponent(component.Path[^1].Name))
             .Select(component => new ContentRange(component.Start, component.Length));
-        var propertyRemovals = Properties.Where(property => !IsTypedValidationProperty(property))
+        var propertyRemovals = Properties.Where(property => !IsTypedValidationProperty(property)
+                || removeAdditionalProperty(property))
             .Select(property => new ContentRange(property.Start, property.Length));
         var removals = componentRemovals.Concat(propertyRemovals)
             .OrderBy(range => range.Start)

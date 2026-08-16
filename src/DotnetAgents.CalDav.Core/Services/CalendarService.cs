@@ -81,6 +81,15 @@ internal sealed class CalendarService : ICalendarService
             ResolveDefaultCalendar).QueryAsync(query, cancellationToken);
 
     /// <inheritdoc />
+    public async Task<CalendarOccurrenceQueryResult> QueryOccurrencesAsync(
+        CalendarOccurrenceQuery query,
+        CancellationToken cancellationToken) => await new CalendarOccurrenceQueryEngine(
+            _calendarClient,
+            _options.Value,
+            ApplyScope,
+            ResolveDefaultCalendar).QueryAsync(query, cancellationToken);
+
+    /// <inheritdoc />
     public async Task<CalendarResourceRead> GetResourceAsync(string href, CancellationToken cancellationToken)
     {
         if (!TryGetCanonicalResourceUri(href, out var resourceUri))

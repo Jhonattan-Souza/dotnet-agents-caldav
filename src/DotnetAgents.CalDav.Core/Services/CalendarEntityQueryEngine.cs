@@ -1,3 +1,4 @@
+using System.Xml;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Core.Internal.Ical;
@@ -110,7 +111,15 @@ internal sealed class CalendarEntityQueryEngine
         foreach (var candidate in candidates)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var read = await ReadSnapshotAsync(candidate.Value, candidate.Key, cancellationToken);
+            CalendarResourceRead read;
+            try
+            {
+                read = await ReadSnapshotAsync(candidate.Value, candidate.Key, cancellationToken);
+            }
+            catch (Exception exception) when (exception is CalendarDiscoveryProtocolException or XmlException)
+            {
+                return CandidateFetchResult.Failure(CalendarEntityQueryCode.UpstreamProtocolError);
+            }
             if (read.Code == CalendarResourceReadCode.NotFound)
             {
                 AddDiagnostic(diagnostics, "resource_disappeared_during_query",

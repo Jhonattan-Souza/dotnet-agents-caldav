@@ -10,6 +10,30 @@ namespace DotnetAgents.CalDav.IntegrationTests;
 public sealed class CalendarMcpRawStdioTests
 {
     [Fact]
+    public async Task CalendarOccurrenceQuery_NormalRawCallReachesServiceAndReturnsTypedExecutionFailure()
+    {
+        const string request = """
+            {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"calendar_occurrences.query","arguments":{"scope":{"mode":"default"},"from":{"kind":"utcDateTime","value":"2026-08-15T12:00:00Z"},"to":{"kind":"utcDateTime","value":"2026-08-16T12:00:00Z"}}}}
+            """;
+
+        var result = await InvokeRawAsync(request);
+
+        AssertTypedError(result, "upstream_unavailable", "execution");
+    }
+
+    [Fact]
+    public async Task CalendarOccurrenceQuery_RootDuplicateArgumentsReturnTypedInvalidInputBeforeNetwork()
+    {
+        const string request = """
+            {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"calendar_occurrences.query","arguments":{"scope":{"mode":"default"},"scope":{"mode":"all"},"from":{"kind":"utcDateTime","value":"2026-08-15T12:00:00Z"},"to":{"kind":"utcDateTime","value":"2026-08-16T12:00:00Z"}}}}
+            """;
+
+        var result = await InvokeRawAsync(request);
+
+        AssertTypedError(result, "invalid_input", "schemaLexicalDiscriminator");
+    }
+
+    [Fact]
     public async Task CalendarEntityQuery_NormalInvalidArgumentsReturnTypedInvalidInputBeforeNetwork()
     {
         const string request = """

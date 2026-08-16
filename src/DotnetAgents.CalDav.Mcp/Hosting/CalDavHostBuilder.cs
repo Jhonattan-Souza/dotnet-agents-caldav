@@ -34,6 +34,7 @@ public sealed class CalDavHostBuilder
             .WithRequestFilters(filters => filters.AddCallToolFilter(StrictToolInputGuard.CallTool))
             .WithTools<CalendarTools>()
             .WithTools<CalendarEntityTools>()
+            .WithTools<CalendarOccurrenceTools>()
             .WithTools<CalendarResourceTools>()
             .WithTools<TaskListTools>()
             .WithTools<ChatTaskTools>();
@@ -68,6 +69,10 @@ public sealed class CalDavHostBuilder
             serviceProvider.GetRequiredService<DotnetAgents.CalDav.Core.Abstractions.ICalendarService>(),
             serviceProvider.GetRequiredService<CalendarEntityCursorProtector>(),
             serviceProvider.GetRequiredService<TimeProvider>()));
+        builder.Services.AddTransient(serviceProvider => new CalendarOccurrenceTools(
+            serviceProvider.GetRequiredService<DotnetAgents.CalDav.Core.Abstractions.ICalendarService>(),
+            serviceProvider.GetRequiredService<CalendarEntityCursorProtector>(),
+            serviceProvider.GetRequiredService<TimeProvider>()));
         builder.Services.AddTransient<TaskCompletion>();
 
         return builder;
@@ -81,6 +86,7 @@ public sealed class CalDavHostBuilder
         options.ToolCollection = new OrderedToolCollection(options.ToolCollection.ToArray());
         ConfigureTool(options.ToolCollection, "calendars.list");
         ConfigureTool(options.ToolCollection, "calendar_entities.query");
+        ConfigureTool(options.ToolCollection, "calendar_occurrences.query");
         ConfigureTool(options.ToolCollection, "calendar_resources.get");
         ConfigureTool(options.ToolCollection, "calendar_resources.exact_get");
     }
