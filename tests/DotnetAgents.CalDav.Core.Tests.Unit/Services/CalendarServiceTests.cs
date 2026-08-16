@@ -3668,6 +3668,10 @@ public sealed class CalendarServiceTests
         public Task<CalendarResourceCreateResult> CreateCalendarResourceAsync(
             CalendarResourceCreateRequest request,
             CancellationToken cancellationToken) => transport.CreateCalendarResourceAsync(request, cancellationToken);
+
+        public Task<CalendarResourceDeleteDispatchResult> DeleteCalendarResourceAsync(
+            CalendarResourceDeleteRequest request,
+            CancellationToken cancellationToken) => transport.DeleteCalendarResourceAsync(request, cancellationToken);
     }
 
     private sealed class DelegatingQueryCalendarClient(
@@ -3695,6 +3699,10 @@ public sealed class CalendarServiceTests
         public Task<CalendarResourceCreateResult> CreateCalendarResourceAsync(
             CalendarResourceCreateRequest request,
             CancellationToken cancellationToken) => transport.CreateCalendarResourceAsync(request, cancellationToken);
+
+        public Task<CalendarResourceDeleteDispatchResult> DeleteCalendarResourceAsync(
+            CalendarResourceDeleteRequest request,
+            CancellationToken cancellationToken) => transport.DeleteCalendarResourceAsync(request, cancellationToken);
     }
 
     private sealed class RedirectHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> handler) : HttpMessageHandler

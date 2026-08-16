@@ -23,4 +23,9 @@ public interface ICalendarClient
     Task<CalendarResourceCreateResult> CreateCalendarResourceAsync(
         CalendarResourceCreateRequest request,
         CancellationToken cancellationToken);
+
+    /// <summary>Conditionally deletes one complete Calendar Object Resource without retrying.</summary>
+    Task<CalendarResourceDeleteDispatchResult> DeleteCalendarResourceAsync(
+        CalendarResourceDeleteRequest request,
+        CancellationToken cancellationToken);
 }

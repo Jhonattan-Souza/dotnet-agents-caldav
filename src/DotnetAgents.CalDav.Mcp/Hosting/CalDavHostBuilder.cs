@@ -37,6 +37,7 @@ public sealed class CalDavHostBuilder
             .WithTools<CalendarOccurrenceTools>()
             .WithTools<CalendarResourceTools>()
             .WithTools<CalendarEntityCreateTools>()
+            .WithTools<CalendarResourceDeleteTools>()
             .WithTools<TaskListTools>()
             .WithTools<ChatTaskTools>();
 
@@ -66,6 +67,7 @@ public sealed class CalDavHostBuilder
 
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<CalendarMutationAdmission>();
+        builder.Services.AddSingleton<CalendarMutationRequestStateProtector>();
         builder.Services.AddSingleton<CalendarEntityCursorProtector>();
         builder.Services.AddTransient(serviceProvider => new CalendarEntityTools(
             serviceProvider.GetRequiredService<DotnetAgents.CalDav.Core.Abstractions.ICalendarService>(),
@@ -92,6 +94,7 @@ public sealed class CalDavHostBuilder
         ConfigureTool(options.ToolCollection, "calendar_resources.get");
         ConfigureTool(options.ToolCollection, "events.create");
         ConfigureTool(options.ToolCollection, "todos.create");
+        ConfigureTool(options.ToolCollection, "calendar_resources.delete");
         ConfigureTool(options.ToolCollection, "calendar_resources.exact_get");
     }
 

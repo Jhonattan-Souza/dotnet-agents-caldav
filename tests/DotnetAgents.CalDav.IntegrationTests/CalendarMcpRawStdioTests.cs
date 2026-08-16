@@ -1,9 +1,13 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using DotnetAgents.CalDav.Mcp.Tools;
+using ModelContextProtocol;
+using ModelContextProtocol.Client;
+using ModelContextProtocol.Protocol;
 using Shouldly;
 using Xunit;
 
@@ -12,6 +16,179 @@ namespace DotnetAgents.CalDav.IntegrationTests;
 /// <summary>Exercises raw JSON evidence that the SDK's dictionary client cannot represent.</summary>
 public sealed class CalendarMcpRawStdioTests
 {
+    [Fact]
+    public async Task CalendarResourceDelete_NativeSdkCompletesMrtrOverStdioWithoutDocker()
+    {
+        await using var server = new DeleteServer();
+        var stderr = new ConcurrentQueue<string>();
+        var elicitationCount = 0;
+        var transport = new StdioClientTransport(new StdioClientTransportOptions
+        {
+            Command = "dotnet",
+            Arguments = [GetServerAssemblyPath()],
+            WorkingDirectory = AppContext.BaseDirectory,
+            InheritEnvironmentVariables = true,
+            EnvironmentVariables = new Dictionary<string, string?>
+            {
+                ["CALDAV_URL"] = server.BaseUrl,
+                ["CALDAV_USERNAME"] = "test",
+                ["CALDAV_PASSWORD"] = "test",
+                ["CALDAV_CALENDAR_HREFS"] = server.CalendarHref
+            },
+            StandardErrorLines = stderr.Enqueue
+        });
+        var options = new McpClientOptions
+        {
+            ProtocolVersion = "2026-07-28",
+            DiscoverProbeTimeout = TimeSpan.FromSeconds(10),
+            Handlers = new McpClientHandlers
+            {
+                ElicitationHandler = (request, _) =>
+                {
+                    Interlocked.Increment(ref elicitationCount);
+                    var schema = request.ShouldNotBeNull().RequestedSchema.ShouldNotBeNull();
+                    schema.Properties.ShouldNotBeNull().ShouldContainKey("confirm");
+                    return ValueTask.FromResult(new ElicitResult
+                    {
+                        Action = "accept",
+                        Content = new Dictionary<string, JsonElement>
+                        {
+                            ["confirm"] = JsonSerializer.SerializeToElement(true)
+                        }
+                    });
+                }
+            }
+        };
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(20));
+        await using var client = await McpClient.CreateAsync(transport, options, cancellationToken: timeout.Token);
+
+        var result = await client.CallToolAsync(
+            "calendar_resources.delete",
+            new Dictionary<string, object?>
+            {
+                ["revision"] = new Dictionary<string, object?>
+                {
+                    ["href"] = server.ResourceHref,
+                    ["entityUid"] = "stdio-delete-1",
+                    ["entityKind"] = "todo",
+                    ["entityTag"] = "\"r1\""
+                }
+            },
+            cancellationToken: timeout.Token);
+
+        result.IsError.ShouldBe(false, result.StructuredContent?.ToString());
+        var structured = result.StructuredContent!.Value;
+        structured.GetProperty("outcome").GetString().ShouldBe("success");
+        structured.GetProperty("mutationState").GetString().ShouldBe("committed");
+        structured.GetProperty("deletionReceipt").GetProperty("consumedEntityTag").GetString().ShouldBe("\"r1\"");
+        elicitationCount.ShouldBe(1);
+        server.DeleteCount.ShouldBe(1);
+        server.ObservedIfMatch.ShouldBe("\"r1\"");
+        server.IsDeleted.ShouldBeTrue();
+        JsonSerializer.Serialize(result).ShouldNotContain("Private reviewed delete");
+        stderr.ShouldBeEmpty();
+    }
+
+    [Theory]
+    [InlineData("decline")]
+    [InlineData("cancel")]
+    public async Task CalendarResourceDelete_NativeSdkDeclineOrCancelMakesNoDelete(string action)
+    {
+        await using var server = new DeleteServer();
+        var stderr = new ConcurrentQueue<string>();
+        var transport = CreateDeleteTransport(server, stderr);
+        var options = new McpClientOptions
+        {
+            ProtocolVersion = "2026-07-28",
+            DiscoverProbeTimeout = TimeSpan.FromSeconds(10),
+            Handlers = new McpClientHandlers
+            {
+                ElicitationHandler = (_, _) => ValueTask.FromResult(new ElicitResult { Action = action })
+            }
+        };
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(20));
+        await using var client = await McpClient.CreateAsync(transport, options, cancellationToken: timeout.Token);
+
+        var result = await CallDeleteAsync(client, server.ResourceHref, timeout.Token);
+
+        result.IsError.ShouldBe(false);
+        result.StructuredContent!.Value.GetProperty("outcome").GetString().ShouldBe("confirmation_declined");
+        result.StructuredContent.Value.GetProperty("mutationState").GetString().ShouldBe("not_attempted");
+        server.DeleteCount.ShouldBe(0);
+        server.IsDeleted.ShouldBeFalse();
+        stderr.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task CalendarResourceDelete_LegacySdkIsRejectedAtProtocolHandshakeBeforeDelete()
+    {
+        await using var server = new DeleteServer();
+        var stderr = new ConcurrentQueue<string>();
+        var transport = CreateDeleteTransport(server, stderr);
+        var options = new McpClientOptions
+        {
+            ProtocolVersion = "2025-06-18",
+            DiscoverProbeTimeout = TimeSpan.FromSeconds(10)
+        };
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(20));
+        await Should.ThrowAsync<UnsupportedProtocolVersionException>(async () =>
+        {
+            await using var client = await McpClient.CreateAsync(transport, options, cancellationToken: timeout.Token);
+        });
+        server.DeleteCount.ShouldBe(0);
+    }
+
+    [Theory]
+    [InlineData("changed_args")]
+    [InlineData("tampered_state")]
+    public async Task CalendarResourceDelete_RawMrtrRejectsChangedArgumentsOrTamperedState(string mismatch)
+    {
+        await using var server = new DeleteServer();
+
+        var result = await InvokeRawDeleteMrtrMismatchAsync(server, mismatch);
+
+        AssertTypedError(result, "confirmation_mismatch", "mrtr");
+        result.GetProperty("structuredContent").GetProperty("mutationState").GetString().ShouldBe("not_attempted");
+        server.DeleteCount.ShouldBe(0);
+        server.IsDeleted.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task CalendarResourceDelete_RootDuplicateRevisionReturnsTypedInvalidInputBeforeNetwork()
+    {
+        const string request = """
+            {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"calendar_resources.delete","arguments":{"revision":{"href":"https://cal.example/tasks/a.ics","entityUid":"private-1","entityKind":"todo","entityTag":"\"r1\""},"revision":{"href":"https://cal.example/tasks/b.ics","entityUid":"private-2","entityKind":"todo","entityTag":"\"r2\""}}}}
+            """;
+
+        var result = await InvokeRawAsync(request);
+
+        AssertTypedError(result, "invalid_input", "schemaLexicalDiscriminator");
+        result.ToString().ShouldNotContain("private-1");
+        result.ToString().ShouldNotContain("private-2");
+    }
+
+    [Theory]
+    [InlineData(262_144, "invalid_input", "schemaLexicalDiscriminator")]
+    [InlineData(262_145, "payload_too_large", "admissionAndPayload")]
+    public async Task CalendarResourceDelete_EnforcesExact256KiBArgumentBoundary(
+        int argumentBytes,
+        string expectedCode,
+        string expectedPhase)
+    {
+        var arguments = DeleteArgumentsAtSize(argumentBytes);
+        Encoding.UTF8.GetByteCount(arguments).ShouldBe(argumentBytes);
+        var request = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"calendar_resources.delete\",\"arguments\":"
+            + arguments
+            + "}}";
+
+        var result = await InvokeRawAsync(request);
+
+        AssertTypedError(result, expectedCode, expectedPhase);
+    }
+
     [Theory]
     [InlineData("events.create", "event", "private-event-marker")]
     [InlineData("todos.create", "todo", "private-todo-marker")]
@@ -199,6 +376,136 @@ public sealed class CalendarMcpRawStdioTests
         }
     }
 
+    private static async Task<JsonElement> InvokeRawDeleteMrtrMismatchAsync(
+        DeleteServer server,
+        string mismatch)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        using var process = StartServer(server.BaseUrl, server.CalendarHref);
+        var arguments = DeleteArguments(server.ResourceHref, "stdio-delete-1");
+        try
+        {
+            await process.StandardInput.WriteLineAsync(
+                "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":\"2026-07-28\",\"io.modelcontextprotocol/clientInfo\":{\"name\":\"raw-test\",\"version\":\"1\"},\"io.modelcontextprotocol/clientCapabilities\":{}},\"name\":\"calendar_resources.delete\",\"arguments\":"
+                + arguments
+                + "}}");
+            await process.StandardInput.FlushAsync(timeout.Token);
+            var first = await ReadResponseAsync(process, 2, timeout.Token);
+            first.TryGetProperty("result", out var inputRequired).ShouldBeTrue(first.ToString());
+            inputRequired.TryGetProperty("inputRequests", out var inputRequests)
+                .ShouldBeTrue(inputRequired.ToString());
+            inputRequests.TryGetProperty("confirm_delete", out _).ShouldBeTrue();
+            var state = inputRequired.GetProperty("requestState").GetString();
+            state.ShouldNotBeNullOrWhiteSpace();
+            if (mismatch == "tampered_state")
+                state = $"{state![..^1]}{(state[^1] == 'A' ? 'B' : 'A')}";
+            else
+                arguments = DeleteArguments(server.ResourceHref, "changed-uid");
+            var retry = JsonSerializer.Serialize(new
+            {
+                jsonrpc = "2.0",
+                id = 3,
+                method = "tools/call",
+                @params = new
+                {
+                    _meta = new Dictionary<string, object?>
+                    {
+                        ["io.modelcontextprotocol/protocolVersion"] = "2026-07-28",
+                        ["io.modelcontextprotocol/clientInfo"] = new { name = "raw-test", version = "1" },
+                        ["io.modelcontextprotocol/clientCapabilities"] = new { }
+                    },
+                    name = "calendar_resources.delete",
+                    arguments = JsonSerializer.Deserialize<JsonElement>(arguments),
+                    requestState = state,
+                    inputResponses = new Dictionary<string, object?>
+                    {
+                        ["confirm_delete"] = new
+                        {
+                            action = "accept",
+                            content = new { confirm = true }
+                        }
+                    }
+                }
+            });
+            await process.StandardInput.WriteLineAsync(retry);
+            await process.StandardInput.FlushAsync(timeout.Token);
+            var response = await ReadResponseAsync(process, 3, timeout.Token);
+            process.StandardInput.Close();
+            await process.WaitForExitAsync(timeout.Token);
+            (await process.StandardError.ReadToEndAsync(timeout.Token)).ShouldBeEmpty();
+            return response.GetProperty("result").Clone();
+        }
+        finally
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
+        }
+    }
+
+    private static StdioClientTransport CreateDeleteTransport(
+        DeleteServer server,
+        ConcurrentQueue<string> stderr) => new(new StdioClientTransportOptions
+        {
+            Command = "dotnet",
+            Arguments = [GetServerAssemblyPath()],
+            WorkingDirectory = AppContext.BaseDirectory,
+            InheritEnvironmentVariables = true,
+            EnvironmentVariables = new Dictionary<string, string?>
+            {
+                ["CALDAV_URL"] = server.BaseUrl,
+                ["CALDAV_USERNAME"] = "test",
+                ["CALDAV_PASSWORD"] = "test",
+                ["CALDAV_CALENDAR_HREFS"] = server.CalendarHref
+            },
+            StandardErrorLines = stderr.Enqueue
+        });
+
+    private static Task<CallToolResult> CallDeleteAsync(
+        McpClient client,
+        string resourceHref,
+        CancellationToken cancellationToken) => client.CallToolAsync(
+            "calendar_resources.delete",
+            new Dictionary<string, object?>
+            {
+                ["revision"] = new Dictionary<string, object?>
+                {
+                    ["href"] = resourceHref,
+                    ["entityUid"] = "stdio-delete-1",
+                    ["entityKind"] = "todo",
+                    ["entityTag"] = "\"r1\""
+                }
+            },
+            cancellationToken: cancellationToken).AsTask();
+
+    private static string DeleteArguments(string resourceHref, string uid) => JsonSerializer.Serialize(new
+    {
+        revision = new
+        {
+            href = resourceHref,
+            entityUid = uid,
+            entityKind = "todo",
+            entityTag = "\"r1\""
+        }
+    });
+
+    private static string DeleteArgumentsAtSize(int argumentBytes)
+    {
+        var value = new Dictionary<string, object?>
+        {
+            ["revision"] = new
+            {
+                href = "https://cal.example/tasks/a.ics",
+                entityUid = "todo-1",
+                entityKind = "todo",
+                entityTag = "\"r1\""
+            },
+            ["padding"] = string.Empty
+        };
+        var fixedBytes = JsonSerializer.SerializeToUtf8Bytes(value).Length;
+        value["padding"] = new string('x', argumentBytes - fixedBytes);
+        return JsonSerializer.Serialize(value);
+    }
+
     private static Process StartServer(string baseUrl, string calendarHref)
     {
         var startInfo = new ProcessStartInfo("dotnet", GetServerAssemblyPath())
@@ -370,6 +677,139 @@ public sealed class CalendarMcpRawStdioTests
             var bytes = Encoding.UTF8.GetBytes(xml);
             response.StatusCode = (int)HttpStatusCode.MultiStatus;
             response.ContentType = "application/xml; charset=utf-8";
+            response.ContentLength64 = bytes.Length;
+            await response.OutputStream.WriteAsync(bytes, TestContext.Current.CancellationToken);
+            response.Close();
+        }
+
+        private static int ReservePort()
+        {
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            listener.Stop();
+            return port;
+        }
+    }
+
+    private sealed class DeleteServer : IAsyncDisposable
+    {
+        private const string ResourcePath = "/calendars/test/entities/stdio-delete-1.ics";
+        private const string Content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Integration//EN\r\nBEGIN:VTODO\r\nUID:stdio-delete-1\r\nDTSTAMP:20260815T120000Z\r\nSUMMARY:Private reviewed delete\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+        private readonly HttpListener _listener = new();
+        private readonly CancellationTokenSource _stopping = new();
+        private readonly Task _serve;
+        private int _deleteCount;
+        private int _deleted;
+        private string? _observedIfMatch;
+
+        public DeleteServer()
+        {
+            var port = ReservePort();
+            BaseUrl = $"http://127.0.0.1:{port}/";
+            CalendarHref = BaseUrl + "calendars/test/entities/";
+            ResourceHref = BaseUrl + ResourcePath.TrimStart('/');
+            _listener.Prefixes.Add(BaseUrl);
+            _listener.Start();
+            _serve = ServeAsync();
+        }
+
+        public string BaseUrl { get; }
+
+        public string CalendarHref { get; }
+
+        public string ResourceHref { get; }
+
+        public int DeleteCount => Volatile.Read(ref _deleteCount);
+
+        public bool IsDeleted => Volatile.Read(ref _deleted) != 0;
+
+        public string? ObservedIfMatch => _observedIfMatch;
+
+        public async ValueTask DisposeAsync()
+        {
+            await _stopping.CancelAsync();
+            _listener.Stop();
+            try
+            {
+                await _serve;
+            }
+            finally
+            {
+                _listener.Close();
+                _stopping.Dispose();
+            }
+        }
+
+        private async Task ServeAsync()
+        {
+            try
+            {
+                while (!_stopping.IsCancellationRequested)
+                {
+                    var context = await _listener.GetContextAsync();
+                    await RespondAsync(context);
+                }
+            }
+            catch (Exception exception) when (_stopping.IsCancellationRequested
+                && exception is HttpListenerException or ObjectDisposedException)
+            {
+                return;
+            }
+        }
+
+        private async Task RespondAsync(HttpListenerContext context)
+        {
+            switch (context.Request.HttpMethod)
+            {
+                case "PROPFIND":
+                    await WriteDiscoveryAsync(context.Response, context.Request.Url!.AbsolutePath);
+                    return;
+                case "GET":
+                    await GetAsync(context.Response);
+                    return;
+                case "DELETE":
+                    _observedIfMatch = context.Request.Headers["If-Match"];
+                    Interlocked.Increment(ref _deleteCount);
+                    Interlocked.Exchange(ref _deleted, 1);
+                    context.Response.StatusCode = (int)HttpStatusCode.NoContent;
+                    context.Response.Close();
+                    return;
+                default:
+                    context.Response.StatusCode = (int)HttpStatusCode.MethodNotAllowed;
+                    context.Response.Close();
+                    return;
+            }
+        }
+
+        private static async Task WriteDiscoveryAsync(HttpListenerResponse response, string path)
+        {
+            var body = path == "/"
+                ? "<d:response><d:href>/</d:href><d:propstat><d:prop><c:calendar-home-set><d:href>/calendars/test/</d:href></c:calendar-home-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>"
+                : "<d:response><d:href>/calendars/test/entities/</d:href><d:propstat><d:prop><d:resourcetype><c:calendar/></d:resourcetype><d:displayname>Entities</d:displayname><c:supported-calendar-component-set><c:comp name=\"VEVENT\"/><c:comp name=\"VTODO\"/></c:supported-calendar-component-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>";
+            var xml = "<?xml version=\"1.0\" encoding=\"utf-8\"?><d:multistatus xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\">"
+                + body
+                + "</d:multistatus>";
+            var bytes = Encoding.UTF8.GetBytes(xml);
+            response.StatusCode = (int)HttpStatusCode.MultiStatus;
+            response.ContentType = "application/xml; charset=utf-8";
+            response.ContentLength64 = bytes.Length;
+            await response.OutputStream.WriteAsync(bytes, TestContext.Current.CancellationToken);
+            response.Close();
+        }
+
+        private async Task GetAsync(HttpListenerResponse response)
+        {
+            if (IsDeleted)
+            {
+                response.StatusCode = (int)HttpStatusCode.NotFound;
+                response.Close();
+                return;
+            }
+            var bytes = Encoding.UTF8.GetBytes(Content);
+            response.StatusCode = (int)HttpStatusCode.OK;
+            response.ContentType = "text/calendar; charset=utf-8";
+            response.AddHeader("ETag", "\"r1\"");
             response.ContentLength64 = bytes.Length;
             await response.OutputStream.WriteAsync(bytes, TestContext.Current.CancellationToken);
             response.Close();
