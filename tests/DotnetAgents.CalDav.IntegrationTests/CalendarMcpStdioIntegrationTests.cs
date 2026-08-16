@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using DotnetAgents.CalDav.IntegrationTests.Fixtures;
@@ -50,6 +51,7 @@ public sealed class CalendarMcpStdioIntegrationTests
         [
             "calendars.list",
             "calendar_entities.query",
+            "calendar_occurrences.query",
             "calendar_resources.get",
             "list_task_lists",
             "show_tasks",
@@ -152,6 +154,122 @@ public sealed class CalendarMcpStdioIntegrationTests
     }
 
     [Fact]
+    public async Task CalendarOccurrenceQuery_ExpandsAuthoritativeRecurringTodoOverRealStdioAndRadicale()
+    {
+        const string content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Integration//EN\r\n"
+            + "BEGIN:VTODO\r\nUID:occurrence-stdio-1\r\nDTSTAMP:20260815T120000Z\r\n"
+            + "DTSTART:20260815T100000Z\r\nDUE:20260815T103000Z\r\nRRULE:FREQ=DAILY;COUNT=3\r\n"
+            + "END:VTODO\r\nEND:VCALENDAR\r\n";
+        var href = await PutResourceAsync("occurrence-stdio-1.ics", content);
+        var stderr = new ConcurrentQueue<string>();
+        await using var client = await CreateClientAsync(stderr, exposeExact: false);
+        var tools = await client.ListToolsAsync(new ListToolsRequestParams(), TestContext.Current.CancellationToken);
+        var advertised = tools.Tools.Single(tool => tool.Name == "calendar_occurrences.query");
+
+        var result = await client.CallToolAsync(
+            "calendar_occurrences.query",
+            new Dictionary<string, object?>
+            {
+                ["scope"] = new Dictionary<string, object?>
+                {
+                    ["mode"] = "selected",
+                    ["calendar"] = new Dictionary<string, object?>
+                    {
+                        ["by"] = "href",
+                        ["href"] = $"{_fixture.BaseUrl}{_fixture.TaskListHref}"
+                    }
+                },
+                ["from"] = new Dictionary<string, object?>
+                {
+                    ["kind"] = "utcDateTime",
+                    ["value"] = "2026-08-16T10:15:00Z"
+                },
+                ["to"] = new Dictionary<string, object?>
+                {
+                    ["kind"] = "utcDateTime",
+                    ["value"] = "2026-08-16T10:20:00Z"
+                }
+            },
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        result.IsError.ShouldBe(false);
+        var occurrence = result.StructuredContent!.Value.GetProperty("items").EnumerateArray().ShouldHaveSingleItem();
+        occurrence.GetProperty("snapshot").GetProperty("resourceRevision").GetProperty("href").GetString().ShouldBe(href);
+        occurrence.GetProperty("snapshot").GetProperty("projection").GetProperty("kind").GetString().ShouldBe("todo");
+        occurrence.GetProperty("recurrenceIdentity").GetProperty("value").GetProperty("value").GetString()
+            .ShouldBe("2026-08-16T10:00:00Z");
+        occurrence.GetProperty("timing").GetProperty("effectiveEnd").GetProperty("value").GetString()
+            .ShouldBe("2026-08-16T10:30:00Z");
+        advertised.InputSchema.GetProperty("required").EnumerateArray().Select(item => item.GetString())
+            .ShouldBe(["scope", "from", "to"]);
+        advertised.Meta!["cache"]!["ttlMs"]!.GetValue<int>().ShouldBe(5000);
+        advertised.Meta!["cache"]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
+        stderr.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task CalendarOccurrenceQuery_ProvesBoundaryDstLeapRangeAndTypedFailuresOverRealStdioAndRadicale()
+    {
+        var boundaryHref = await PutResourceAsync("occurrence-boundary.ics", Todo(
+            "occurrence-boundary", "DUE:20260816T100000Z\r\n"));
+        _ = await PutResourceAsync("occurrence-boundary-to.ics", Todo(
+            "occurrence-boundary-to", "DUE:20260816T110000Z\r\n"));
+        _ = await PutResourceAsync("occurrence-dst.ics", Todo(
+            "occurrence-dst", "DTSTART;TZID=America/New_York:20260307T100000\r\n"
+            + "DURATION:PT1H\r\nRRULE:FREQ=DAILY;COUNT=3\r\n"));
+        _ = await PutResourceAsync("occurrence-leap.ics", Todo(
+            "occurrence-leap", "DTSTART:20240229T100000Z\r\nDURATION:PT1H\r\nRRULE:FREQ=YEARLY;COUNT=3\r\n"));
+        var rangeHref = await PutResourceAsync("occurrence-range.ics", RangeTodo());
+        var rangeObserved = await GetResourceAsync(rangeHref);
+        var stderr = new ConcurrentQueue<string>();
+        await using var client = await CreateClientAsync(stderr, exposeExact: false);
+
+        var boundary = await CallOccurrenceAsync(client, "2026-08-16T10:00:00Z", "2026-08-16T11:00:00Z");
+        var dst = await CallOccurrenceAsync(client, "2026-03-08T14:30:00Z", "2026-03-08T14:45:00Z");
+        var leap = await CallOccurrenceAsync(client, "2028-02-29T10:30:00Z", "2028-02-29T10:45:00Z");
+        var moved = await CallOccurrenceAsync(client, "2026-08-17T13:30:00Z", "2026-08-17T13:45:00Z");
+
+        boundary.IsError.ShouldBe(false);
+        var boundaryItems = boundary.StructuredContent!.Value.GetProperty("items").EnumerateArray().ToArray();
+        boundaryItems.ShouldContain(item => item.GetProperty("snapshot").GetProperty("resourceRevision")
+            .GetProperty("href").GetString() == boundaryHref);
+        boundaryItems.ShouldNotContain(item => item.GetProperty("snapshot").GetProperty("projection")
+            .GetProperty("uid").GetString() == "occurrence-boundary-to");
+        dst.StructuredContent!.Value.GetProperty("items").EnumerateArray()
+            .Single(item => item.GetProperty("snapshot").GetProperty("projection").GetProperty("uid").GetString() == "occurrence-dst")
+            .GetProperty("timing").GetProperty("evaluatedStartUtc").GetProperty("value").GetString()
+            .ShouldBe("2026-03-08T14:00:00Z");
+        leap.StructuredContent!.Value.GetProperty("items").EnumerateArray()
+            .Single(item => item.GetProperty("snapshot").GetProperty("projection").GetProperty("uid").GetString() == "occurrence-leap")
+            .GetProperty("recurrenceIdentity").GetProperty("value").GetProperty("value").GetString()
+            .ShouldBe("2028-02-29T10:00:00Z");
+        var movedOccurrence = moved.StructuredContent!.Value.GetProperty("items").EnumerateArray()
+            .Single(item => item.GetProperty("snapshot").GetProperty("projection").GetProperty("uid").GetString() == "occurrence-range");
+        movedOccurrence.GetProperty("recurrenceIdentity").GetProperty("value").GetProperty("value").GetString()
+            .ShouldBe("2026-08-17T09:00:00Z");
+        movedOccurrence.GetProperty("timing").GetProperty("effectiveStart").GetProperty("value").GetString()
+            .ShouldBe("2026-08-17T13:00:00Z");
+        Convert.FromBase64String(movedOccurrence.GetProperty("snapshot").GetProperty("authoritativePayload")
+            .GetProperty("base64Utf8").GetString()!).ShouldBe(rangeObserved.Utf8);
+
+        var unresolvedHref = await PutResourceAsync("occurrence-unresolved.ics", Todo(
+            "occurrence-unresolved", "DTSTART;TZID=Private/Unknown:20260816T100000\r\nDURATION:PT1H\r\n"));
+        var unresolved = await CallOccurrenceAsync(client, "2026-08-16T00:00:00Z", "2026-08-17T00:00:00Z");
+        unresolved.IsError.ShouldBe(true);
+        unresolved.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("temporal_unresolved");
+        await DeleteResourceAsync(unresolvedHref);
+
+        var unevaluableHref = await PutResourceAsync("occurrence-unevaluable.ics", Todo(
+            "occurrence-unevaluable", "DTSTART:20260816T100000Z\r\nDURATION:PT1H\r\n"
+            + "RRULE:FREQ=DAILY;COUNT=2\r\nRRULE:FREQ=WEEKLY;COUNT=2\r\n"));
+        var unevaluable = await CallOccurrenceAsync(client, "2026-08-16T00:00:00Z", "2026-08-17T00:00:00Z");
+        unevaluable.IsError.ShouldBe(true);
+        unevaluable.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("recurrence_unevaluable");
+        await DeleteResourceAsync(unevaluableHref);
+        stderr.ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task CalendarEntityQuery_InvalidRawShapesReturnTypedErrorsWithoutNetwork()
     {
         var stderr = new ConcurrentQueue<string>();
@@ -247,6 +365,7 @@ public sealed class CalendarMcpStdioIntegrationTests
         [
             "calendars.list",
             "calendar_entities.query",
+            "calendar_occurrences.query",
             "calendar_resources.get",
             "calendar_resources.exact_get",
             "list_task_lists",
@@ -305,6 +424,32 @@ public sealed class CalendarMcpStdioIntegrationTests
         return $"{_fixture.BaseUrl}{href}";
     }
 
+    private async Task<CallToolResult> CallOccurrenceAsync(McpClient client, string from, string to) =>
+        await client.CallToolAsync(
+            "calendar_occurrences.query",
+            new Dictionary<string, object?>
+            {
+                ["scope"] = new Dictionary<string, object?>
+                {
+                    ["mode"] = "selected",
+                    ["calendar"] = new Dictionary<string, object?>
+                    {
+                        ["by"] = "href",
+                        ["href"] = $"{_fixture.BaseUrl}{_fixture.TaskListHref}"
+                    }
+                },
+                ["from"] = new Dictionary<string, object?> { ["kind"] = "utcDateTime", ["value"] = from },
+                ["to"] = new Dictionary<string, object?> { ["kind"] = "utcDateTime", ["value"] = to }
+            },
+            cancellationToken: TestContext.Current.CancellationToken);
+
+    private async Task DeleteResourceAsync(string href)
+    {
+        using var client = CreateAuthenticatedClient();
+        using var response = await client.DeleteAsync(href, TestContext.Current.CancellationToken);
+        response.StatusCode.ShouldBeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
+    }
+
     private async Task<ObservedResource> GetResourceAsync(string href)
     {
         using var client = CreateAuthenticatedClient();
@@ -333,6 +478,21 @@ public sealed class CalendarMcpStdioIntegrationTests
         ["CALDAV_PASSWORD"] = "caldavtest123",
         ["CALDAV_CALENDAR_HREFS"] = $"{_fixture.BaseUrl}{_fixture.TaskListHref}"
     };
+
+    private static string Todo(string uid, string temporalLines) =>
+        $"BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Integration//EN\r\nBEGIN:VTODO\r\n"
+        + $"UID:{uid}\r\nDTSTAMP:20260815T120000Z\r\n{temporalLines}END:VTODO\r\nEND:VCALENDAR\r\n";
+
+    private static string RangeTodo() =>
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Integration//EN\r\n"
+        + "BEGIN:VTODO\r\nUID:occurrence-range\r\nDTSTAMP:20260815T120000Z\r\nDTSTART:20260814T090000Z\r\n"
+        + "DUE:20260814T100000Z\r\nRRULE:FREQ=DAILY;COUNT=5\r\nEND:VTODO\r\n"
+        + "BEGIN:VTODO\r\nUID:occurrence-range\r\nDTSTAMP:20260815T120000Z\r\n"
+        + "RECURRENCE-ID;RANGE=THISANDFUTURE:20260816T090000Z\r\n"
+        + "DTSTART:20260816T110000Z\r\nDUE:20260816T120000Z\r\nEND:VTODO\r\n"
+        + "BEGIN:VTODO\r\nUID:occurrence-range\r\nDTSTAMP:20260815T120000Z\r\n"
+        + "RECURRENCE-ID;RANGE=THISANDFUTURE:20260817T090000Z\r\n"
+        + "DTSTART:20260817T130000Z\r\nDUE:20260817T150000Z\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
 
     private static string GetServerAssemblyPath()
     {

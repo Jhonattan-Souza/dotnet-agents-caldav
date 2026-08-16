@@ -33,6 +33,29 @@ public sealed class CalDavServiceCollectionExtensionsTests
     }
 
     [Fact]
+    public void AddCalDavTasks_RecyclesIdleConnectionsBeforePinnedRadicaleTimeout()
+    {
+        SocketsHttpHandler? handler = null;
+        var services = new ServiceCollection();
+        services.AddSingleton<IHttpMessageHandlerBuilderFilter>(
+            new CapturingHandlerFilter(candidate => handler = candidate as SocketsHttpHandler));
+        services.AddCalDavTasks(options =>
+        {
+            options.BaseUrl = "https://cal.example";
+            options.Username = "user";
+            options.Password = "password";
+        });
+        using var provider = services.BuildServiceProvider();
+
+        _ = provider.GetRequiredService<ICalDavClient>();
+
+        handler.ShouldNotBeNull();
+        handler.PooledConnectionIdleTimeout.ShouldBe(TimeSpan.FromSeconds(20));
+        handler.PooledConnectionIdleTimeout.ShouldBeLessThan(TimeSpan.FromSeconds(30));
+        handler.PooledConnectionLifetime.ShouldBe(TimeSpan.FromMinutes(2));
+    }
+
+    [Fact]
     public async Task AddCalDavTasks_RetriesTransientReadsAtMostThreeTotalAttempts()
     {
         var handler = new CountingUnavailableHandler();

@@ -35,13 +35,28 @@ internal static class StrictToolInputGuard
 
     internal static CallToolResult? Reject(string? toolName, StrictToolInputEvidence evidence)
     {
-        if (toolName != "calendar_entities.query")
-            return null;
-        if (evidence.ArgumentBytes > CalendarEntityTools.MaximumArgumentBytes)
-            return CalendarEntityTools.CreateInputGuardError(payloadTooLarge: true);
-        return evidence.HasDuplicateProperty
-            ? CalendarEntityTools.CreateInputGuardError(payloadTooLarge: false)
-            : null;
+        return toolName switch
+        {
+            "calendar_entities.query" => RejectEntity(evidence),
+            "calendar_occurrences.query" => RejectOccurrence(evidence),
+            _ => null
+        };
+    }
+
+    private static CallToolResult? RejectEntity(StrictToolInputEvidence evidence) =>
+        Reject(evidence, CalendarQueryToolSupport.MaximumArgumentBytes, CalendarEntityTools.CreateInputGuardError);
+
+    private static CallToolResult? RejectOccurrence(StrictToolInputEvidence evidence) =>
+        Reject(evidence, CalendarQueryToolSupport.MaximumArgumentBytes, CalendarOccurrenceTools.CreateInputGuardError);
+
+    private static CallToolResult? Reject(
+        StrictToolInputEvidence evidence,
+        int maximumArgumentBytes,
+        Func<bool, CallToolResult> createError)
+    {
+        if (evidence.ArgumentBytes > maximumArgumentBytes)
+            return createError(true);
+        return evidence.HasDuplicateProperty ? createError(false) : null;
     }
 
     internal static StrictToolInputEvidence InspectArguments(JsonNode? arguments)

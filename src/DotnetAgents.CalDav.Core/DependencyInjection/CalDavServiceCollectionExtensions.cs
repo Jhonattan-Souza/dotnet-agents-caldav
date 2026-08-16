@@ -48,7 +48,8 @@ public static class CalDavServiceCollectionExtensions
         // SocketsHttpHandler is used instead of HttpClientHandler for:
         // - PooledConnectionLifetime: proactively recycle stale connections before the server
         //   can drop them (prevents "response ended prematurely" / ResponseEnded errors)
-        // - PooledConnectionIdleTimeout: close idle connections that Radicale may have already closed
+        // - PooledConnectionIdleTimeout: recycle idle connections before the pinned Radicale
+        //   profile's 30-second server timeout can close them
         //
         // Auto-redirect is disabled because CalDAV uses non-standard HTTP methods (PROPFIND, REPORT,
         // MKCOL) that must be preserved across redirects. Disable automatic redirects explicitly
@@ -74,7 +75,7 @@ public static class CalDavServiceCollectionExtensions
             AllowAutoRedirect = false,
             AutomaticDecompression = DecompressionMethods.All,
             PooledConnectionLifetime = TimeSpan.FromMinutes(2),
-            PooledConnectionIdleTimeout = TimeSpan.FromMinutes(1)
+            PooledConnectionIdleTimeout = TimeSpan.FromSeconds(20)
         })
         .AddStandardResilienceHandler(options =>
         {

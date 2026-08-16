@@ -64,7 +64,7 @@ internal static class CalendarResourceProjector
             if (diagnostic is not null)
                 return Opaque(properties, diagnostic);
 
-            if (!IcalNetCorroborates(document.ReplayForTypedValidation(), entities[0].Kind, entities.Count))
+            if (!IcalNetCorroborates(document.ReplayForProjectionValidation(), entities[0].Kind, entities.Count))
                 return Opaque(properties, "typed_projection_invalid");
 
             var master = entities.Single(entity => entity.RecurrenceIdentity is null);

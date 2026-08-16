@@ -196,6 +196,7 @@ public class CalDavHostBuilderTests
         [
             typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarTools),
             typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarEntityTools),
+            typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarOccurrenceTools),
             typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarResourceTools),
             typeof(DotnetAgents.CalDav.Mcp.Tools.TaskListTools),
             typeof(DotnetAgents.CalDav.Mcp.Tools.ChatTaskTools)
@@ -238,6 +239,28 @@ public class CalDavHostBuilderTests
             .ShouldBe(["scope", "entityKinds"]);
         outputSchema["oneOf"]!.AsArray().Count.ShouldBe(2);
         outputSchema["$defs"]!.AsObject().ShouldContainKey("entityQuerySuccess");
+        outputSchema["$defs"]!.AsObject().ShouldContainKey("errorOutcome");
+        tool.ProtocolTool.Meta!["cache"]!["ttlMs"]!.GetValue<int>().ShouldBe(5000);
+        tool.ProtocolTool.Meta!["cache"]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
+    }
+
+    [Fact]
+    public void BuildHost_AdvertisesFrozenOccurrenceQuerySchemasAndPrivateCacheHint()
+    {
+        var builder = CalDavHostBuilder.CreateBuilder();
+        builder.Services.ConfigureCalDav(ValidOptions);
+        using var host = builder.Build();
+
+        var options = host.Services.GetRequiredService<IOptions<ModelContextProtocol.Server.McpServerOptions>>().Value;
+        options.ToolCollection!.TryGetPrimitive("calendar_occurrences.query", out var tool).ShouldBeTrue();
+
+        var inputSchema = JsonNode.Parse(tool!.ProtocolTool.InputSchema.GetRawText())!.AsObject();
+        var outputSchema = JsonNode.Parse(tool.ProtocolTool.OutputSchema!.Value.GetRawText())!.AsObject();
+        inputSchema["additionalProperties"]!.GetValue<bool>().ShouldBeFalse();
+        inputSchema["required"]!.AsArray().Select(item => item!.GetValue<string>())
+            .ShouldBe(["scope", "from", "to"]);
+        outputSchema["oneOf"]!.AsArray().Count.ShouldBe(2);
+        outputSchema["$defs"]!.AsObject().ShouldContainKey("occurrenceQuerySuccess");
         outputSchema["$defs"]!.AsObject().ShouldContainKey("errorOutcome");
         tool.ProtocolTool.Meta!["cache"]!["ttlMs"]!.GetValue<int>().ShouldBe(5000);
         tool.ProtocolTool.Meta!["cache"]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
@@ -294,6 +317,7 @@ public class CalDavHostBuilderTests
         [
             "calendars.list",
             "calendar_entities.query",
+            "calendar_occurrences.query",
             "calendar_resources.get",
             "list_task_lists",
             "show_tasks",
@@ -332,6 +356,7 @@ public class CalDavHostBuilderTests
         [
             "calendars.list",
             "calendar_entities.query",
+            "calendar_occurrences.query",
             "calendar_resources.get",
             "list_task_lists",
             "show_tasks",

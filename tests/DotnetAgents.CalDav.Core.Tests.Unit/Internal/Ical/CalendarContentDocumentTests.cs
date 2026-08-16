@@ -29,6 +29,38 @@ public sealed class CalendarContentDocumentTests
     }
 
     [Fact]
+    public void ReplayForOccurrenceEvaluation_PreservesEveryObservanceRecurrenceDate()
+    {
+        const string content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\n"
+            + "BEGIN:VTIMEZONE\r\nTZID:Private/Zone\r\nBEGIN:STANDARD\r\n"
+            + "DTSTART:20261025T030000\r\nTZOFFSETFROM:+0200\r\nTZOFFSETTO:+0100\r\n"
+            + "RDATE:20271031T030000\r\nRDATE;VALUE=DATE-TIME:20281029T030000\r\n"
+            + "RDATE;VALUE=PERIOD:20291028T030000/20291028T040000\r\n"
+            + "END:STANDARD\r\nEND:VTIMEZONE\r\n"
+            + "BEGIN:VEVENT\r\nUID:u1\r\nDTSTAMP:20260815T120000Z\r\n"
+            + "DTSTART;TZID=Private/Zone:20260816T090000\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var document = CalendarContentDocument.Parse(Encoding.UTF8.GetBytes(content));
+
+        document.ReplayForOccurrenceEvaluation().ShouldBe(Encoding.UTF8.GetBytes(content));
+        document.ReplayForTypedValidation().ShouldBe(Encoding.UTF8.GetBytes(content));
+    }
+
+    [Fact]
+    public void TypedReplayRetainsEntityPeriodWhileOccurrenceReplayDelegatesItToTheLocalEvaluator()
+    {
+        const string periodLine = "RDATE;VALUE=PERIOD:20260816T100000Z/PT1H\r\n";
+        const string content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\n"
+            + "BEGIN:VEVENT\r\nUID:u1\r\nDTSTAMP:20260815T120000Z\r\n"
+            + "DTSTART:20260816T090000Z\r\n" + periodLine
+            + "END:VEVENT\r\nEND:VCALENDAR\r\n";
+        var document = CalendarContentDocument.Parse(Encoding.UTF8.GetBytes(content));
+
+        Encoding.UTF8.GetString(document.ReplayForTypedValidation()).ShouldContain(periodLine);
+        Encoding.UTF8.GetString(document.ReplayForOccurrenceEvaluation()).ShouldNotContain(periodLine);
+        Encoding.UTF8.GetString(document.ReplayForProjectionValidation()).ShouldNotContain(periodLine);
+    }
+
+    [Fact]
     public void Parse_DecodesRfc6868ParameterEscapesInOnePass()
     {
         const string content = "BEGIN:VCALENDAR\r\nX-PROP;X-P=^^n,^n,^',^^:value\r\nEND:VCALENDAR\r\n";

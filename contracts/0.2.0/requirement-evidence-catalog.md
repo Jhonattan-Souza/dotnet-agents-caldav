@@ -103,10 +103,10 @@ Every requirement row contains the normative statement, source, interoperability
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
-- Named scenario or fixture: `0.2.0/model/cal-model-005`.
+- Named scenario or fixture: `0.2.0/model/cal-model-005`; committed issue #40 targets: `CalendarServiceTests.QueryOccurrencesAsync_MultipleRrulesAreTypedRecurrenceUnevaluableWithNoPartialItems` and `RadicaleConformanceHarnessTests.Pinned_profile_preserves_occurrence_boundary_dst_leap_range_and_typed_failures`.
 - Objective oracle: Given DTSTART, two RRULE lines, two RDATEs, one EXDATE, and two overrides, when read, then `rrules` has count 2, `evaluationState=unevaluable`, every RDATE/EXDATE/override remains ordered, and recurrence expansion returns `recurrence_unevaluable`.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: the occurrence-query slice is implemented: multiple RRULE resources remain projectable but recurrence evaluation fails closed with `recurrence_unevaluable` and zero partial items; semantic creation and mutation remain planned.
+- Evidence status: focused Core evidence passes locally; the digest-pinned Radicale target is committed and remains pending pull-request CI because this machine's Docker path could not complete fixture startup (Resource Reaper timeout, then fixture HTTP timeout when bypassed).
 
 ## CAL-MODEL-006
 
@@ -115,10 +115,10 @@ Every requirement row contains the normative statement, source, interoperability
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
-- Named scenario or fixture: `0.2.0/model/cal-model-006`.
-- Objective oracle: Given a recurring event expanded into three occurrences, when occurrence query returns them, then every item has `timing` and recurrence identity, none has a resource href/ETag mutation target, and a direct write attempt is rejected as `invalid_input`.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Named scenario or fixture: `0.2.0/model/cal-model-006`; committed issue #40 target: occurrence snapshot-shape assertions in `CalendarOccurrenceToolsTests.QueryAsync_EmitsExactOccurrenceShapeAndPaginatesByFrozenContinuationTuple`; direct Occurrence-object mutation rejection remains a planned mutation-tool target.
+- Objective oracle: Given a recurring event expanded into three occurrences, when occurrence query returns them, then every item has `timing`, original recurrence identity, and an `occurrenceSnapshot.calendarSnapshot` carrying the authoritative source href and ETag. The derived Occurrence object is not accepted directly as mutation input and is never serialized or written back. Any mutation uses its own input contract, an extracted or supplied Revision Reference, explicit original identity and intent, and an authoritative refetch; a direct Occurrence-object write is rejected as `invalid_input` once that mutation tool exists.
+- Implementation status: occurrence query returns the frozen derived shape with authoritative source revision; direct Occurrence-object mutation admission remains planned with the mutation tools.
+- Evidence status: focused occurrence snapshot-shape evidence passes locally; the direct-write rejection target remains planned and is not claimed as implemented evidence.
 
 ## CAL-MODEL-007
 
@@ -535,10 +535,10 @@ Every requirement row contains the normative statement, source, interoperability
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
-- Named scenario or fixture: `0.2.0/time/cal-time-002`.
+- Named scenario or fixture: `0.2.0/time/cal-time-002`; committed issue #40 targets: `CalendarServiceTests.QueryOccurrencesAsync_FloatingComparisonRequiresExplicitEvaluationTimeZoneOnlyWhenEncountered`, `QueryOccurrencesAsync_ExplicitFloatingGapUsesPriorEvaluationZoneOffset`, `QueryOccurrencesAsync_FloatingRruleSkipsEvaluationZoneGapWithoutConsumingCount`, `QueryOccurrencesAsync_DateOnlyEventDefaultsToOneLocalDay`, and `QueryOccurrencesAsync_DateOnlyTodoStartAndDueAreLocalPoints`.
 - Objective oracle: Given date/floating values and explicit request IANA `America/Sao_Paulo`, when comparison/expansion runs, then that context is recorded and used; omitted context returns temporal_unresolved and never reads calendar/server/process/host timezone.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented for occurrence comparison and expansion; the request IANA zone is required only when a floating or date-only value is actually evaluated, and no implicit host/server zone is used.
+- Evidence status: focused Core and MCP occurrence-query targets pass locally and are included in the CI test run.
 
 ## CAL-TIME-003
 
@@ -547,10 +547,10 @@ Every requirement row contains the normative statement, source, interoperability
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
-- Named scenario or fixture: `0.2.0/time/cal-time-003`.
-- Objective oracle: Given unambiguous resource VTIMEZONE, recognized IANA, unknown `Mars/Base`, and conflicting VTIMEZONE, when evaluated, then unambiguous resource zone wins then IANA; unknown/conflicting values stay preserved with diagnostics, unrelated patch succeeds, and evaluation returns temporal_unresolved.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Named scenario or fixture: `0.2.0/time/cal-time-003`; committed issue #40 targets: `CalendarServiceTests.QueryOccurrencesAsync_UnambiguousResourceLocalTimeZonePrecedesIanaDefinition`, `QueryOccurrencesAsync_ResourceLocalRecurringZoneIsEvaluatedWithoutIanaFallback`, `QueryOccurrencesAsync_ExplicitIanaGapUsesPriorOffsetAndOverlapUsesFirstOccurrence`, `QueryOccurrencesAsync_IanaRruleSkipsGapWithoutConsumingCount`, `QueryOccurrencesAsync_ExplicitResourceLocalGapAndOverlapFollowRfc5545`, `QueryOccurrencesAsync_ResourceLocalRruleSkipsGapWithoutConsumingCount`, `QueryOccurrencesAsync_RruleOverlapUsesFirstOccurrenceExactlyOnce`, `QueryOccurrencesAsync_ExdateSuppressedUnknownZoneOverrideDoesNotRequireResolution`, `QueryOccurrencesAsync_CancelledUnknownZoneOverrideDoesNotRequireResolution`, `QueryOccurrencesAsync_ActiveUnknownZoneOverrideRemainsTypedTemporalUnresolved`, `QueryOccurrencesAsync_UnknownNamedZoneIsTypedTemporalUnresolved`, and `QueryOccurrencesAsync_ConflictingResourceLocalZonesAreTypedTemporalUnresolved`.
+- Objective oracle: Given unambiguous resource VTIMEZONE, recognized IANA, explicit and RRULE-generated local values in gaps/overlaps, unknown `Mars/Base`, and conflicting VTIMEZONE, when evaluated, then the resource zone wins before IANA; explicit gap uses the pre-gap offset, overlap uses the first occurrence, generated gap instances are skipped without consuming COUNT, and unknown/conflicting values return temporal_unresolved.
+- Implementation status: the occurrence-query evaluation slice is implemented: one resource-local definition takes precedence, recognized IANA is the fallback, RFC gap/overlap semantics distinguish explicit from generated values, and unknown/conflicting definitions return `temporal_unresolved`; unrelated mutation behavior remains planned.
+- Evidence status: focused Core evidence passes locally; the typed unresolved path is also committed to the real-stdio and digest-pinned Radicale targets.
 
 ## CAL-TIME-004
 
@@ -559,10 +559,10 @@ Every requirement row contains the normative statement, source, interoperability
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
-- Named scenario or fixture: `0.2.0/time/cal-time-004`.
+- Named scenario or fixture: `0.2.0/time/cal-time-004`; committed issue #40 targets: `CalendarServiceTests.QueryOccurrencesAsync_DateOnlyEventDefaultsToOneLocalDay`, `QueryOccurrencesAsync_DateEventIndividualOverrideDefaultsToOneDay`, `QueryOccurrencesAsync_DateEventRangeOverrideDefaultsEachOccurrenceToOneDay`, `QueryOccurrencesAsync_DateEventOverrideDefaultsToNextLocalDayAcrossDst`, `QueryOccurrencesAsync_IanaMasterDistinguishesNominalDayFromAccurateHours`, `QueryOccurrencesAsync_IanaOverrideDistinguishesNominalDayFromAccurateHours`, `QueryOccurrencesAsync_DetachedOverrideRetainsAccurateMasterSourceSpanAcrossDst`, `QueryOccurrencesAsync_ResourceLocalMasterUsesTheSameDurationArithmetic`, `QueryOccurrencesAsync_WeekDurationRemainsNominalAcrossDst`, `CalendarDurationParser_RejectsNonRfcGrammar`, `CalendarDurationParser_PreservesNominalAndAccurateComponents`, `QueryOccurrencesAsync_RangeDurationUsesPerInstanceNominalThenAccurateArithmetic`, `QueryOccurrencesAsync_RecurringExplicitEndPropagatesExactDurationAcrossDst`, `QueryOccurrencesAsync_RangeExplicitEndPropagatesExactDurationAfterAnchor`, `QueryOccurrencesAsync_RecurringTodoDuePropagatesExactDurationAcrossDst`, `QueryOccurrencesAsync_RecurringDateSearchIncludesTwentyFiveHourFallBackSpan`, `QueryOccurrencesAsync_DateOnlyTodoStartAndDueAreLocalPoints`, and `QueryOccurrencesAsync_SelectedScopeIncludesEventsAndEveryTimedTodoForm`.
 - Objective oracle: Given exclusive spans, default one-day event, zero-duration event, VTODO DUE/DURATION variants, missing DTSTART duration, and reschedule, when validated, then bounds/default/span/reschedule results match fixture; zero-duration has effective start=end and appears only when its start lies in range; invalid due/duration/start combinations reject before PUT.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: the occurrence-query effective-span slice is implemented, including exclusive bounds, one-day date Events, zero-duration date-time Events, and available To-do DTSTART/DUE/DURATION forms; reschedule mutation validation remains planned.
+- Evidence status: focused Core occurrence-query targets pass locally and are included in the CI test run.
 
 ## CAL-RECUR-001
 
@@ -571,10 +571,10 @@ Every requirement row contains the normative statement, source, interoperability
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
-- Named scenario or fixture: `0.2.0/recur/cal-recur-001`.
+- Named scenario or fixture: `0.2.0/recur/cal-recur-001`; committed issue #40 targets: `CalendarServiceTests.QueryOccurrencesAsync_SelectedScopeIncludesEventsAndEveryTimedTodoForm`, `QueryOccurrencesAsync_ExdateAndCancellationSuppressWhileMovedTimingRetainsOriginalIdentity`, `CalendarMcpStdioIntegrationTests.CalendarOccurrenceQuery_ProvesBoundaryDstLeapRangeAndTypedFailuresOverRealStdioAndRadicale`, and `RadicaleConformanceHarnessTests.Pinned_profile_preserves_occurrence_boundary_dst_leap_range_and_typed_failures`.
 - Objective oracle: Given non-empty UTC `[from,to)` window, overlap event, zero-duration event, moved override, and nonrecurring VTODO fixtures with and without DTSTART/DUE/DURATION, when query runs, then overlap appears, zero-duration matches iff start is in range, moved effective span is returned, todo output follows timing presence, and invalid/empty window rejects.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented for bounded Event and To-do occurrence queries, including half-open overlap/point matching, moved effective spans, every non-recurring To-do timing form, and no occurrence for a To-do without temporal data.
+- Evidence status: semantic-corpus targets pass locally; real-stdio and digest-pinned Radicale targets are committed, with live local execution pending because this machine's Docker path could not complete fixture startup.
 
 ## CAL-RECUR-002
 
@@ -583,10 +583,10 @@ Every requirement row contains the normative statement, source, interoperability
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
-- Named scenario or fixture: `0.2.0/recur/cal-recur-002`.
-- Objective oracle: Given DTSTART, one RRULE, all RDATE/EXDATE/overrides including duplicate identities and RDATE PERIOD, when expansion/create run, then duplicates collapse, EXDATE wins, overrides remain, and PERIOD is preserved but rejected before Radicale PUT.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Named scenario or fixture: `0.2.0/recur/cal-recur-002`; committed issue #40 targets: `CalendarServiceTests.QueryOccurrencesAsync_RdatePeriodSuppliesOccurrenceSpecificSpan`, `QueryOccurrencesAsync_RdatePeriodDeduplicatesAndOverrideUsesOccurrenceSpecificSourceSpan`, `QueryOccurrencesAsync_RdatePeriodUsesNominalThenAccurateDurationArithmetic`, `QueryOccurrencesAsync_ExdateSuppressesDuplicateRdatePeriodAndItsOverride`, `QueryOccurrencesAsync_DetachedEventOverridesAreEnumeratedWithCancellationAndExdatePrecedence`, `QueryOccurrencesAsync_DetachedTodoOverridesWithoutDtstartRemainObservable`, and `QueryOccurrencesAsync_DueOnlyRecurringTodoIsTypedRecurrenceUnevaluable`.
+- Objective oracle: Given DTSTART, one RRULE, all RDATE/EXDATE/overrides including duplicate and detached identities, VTODO overrides without DTSTART, and RDATE PERIOD, when expansion runs, then duplicates collapse, EXDATE wins even over preserved overrides, detached moved overrides remain observable, cancellations are omitted, PERIOD supplies its own span, and VTODO RRULE without DTSTART is recurrence_unevaluable.
+- Implementation status: the occurrence-query slice is implemented for RRULE/RDATE/EXDATE/override identity collapse, detached override enumeration, EXDATE precedence, VTODO recurrence validity, and occurrence-specific RDATE PERIOD spans; semantic create and Radicale write rejection remain planned.
+- Evidence status: focused Core occurrence-query targets pass locally and are included in the CI test run.
 
 ## CAL-RECUR-003
 
@@ -595,10 +595,10 @@ Every requirement row contains the normative statement, source, interoperability
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
-- Named scenario or fixture: `0.2.0/recur/cal-recur-003`.
+- Named scenario or fixture: `0.2.0/recur/cal-recur-003`; committed issue #40 targets: `CalendarServiceTests.QueryOccurrencesAsync_NearestRangeReplacesEarlierAndIndividualOverrideWins`, `QueryOccurrencesAsync_MovedRangeMatchesEffectiveWindowAndRetainsOriginalIdentity`, `QueryOccurrencesAsync_CancelledRangeOmitsUntilLaterRangeWhileExactOverrideWins`, `QueryOccurrencesAsync_OldTodoRangeMovedByDueIsIncludedInBoundedSearch`, plus the real-stdio and pinned-Radicale advanced occurrence targets.
 - Objective oracle: Given master recurrence ID `2026-01-02T09:00:00`, moved override, and overlapping RANGE overrides, when expanded, then returned identity remains original master family/value and later applicable range override wins deterministically.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented for occurrence queries: original Recurrence Identity is stable, the nearest applicable RANGE transformation is used without double stacking, a later range supersedes an earlier range, and an exact individual override wins.
+- Evidence status: focused Core targets pass locally; the moved-identity/range-precedence path is committed to real-stdio and digest-pinned Radicale CI targets.
 
 ## CAL-RECUR-004
 
@@ -667,10 +667,10 @@ Every requirement row contains the normative statement, source, interoperability
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: real MCP client over stdio.
-- Named scenario or fixture: `0.2.0/mcp/cal-mcp-002`.
+- Named scenario or fixture: `0.2.0/mcp/cal-mcp-002`; committed issue #40 targets: `CalDavHostBuilderTests.CreateBuilder_DefaultMode_RegistersCalendarDiscoveryAlongsideChatSafeLegacyTools` and `BuildHost_DefaultMode_ListsToolsInCanonicalWireOrder`.
 - Objective oracle: Given tools/list, when catalog is emitted, then the 16 default names exactly equal the committed discovery order and no exact tool appears without opt-in.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: the `calendar_occurrences.query` catalog position and default exposure are implemented; later semantic tools in the frozen 16-tool catalog remain planned by their owning tickets.
+- Evidence status: focused host discovery/order targets pass locally and are included in the CI test run.
 
 ## CAL-MCP-003
 
@@ -691,10 +691,10 @@ Every requirement row contains the normative statement, source, interoperability
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: real MCP client over stdio.
-- Named scenario or fixture: `0.2.0/mcp/cal-mcp-004`.
+- Named scenario or fixture: `0.2.0/mcp/cal-mcp-004`; committed issue #40 targets: `CalendarOccurrenceToolsTests.QueryRawAsync_AcceptsExactFrozenShapeWithoutEntityKindsAndDefaultsAbsentPageSize`, `QueryRawAsync_RejectsMissingNullAndUnknownFrozenShape`, `QueryAsync_EmitsExactOccurrenceShapeAndPaginatesByFrozenContinuationTuple`, and `CalendarMcpRawStdioTests.CalendarOccurrenceQuery_RootDuplicateArgumentsReturnTypedInvalidInputBeforeNetwork`.
 - Objective oracle: Given valid closed input, unknown sibling, duplicate JSON member, and typed failure, when tool validates, then valid authoritative structuredContent matches output schema with concise compatible text content, invalid values return schema-valid invalid_input, and parser rejects duplicate/unknown members.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented for `calendar_occurrences.query`, including the frozen closed input without `entityKinds`, duplicate/unknown rejection, exact output union, authoritative structured content, and bounded compatible text; later tools remain planned.
+- Evidence status: focused MCP unit and raw-stdio targets pass locally and are included in the CI test run.
 
 ## CAL-MCP-005
 
@@ -703,10 +703,10 @@ Every requirement row contains the normative statement, source, interoperability
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: real MCP client over stdio.
-- Named scenario or fixture: `0.2.0/mcp/cal-mcp-005`.
+- Named scenario or fixture: `0.2.0/mcp/cal-mcp-005`; committed issue #40 target: `CalendarOccurrenceToolsTests.QueryAsync_CursorIsNonceRandomTamperEvidentBoundToQueryCredentialsExpiryAndProcessKey` exercises default, selected, and all scope binding through the occurrence query cursor.
 - Objective oracle: Given by-name, by-href, default, selected, all scope, and a stale revision, when resolution/mutation runs, then exactly one selector branch is accepted, all is explicit, and mutation refetches expected href/UID/kind/ETag before write.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: the read-only Calendar Scope path is implemented for occurrence queries through the shared discovery/selection engine; mutation revision behavior remains planned.
+- Evidence status: focused occurrence-query scope and cursor-binding targets pass locally and are included in the CI test run.
 
 ## CAL-MCP-006
 
@@ -727,10 +727,10 @@ Every requirement row contains the normative statement, source, interoperability
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: real MCP client over stdio.
-- Named scenario or fixture: `0.2.0/mcp/cal-mcp-007`.
+- Named scenario or fixture: `0.2.0/mcp/cal-mcp-007`; committed issue #40 targets: `CalendarServiceTests.QueryOccurrencesAsync_OrdersByEffectiveStartCalendarHrefUidThenRecurrenceIdentity` and `CalendarOccurrenceToolsTests.QueryAsync_EmitsExactOccurrenceShapeAndPaginatesByFrozenContinuationTuple`.
 - Objective oracle: Given paginated entity and occurrence results with equal timestamps, when query continues, then envelope has items/diagnostics/non_snapshot/nextCursor, entities sort calendar href/resource href and occurrences sort effective start/href/UID/identity.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented for occurrence queries: exact effective-start/Calendar-href/UID/Recurrence-Identity ordering, non-snapshot envelope, and protected continuation tuple pagination; entity ordering was delivered by the preceding query slice.
+- Evidence status: focused Core and MCP targets pass locally and are included in the CI test run.
 
 ## CAL-MCP-008
 
@@ -739,10 +739,10 @@ Every requirement row contains the normative statement, source, interoperability
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: real MCP client over stdio.
-- Named scenario or fixture: `0.2.0/mcp/cal-mcp-008`.
+- Named scenario or fixture: `0.2.0/mcp/cal-mcp-008`; committed issue #40 targets: `CalendarOccurrenceToolsTests.QueryAsync_MapsEveryDomainFailure`, `QueryAsync_PreservesDiscoveryPhaseForDiscovery404`, `QueryAsync_MalformedDiscoveryRetainsSelectionDiscoveryPhase`, and `CalendarMcpRawStdioTests.CalendarOccurrenceQuery_NormalRawCallReachesServiceAndReturnsTypedExecutionFailure`.
 - Objective oracle: Given invalid input, conflict, limit, upstream, unexpected exception, no_change, declined confirmation, invalid JSON, unknown method/tool, incompatible version and transport auth failure, when requests run, then tool failures use isError/schema-valid safe fields, protocol cases use their protocol/HTTP channel, and no_change/decline use isError false.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented for expected occurrence-query failures, including schema-valid `isError`, sanitized unexpected failures, earliest discovery phase retention, execution-phase failures, and typed real-stdio results; non-query mutation outcomes remain planned.
+- Evidence status: focused MCP unit and raw-stdio targets pass locally and are included in the CI test run.
 
 ## CAL-MCP-009
 
@@ -787,10 +787,10 @@ Every requirement row contains the normative statement, source, interoperability
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: real MCP client over stdio.
-- Named scenario or fixture: `0.2.0/mcp/cal-mcp-012`.
+- Named scenario or fixture: `0.2.0/mcp/cal-mcp-012`; committed issue #40 target: `CalDavHostBuilderTests.BuildHost_AdvertisesFrozenOccurrenceQuerySchemasAndPrivateCacheHint`.
 - Objective oracle: Given list/query/snapshot/mutation calls, when annotations/cache inspected, then ttlMs are 30000/5000/0, cacheScope private, no list-change notification is advertised, and all annotation booleans match external CalDAV behavior.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: the private five-second cache hint and frozen annotations are implemented for `calendar_occurrences.query`; later catalog entries remain planned by their owning tickets.
+- Evidence status: focused host metadata target passes locally and is included in the CI test run.
 
 ## CAL-MCP-013
 
@@ -811,10 +811,10 @@ Every requirement row contains the normative statement, source, interoperability
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: deterministic WebDAV contract.
-- Named scenario or fixture: `0.2.0/bound/cal-bound-001`.
+- Named scenario or fixture: `0.2.0/bound/cal-bound-001`; committed issue #40 targets: `CalendarOccurrenceToolsTests.QueryRawAsync_EnforcesExactArgumentByteBoundary`, `QueryRawAsync_RejectsMissingNullAndUnknownFrozenShape`, `QueryAsync_PreservesDiscoveryPhaseForDiscovery404`, and `QueryAsync_MalformedDiscoveryRetainsSelectionDiscoveryPhase`.
 - Objective oracle: Given inputs failing authorization, payload, schema, origin, selection, revision, resource semantics, MRTR, execution and verification in combination, when validated, then only earliest phase is returned and at most 32 JSON-pointer-sorted safe violations appear.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: the occurrence-query validation path is implemented through execution, including payload-before-schema ordering and earliest `selectionDiscoveryCapability` versus `execution` phase mapping; mutation-only phases remain planned.
+- Evidence status: focused MCP targets pass locally and are included in the CI test run.
 
 ## CAL-BOUND-002
 
@@ -823,10 +823,10 @@ Every requirement row contains the normative statement, source, interoperability
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: deterministic WebDAV contract.
-- Named scenario or fixture: `0.2.0/bound/cal-bound-002`.
+- Named scenario or fixture: `0.2.0/bound/cal-bound-002`; committed issue #40 targets: `CalendarOccurrenceToolsTests.QueryRawAsync_AcceptsExactFrozenShapeWithoutEntityKindsAndDefaultsAbsentPageSize` plus bounded-window and page-size cases in `CalendarServiceTests` and `CalendarOccurrenceToolsTests`.
 - Objective oracle: Given 0-day, 366-day, 367-day windows; page sizes 0,50,200,201; 256 calendars and 5001 resources, when queried, then valid bounds/default 50/cap 200 apply and excess returns limit_exhausted before partial results.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented for occurrence queries through the shared bounded query engine: non-empty windows up to 366 days, nullable pageSize default 50/cap 200, and shared 5,000-resource/256-Calendar ceilings with zero partial results.
+- Evidence status: focused Core and MCP boundary targets pass locally and are included in the CI test run.
 
 ## CAL-BOUND-003
 
@@ -835,10 +835,10 @@ Every requirement row contains the normative statement, source, interoperability
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: deterministic WebDAV contract.
-- Named scenario or fixture: `0.2.0/bound/cal-bound-003`.
-- Objective oracle: Given recurrence fixtures producing 2000,2001 entity occurrences; 5000,5001 query occurrences; and 10000,10001 unmatched increments, when expanded, then ceilings pass exactly and plus-one returns limit_exhausted with items count zero.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Named scenario or fixture: `0.2.0/bound/cal-bound-003`; committed issue #40 targets: `CalendarServiceTests.QueryOccurrencesAsync_EnforcesExactPerEntityOccurrenceBoundaryWithZeroPartial`, `QueryOccurrencesAsync_PeriodBoundaryCountsUniqueDerivedWorkOutsideWindow`, `QueryOccurrencesAsync_DuplicatePeriodIdentityDoesNotInflateDerivedWork`, `QueryOccurrencesAsync_DetachedOverrideBoundaryCountsUniqueDerivedWorkOutsideWindow`, `QueryOccurrencesAsync_PerEntityBoundaryUnionsRrulePeriodAndDetachedIdentities`, `QueryOccurrencesAsync_EnforcesExactTotalOccurrenceBoundaryWithZeroPartial`, `QueryOccurrencesAsync_EnforcesExactUnmatchedIncrementBoundaryWithoutPartialOrInventedOccurrenceCount`, and `QueryOccurrencesAsync_OldResourceLocalSeriesStartsNearBoundedWindow`.
+- Objective oracle: Given recurrence fixtures deriving 2000/2001 unique entity identities in and outside the query window, including RDATE PERIOD and detached overrides; 5000/5001 query occurrences; and 10000/10001 unmatched increments, when expanded, then ceilings pass exactly, duplicate identities neither inflate nor bypass the work count, and plus-one returns limit_exhausted with items count zero.
+- Implementation status: implemented for recurrence expansion with exact 2,000/2,001 per-entity, 5,000/5,001 per-query, and 10,000/10,001 unmatched-increment behavior; every exhausted result contains zero partial items.
+- Evidence status: exact boundary targets pass locally and are included in the CI test run.
 
 ## CAL-BOUND-004
 
@@ -847,10 +847,10 @@ Every requirement row contains the normative statement, source, interoperability
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: deterministic WebDAV contract.
-- Named scenario or fixture: `0.2.0/bound/cal-bound-004`.
+- Named scenario or fixture: `0.2.0/bound/cal-bound-004`; committed issue #40 targets: `CalendarOccurrenceToolsTests.QueryRawAsync_EnforcesExactArgumentByteBoundary`, `QueryAsync_RejectsSingleOccurrenceThatCannotFitStructuredBudget`, and `QueryAsync_RejectsHumanAndDiagnosticContentBeyondShared64KiBBudget`.
 - Objective oracle: Given UTF-8 JSON at 256KiB±1, resource/exact payload/page at 4MiB±1, text/diagnostics at 64KiB±1, and compressed body expanding over limit, when streamed, then limit-plus-one rejects with payload_too_large and no partial serialization.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: the occurrence-query slice is implemented for 256 KiB arguments, 4 MiB structured page/single-item handling, and 64 KiB text plus diagnostics with zero partial serialization; mutation payload paths remain planned.
+- Evidence status: focused MCP exact and plus-one boundary targets pass locally and are included in the CI test run.
 
 ## CAL-BOUND-005
 
@@ -859,10 +859,10 @@ Every requirement row contains the normative statement, source, interoperability
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: deterministic WebDAV contract.
-- Named scenario or fixture: `0.2.0/bound/cal-bound-005`.
+- Named scenario or fixture: `0.2.0/bound/cal-bound-005`; committed issue #40 target: `CalendarOccurrenceToolsTests.QueryAsync_FinalDeadlineReturnsLimitErrorWithoutSuccessItems`.
 - Objective oracle: Given reads with transient failures, mutations before/after dispatch, and fake clock at 10/30/60 seconds, when retries execute, then reads make at most three attempts, mutations no blind retries, and timeout code/phase reflects attempt, operation, or reconciliation bound.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: the occurrence-query 30-second read deadline is implemented over the existing bounded HTTP read path; mutation, reconciliation, and generated-UID limits remain planned.
+- Evidence status: focused fake-time occurrence deadline target passes locally and is included in the CI test run.
 
 ## CAL-BOUND-006
 
@@ -883,10 +883,10 @@ Every requirement row contains the normative statement, source, interoperability
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: deterministic WebDAV contract.
-- Named scenario or fixture: `0.2.0/bound/cal-bound-007`.
+- Named scenario or fixture: `0.2.0/bound/cal-bound-007`; committed issue #40 target: `CalendarOccurrenceToolsTests.QueryAsync_CallerCancellationPropagatesWithoutReturningAResult`.
 - Objective oracle: Given cancelled read, cancelled pre-dispatch mutation, and cancelled post-dispatch mutation, when tokens fire, then first two stop promptly with zero/one dispatch respectively and post-dispatch continues bounded reconciliation to truthful mutationState.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: prompt caller cancellation is implemented for occurrence reads; post-dispatch mutation reconciliation remains planned.
+- Evidence status: focused occurrence cancellation target passes locally and is included in the CI test run.
 
 ## CAL-BOUND-008
 
@@ -895,10 +895,10 @@ Every requirement row contains the normative statement, source, interoperability
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: deterministic WebDAV contract.
-- Named scenario or fixture: `0.2.0/bound/cal-bound-008`.
+- Named scenario or fixture: `0.2.0/bound/cal-bound-008`; committed issue #40 targets: `CalendarOccurrenceToolsTests.QueryAsync_CursorIsNonceRandomTamperEvidentBoundToQueryCredentialsExpiryAndProcessKey` and `QueryAsync_CursorCredentialBindingRejectsSameKeyUnderDifferentCredentials`.
 - Objective oracle: Given cursor/requestState exceeding 2KiB, expired at ten minutes, rotated key, changed arguments/principal/ETag, one-bit tamper, and replay, when consumed, then each invalid handle fails closed; serialized bytes reveal none of normalized args/principal/identity/ETag and valid replay remains nonduplicating through conditional write.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: the occurrence cursor is implemented with authenticated encryption, random nonce, canonical base64url, ten-minute expiry, process-key rotation invalidation, credential and normalized-query binding, continuation tuple binding, and a 2 KiB cap; MRTR requestState and mutation replay remain planned.
+- Evidence status: focused tamper/expiry/restart/credential/query-binding targets pass locally and are included in the CI test run.
 
 ## CAL-ERROR-001
 
@@ -1051,10 +1051,10 @@ Every requirement row contains the normative statement, source, interoperability
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: catalog verifier.
-- Named scenario or fixture: `0.2.0/evidence/cal-evidence-002`.
+- Named scenario or fixture: `0.2.0/evidence/cal-evidence-002`; committed issue #40 semantic targets are the `CalendarServiceTests.QueryOccurrencesAsync_*` corpus covering half-open boundaries, Event/To-do temporal partitions, DST/leap, RRULE/RDATE PERIOD/EXDATE, individual and RANGE overrides, moved identity, cancellation, unresolved zones, unevaluable recurrence, exact ordering, and limit partitions.
 - Objective oracle: Given semantic fixture inventory, when manifest is counted, then it contains named cases for discovery, snapshots, strict schemas, patch, temporal, recurrence, structured/inert/opaque content, concurrency, truth, limits, errors and MRTR plus listed pairwise cross-products.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: the occurrence-query equivalence partitions and recurrence-by-temporal, override-precedence, pagination-order, and limit cross-products are implemented; the remaining catalog-wide fixture inventory stays planned for downstream tickets.
+- Evidence status: the committed issue #40 semantic-corpus targets pass locally and are included in the CI test run; this partial slice does not claim completion of the broader inventory.
 
 ## CAL-EVIDENCE-003
 
@@ -1087,10 +1087,10 @@ Every requirement row contains the normative statement, source, interoperability
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: catalog verifier.
-- Named scenario or fixture: `0.2.0/evidence/cal-evidence-005`.
-- Objective oracle: Given `RadicaleConformanceFixture` in baseline/strict/New_York variants, when `Pinned_profile_records_the_runtime_and_selected_variant` runs, then TRX records index/platform/runtime/TZ/strict facts and legacy task fixtures are never listed as evidence.
-- Implementation status: runtime-evidence slice implemented and passing; the broader behavioral cases remain planned for downstream tickets.
-- Evidence status: the runtime harness passes locally in all three variants and runs in the CI matrix; downstream behavioral cases are not represented by task fixtures.
+- Named scenario or fixture: `0.2.0/evidence/cal-evidence-005`; committed issue #40 target: `RadicaleConformanceHarnessTests.Pinned_profile_preserves_occurrence_boundary_dst_leap_range_and_typed_failures`, executed by the existing baseline/strict/New_York CI matrix after PUT followed by authoritative GET.
+- Objective oracle: Given `RadicaleConformanceFixture` in baseline/strict/New_York variants, when the runtime and occurrence targets run, then TRX records index/platform/runtime/TZ/strict facts and authoritative post-PUT GET bytes prove half-open boundary behavior, DST, leap recurrence, RANGE precedence with moved original identity, and typed unresolved/unevaluable failures.
+- Implementation status: runtime evidence plus the issue #40 recurrence/time-zone fidelity slice are implemented; the remaining live-server behaviors in this broad row stay planned for downstream tickets.
+- Evidence status: the runtime harness previously passes locally in all three variants and runs in the CI matrix; the new occurrence target is committed to that matrix and awaits CI because this machine's Docker path could not complete fixture startup (Resource Reaper timeout, then fixture HTTP timeout when bypassed).
 
 ## CAL-EVIDENCE-006
 
@@ -1123,10 +1123,10 @@ Every requirement row contains the normative statement, source, interoperability
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: catalog verifier.
-- Named scenario or fixture: `0.2.0/evidence/cal-evidence-008`.
+- Named scenario or fixture: `0.2.0/evidence/cal-evidence-008`; committed issue #40 targets: the exact argument, page, text/diagnostics, 2,000/2,001, 5,000/5,001, and 10,000/10,001 boundary theories in `CalendarOccurrenceToolsTests` and `CalendarServiceTests`.
 - Objective oracle: Given each numeric boundary at minus-one/exact/plus-one and immutable expected fixture, when tests execute, then only within-bound cases pass, excess has no partial output, and fixture hash remains unchanged after run.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: the occurrence-query boundary inventory is implemented with immutable inline expectations and zero-partial plus-one outcomes; remaining non-occurrence boundaries stay planned.
+- Evidence status: focused issue #40 exact-boundary targets pass locally and are included in the CI test run; this partial slice does not claim completion of every catalog boundary.
 
 ## CAL-EVIDENCE-009
 

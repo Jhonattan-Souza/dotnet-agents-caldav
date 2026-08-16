@@ -7,12 +7,12 @@ Every component cell uses exactly one closed class. `preserved but unevaluable` 
 | Event and To-do resource projection | supported | supported | pinned-profile-only | planned | `CAL-MODEL-001`, corpus plus live mixed-calendar cases |
 | Exact server-returned resource authority | supported | unsafe through Ical.Net | supported | planned | `CAL-RESOURCE-001`; only server GET bytes are authoritative |
 | Unknown registered and extension content on unrelated patch | supported | unsafe through Ical.Net | preserved but unevaluable | planned | `CAL-RESOURCE-002` corpus oracle; regenerated Ical.Net output is forbidden |
-| Resource-local VTIMEZONE evaluation | required typed rejection | preserved but unevaluable | pinned-profile-only | planned | `CAL-TIME-003`; no host-zone fallback |
-| Bounded RRULE evaluation | supported | supported | pinned-profile-only | planned | `CAL-RECUR-001`; client owns final evaluation |
-| Multiple RRULE resources | preserved but unevaluable | preserved but unevaluable | pinned-profile-only | planned | `CAL-MODEL-005`; return `recurrence_unevaluable` |
+| Resource-local VTIMEZONE evaluation | supported | preserved but unevaluable | pinned-profile-only | implemented for occurrence queries | `CAL-TIME-003`; one unambiguous resource-local definition wins, while unknown or conflicting definitions fail with a typed outcome and no host-zone fallback |
+| Bounded RRULE evaluation | supported | supported | pinned-profile-only | implemented for occurrence queries | `CAL-RECUR-001`; client owns final evaluation from authoritative GET bytes |
+| Multiple RRULE resources | preserved but unevaluable | preserved but unevaluable | pinned-profile-only | implemented for occurrence queries | `CAL-MODEL-005`; preserve the resource and return `recurrence_unevaluable` with no partial items |
 | RDATE PERIOD semantic write | required typed rejection | preserved but unevaluable | required typed rejection | planned | `CAL-RECUR-002`; reject before PUT |
 | THISANDFUTURE mutation | supported | unsafe through Ical.Net | pinned-profile-only | planned | `CAL-BASE-004`; service owns semantics |
-| Full-resource GET and REPORT candidate reduction | supported | required typed rejection | supported | planned | `CAL-DISC-006`, `CAL-DAV-001`; final filter is local |
+| Full-resource GET and REPORT candidate reduction | supported | required typed rejection | supported | implemented for entity and occurrence queries | `CAL-DISC-006`, `CAL-DAV-001`; REPORT is candidate reduction only and final filtering uses authoritative GET bytes locally |
 | Strong ETag conditional mutation | supported | required typed rejection | supported | planned | `CAL-RESOURCE-009`; no weak-tag bypass |
 | Strict preconditions mode | supported | required typed rejection | pinned-profile-only | implemented | `strict-preconditions` fixture variant |
 | Calendar alarms and URI values | supported | preserved but unevaluable | preserved but unevaluable | planned | `CAL-EVENT-006`; never execute or dereference |

@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Configurations;
 using DotNet.Testcontainers.Containers;
@@ -12,6 +13,8 @@ namespace DotnetAgents.CalDav.IntegrationTests.Fixtures;
 /// </summary>
 public sealed class RadicaleConformanceFixture : IAsyncLifetime
 {
+    public const string Username = "conformance";
+    public const string Password = "conformance";
     public const string Image = "ghcr.io/kozea/radicale@sha256:3a0080ea51ac69dcd74e345b9587dc14a8c8af0652046069005749f9a75c5c80";
     public const string IndexDigest = "sha256:3a0080ea51ac69dcd74e345b9587dc14a8c8af0652046069005749f9a75c5c80";
     public const string Amd64ManifestDigest = "sha256:7e2d729c434574762b058d57c7c81641ade11655da6d0eede948512d53873e71";
@@ -23,6 +26,8 @@ public sealed class RadicaleConformanceFixture : IAsyncLifetime
     public RadicaleConformanceVariant Variant { get; } = RadicaleConformanceVariant.FromEnvironment();
 
     public RadicaleRuntimeEvidence Runtime { get; private set; } = null!;
+
+    public string BaseUrl { get; private set; } = null!;
 
     public async ValueTask InitializeAsync()
     {
@@ -36,10 +41,20 @@ public sealed class RadicaleConformanceFixture : IAsyncLifetime
                 UnixFileModes.UserRead | UnixFileModes.UserWrite |
                 UnixFileModes.GroupRead | UnixFileModes.OtherRead)
             .WithWaitStrategy(Wait.ForUnixContainer()
-                .UntilInternalTcpPortIsAvailable(RadicalePort))
+                .UntilInternalTcpPortIsAvailable(RadicalePort)
+                .UntilHttpRequestIsSucceeded(
+                    request => request
+                        .ForPort(RadicalePort)
+                        .ForPath("/")
+                        .ForStatusCodeMatching(status => (int)status < 500),
+                    strategy => strategy
+                        .WithInterval(TimeSpan.FromMilliseconds(250))
+                        .WithRetries(60)
+                        .WithTimeout(TimeSpan.FromSeconds(30))))
             .Build();
 
         await _container.StartAsync();
+        BaseUrl = $"http://localhost:{_container.GetMappedPublicPort(RadicalePort)}";
 
         var configuredStrictPreconditions = await ReadConfigurationValueAsync("strict_preconditions");
         var strictPreconditionsApplied = await ObserveStrictPreconditionsAsync();
@@ -67,6 +82,97 @@ public sealed class RadicaleConformanceFixture : IAsyncLifetime
         if (_container is not null)
         {
             await _container.DisposeAsync();
+        }
+    }
+
+    public async Task<RadicaleConformanceResource> SeedResourceAsync(
+        string resourceName,
+        string content,
+        CancellationToken cancellationToken)
+    {
+        const string script = """
+            import base64
+            import json
+            import sys
+            import urllib.parse
+            import urllib.request
+
+            name = urllib.parse.quote(sys.argv[1], safe='')
+            content = base64.b64decode(sys.argv[2])
+            authorization = 'Basic ' + sys.argv[3]
+            url = 'http://127.0.0.1:5232/conformance/conformance/' + name
+            headers = {'Authorization': authorization, 'Connection': 'close'}
+
+            put = urllib.request.Request(
+                url,
+                data=content,
+                headers=headers | {'Content-Type': 'text/calendar; charset=utf-8'},
+                method='PUT')
+            with urllib.request.urlopen(put) as response:
+                if response.status not in (201, 204):
+                    raise RuntimeError(f'PUT returned {response.status}')
+
+            get = urllib.request.Request(url, headers=headers, method='GET')
+            with urllib.request.urlopen(get) as response:
+                etag = response.headers.get('ETag')
+                if not etag or etag.startswith('W/'):
+                    raise RuntimeError('GET did not return a strong ETag')
+                observed = response.read()
+
+            print(json.dumps({
+                'entityTag': etag,
+                'content': base64.b64encode(observed).decode('ascii')
+            }))
+            """;
+        var contentBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(content));
+        var credentialsBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{Username}:{Password}"));
+        var result = await _container!.ExecAsync(
+            ["/app/bin/python", "-c", script, resourceName, contentBase64, credentialsBase64],
+            cancellationToken);
+        if (result.ExitCode != 0)
+        {
+            throw new InvalidOperationException($"Unable to seed the Radicale conformance resource: {result.Stderr}");
+        }
+
+        using var document = JsonDocument.Parse(result.Stdout);
+        var root = document.RootElement;
+        return new RadicaleConformanceResource(
+            root.GetProperty("entityTag").GetString()!,
+            Convert.FromBase64String(root.GetProperty("content").GetString()!));
+    }
+
+    public async Task DeleteResourceAsync(
+        string resourceName,
+        string entityTag,
+        CancellationToken cancellationToken)
+    {
+        const string script = """
+            import sys
+            import urllib.parse
+            import urllib.request
+
+            name = urllib.parse.quote(sys.argv[1], safe='')
+            authorization = 'Basic ' + sys.argv[3]
+            url = 'http://127.0.0.1:5232/conformance/conformance/' + name
+            request = urllib.request.Request(
+                url,
+                headers={
+                    'Authorization': authorization,
+                    'Connection': 'close',
+                    'If-Match': sys.argv[2]
+                },
+                method='DELETE')
+            with urllib.request.urlopen(request) as response:
+                if response.status not in (200, 204):
+                    raise RuntimeError(f'DELETE returned {response.status}')
+            """;
+        var credentialsBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{Username}:{Password}"));
+        var result = await _container!.ExecAsync(
+            ["/app/bin/python", "-c", script, resourceName, entityTag, credentialsBase64],
+            cancellationToken);
+        if (result.ExitCode != 0)
+        {
+            throw new InvalidOperationException($"Unable to delete the Radicale conformance resource: {result.Stderr}");
         }
     }
 
@@ -118,7 +224,7 @@ public sealed class RadicaleConformanceFixture : IAsyncLifetime
                 except urllib.error.HTTPError as error:
                     return error.code
 
-            credentials = {'Authorization': 'Basic Y29uZm9ybWFuY2U6'}
+            credentials = {'Authorization': 'Basic Y29uZm9ybWFuY2U6Y29uZm9ybWFuY2U='}
             collection = request('MKCALENDAR', base, headers=credentials)
             if collection not in (201, 405):
                 raise RuntimeError(f'MKCALENDAR returned {collection}')
@@ -171,6 +277,8 @@ public sealed record RadicaleRuntimeEvidence(
     string RuntimeTimeZone);
 
 internal sealed record RadicaleManifestEvidence(string Architecture, string Digest);
+
+public sealed record RadicaleConformanceResource(string EntityTag, byte[] Utf8);
 
 public sealed record RadicaleConformanceVariant(string Name, string TimeZone, bool StrictPreconditions)
 {
