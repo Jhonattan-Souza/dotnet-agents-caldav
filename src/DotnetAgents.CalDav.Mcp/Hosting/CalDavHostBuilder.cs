@@ -20,9 +20,8 @@ public sealed class CalDavHostBuilder
     /// The caller must configure <see cref="CalDavOptions"/> via <see cref="ConfigureCalDav"/>
     /// before calling <see cref="HostApplicationBuilder.Build"/>.
     /// </summary>
-    /// <param name="exposeAdvancedTools">Whether to retain the existing legacy href-based tool surface.</param>
-    /// <param name="exposeExactTools">Whether to expose protected exact resource reads.</param>
-    public static HostApplicationBuilder CreateBuilder(bool exposeAdvancedTools = false, bool exposeExactTools = false)
+    /// <param name="exposeExactTools">Whether to expose the protected exact resource tools.</param>
+    public static HostApplicationBuilder CreateBuilder(bool exposeExactTools = false)
     {
         var builder = Host.CreateApplicationBuilder();
 
@@ -40,16 +39,7 @@ public sealed class CalDavHostBuilder
             .WithTools<CalendarEntityCreateTools>()
             .WithTools<CalendarEntityPatchTools>()
             .WithTools<CalendarResourceMoveTools>()
-            .WithTools<CalendarResourceDeleteTools>()
-            .WithTools<TaskListTools>()
-            .WithTools<ChatTaskTools>();
-
-        if (exposeAdvancedTools)
-        {
-            mcpBuilder
-                .WithTools<TaskQueryTools>()
-                .WithTools<TaskMutationTools>();
-        }
+            .WithTools<CalendarResourceDeleteTools>();
 
         if (exposeExactTools)
         {
@@ -81,8 +71,6 @@ public sealed class CalDavHostBuilder
             serviceProvider.GetRequiredService<DotnetAgents.CalDav.Core.Abstractions.ICalendarService>(),
             serviceProvider.GetRequiredService<CalendarEntityCursorProtector>(),
             serviceProvider.GetRequiredService<TimeProvider>()));
-        builder.Services.AddTransient<TaskCompletion>();
-
         return builder;
     }
 
@@ -143,6 +131,6 @@ public static class CalDavHostBuilderExtensions
         this IServiceCollection services,
         Action<CalDavOptions> configure)
     {
-        return services.AddCalDavTasks(configure);
+        return services.AddCalDavCalendars(configure);
     }
 }

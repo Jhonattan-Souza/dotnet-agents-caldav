@@ -1,6 +1,6 @@
-# CalDAV Tasks MCP Server
+# CalDAV Calendars MCP Server
 
-.NET 10 stdio MCP server for CalDAV VTODOs, packaged as the `dotnet-agents-caldav` `dnx` tool.
+.NET 10 stdio MCP server for CalDAV Events and To-dos, packaged as the `dotnet-agents-caldav` `dnx` tool.
 
 ## Commands
 
@@ -18,7 +18,7 @@ dotnet test tests/DotnetAgents.CalDav.Core.Tests.Unit/DotnetAgents.CalDav.Core.T
 dotnet test tests/DotnetAgents.CalDav.Core.Tests.Unit/DotnetAgents.CalDav.Core.Tests.Unit.csproj -c Release --filter "FullyQualifiedName~TypeOrMethod"
 ```
 
-- The integration project requires Docker. Its `RadicaleCollection` shares one `tomsquest/docker-radicale` Testcontainer and seeds `Tasks`, `Shopping`, and `Work` collections.
+- The integration project requires Docker. Its `RadicaleCollection` shares one digest-pinned official Radicale 3.7.8 Testcontainer and seeds Event and To-do Calendars.
 - Match CI in this order; `--results-directory TestResults` is required because the report command reads the root `TestResults/` tree:
 
 ```bash
@@ -33,17 +33,17 @@ dotnet tool run slopwatch analyze --config .slopwatch/slopwatch.json --fail-on w
 
 ## Boundaries
 
-- Runtime is transitional: unified Calendar tools use `ICalendarService`, while legacy task tools retain `ITaskService` until the 0.2 cleanup. Both services stay thin; WebDAV request/response logic belongs under `Core/Internal/Xml`, and iCalendar mapping belongs under `Core/Internal/Ical`.
+- Runtime flow is `MCP tools -> ICalendarService -> CalendarService -> CalDavClient -> HttpClient`; `CalendarService` stays thin. WebDAV request/response logic belongs under `Core/Internal/Xml`, and iCalendar mapping belongs under `Core/Internal/Ical`.
 - `Program.cs` maps `CALDAV_*` environment variables, then delegates startup to `CalDavMcpRunner` and `CalDavHostBuilder`; keep startup testable through those types rather than adding logic to top-level statements.
-- The default host exposes the implemented 15-tool semantic subset in frozen order, including `todos.complete`, plus the staged legacy chat-safe tools. `CALDAV_EXPOSE_EXACT_TOOLS=true` enables exact Calendar resource access; the legacy `CALDAV_EXPOSE_ADVANCED_TOOLS=true` gate remains until its tools are removed.
+- The default host exposes exactly the frozen 16-tool semantic catalog, including `todos.complete`. It contains no legacy aliases. `CALDAV_EXPOSE_EXACT_TOOLS=true` independently enables the four exact Calendar resource tools.
 - `.opencode/opencode.jsonc` launches the published NuGet tool through `dnx`; it does not run the current checkout. Do not treat that configuration as source-level end-to-end validation.
 
 ## Invariants
 
 - Keep console providers disabled. Stdout is the JSON-RPC transport, and integration tests require a valid server run to leave both stdout and stderr clean; only startup validation failures write human-readable stderr.
-- `TaskItem` and `TaskList` are immutable records. Modify them with `with`, preserve fetched ETags on updates/deletes, and use injected `TimeProvider` for completion timestamps.
-- Chat tools resolve explicit display names first, then `CALDAV_DEFAULT_TASK_LIST`; they never infer a list from task content. Summary-based mutations must return `not_found` or `ambiguous` unless exactly one task matches.
-- Legacy and exact href tools are the advanced/raw surface. Keep their descriptions requiring an explicitly provided or confirmed absolute href; semantic revision-bound mutations follow the frozen catalog, require an explicitly supplied absolute revision href, and use MRTR confirmation for the frozen destructive variants. Normal chat flows use list-name tools.
+- Calendar Object Resource snapshots are immutable. Preserve fetched strong Entity Tags on mutations, and use injected `TimeProvider` for To-do Completion timestamps.
+- Calendar Names are display metadata, never identity. Defaults are independent for Events and To-dos, and explicit selection never falls back after failure.
+- Exact tools are the independently gated raw surface. Keep their descriptions requiring explicitly provided absolute hrefs and complete caller-authored resources; semantic revision-bound mutations use the frozen contract and MRTR where required.
 - Package versions are centralized in `Directory.Packages.props`; project files keep versionless `PackageReference` entries.
 - For Ical.Net, `.ics`, VTODO, or recurrence changes, load the repo-local `ical-net` skill before editing.
 

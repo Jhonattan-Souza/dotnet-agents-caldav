@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.jhonattan-souza/dotnet-agents-caldav",
-  "description": "MCP server for CalDAV task management — create, update, complete, and query tasks via CalDAV.",
+  "description": "MCP server for CalDAV Calendars, Events, and To-dos with revision-bound semantic and exact operations.",
   "version": "0.0.0",
   "packages": [
     {
@@ -43,21 +43,6 @@
         {
           "name": "CALDAV_DEFAULT_EVENT_CALENDAR_NAME",
           "description": "Display name of the default Calendar for Event operations (optional)",
-          "isRequired": false
-        },
-        {
-          "name": "CALDAV_TASK_LISTS",
-          "description": "Comma-separated list of task list hrefs to expose (optional; omit to auto-discover)",
-          "isRequired": false
-        },
-        {
-          "name": "CALDAV_DEFAULT_TASK_LIST",
-          "description": "Display name of the default task list to use when chat requests omit an explicit list name (optional)",
-          "isRequired": false
-        },
-        {
-          "name": "CALDAV_EXPOSE_ADVANCED_TOOLS",
-          "description": "Set to true to expose advanced href-based tools alongside the chat-safe surface (optional)",
           "isRequired": false
         },
         {

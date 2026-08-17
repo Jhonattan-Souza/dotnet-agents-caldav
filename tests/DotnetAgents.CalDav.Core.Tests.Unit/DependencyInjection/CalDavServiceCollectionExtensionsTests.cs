@@ -13,12 +13,12 @@ namespace DotnetAgents.CalDav.Core.Tests.Unit.DependencyInjection;
 public sealed class CalDavServiceCollectionExtensionsTests
 {
     [Fact]
-    public void AddCalDavTasks_DisablesAutomaticRedirectsOnTheConfiguredHandler()
+    public void AddCalDavCalendars_DisablesAutomaticRedirectsOnTheConfiguredHandler()
     {
         SocketsHttpHandler? handler = null;
         var services = new ServiceCollection();
         services.AddSingleton<IHttpMessageHandlerBuilderFilter>(new CapturingHandlerFilter(candidate => handler = candidate as SocketsHttpHandler));
-        services.AddCalDavTasks(options =>
+        services.AddCalDavCalendars(options =>
         {
             options.BaseUrl = "https://cal.example";
             options.Username = "user";
@@ -26,20 +26,20 @@ public sealed class CalDavServiceCollectionExtensionsTests
         });
         using var provider = services.BuildServiceProvider();
 
-        _ = provider.GetRequiredService<ICalDavClient>();
+        _ = provider.GetRequiredService<ICalendarClient>();
 
         handler.ShouldNotBeNull();
         handler.AllowAutoRedirect.ShouldBeFalse();
     }
 
     [Fact]
-    public void AddCalDavTasks_RecyclesIdleConnectionsBeforePinnedRadicaleTimeout()
+    public void AddCalDavCalendars_RecyclesIdleConnectionsBeforePinnedRadicaleTimeout()
     {
         SocketsHttpHandler? handler = null;
         var services = new ServiceCollection();
         services.AddSingleton<IHttpMessageHandlerBuilderFilter>(
             new CapturingHandlerFilter(candidate => handler = candidate as SocketsHttpHandler));
-        services.AddCalDavTasks(options =>
+        services.AddCalDavCalendars(options =>
         {
             options.BaseUrl = "https://cal.example";
             options.Username = "user";
@@ -47,7 +47,7 @@ public sealed class CalDavServiceCollectionExtensionsTests
         });
         using var provider = services.BuildServiceProvider();
 
-        _ = provider.GetRequiredService<ICalDavClient>();
+        _ = provider.GetRequiredService<ICalendarClient>();
 
         handler.ShouldNotBeNull();
         handler.PooledConnectionIdleTimeout.ShouldBe(TimeSpan.FromSeconds(20));
@@ -56,7 +56,7 @@ public sealed class CalDavServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public async Task AddCalDavTasks_RetriesTransientReadsAtMostThreeTotalAttempts()
+    public async Task AddCalDavCalendars_RetriesTransientReadsAtMostThreeTotalAttempts()
     {
         var handler = new CountingUnavailableHandler();
         using var provider = BuildProvider(handler);
@@ -70,7 +70,7 @@ public sealed class CalDavServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public async Task AddCalDavTasks_RetriesTransientCalDavReportAtMostThreeTotalAttempts()
+    public async Task AddCalDavCalendars_RetriesTransientCalDavReportAtMostThreeTotalAttempts()
     {
         var handler = new CountingUnavailableHandler();
         using var provider = BuildProvider(handler);
@@ -88,7 +88,7 @@ public sealed class CalDavServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public async Task AddCalDavTasks_RetriesTransientCalDavPropFindAtMostThreeTotalAttempts()
+    public async Task AddCalDavCalendars_RetriesTransientCalDavPropFindAtMostThreeTotalAttempts()
     {
         var handler = new CountingUnavailableHandler();
         using var provider = BuildProvider(handler);
@@ -101,20 +101,22 @@ public sealed class CalDavServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public async Task AddCalDavTasks_DoesNotRetryMutations()
+    public async Task AddCalDavCalendars_DoesNotRetryMutations()
     {
         var handler = new CountingUnavailableHandler();
         using var provider = BuildProvider(handler);
-        var client = provider.GetRequiredService<ICalDavClient>();
+        var client = provider.GetRequiredService<ICalendarClient>();
 
-        await Should.ThrowAsync<HttpRequestException>(() => client.DeleteTaskAsync(
-            "https://cal.example/tasks/a.ics", "r1", CancellationToken.None));
+        var result = await client.DeleteCalendarResourceAsync(
+            new CalendarResourceDeleteRequest("https://cal.example/tasks/a.ics", "\"r1\""),
+            CancellationToken.None);
 
+        result.Code.ShouldBe(CalendarResourceDeleteDispatchCode.PossiblyDispatched);
         handler.RequestCount.ShouldBe(1);
     }
 
     [Fact]
-    public async Task AddCalDavTasks_CallerCancellationStopsReadWithoutRetry()
+    public async Task AddCalDavCalendars_CallerCancellationStopsReadWithoutRetry()
     {
         var handler = new CancelingHandler();
         using var provider = BuildProvider(handler);
@@ -132,7 +134,7 @@ public sealed class CalDavServiceCollectionExtensionsTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddCalDavTasks(options =>
+        services.AddCalDavCalendars(options =>
         {
             options.BaseUrl = "https://cal.example";
             options.Username = "user";

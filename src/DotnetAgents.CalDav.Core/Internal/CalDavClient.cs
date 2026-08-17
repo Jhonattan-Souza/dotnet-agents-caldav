@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Buffers;
 using System.Net;
-using System.Net.Http.Headers;
 using System.Text;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Configuration;
@@ -15,14 +14,14 @@ using Microsoft.Extensions.Options;
 namespace DotnetAgents.CalDav.Core.Internal;
 
 /// <summary>
-/// HttpClient-based CalDAV client focused on VTODO operations.
+/// HttpClient-based CalDAV client for Calendar Object Resources.
 /// Handles PROPFIND, REPORT, GET, PUT, DELETE verbs with XML/iCalendar encoding.
 /// </summary>
-internal sealed class CalDavClient : ICalDavClient, ICalendarClient
+internal sealed class CalDavClient : ICalendarClient
 {
     private const int MaximumCalendarResourceBytes = 4 * 1024 * 1024;
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
-    private static readonly ActivitySource ActivitySource = new("DotnetAgents.CalDav", "0.1.0");
+    private static readonly ActivitySource ActivitySource = new("DotnetAgents.CalDav", "0.2.0");
     private static readonly HttpMethod PropFindMethod = new("PROPFIND");
     private static readonly HttpMethod ReportMethod = new("REPORT");
 
@@ -35,44 +34,6 @@ internal sealed class CalDavClient : ICalDavClient, ICalendarClient
         _httpClient = httpClient;
         _options = options;
         _logger = logger;
-    }
-
-    /// <inheritdoc/>
-    public async Task<IReadOnlyList<TaskList>> GetTaskListsAsync(CancellationToken cancellationToken)
-    {
-        using var activity = ActivitySource.StartActivity("caldav.get_task_lists", ActivityKind.Client);
-
-        _logger.LogDebug("Discovering task lists from {BaseUrl}", _options.Value.BaseUrl);
-
-        // Step 1: Find the calendar-home-set for the current user
-        var homeSetHref = await DiscoverCalendarHomeSetAsync(cancellationToken);
-        if (homeSetHref is null)
-        {
-            _logger.LogWarning("Could not discover calendar-home-set for {BaseUrl}", _options.Value.BaseUrl);
-            return [];
-        }
-
-        // Step 2: PROPFIND the calendar-home-set to list calendars (Depth: 1 to return child collections)
-        var propfindBody = DavRequestBuilder.BuildPropFindCalendarProperties();
-        var response = await SendPropFindAsync(homeSetHref, propfindBody, depth: 1, cancellationToken);
-
-        var taskLists = DavResponseParser.ParseTaskLists(response.Content);
-
-        // Step 3: Filter to only calendars supporting VTODO
-        var filtered = taskLists
-            .Where(tl => tl.SupportedComponents.Count == 0 || tl.SupportedComponents.Contains("VTODO", StringComparer.OrdinalIgnoreCase))
-            .ToList();
-
-        // Step 4: Apply optional TaskLists filter from configuration
-        var configuredFilter = _options.Value.TaskLists;
-        if (!string.IsNullOrWhiteSpace(configuredFilter))
-        {
-            var allowedHrefs = configuredFilter.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            filtered = filtered.Where(tl => allowedHrefs.Any(allowed => tl.Href.Contains(allowed, StringComparison.OrdinalIgnoreCase))).ToList();
-        }
-
-        _logger.LogInformation("Discovered {Count} task list(s)", filtered.Count);
-        return filtered;
     }
 
     /// <inheritdoc />
@@ -353,205 +314,6 @@ internal sealed class CalDavClient : ICalDavClient, ICalendarClient
 
     private sealed record BoundedContentRead(byte[]? Content, int ObservedByteCount);
 
-    /// <inheritdoc/>
-    public async Task<IReadOnlyList<TaskItem>> GetTasksAsync(string taskListHref, TaskQuery query, CancellationToken cancellationToken)
-    {
-        using var activity = ActivitySource.StartActivity("caldav.get_tasks", ActivityKind.Client);
-        activity?.SetTag("caldav.task_list_href", taskListHref);
-
-        _logger.LogDebug("Querying tasks from {TaskListHref}", taskListHref);
-
-        // Use server-side REPORT filtering for status when possible
-        var reportBody = query.Status switch
-        {
-            Models.TaskStatus.Completed => DavRequestBuilder.BuildCalendarQuery(completedOnly: true),
-            _ => DavRequestBuilder.BuildCalendarQuery()
-        };
-        var responseXml = (await SendReportAsync(taskListHref, reportBody, cancellationToken)).Content;
-
-        var calendarDataItems = DavResponseParser.ParseCalendarData(responseXml);
-        var tasks = new List<TaskItem>();
-
-        foreach (var (href, etag, iCalData) in calendarDataItems)
-        {
-            AddMatchingTasks(tasks, href, etag, iCalData, query);
-        }
-
-        _logger.LogDebug("Found {Count} task(s) in {TaskListHref}", tasks.Count, taskListHref);
-        return tasks;
-    }
-
-    private void AddMatchingTasks(List<TaskItem> tasks, string href, string? etag, string iCalData, TaskQuery query)
-    {
-        try
-        {
-            var items = TaskItemMapper.FromICalText(iCalData, etag);
-            foreach (var item in items)
-            {
-                var taskWithHref = item with { Href = href };
-                if (MatchesQuery(taskWithHref, query))
-                    tasks.Add(taskWithHref);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to parse iCalendar data for {Href}", href);
-        }
-    }
-
-    /// <inheritdoc/>
-    public async Task<TaskItem?> GetTaskAsync(string href, CancellationToken cancellationToken)
-    {
-        using var activity = ActivitySource.StartActivity("caldav.get_task", ActivityKind.Client);
-        activity?.SetTag("caldav.task_href", href);
-
-        _logger.LogDebug("Fetching task {Href}", href);
-
-        var request = new HttpRequestMessage(HttpMethod.Get, BuildUrl(href));
-        var response = await _httpClient.SendAsync(request, cancellationToken);
-
-        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
-        {
-            _logger.LogDebug("Task not found at {Href}", href);
-            return null;
-        }
-
-        response.EnsureSuccessStatusCode();
-
-        var etag = response.Headers.ETag?.Tag?.Trim('"');
-        var iCalData = await response.Content.ReadAsStringAsync(cancellationToken);
-
-        var items = TaskItemMapper.FromICalText(iCalData, etag);
-        var task = items.FirstOrDefault();
-
-        if (task is null)
-        {
-            _logger.LogDebug("No VTODO component found in iCalendar data for {Href}", href);
-            return null;
-        }
-
-        _logger.LogDebug("Fetched task {Uid} from {Href}", task.Uid, href);
-        return task with { Href = href };
-    }
-
-    /// <inheritdoc/>
-    public async Task<TaskItem> CreateTaskAsync(string taskListHref, TaskItem task, CancellationToken cancellationToken)
-    {
-        using var activity = ActivitySource.StartActivity("caldav.create_task", ActivityKind.Client);
-        activity?.SetTag("caldav.task_list_href", taskListHref);
-
-        _logger.LogDebug("Creating task in {TaskListHref}", taskListHref);
-
-        // Generate UID and href if not provided
-        var uid = string.IsNullOrEmpty(task.Uid) ? Guid.NewGuid().ToString() : task.Uid;
-        var taskWithUid = task with { Uid = uid };
-        var escapedUid = Uri.EscapeDataString(uid);
-        var resourceHref = $"{taskListHref.TrimEnd('/')}/{escapedUid}.ics";
-
-        var iCalText = TaskItemMapper.ToICalText(taskWithUid);
-
-        var request = new HttpRequestMessage(HttpMethod.Put, BuildUrl(resourceHref))
-        {
-            Content = new StringContent(iCalText, Encoding.UTF8, "text/calendar")
-        };
-        request.Headers.Add("If-None-Match", "*");
-
-        var response = await _httpClient.SendAsync(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
-
-        // Fetch the created task to get the server-assigned ETag and canonical href
-        var etag = response.Headers.ETag?.Tag?.Trim('"');
-        var location = response.Headers.Location?.OriginalString;
-        var canonicalHref = string.IsNullOrWhiteSpace(location) ? resourceHref : BuildUrl(location);
-
-        _logger.LogInformation("Created task {Uid} at {Href}", uid, canonicalHref);
-        return taskWithUid with { ETag = etag, Href = canonicalHref };
-    }
-
-    /// <inheritdoc/>
-    /// <remarks>
-    /// Assumes the task href remains stable across PUT updates.
-    /// If a server relocates resources on update, callers must re-discover the canonical href separately.
-    /// </remarks>
-    public async Task<TaskItem> UpdateTaskAsync(TaskItem task, CancellationToken cancellationToken)
-    {
-        using var activity = ActivitySource.StartActivity("caldav.update_task", ActivityKind.Client);
-        activity?.SetTag("caldav.task_href", task.Href);
-
-        _logger.LogDebug("Updating task {Uid} at {Href}", task.Uid, task.Href);
-
-        var iCalText = TaskItemMapper.ToICalText(task);
-
-        var request = new HttpRequestMessage(HttpMethod.Put, BuildUrl(task.Href))
-        {
-            Content = new StringContent(iCalText, Encoding.UTF8, "text/calendar")
-        };
-
-        // Use If-Match for optimistic concurrency when ETag is available
-        AddIfMatchHeader(request, task.ETag);
-
-        var response = await _httpClient.SendAsync(request, cancellationToken);
-
-        ThrowIfPreconditionFailed(response, task.Href);
-
-        response.EnsureSuccessStatusCode();
-
-        var etag = response.Headers.ETag?.Tag?.Trim('"') ?? task.ETag;
-
-        _logger.LogInformation("Updated task {Uid} at {Href}", task.Uid, task.Href);
-        return task with { ETag = etag };
-    }
-
-    /// <inheritdoc/>
-    public async Task DeleteTaskAsync(string href, string? etag, CancellationToken cancellationToken)
-    {
-        using var activity = ActivitySource.StartActivity("caldav.delete_task", ActivityKind.Client);
-        activity?.SetTag("caldav.task_href", href);
-
-        _logger.LogDebug("Deleting task at {Href}", href);
-
-        var request = new HttpRequestMessage(HttpMethod.Delete, BuildUrl(href));
-        AddIfMatchHeader(request, etag);
-
-        var response = await _httpClient.SendAsync(request, cancellationToken);
-
-        EnsureDeleteSucceeded(response, href);
-
-        _logger.LogInformation("Deleted task at {Href}", href);
-    }
-
-    private static void AddIfMatchHeader(HttpRequestMessage request, string? etag)
-    {
-        if (string.IsNullOrEmpty(etag))
-            return;
-
-        request.Headers.IfMatch.Add(new EntityTagHeaderValue($"\"{etag}\""));
-    }
-
-    private static void EnsureDeleteSucceeded(HttpResponseMessage response, string href)
-    {
-        if (response.StatusCode == System.Net.HttpStatusCode.PreconditionFailed)
-        {
-            var currentEtag = response.Headers.ETag?.Tag?.Trim('"');
-            throw new CalDavConflictException(href, currentEtag);
-        }
-
-        // 404 is ok — already deleted
-        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
-            return;
-
-        response.EnsureSuccessStatusCode();
-    }
-
-    private static void ThrowIfPreconditionFailed(HttpResponseMessage response, string href)
-    {
-        if (response.StatusCode != System.Net.HttpStatusCode.PreconditionFailed)
-            return;
-
-        var currentEtag = response.Headers.ETag?.Tag?.Trim('"');
-        throw new CalDavConflictException(href, currentEtag);
-    }
-
     private async Task<string?> DiscoverCalendarHomeSetAsync(CancellationToken cancellationToken, bool failOnNotFound = false)
     {
         var principalBody = DavRequestBuilder.BuildPropFindCalendarHomeSet();
@@ -817,27 +579,6 @@ internal sealed class CalDavClient : ICalDavClient, ICalendarClient
         return requestUri is null ? null : new Uri(requestUri, location).ToString();
     }
 
-    private string BuildUrl(string href)
-    {
-        if (href.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
-            href.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-        {
-            return href;
-        }
-
-        var baseUri = new Uri(_options.Value.BaseUrl.TrimEnd('/') + "/");
-
-        if (href.StartsWith('/'))
-        {
-            var origin = baseUri.GetLeftPart(UriPartial.Authority);
-            return origin + href;
-        }
-
-        var baseWithPath = new Uri(baseUri, baseUri.AbsolutePath.TrimEnd('/') + "/");
-        var resolved = new Uri(baseWithPath, href);
-        return resolved.AbsoluteUri;
-    }
-
     private bool TryCanonicalizeCalendarHref(Uri homeSetUri, string href, out string canonicalHref)
     {
         canonicalHref = string.Empty;
@@ -914,46 +655,4 @@ internal sealed class CalDavClient : ICalDavClient, ICalendarClient
         return relativePath.Length > 0 && !relativePath.Contains('/');
     }
 
-    private static bool MatchesQuery(TaskItem task, TaskQuery query)
-    {
-        return MatchesStatus(task, query)
-            && MatchesDueRange(task, query)
-            && MatchesTextSearch(task, query)
-            && MatchesCategory(task, query);
-    }
-
-    private static bool MatchesStatus(TaskItem task, TaskQuery query)
-    {
-        return query.Status is null || task.Status == query.Status;
-    }
-
-    private static bool MatchesDueRange(TaskItem task, TaskQuery query)
-    {
-        if (query.DueAfter is not null && (task.Due is null || task.Due < query.DueAfter))
-            return false;
-
-        if (query.DueBefore is not null && (task.Due is null || task.Due > query.DueBefore))
-            return false;
-
-        return true;
-    }
-
-    private static bool MatchesTextSearch(TaskItem task, TaskQuery query)
-    {
-        if (string.IsNullOrWhiteSpace(query.TextSearch))
-            return true;
-
-        var search = query.TextSearch;
-        var summaryMatch = task.Summary.Contains(search, StringComparison.OrdinalIgnoreCase);
-        var descMatch = task.Description?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false;
-        return summaryMatch || descMatch;
-    }
-
-    private static bool MatchesCategory(TaskItem task, TaskQuery query)
-    {
-        if (string.IsNullOrWhiteSpace(query.Category))
-            return true;
-
-        return task.Categories.Contains(query.Category, StringComparer.OrdinalIgnoreCase);
-    }
 }

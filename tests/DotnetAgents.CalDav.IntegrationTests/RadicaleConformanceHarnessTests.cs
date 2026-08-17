@@ -653,7 +653,7 @@ public sealed class RadicaleConformanceHarnessTests(RadicaleConformanceFixture f
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddCalDavTasks(options =>
+        services.AddCalDavCalendars(options =>
         {
             options.BaseUrl = baseUrl;
             options.CalendarHrefs = calendarHref;
