@@ -10,6 +10,18 @@ internal sealed record CalendarOccurrencePatchTarget(
     CalendarContentComponent? Component,
     CalendarEntityPatchResult? Failure);
 
+internal sealed record CalendarOccurrenceAdditionValidation(
+    bool ShouldAdd,
+    CalendarEntityPatchResult? Failure);
+
+internal sealed record CalendarOccurrenceMembershipInspection(
+    CalendarContentComponent? Master,
+    CalendarContentComponent? Individual,
+    CalendarContentComponent? Range,
+    bool Exists,
+    bool IsExcluded,
+    CalendarEntityPatchResult? Failure);
+
 /// <summary>Materializes the complete individual override addressed by one original Recurrence Identity.</summary>
 internal static class CalendarOccurrencePatchBuilder
 {
@@ -21,6 +33,127 @@ internal static class CalendarOccurrencePatchBuilder
         new HashSet<string>(["VALUE", "TZID", "RANGE"], StringComparer.OrdinalIgnoreCase);
     private static readonly IReadOnlySet<string> RemovedMembershipProperties =
         new HashSet<string>(["RRULE", "RDATE", "EXDATE", "RECURRENCE-ID"], StringComparer.OrdinalIgnoreCase);
+
+    public static CalendarOccurrenceAdditionValidation ValidateAddition(
+        CalendarResourceSnapshot snapshot,
+        CalendarContentDocument document,
+        CalendarTemporalValue identity,
+        CalendarEntityKind kind,
+        CancellationToken cancellationToken)
+    {
+        var inspection = InspectMembership(snapshot, document, identity, kind, cancellationToken);
+        if (inspection.Failure is not null)
+            return new(false, inspection.Failure);
+        return inspection.IsExcluded
+            ? AdditionFailure(CalendarEntityPatchCode.InvalidInput, snapshot)
+            : new(!inspection.Exists, null);
+    }
+
+    public static CalendarOccurrenceMembershipInspection InspectMembership(
+        CalendarResourceSnapshot snapshot,
+        CalendarContentDocument document,
+        CalendarTemporalValue identity,
+        CalendarEntityKind kind,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (!HasValidIdentityLexicalForm(identity))
+                return InspectionFailure(CalendarEntityPatchCode.InvalidInput, snapshot);
+            if (CalendarOccurrenceEvaluator.HasUnevaluableRecurrenceStructure(snapshot))
+                return InspectionFailure(CalendarEntityPatchCode.RecurrenceUnevaluable, snapshot);
+            var master = document.GetMasterComponent(kind);
+            var masterStart = GetProperty(document, master, "DTSTART");
+            if (!HasValidIdentityFamily(masterStart, identity))
+                return InspectionFailure(CalendarEntityPatchCode.InvalidInput, snapshot);
+            if (IsTemporallyUnresolved(snapshot, identity))
+                return InspectionFailure(CalendarEntityPatchCode.TemporalUnresolved, snapshot);
+            if (HasRecurrencePeriodDate(document, master))
+                return InspectionFailure(CalendarEntityPatchCode.UnsupportedCapability, snapshot);
+
+            var overrides = GetOverrides(document, kind);
+            EnsureKnownIdentityLimit(document, master, overrides);
+            var key = identity.GetCanonicalSortKey();
+            var individual = FindIndividual(overrides, key);
+            var range = FindRange(overrides, key);
+            var exists = CalendarPatchValueSerializer.ParseTemporal(masterStart!).GetCanonicalSortKey() == key
+                || overrides.Any(item => item.Key == key)
+                || IsRecurrenceDate(document, master, key)
+                || IsGeneratedByRule(document, master, identity, overrides, cancellationToken);
+            return new(master, individual, range, exists, IsExcluded(document, master, key), null);
+        }
+        catch (EvaluationLimitExceededException)
+        {
+            return InspectionFailure(CalendarEntityPatchCode.LimitExhausted, snapshot);
+        }
+        catch (Exception exception) when (exception is FormatException
+            or ArgumentException
+            or InvalidOperationException
+            or EvaluationException
+            or OverflowException)
+        {
+            return InspectionFailure(CalendarEntityPatchCode.InvalidCalendarData, snapshot);
+        }
+    }
+
+    public static CalendarOccurrencePatchTarget MaterializeIndividual(
+        CalendarResourceSnapshot snapshot,
+        CalendarContentDocument document,
+        CalendarOccurrenceMembershipInspection inspection,
+        CalendarTemporalValue identity,
+        CalendarEntityKind kind)
+    {
+        try
+        {
+            if (!inspection.Exists || inspection.Master is null)
+                return Failed(CalendarEntityPatchCode.NotFound, snapshot);
+            if (inspection.Individual is not null)
+            {
+                return CompleteSupportedIndividual(
+                    snapshot,
+                    document,
+                    inspection.Master,
+                    inspection.Individual,
+                    inspection.Range,
+                    identity,
+                    kind);
+            }
+
+            var materialized = MaterializeOverride(
+                snapshot,
+                document,
+                inspection.Master,
+                inspection.Range,
+                identity,
+                kind);
+            return new(materialized.Document, materialized.Component, null);
+        }
+        catch (CalendarTemporalUnresolvedException)
+        {
+            return Failed(CalendarEntityPatchCode.TemporalUnresolved, snapshot);
+        }
+        catch (Exception exception) when (exception is FormatException
+            or ArgumentException
+            or InvalidOperationException
+            or OverflowException)
+        {
+            return Failed(CalendarEntityPatchCode.InvalidCalendarData, snapshot);
+        }
+    }
+
+    private static CalendarOccurrenceAdditionValidation AdditionFailure(
+        CalendarEntityPatchCode code,
+        CalendarResourceSnapshot snapshot) => new(false, Failed(code, snapshot).Failure);
+
+    private static CalendarOccurrenceMembershipInspection InspectionFailure(
+        CalendarEntityPatchCode code,
+        CalendarResourceSnapshot snapshot) => new(null, null, null, false, false, Failed(code, snapshot).Failure);
+
+    private static bool IsTemporallyUnresolved(
+        CalendarResourceSnapshot snapshot,
+        CalendarTemporalValue identity) => identity.Kind == CalendarTemporalKind.ZonedDateTime
+        && new CalendarTemporalResolver(snapshot.CalendarProperties, snapshot.AuthoritativeUtf8.Span)
+            .Resolve(ToCalDateTime(identity)).Unresolved;
 
     public static CalendarOccurrencePatchTarget SelectTarget(
         CalendarResourceSnapshot snapshot,
@@ -420,20 +553,32 @@ internal static class CalendarOccurrencePatchBuilder
             : AddNominalOffset(identity, GetRangeOffset(sourceDocument, sourceComponent, sourceStart));
         var endName = kind == CalendarEntityKind.Event ? "DTEND" : "DUE";
         var sourceEndProperty = GetProperty(sourceDocument, sourceComponent, endName);
-        var effectiveEnd = sourceEndProperty is null
-            ? null
-            : CalendarDurationArithmetic.ShiftExplicitEnd(
-                sourceStart,
-                CalendarPatchValueSerializer.ParseTemporal(sourceEndProperty),
-                effectiveStart,
-                new CalendarTemporalResolver(snapshot.CalendarProperties, snapshot.AuthoritativeUtf8.Span));
-        if (sourceEndProperty is not null && effectiveEnd is null)
-            throw new FormatException("The inherited occurrence span could not be resolved.");
+        var effectiveEnd = ResolveInheritedEnd(snapshot, sourceStart, sourceEndProperty, effectiveStart);
         document = SetTemporalProperty(document, component, "DTSTART", effectiveStart);
         if (effectiveEnd is null)
             return document;
         component = document.GetComponent(component.Path);
         return SetTemporalProperty(document, component, endName, effectiveEnd);
+    }
+
+    private static CalendarTemporalValue? ResolveInheritedEnd(
+        CalendarResourceSnapshot snapshot,
+        CalendarTemporalValue sourceStart,
+        CalendarContentProperty? sourceEndProperty,
+        CalendarTemporalValue effectiveStart)
+    {
+        if (sourceEndProperty is null)
+            return null;
+        var shifted = CalendarDurationArithmetic.ShiftExplicitEndResolution(
+            sourceStart,
+            CalendarPatchValueSerializer.ParseTemporal(sourceEndProperty),
+            effectiveStart,
+            new CalendarTemporalResolver(snapshot.CalendarProperties, snapshot.AuthoritativeUtf8.Span));
+        if (shifted.Value is not null)
+            return shifted.Value;
+        if (shifted.Instant.Unresolved || shifted.Instant.Skipped)
+            throw new CalendarTemporalUnresolvedException();
+        throw new FormatException("The inherited component span must be strictly positive.");
     }
 
     private static CalendarContentDocument SetTemporalProperty(
@@ -522,4 +667,8 @@ internal static class CalendarOccurrencePatchBuilder
     private sealed record MaterializedOverride(
         CalendarContentDocument Document,
         CalendarContentComponent Component);
+
+    private sealed class CalendarTemporalUnresolvedException : FormatException
+    {
+    }
 }

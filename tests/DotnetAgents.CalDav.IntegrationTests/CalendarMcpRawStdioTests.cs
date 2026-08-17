@@ -325,6 +325,39 @@ public sealed class CalendarMcpRawStdioTests
     }
 
     [Fact]
+    public async Task CalendarOccurrenceMutation_RootDuplicateArgumentsReturnRedactedTypedInvalidInputBeforeNetwork()
+    {
+        const string request = """
+            {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"calendar_occurrences.cancel","arguments":{"snapshot":{"href":"https://cal.example/tasks/private-a.ics","entityUid":"private-a","entityKind":"todo","entityTag":"\"r1\""},"snapshot":{"href":"https://cal.example/tasks/private-b.ics","entityUid":"private-b","entityKind":"todo","entityTag":"\"r2\""},"recurrenceIdentity":{"value":{"kind":"utcDateTime","value":"2026-08-19T09:00:00Z"}}}}}
+            """;
+
+        var result = await InvokeRawAsync(request);
+
+        AssertTypedError(result, "invalid_input", "schemaLexicalDiscriminator");
+        result.ToString().ShouldNotContain("private-a");
+        result.ToString().ShouldNotContain("private-b");
+    }
+
+    [Fact]
+    public async Task CalendarOccurrenceMutation_OversizedArgumentsReturnRedactedAdmissionFailureBeforeNetwork()
+    {
+        var marker = new string('x', CalendarOccurrenceMutationTools.MaximumArgumentBytes);
+        var request = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{"
+            + "\"name\":\"calendar_occurrences.exclude\",\"arguments\":{"
+            + "\"snapshot\":{\"href\":\"https://cal.example/tasks/a.ics\",\"entityUid\":\"a\","
+            + "\"entityKind\":\"todo\",\"entityTag\":\"\\\"r1\\\"\"},"
+            + "\"recurrenceIdentity\":{\"value\":{\"kind\":\"utcDateTime\","
+            + "\"value\":\"2026-08-19T09:00:00Z\"}},\"privatePadding\":\""
+            + marker
+            + "\"}}}";
+
+        var result = await InvokeRawAsync(request);
+
+        AssertTypedError(result, "payload_too_large", "admissionAndPayload");
+        result.ToString().ShouldNotContain(marker);
+    }
+
+    [Fact]
     public async Task CalendarEntityQuery_NormalInvalidArgumentsReturnTypedInvalidInputBeforeNetwork()
     {
         const string request = """

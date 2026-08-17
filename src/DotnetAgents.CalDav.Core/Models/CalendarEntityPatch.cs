@@ -151,7 +151,8 @@ public enum CalendarEntityPatchCode
     FidelityFailure,
     CommittedButUnverified,
     CommittedButConcurrencyUnavailable,
-    Indeterminate
+    Indeterminate,
+    TemporalUnresolved
 }
 
 /// <summary>Earliest completed validation or execution phase that produced a patch outcome.</summary>

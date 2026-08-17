@@ -171,7 +171,7 @@ internal static class CalendarEntityPatchEditor
         return patch with { End = endpointPatch };
     }
 
-    private static (byte[]? AuthoritativeUtf8, CalendarEntityPatchResult? Failure) FinishEdit(
+    internal static (byte[]? AuthoritativeUtf8, CalendarEntityPatchResult? Failure) FinishEdit(
         CalendarResourceSnapshot snapshot,
         CalendarContentDocument document,
         CalendarContentComponent master,

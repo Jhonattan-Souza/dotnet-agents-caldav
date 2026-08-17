@@ -61,11 +61,18 @@ Add this MCP server to VS Code, Claude Desktop, Cursor, or any MCP client:
 - `calendar_entities.query` — Query bounded persisted Event and To-do snapshots across default, selected, or explicit-all Calendar Scope.
 - `calendar_occurrences.query` — Expand Event and To-do occurrences locally within a required half-open UTC window, using an explicit IANA evaluation time zone only when floating or date-only values require it.
 - `events.create` — Create one Event in a selected Calendar.
+- `events.patch` — Apply a revision-bound semantic patch to one Event resource.
 - `todos.create` — Create one To-do in a selected Calendar.
+- `todos.patch` — Apply a revision-bound semantic patch to one To-do resource.
+- `calendar_occurrences.add` — Add one explicit RDATE identity.
+- `calendar_occurrences.exclude` — Add one exact EXDATE while preserving any override.
+- `calendar_occurrences.restore_exclusion` — Remove only one exact EXDATE.
+- `calendar_occurrences.cancel` — Create or update one complete cancelled override.
+- `calendar_occurrences.restore_cancellation` — Remove only cancelled status from one override.
 - `calendar_resources.delete` — Delete an entire resource from an explicitly supplied revision reference (href, UID, kind, and exact strong ETag) after MCP MRTR review and confirmation; success requires verified absence.
 - `calendar_resources.exact_get` — Opt-in exact read through a protected MCP resource link; enable with `CALDAV_EXPOSE_EXACT_TOOLS=true`.
 
-The staged default catalog is `calendars.list`, `calendar_entities.query`, `calendar_occurrences.query`, `calendar_resources.get`, `events.create`, `todos.create`, `calendar_resources.delete`, `list_task_lists`, `show_tasks`, `add_task`, `find_tasks`, `complete_task_by_summary`, and `delete_task_by_summary`. Set `CALDAV_EXPOSE_ADVANCED_TOOLS=true` to also expose the legacy href-based advanced tools.
+The staged default catalog is `calendars.list`, `calendar_entities.query`, `calendar_occurrences.query`, `calendar_resources.get`, `events.create`, `events.patch`, `todos.create`, `todos.patch`, `calendar_occurrences.add`, `calendar_occurrences.exclude`, `calendar_occurrences.restore_exclusion`, `calendar_occurrences.cancel`, `calendar_occurrences.restore_cancellation`, `calendar_resources.delete`, `list_task_lists`, `show_tasks`, `add_task`, `find_tasks`, `complete_task_by_summary`, and `delete_task_by_summary`. Set `CALDAV_EXPOSE_ADVANCED_TOOLS=true` to also expose the legacy href-based advanced tools.
 
 ## Supported servers
 

@@ -58,6 +58,11 @@ public sealed class CalendarMcpStdioIntegrationTests
             "events.patch",
             "todos.create",
             "todos.patch",
+            "calendar_occurrences.add",
+            "calendar_occurrences.exclude",
+            "calendar_occurrences.restore_exclusion",
+            "calendar_occurrences.cancel",
+            "calendar_occurrences.restore_cancellation",
             "calendar_resources.delete",
             "list_task_lists",
             "show_tasks",
@@ -629,6 +634,69 @@ public sealed class CalendarMcpStdioIntegrationTests
     }
 
     [Fact]
+    public async Task CalendarOccurrenceMembership_RoundTripsAllDirectMutationsOverNativeStdioAndRadicale()
+    {
+        const string uid = "stdio-occurrence-membership";
+        var href = await PutResourceAsync("stdio-occurrence-membership.ics", Todo(
+            uid,
+            "SUMMARY:Membership series\r\nDTSTART:20260818T090000Z\r\n"
+            + "DUE:20260818T100000Z\r\nRRULE:FREQ=DAILY;COUNT=2\r\nX-KEEP:opaque\r\n"));
+        var observed = await GetResourceAsync(href);
+        var revision = new ObservedRevision(href, observed.EntityTag);
+        var stderr = new ConcurrentQueue<string>();
+        await using var client = await CreateClientAsync(stderr, exposeExact: false);
+
+        revision = AssertCommittedCreate(
+            await CallOccurrenceMutationAsync(client, "add", revision, uid, "2026-08-20T09:00:00Z"),
+            "todo",
+            uid,
+            $"{_fixture.BaseUrl}{_fixture.TaskListHref}");
+        revision = AssertCommittedCreate(
+            await CallOccurrenceMutationAsync(client, "exclude", revision, uid, "2026-08-19T09:00:00Z"),
+            "todo",
+            uid,
+            $"{_fixture.BaseUrl}{_fixture.TaskListHref}");
+        revision = AssertCommittedCreate(
+            await CallOccurrenceMutationAsync(client, "cancel", revision, uid, "2026-08-19T09:00:00Z"),
+            "todo",
+            uid,
+            $"{_fixture.BaseUrl}{_fixture.TaskListHref}");
+        revision = AssertCommittedCreate(
+            await CallOccurrenceMutationAsync(
+                client,
+                "restore_cancellation",
+                revision,
+                uid,
+                "2026-08-19T09:00:00Z"),
+            "todo",
+            uid,
+            $"{_fixture.BaseUrl}{_fixture.TaskListHref}");
+        revision = AssertCommittedCreate(
+            await CallOccurrenceMutationAsync(
+                client,
+                "restore_exclusion",
+                revision,
+                uid,
+                "2026-08-19T09:00:00Z"),
+            "todo",
+            uid,
+            $"{_fixture.BaseUrl}{_fixture.TaskListHref}");
+
+        observed = await GetResourceAsync(href);
+        observed.EntityTag.ShouldBe(revision.EntityTag);
+        var stored = Encoding.UTF8.GetString(observed.Utf8);
+        stored.ShouldContain("RDATE:20260820T090000Z");
+        stored.ShouldContain("RECURRENCE-ID:20260819T090000Z");
+        stored.ShouldContain("SUMMARY:Membership series");
+        stored.ShouldContain("X-KEEP:opaque");
+        stored.ShouldNotContain("EXDATE:20260819T090000Z");
+        stored.ShouldNotContain("STATUS:CANCELLED");
+        stored.Split($"UID:{uid}", StringSplitOptions.None).Length.ShouldBe(3);
+        stderr.ShouldBeEmpty();
+        await DeleteResourceAsync(href, revision.EntityTag);
+    }
+
+    [Fact]
     public async Task CalendarResourceDelete_ConfirmedMrtrDeletesOneReviewedResourceOverStdio()
     {
         const string content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Integration//EN\r\nBEGIN:VTODO\r\nUID:stdio-delete-1\r\nDTSTAMP:20260815T120000Z\r\nSUMMARY:Reviewed delete\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
@@ -766,6 +834,11 @@ public sealed class CalendarMcpStdioIntegrationTests
             "events.patch",
             "todos.create",
             "todos.patch",
+            "calendar_occurrences.add",
+            "calendar_occurrences.exclude",
+            "calendar_occurrences.restore_exclusion",
+            "calendar_occurrences.cancel",
+            "calendar_occurrences.restore_cancellation",
             "calendar_resources.delete",
             "calendar_resources.exact_get",
             "list_task_lists",
@@ -952,6 +1025,33 @@ public sealed class CalendarMcpStdioIntegrationTests
                 ["to"] = new Dictionary<string, object?> { ["kind"] = "utcDateTime", ["value"] = to }
             },
             cancellationToken: TestContext.Current.CancellationToken);
+
+    private static async Task<CallToolResult> CallOccurrenceMutationAsync(
+        McpClient client,
+        string operation,
+        ObservedRevision revision,
+        string uid,
+        string identity) => await client.CallToolAsync(
+        $"calendar_occurrences.{operation}",
+        new Dictionary<string, object?>
+        {
+            ["snapshot"] = new Dictionary<string, object?>
+            {
+                ["href"] = revision.Href,
+                ["entityUid"] = uid,
+                ["entityKind"] = "todo",
+                ["entityTag"] = revision.EntityTag
+            },
+            ["recurrenceIdentity"] = new Dictionary<string, object?>
+            {
+                ["value"] = new Dictionary<string, object?>
+                {
+                    ["kind"] = "utcDateTime",
+                    ["value"] = identity
+                }
+            }
+        },
+        cancellationToken: TestContext.Current.CancellationToken);
 
     private async Task DeleteResourceAsync(string href, string? entityTag = null)
     {
