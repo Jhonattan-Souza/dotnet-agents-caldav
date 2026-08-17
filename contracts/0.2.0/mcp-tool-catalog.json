@@ -3447,7 +3447,7 @@
           "format": "uri"
         },
         "recurrenceSet": {
-          "$ref": "#/$defs/recurrenceSetInput"
+          "$ref": "#/$defs/eventRecurrenceSetInput"
         },
         "structuredData": {
           "$ref": "#/$defs/structuredData"
@@ -3488,10 +3488,94 @@
           }
         },
         "recurrenceSet": {
-          "$ref": "#/$defs/recurrenceSetInput"
+          "$ref": "#/$defs/todoRecurrenceSetInput"
         },
         "structuredData": {
           "$ref": "#/$defs/structuredData"
+        }
+      }
+    },
+    "eventOverrideInputFields": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/eventInputFields"
+        },
+        {
+          "not": {
+            "required": [
+              "recurrenceSet"
+            ]
+          }
+        }
+      ]
+    },
+    "todoOverrideInputFields": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/todoInputFields"
+        },
+        {
+          "not": {
+            "required": [
+              "recurrenceSet"
+            ]
+          }
+        }
+      ]
+    },
+    "eventRecurrenceOverrideInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recurrenceIdentity",
+        "status",
+        "fields"
+      ],
+      "properties": {
+        "recurrenceIdentity": {
+          "$ref": "#/$defs/recurrenceIdentity"
+        },
+        "range": {
+          "enum": [
+            "this-and-future"
+          ]
+        },
+        "status": {
+          "enum": [
+            "active",
+            "cancelled"
+          ]
+        },
+        "fields": {
+          "$ref": "#/$defs/eventOverrideInputFields"
+        }
+      }
+    },
+    "todoRecurrenceOverrideInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recurrenceIdentity",
+        "status",
+        "fields"
+      ],
+      "properties": {
+        "recurrenceIdentity": {
+          "$ref": "#/$defs/recurrenceIdentity"
+        },
+        "range": {
+          "enum": [
+            "this-and-future"
+          ]
+        },
+        "status": {
+          "enum": [
+            "active",
+            "cancelled"
+          ]
+        },
+        "fields": {
+          "$ref": "#/$defs/todoOverrideInputFields"
         }
       }
     },
@@ -3993,6 +4077,51 @@
         }
       }
     },
+    "recurrenceDateInput": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/temporalValue"
+        },
+        {
+          "$ref": "#/$defs/recurrencePeriodInput"
+        }
+      ]
+    },
+    "recurrencePeriodInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "start"
+      ],
+      "properties": {
+        "kind": {
+          "const": "period"
+        },
+        "start": {
+          "$ref": "#/$defs/temporalValue"
+        },
+        "end": {
+          "$ref": "#/$defs/temporalValue"
+        },
+        "duration": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "end"
+          ]
+        },
+        {
+          "required": [
+            "duration"
+          ]
+        }
+      ]
+    },
     "recurrenceSetInput": {
       "type": "object",
       "additionalProperties": false,
@@ -4017,6 +4146,62 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/recurrenceOverride"
+          }
+        }
+      }
+    },
+    "eventRecurrenceSetInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rrule": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rdates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/recurrenceDateInput"
+          }
+        },
+        "exdates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/temporalValue"
+          }
+        },
+        "overrides": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/eventRecurrenceOverrideInput"
+          }
+        }
+      }
+    },
+    "todoRecurrenceSetInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rrule": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rdates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/recurrenceDateInput"
+          }
+        },
+        "exdates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/temporalValue"
+          }
+        },
+        "overrides": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/todoRecurrenceOverrideInput"
           }
         }
       }

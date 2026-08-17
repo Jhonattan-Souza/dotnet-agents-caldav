@@ -46,16 +46,17 @@ internal sealed class CalendarEntityCreateEngine(
         var prevalidation = PrevalidateDestination(request.Destination);
         if (prevalidation is not null)
             return prevalidation;
+        var contentValidation = PrevalidateEventContent(request);
+        if (contentValidation is not null)
+            return contentValidation;
+        if (HasRecurrencePeriod(request.Fields.RecurrenceSet?.RecurrenceDates))
+            return Failure(CalendarEntityCreateCode.UnsupportedCapability);
 
         var selection = await SelectCalendarAsync(request.Destination, CalendarEntityKind.Event, cancellationToken);
         if (selection.Code != CalendarSelectionCode.Success)
             return SelectionFailure(selection);
         if (selection.Calendar!.EventSupport != EntityKindSupport.Advertised)
             return Failure(CalendarEntityCreateCode.UnsupportedCapability, selection.Candidates);
-        var contentValidation = PrevalidateEventContent(request);
-        if (contentValidation is not null)
-            return contentValidation;
-
         return await CreateEventInCalendarAsync(selection.Calendar, request, startedTimestamp, cancellationToken);
     }
 
@@ -72,16 +73,17 @@ internal sealed class CalendarEntityCreateEngine(
         var prevalidation = PrevalidateDestination(request.Destination);
         if (prevalidation is not null)
             return prevalidation;
+        var contentValidation = PrevalidateTodoContent(request);
+        if (contentValidation is not null)
+            return contentValidation;
+        if (HasRecurrencePeriod(request.Fields.RecurrenceSet?.RecurrenceDates))
+            return Failure(CalendarEntityCreateCode.UnsupportedCapability);
 
         var selection = await SelectCalendarAsync(request.Destination, CalendarEntityKind.Todo, cancellationToken);
         if (selection.Code != CalendarSelectionCode.Success)
             return SelectionFailure(selection);
         if (selection.Calendar!.TodoSupport != EntityKindSupport.Advertised)
             return Failure(CalendarEntityCreateCode.UnsupportedCapability, selection.Candidates);
-        var contentValidation = PrevalidateTodoContent(request);
-        if (contentValidation is not null)
-            return contentValidation;
-
         return await CreateTodoInCalendarAsync(selection.Calendar, request, startedTimestamp, cancellationToken);
     }
 
@@ -405,6 +407,10 @@ internal sealed class CalendarEntityCreateEngine(
                 ? Failure(CalendarEntityCreateCode.PayloadTooLarge)
                 : null;
         }
+        catch (CalendarRecurrenceUnevaluableException)
+        {
+            return Failure(CalendarEntityCreateCode.RecurrenceUnevaluable);
+        }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
             return Failure(CalendarEntityCreateCode.InvalidCalendarData);
@@ -542,6 +548,9 @@ internal sealed class CalendarEntityCreateEngine(
             CalendarSelectionCode.OutsideScope => CalendarEntityCreateCode.OutsideScope,
             _ => CalendarEntityCreateCode.UnsupportedCapability
         }, selection.Candidates);
+
+    private static bool HasRecurrencePeriod(IReadOnlyList<CalendarRecurrenceDateCreate>? recurrenceDates) =>
+        recurrenceDates?.Any(date => date.Period is not null) == true;
 
     private static CalendarEntityCreateResult Failure(
         CalendarEntityCreateCode code,

@@ -63,7 +63,6 @@ public sealed class ContractCatalogTests
             .ShouldBe("#/$defs/eventCreateEntity");
         catalog["$defs"]!["todoCreateInput"]!["properties"]!["entity"]!["$ref"]!.GetValue<string>()
             .ShouldBe("#/$defs/todoCreateEntity");
-
         var temporalKinds = catalog["$defs"]!["temporalValue"]!["oneOf"]!.AsArray()
             .Select(value => value!["properties"]!["kind"]!["const"]!.GetValue<string>()).ToArray();
         temporalKinds.ShouldBe(["date", "floatingDateTime", "utcDateTime", "zonedDateTime"]);
@@ -159,6 +158,21 @@ public sealed class ContractCatalogTests
         catalog["$defs"]!["errorOutcome"]!["properties"]!["category"]!["enum"]!.AsArray().Count.ShouldBe(8);
         catalog["$defs"]!["errorOutcome"]!["properties"]!["phase"]!["enum"]!.AsArray().Count.ShouldBe(10);
         FindOpenSchemaNodes(catalog).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Mcp_catalog_freezes_kind_specific_create_recurrence_without_changing_read_or_patch_shapes()
+    {
+        var catalog = ReadJson("mcp-tool-catalog.json");
+
+        AssertCreateRecurrenceSchema(catalog, "event");
+        AssertCreateRecurrenceSchema(catalog, "todo");
+        AssertPatchRecurrenceSchema(catalog, "event");
+        AssertPatchRecurrenceSchema(catalog, "todo");
+        catalog["$defs"]!["recurrenceDateInput"]!["oneOf"]!.AsArray().Count.ShouldBe(2);
+        catalog["$defs"]!["recurrencePeriodInput"]!["oneOf"]!.AsArray().Count.ShouldBe(2);
+        catalog["$defs"]!["recurrenceOverride"]!["properties"]!.AsObject().ShouldContainKey("entityKind");
+        catalog["$defs"]!["recurrenceOverride"]!["properties"]!.AsObject().ShouldNotContainKey("fields");
     }
 
     [Fact]
@@ -387,6 +401,30 @@ public sealed class ContractCatalogTests
 
     private static JsonObject FindTool(JsonObject catalog, string name) =>
         catalog["tools"]!.AsArray().Single(tool => tool!["name"]!.GetValue<string>() == name)!.AsObject();
+
+    private static void AssertCreateRecurrenceSchema(JsonObject catalog, string kind)
+    {
+        var recurrenceName = $"{kind}RecurrenceSetInput";
+        var overrideName = $"{kind}RecurrenceOverrideInput";
+        catalog["$defs"]![$"{kind}InputFields"]!["properties"]!["recurrenceSet"]!["$ref"]!
+            .GetValue<string>().ShouldBe($"#/$defs/{recurrenceName}");
+        catalog["$defs"]![recurrenceName]!["properties"]!["overrides"]!["items"]!["$ref"]!
+            .GetValue<string>().ShouldBe($"#/$defs/{overrideName}");
+        var recurrenceOverride = catalog["$defs"]![overrideName]!.AsObject();
+        recurrenceOverride["additionalProperties"]!.GetValue<bool>().ShouldBeFalse();
+        recurrenceOverride["properties"]!.AsObject().ShouldNotContainKey("entityKind");
+        recurrenceOverride["properties"]!.AsObject().ShouldNotContainKey("uid");
+        recurrenceOverride["required"]!.ToJsonString().ShouldContain("fields");
+    }
+
+    private static void AssertPatchRecurrenceSchema(JsonObject catalog, string kind)
+    {
+        var recurrenceSet = catalog["$defs"]![$"{kind}ScalarPatch"]!["oneOf"]!.AsArray()
+            .Where(node => node!["properties"]?["field"]?["const"]?.GetValue<string>() == "recurrenceSet")
+            .Single(node => node!["properties"]?["operation"]?["const"]?.GetValue<string>() == "set");
+        recurrenceSet!["properties"]!["value"]!["$ref"]!.GetValue<string>()
+            .ShouldBe("#/$defs/recurrenceSetInput");
+    }
 
     private static string[] ScalarFields(JsonNode scalarPatch) => scalarPatch["oneOf"]!.AsArray()
         .Select(branch => branch!["properties"]!["field"]!["const"]!.GetValue<string>())

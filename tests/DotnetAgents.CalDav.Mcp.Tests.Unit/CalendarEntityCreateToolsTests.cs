@@ -454,6 +454,37 @@ public sealed class CalendarEntityCreateToolsTests
     }
 
     [Fact]
+    public async Task CreateTodoRawAsync_MapsRdateOnlyExclusionAndCompleteOverride()
+    {
+        var service = Substitute.For<ICalendarService>();
+        CalendarTodoCreateRequest? observed = null;
+        service.CreateTodoAsync(Arg.Do<CalendarTodoCreateRequest>(request => observed = request), Arg.Any<CancellationToken>())
+            .Returns(CalendarEntityCreateResult.Success(TodoSnapshot()));
+        var sut = new CalendarEntityCreateTools(service, TimeProvider.System);
+        var arguments = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+            """
+            {"destination":{"mode":"default"},"entity":{"kind":"todo","fields":{
+              "summary":"Review","start":{"kind":"date","value":"2026-08-17"},
+              "recurrenceSet":{"rdates":[{"kind":"date","value":"2026-08-24"}],
+                "exdates":[{"kind":"date","value":"2026-08-31"}],
+                "overrides":[{"recurrenceIdentity":{"value":{"kind":"date","value":"2026-08-24"}},
+                  "status":"cancelled","fields":{"summary":"Skip review","start":{"kind":"date","value":"2026-08-24"}}}]}}}}
+            """);
+
+        var result = await sut.CreateTodoRawAsync(arguments, CancellationToken.None);
+
+        result.IsError.ShouldBe(false);
+        var recurrence = observed!.Fields.RecurrenceSet.ShouldNotBeNull();
+        recurrence.Rule.ShouldBeNull();
+        recurrence.RecurrenceDates.ShouldHaveSingleItem().Value!.Value.ShouldBe("2026-08-24");
+        recurrence.ExceptionDates.ShouldHaveSingleItem().Value.ShouldBe("2026-08-31");
+        var recurrenceOverride = recurrence.Overrides.ShouldHaveSingleItem();
+        recurrenceOverride.Status.ShouldBe(CalendarRecurrenceOverrideStatus.Cancelled);
+        recurrenceOverride.Fields.Summary.ShouldBe("Skip review");
+        recurrenceOverride.Fields.RecurrenceSet.ShouldBeNull();
+    }
+
+    [Fact]
     public async Task CreateTodoRawAsync_MapsAllTodoFieldsIncludingFloatingTemporalAndStructuredData()
     {
         var service = Substitute.For<ICalendarService>();
@@ -544,6 +575,7 @@ public sealed class CalendarEntityCreateToolsTests
     [InlineData(CalendarEntityCreateCode.Ambiguous, "ambiguous", "selection", "selectionDiscoveryCapability")]
     [InlineData(CalendarEntityCreateCode.OutsideScope, "outside_scope", "selection", "originScopeAuthorization")]
     [InlineData(CalendarEntityCreateCode.UnsupportedCapability, "unsupported_capability", "capabilityAndProjection", "selectionDiscoveryCapability")]
+    [InlineData(CalendarEntityCreateCode.RecurrenceUnevaluable, "recurrence_unevaluable", "capabilityAndProjection", "completeResourceSemantics")]
     [InlineData(CalendarEntityCreateCode.OpaqueResource, "opaque_resource", "capabilityAndProjection", "targetRevision")]
     [InlineData(CalendarEntityCreateCode.ConcurrencyUnavailable, "concurrency_unavailable", "state", "targetRevision")]
     [InlineData(CalendarEntityCreateCode.Conflict, "conflict", "state", "execution")]
@@ -799,7 +831,7 @@ public sealed class CalendarEntityCreateToolsTests
     [Theory]
     [InlineData("event")]
     [InlineData("todo")]
-    public async Task CreateRawAsync_AcceptsCompleteFrozenRecurrenceThenRejectsAfterCalendarSelection(string kind)
+    public async Task CreateRawAsync_RejectsLegacyOverrideKindShapeBeforeService(string kind)
     {
         const string calendarHref = "https://cal.example/entities/";
         var client = Substitute.For<ICalendarClient>();
@@ -844,12 +876,222 @@ public sealed class CalendarEntityCreateToolsTests
 
         result.IsError.ShouldBe(true);
         var structured = result.StructuredContent!.Value;
-        structured.GetProperty("code").GetString().ShouldBe("invalid_calendar_data");
-        structured.GetProperty("phase").GetString().ShouldBe("completeResourceSemantics");
-        await client.Received(1).GetCalendarsAsync(Arg.Any<CancellationToken>());
+        structured.GetProperty("code").GetString().ShouldBe("invalid_input");
+        structured.GetProperty("phase").GetString().ShouldBe("schemaLexicalDiscriminator");
+        await client.DidNotReceive().GetCalendarsAsync(Arg.Any<CancellationToken>());
         await client.DidNotReceive().CreateCalendarResourceAsync(
             Arg.Any<CalendarResourceCreateRequest>(),
             Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CreateEventRawAsync_CreatesTypedRecurrenceAndReturnsVerifiedSnapshot()
+    {
+        const string calendarHref = "https://cal.example/events/";
+        const string resourceHref = "https://cal.example/events/recurring-event.ics";
+        var client = Substitute.For<ICalendarClient>();
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
+            new CalendarDescriptor
+            {
+                Href = calendarHref,
+                DisplayName = "Events",
+                DisplayNameProvenance = DisplayNameProvenance.DavDisplayName,
+                EventSupport = EntityKindSupport.Advertised,
+                TodoSupport = EntityKindSupport.NotAdvertised
+            }
+        ]);
+        client.QueryCalendarResourceHrefsAsync(
+                calendarHref,
+                CalendarEntityKind.Event,
+                null,
+                null,
+                Arg.Any<CancellationToken>())
+            .Returns([]);
+        CalendarResourceCreateRequest? dispatched = null;
+        client.CreateCalendarResourceAsync(
+                Arg.Do<CalendarResourceCreateRequest>(request => dispatched = request),
+                Arg.Any<CancellationToken>())
+            .Returns(CalendarResourceCreateResult.Dispatched(resourceHref));
+        client.GetCalendarResourceAsync(resourceHref, Arg.Any<CancellationToken>()).Returns(_ =>
+            CalendarResourceRead.Success(resourceHref, "\"recurring-r1\"", dispatched!.AuthoritativeUtf8));
+        var service = new CalendarService(
+            client,
+            Options.Create(new CalDavOptions
+            {
+                BaseUrl = "https://cal.example",
+                DefaultEventCalendarName = "Events"
+            }),
+            Substitute.For<ILogger<CalendarService>>());
+        var sut = new CalendarEntityCreateTools(service, TimeProvider.System);
+        var arguments = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+            "{\"destination\":{\"mode\":\"default\"},\"entity\":{\"kind\":\"event\",\"uid\":\"recurring-event\","
+            + "\"fields\":{\"summary\":\"Planning\",\"start\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-17T13:00:00Z\"},"
+            + "\"end\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-17T14:00:00Z\"},"
+            + "\"recurrenceSet\":{\"rrule\":\"FREQ=DAILY;COUNT=3\","
+            + "\"rdates\":[{\"kind\":\"utcDateTime\",\"value\":\"2026-08-20T13:00:00Z\"}],"
+            + "\"exdates\":[{\"kind\":\"utcDateTime\",\"value\":\"2026-08-18T13:00:00Z\"}]}}}}");
+
+        var result = await sut.CreateEventRawAsync(arguments, CancellationToken.None);
+
+        result.IsError.ShouldBe(false);
+        result.StructuredContent!.Value.GetProperty("outcome").GetString().ShouldBe("success");
+        var content = Encoding.UTF8.GetString(dispatched!.AuthoritativeUtf8.Span);
+        content.ShouldContain("RRULE:FREQ=DAILY;COUNT=3\r\n");
+        content.ShouldContain("RDATE:20260820T130000Z\r\n");
+        content.ShouldContain("EXDATE:20260818T130000Z\r\n");
+        await client.Received(1).CreateCalendarResourceAsync(
+            Arg.Any<CalendarResourceCreateRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("PT2H")]
+    [InlineData("P1W")]
+    [InlineData("+P1D")]
+    public async Task CreateEventRawAsync_RdatePeriodReturnsUnsupportedBeforeUidLookupOrPut(string duration)
+    {
+        const string calendarHref = "https://cal.example/events/";
+        var client = Substitute.For<ICalendarClient>();
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
+            new CalendarDescriptor
+            {
+                Href = calendarHref,
+                DisplayName = "Events",
+                DisplayNameProvenance = DisplayNameProvenance.DavDisplayName,
+                EventSupport = EntityKindSupport.Advertised,
+                TodoSupport = EntityKindSupport.NotAdvertised
+            }
+        ]);
+        var service = new CalendarService(
+            client,
+            Options.Create(new CalDavOptions
+            {
+                BaseUrl = "https://cal.example",
+                DefaultEventCalendarName = "Events"
+            }),
+            Substitute.For<ILogger<CalendarService>>());
+        var sut = new CalendarEntityCreateTools(service, TimeProvider.System);
+        var arguments = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+            "{\"destination\":{\"mode\":\"default\"},\"entity\":{\"kind\":\"event\",\"uid\":\"period-event\","
+            + "\"fields\":{\"start\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-17T13:00:00Z\"},"
+            + "\"recurrenceSet\":{\"rdates\":[{\"kind\":\"period\","
+            + "\"start\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-20T13:00:00Z\"},"
+            + "\"duration\":\"$DURATION$\"}]}}}}"
+                .Replace("$DURATION$", duration, StringComparison.Ordinal));
+
+        var result = await sut.CreateEventRawAsync(arguments, CancellationToken.None);
+
+        result.IsError.ShouldBe(true);
+        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("unsupported_capability");
+        result.StructuredContent.Value.GetProperty("mutationState").GetString().ShouldBe("not_attempted");
+        await client.DidNotReceive().GetCalendarsAsync(Arg.Any<CancellationToken>());
+        await client.DidNotReceive().QueryCalendarResourceHrefsAsync(
+            Arg.Any<string>(),
+            Arg.Any<CalendarEntityKind>(),
+            Arg.Any<DateTimeOffset?>(),
+            Arg.Any<DateTimeOffset?>(),
+            Arg.Any<CancellationToken>());
+        await client.DidNotReceive().CreateCalendarResourceAsync(
+            Arg.Any<CalendarResourceCreateRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("event", "FREQ=WEEKLY;BYDAY=TU;COUNT=2")]
+    [InlineData("todo", "FREQ=WEEKLY;BYDAY=TU;COUNT=2")]
+    [InlineData("event", "FREQ=DAILY;COUNT=0")]
+    [InlineData("todo", "FREQ=DAILY;COUNT=0")]
+    [InlineData("event", "FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=30;COUNT=1")]
+    [InlineData("todo", "FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=30;COUNT=1")]
+    public async Task CreateRawAsync_UnevaluableRuleFailsBeforeDiscovery(
+        string entityKind,
+        string rule)
+    {
+        var client = Substitute.For<ICalendarClient>();
+        var service = new CalendarService(
+            client,
+            Options.Create(new CalDavOptions
+            {
+                BaseUrl = "https://cal.example",
+                DefaultEventCalendarName = "Events",
+                DefaultTodoCalendarName = "Todos"
+            }),
+            Substitute.For<ILogger<CalendarService>>());
+        var sut = new CalendarEntityCreateTools(service, TimeProvider.System);
+        var arguments = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+            """
+            {"destination":{"mode":"default"},"entity":{"kind":"$KIND$","fields":{"start":{"kind":"utcDateTime","value":"2026-08-17T13:00:00Z"},"recurrenceSet":{"rrule":"$RULE$"}}}}
+            """
+            .Replace("$KIND$", entityKind, StringComparison.Ordinal)
+            .Replace("$RULE$", rule, StringComparison.Ordinal));
+
+        var result = entityKind == "event"
+            ? await sut.CreateEventRawAsync(arguments, CancellationToken.None)
+            : await sut.CreateTodoRawAsync(arguments, CancellationToken.None);
+
+        result.IsError.ShouldBe(true);
+        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("recurrence_unevaluable");
+        result.StructuredContent.Value.GetProperty("mutationState").GetString().ShouldBe("not_attempted");
+        await client.DidNotReceive().GetCalendarsAsync(Arg.Any<CancellationToken>());
+        await client.DidNotReceive().CreateCalendarResourceAsync(
+            Arg.Any<CalendarResourceCreateRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CreateEventRawAsync_SerializesCompleteSameUidOverride()
+    {
+        const string calendarHref = "https://cal.example/events/";
+        const string resourceHref = "https://cal.example/events/override-event.ics";
+        var client = Substitute.For<ICalendarClient>();
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
+            new CalendarDescriptor
+            {
+                Href = calendarHref,
+                DisplayName = "Events",
+                DisplayNameProvenance = DisplayNameProvenance.DavDisplayName,
+                EventSupport = EntityKindSupport.Advertised,
+                TodoSupport = EntityKindSupport.NotAdvertised
+            }
+        ]);
+        client.QueryCalendarResourceHrefsAsync(
+                calendarHref,
+                CalendarEntityKind.Event,
+                null,
+                null,
+                Arg.Any<CancellationToken>())
+            .Returns([]);
+        CalendarResourceCreateRequest? dispatched = null;
+        client.CreateCalendarResourceAsync(
+                Arg.Do<CalendarResourceCreateRequest>(request => dispatched = request),
+                Arg.Any<CancellationToken>())
+            .Returns(CalendarResourceCreateResult.Dispatched(resourceHref));
+        client.GetCalendarResourceAsync(resourceHref, Arg.Any<CancellationToken>()).Returns(_ =>
+            CalendarResourceRead.Success(resourceHref, "\"override-r1\"", dispatched!.AuthoritativeUtf8));
+        var service = new CalendarService(
+            client,
+            Options.Create(new CalDavOptions { BaseUrl = "https://cal.example", DefaultEventCalendarName = "Events" }),
+            Substitute.For<ILogger<CalendarService>>());
+        var sut = new CalendarEntityCreateTools(service, TimeProvider.System);
+        var arguments = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+            "{\"destination\":{\"mode\":\"default\"},\"entity\":{\"kind\":\"event\",\"uid\":\"override-event\","
+            + "\"fields\":{\"summary\":\"Master\",\"start\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-17T13:00:00Z\"},"
+            + "\"end\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-17T14:00:00Z\"},"
+            + "\"recurrenceSet\":{\"overrides\":[{"
+            + "\"recurrenceIdentity\":{\"value\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-18T13:00:00Z\"}},"
+            + "\"status\":\"active\",\"fields\":{\"summary\":\"Moved\","
+            + "\"start\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-18T15:00:00Z\"},"
+            + "\"end\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-18T16:00:00Z\"}}}]}}}}");
+
+        var result = await sut.CreateEventRawAsync(arguments, CancellationToken.None);
+
+        result.IsError.ShouldBe(false);
+        var content = Encoding.UTF8.GetString(dispatched!.AuthoritativeUtf8.Span);
+        content.Split("BEGIN:VEVENT\r\n", StringSplitOptions.None).Length.ShouldBe(3);
+        content.Split("UID:override-event\r\n", StringSplitOptions.None).Length.ShouldBe(3);
+        content.ShouldContain("RECURRENCE-ID:20260818T130000Z\r\n");
+        content.ShouldContain("SUMMARY:Moved\r\n");
+        content.ShouldContain("DTSTART:20260818T150000Z\r\n");
     }
 
     [Theory]
@@ -992,11 +1234,19 @@ public sealed class CalendarEntityCreateToolsTests
         yield return EventFields("{\"structuredData\":{\"attendees\":[{\"uri\":\"urn:uuid:a\",\"delegatedTo\":{},\"parameters\":[]}]}}");
         yield return EventFields("{\"recurrenceSet\":{\"rdates\":{}}}");
         yield return EventFields("{\"recurrenceSet\":{\"rdates\":[null]}}");
-        yield return EventFields("{\"recurrenceSet\":{\"overrides\":[{\"entityKind\":\"event\",\"status\":\"active\"}]}}");
-        yield return EventFields("{\"recurrenceSet\":{\"overrides\":[{\"recurrenceIdentity\":{\"value\":null},\"entityKind\":\"event\",\"status\":\"active\"}]}}");
-        yield return EventFields("{\"recurrenceSet\":{\"overrides\":[{\"recurrenceIdentity\":{\"value\":{\"kind\":\"date\",\"value\":\"2026-08-18\"}},\"entityKind\":\"journal\",\"status\":\"active\"}]}}");
-        yield return EventFields("{\"recurrenceSet\":{\"overrides\":[{\"recurrenceIdentity\":{\"value\":{\"kind\":\"date\",\"value\":\"2026-08-18\"}},\"entityKind\":\"event\",\"range\":\"future\",\"status\":\"active\"}]}}");
-        yield return EventFields("{\"recurrenceSet\":{\"overrides\":[{\"recurrenceIdentity\":{\"value\":{\"kind\":\"date\",\"value\":\"2026-08-18\"}},\"entityKind\":\"event\",\"status\":\"deleted\"}]}}");
+        yield return EventFields("{\"recurrenceSet\":{\"rdates\":[{\"kind\":\"period\",\"start\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-18T13:00:00Z\"}}]}}");
+        yield return EventFields("{\"recurrenceSet\":{\"rdates\":[{\"kind\":\"period\",\"start\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-18T13:00:00Z\"},\"end\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-18T14:00:00Z\"},\"duration\":\"PT1H\"}]}}");
+        yield return EventFields("{\"recurrenceSet\":{\"rdates\":[{\"kind\":\"period\",\"start\":{\"kind\":\"date\",\"value\":\"2026-08-18\"},\"duration\":\"P1D\"}]}}");
+        yield return EventFields("{\"recurrenceSet\":{\"rdates\":[{\"kind\":\"period\",\"start\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-18T13:00:00Z\"},\"end\":{\"kind\":\"floatingDateTime\",\"value\":\"2026-08-18T14:00:00\"}}]}}");
+        yield return EventFields("{\"recurrenceSet\":{\"rdates\":[{\"kind\":\"period\",\"start\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-18T13:00:00Z\"},\"end\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-18T12:00:00Z\"}}]}}");
+        yield return EventFields("{\"recurrenceSet\":{\"rdates\":[{\"kind\":\"period\",\"start\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-18T13:00:00Z\"},\"duration\":\"-PT1H\"}]}}");
+        yield return EventFields("{\"recurrenceSet\":{\"rdates\":[{\"kind\":\"period\",\"start\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-18T13:00:00Z\"},\"duration\":\"P1M\"}]}}");
+        yield return EventFields("{\"recurrenceSet\":{\"overrides\":[{\"recurrenceIdentity\":{\"value\":null},\"status\":\"active\",\"fields\":{}}]}}");
+        yield return EventFields("{\"recurrenceSet\":{\"overrides\":[{\"recurrenceIdentity\":{\"value\":{\"kind\":\"date\",\"value\":\"2026-08-18\"}},\"entityKind\":\"event\",\"status\":\"active\",\"fields\":{}}]}}");
+        yield return EventFields("{\"recurrenceSet\":{\"overrides\":[{\"recurrenceIdentity\":{\"value\":{\"kind\":\"date\",\"value\":\"2026-08-18\"}},\"range\":\"future\",\"status\":\"active\",\"fields\":{}}]}}");
+        yield return EventFields("{\"recurrenceSet\":{\"overrides\":[{\"recurrenceIdentity\":{\"value\":{\"kind\":\"date\",\"value\":\"2026-08-18\"}},\"range\":\"this-and-prior\",\"status\":\"active\",\"fields\":{}}]}}");
+        yield return EventFields("{\"recurrenceSet\":{\"overrides\":[{\"recurrenceIdentity\":{\"value\":{\"kind\":\"date\",\"value\":\"2026-08-18\"}},\"status\":\"deleted\",\"fields\":{}}]}}");
+        yield return EventFields("{\"recurrenceSet\":{\"overrides\":[{\"recurrenceIdentity\":{\"value\":{\"kind\":\"date\",\"value\":\"2026-08-18\"}},\"status\":\"active\",\"fields\":{\"recurrenceSet\":{\"rrule\":\"FREQ=DAILY\"}}}]}}");
         yield return EventFields("{\"structuredData\":{\"structuredDataUris\":[{\"uri\":\"https://example.test/data\"}]}}");
         yield return EventFields("{\"structuredData\":{\"participants\":[{\"uid\":\"speaker-1\"}]}}");
         yield return EventFields("{\"structuredData\":{\"alarms\":[{\"action\":\"email\",\"trigger\":\"-PT1M\",\"attendees\":[{\"uri\":\"mailto:a@example.test\"}]}]}}");

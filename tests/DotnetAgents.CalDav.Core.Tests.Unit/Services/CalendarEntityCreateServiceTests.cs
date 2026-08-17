@@ -89,7 +89,7 @@ public sealed class CalendarEntityCreateServiceTests
     }
 
     [Fact]
-    public async Task CreateEventAsync_InvalidCompleteCalendarDataFailsAfterSelectionBeforePut()
+    public async Task CreateEventAsync_InvalidCompleteCalendarDataFailsBeforeDiscoveryOrPut()
     {
         const string calendarHref = "https://cal.example/events/";
         var client = Substitute.For<ICalendarClient>();
@@ -104,6 +104,14 @@ public sealed class CalendarEntityCreateServiceTests
                 CalendarTemporalKind.ZonedDateTime,
                 "2026-03-08T02:30:00",
                 "America/New_York")),
+            new(Start: new CalendarTemporalValue(
+                CalendarTemporalKind.ZonedDateTime,
+                "2026-11-01T01:30:00",
+                "America/New_York")),
+            new(Start: new CalendarTemporalValue(
+                CalendarTemporalKind.ZonedDateTime,
+                "2026-08-17T09:00:00",
+                "Private/Unknown")),
             new(Start: new CalendarTemporalValue(CalendarTemporalKind.Date, "2026-08-17"), Duration: "PT1H"),
             new(Start: utcStart, Description: "line one\rline two"),
             new(Start: utcStart, Summary: "unsafe\u0001control"),
@@ -264,7 +272,46 @@ public sealed class CalendarEntityCreateServiceTests
                     Trigger("-PT15M"),
                     "Reminder",
                     Repeat: new CalendarIntegerProperty(-1, []),
-                    Duration: new CalendarDurationProperty("PT5M", []))]))
+                    Duration: new CalendarDurationProperty("PT5M", []))])),
+            new(Start: utcStart, RecurrenceSet: new CalendarEventRecurrenceSetCreate()),
+            new(Start: utcStart, RecurrenceSet: new CalendarEventRecurrenceSetCreate(Rule: "FREQ=BOGUS")),
+            new(Start: utcStart, RecurrenceSet: new CalendarEventRecurrenceSetCreate(
+                Rule: "FREQ=DAILY;COUNT=2\r\nRRULE:FREQ=WEEKLY")),
+            new(Start: utcStart, RecurrenceSet: new CalendarEventRecurrenceSetCreate(
+                RecurrenceDates:
+                [
+                    new CalendarRecurrenceDateCreate(Value: new CalendarTemporalValue(
+                        CalendarTemporalKind.Date,
+                        "2026-08-18"))
+                ])),
+            new(Start: new CalendarTemporalValue(CalendarTemporalKind.Date, "2026-08-17"),
+                RecurrenceSet: new CalendarEventRecurrenceSetCreate(
+                    RecurrenceDates:
+                    [
+                        new CalendarRecurrenceDateCreate(Period: new CalendarRecurrencePeriodCreate(
+                            new CalendarTemporalValue(CalendarTemporalKind.Date, "2026-08-18"),
+                            Duration: "P1D"))
+                    ])),
+            new(Start: utcStart, RecurrenceSet: new CalendarEventRecurrenceSetCreate(
+                Rule: "FREQ=DAILY;COUNT=2",
+                Overrides:
+                [
+                    new CalendarEventRecurrenceOverrideCreate(
+                        utcStart,
+                        CalendarRecurrenceOverrideStatus.Active,
+                        new CalendarEventCreateFields(Start: utcStart, Status: "CANCELLED"))
+                ])),
+            new(Start: utcStart, RecurrenceSet: new CalendarEventRecurrenceSetCreate(
+                Rule: "FREQ=DAILY;COUNT=2",
+                Overrides:
+                [
+                    new CalendarEventRecurrenceOverrideCreate(
+                        utcStart,
+                        CalendarRecurrenceOverrideStatus.Active,
+                        new CalendarEventCreateFields(
+                            Start: utcStart,
+                            RecurrenceSet: new CalendarEventRecurrenceSetCreate(Rule: "FREQ=DAILY")))
+                ]))
         ];
 
         foreach (var fields in invalidFields)
@@ -276,14 +323,14 @@ public sealed class CalendarEntityCreateServiceTests
             result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
         }
 
-        await client.Received(invalidFields.Length).GetCalendarsAsync(Arg.Any<CancellationToken>());
+        await client.DidNotReceive().GetCalendarsAsync(Arg.Any<CancellationToken>());
         await client.DidNotReceive().CreateCalendarResourceAsync(
             Arg.Any<CalendarResourceCreateRequest>(),
             Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task CreateEventAsync_MissingStartIsCompleteSemanticFailureAfterSelectionBeforePut()
+    public async Task CreateEventAsync_MissingStartIsCompleteSemanticFailureBeforeDiscoveryOrPut()
     {
         const string calendarHref = "https://cal.example/events/";
         var client = Substitute.For<ICalendarClient>();
@@ -299,14 +346,14 @@ public sealed class CalendarEntityCreateServiceTests
 
         result.Code.ShouldBe(CalendarEntityCreateCode.InvalidCalendarData);
         result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
-        await client.Received(1).GetCalendarsAsync(Arg.Any<CancellationToken>());
+        await client.DidNotReceive().GetCalendarsAsync(Arg.Any<CancellationToken>());
         await client.DidNotReceive().CreateCalendarResourceAsync(
             Arg.Any<CalendarResourceCreateRequest>(),
             Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task CreateEventAsync_CapabilityFailurePrecedesMissingStartSemanticFailure()
+    public async Task CreateEventAsync_MissingStartSemanticFailurePrecedesCapabilityDiscovery()
     {
         const string calendarHref = "https://cal.example/events/";
         var client = Substitute.For<ICalendarClient>();
@@ -322,15 +369,16 @@ public sealed class CalendarEntityCreateServiceTests
                 new CalendarEventCreateFields()),
             CancellationToken.None);
 
-        result.Code.ShouldBe(CalendarEntityCreateCode.UnsupportedCapability);
+        result.Code.ShouldBe(CalendarEntityCreateCode.InvalidCalendarData);
         result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        await client.DidNotReceive().GetCalendarsAsync(Arg.Any<CancellationToken>());
         await client.DidNotReceive().CreateCalendarResourceAsync(
             Arg.Any<CalendarResourceCreateRequest>(),
             Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task CreateTodoAsync_InvalidTemporalRelationshipsFailAfterSelectionBeforePut()
+    public async Task CreateTodoAsync_InvalidTemporalRelationshipsFailBeforeDiscoveryOrPut()
     {
         const string calendarHref = "https://cal.example/todos/";
         var client = Substitute.For<ICalendarClient>();
@@ -356,14 +404,14 @@ public sealed class CalendarEntityCreateServiceTests
             result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
         }
 
-        await client.Received(invalidFields.Length).GetCalendarsAsync(Arg.Any<CancellationToken>());
+        await client.DidNotReceive().GetCalendarsAsync(Arg.Any<CancellationToken>());
         await client.DidNotReceive().CreateCalendarResourceAsync(
             Arg.Any<CalendarResourceCreateRequest>(),
             Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task CreateEventAsync_OversizedSerializedResourceFailsAfterSelectionBeforePut()
+    public async Task CreateEventAsync_OversizedSerializedResourceFailsBeforeDiscoveryOrPut()
     {
         const string calendarHref = "https://cal.example/events/";
         var client = Substitute.For<ICalendarClient>();
@@ -381,7 +429,7 @@ public sealed class CalendarEntityCreateServiceTests
 
         result.Code.ShouldBe(CalendarEntityCreateCode.PayloadTooLarge);
         result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
-        await client.Received(1).GetCalendarsAsync(Arg.Any<CancellationToken>());
+        await client.DidNotReceive().GetCalendarsAsync(Arg.Any<CancellationToken>());
         await client.DidNotReceive().CreateCalendarResourceAsync(
             Arg.Any<CalendarResourceCreateRequest>(),
             Arg.Any<CancellationToken>());
@@ -492,7 +540,7 @@ public sealed class CalendarEntityCreateServiceTests
     [Theory]
     [InlineData(CalendarResourceCreateCode.Dispatched, CalendarEntityCreateCode.FidelityFailure, CalendarMutationState.Committed)]
     [InlineData(CalendarResourceCreateCode.PossiblyDispatched, CalendarEntityCreateCode.Indeterminate, CalendarMutationState.Unknown)]
-    public async Task CreateEventAsync_RefetchedRequestedFieldMismatchPreservesDispatchTruth(
+    public async Task CreateEventAsync_RefetchedRecurrenceMismatchPreservesDispatchTruth(
         CalendarResourceCreateCode transportCode,
         CalendarEntityCreateCode expectedCode,
         CalendarMutationState expectedState)
@@ -519,7 +567,7 @@ public sealed class CalendarEntityCreateServiceTests
                 resourceHref,
                 "\"changed-r1\"",
                 Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(dispatched!.AuthoritativeUtf8.Span)
-                    .Replace("DESCRIPTION:Requested", "DESCRIPTION:Server changed", StringComparison.Ordinal))));
+                    .Replace("RRULE:FREQ=DAILY;COUNT=2", "RRULE:FREQ=DAILY;COUNT=3", StringComparison.Ordinal))));
 
         var result = await sut.CreateEventAsync(
             new CalendarEventCreateRequest(
@@ -528,7 +576,8 @@ public sealed class CalendarEntityCreateServiceTests
                 new CalendarEventCreateFields(
                     Summary: "Same summary",
                     Description: "Requested",
-                    Start: new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-17T13:00:00Z"))),
+                    Start: new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-17T13:00:00Z"),
+                    RecurrenceSet: new CalendarEventRecurrenceSetCreate(Rule: "FREQ=DAILY;COUNT=2"))),
             CancellationToken.None);
 
         result.Code.ShouldBe(expectedCode);
@@ -1361,6 +1410,155 @@ public sealed class CalendarEntityCreateServiceTests
         result.Snapshot.ShouldNotBeNull();
         result.Snapshot.Projection.Kind.ShouldBe(CalendarResourceProjectionKind.Todo);
         result.Snapshot.EntityTag.ShouldBe("\"todo-r2\"");
+    }
+
+    [Fact]
+    public async Task CreateTodoAsync_CreatesRdateOnlySeriesWithExclusionAndCancelledOverride()
+    {
+        const string calendarHref = "https://cal.example/todos/";
+        const string resourceHref = "https://cal.example/todos/recurring-todo.ics";
+        var client = Substitute.For<ICalendarClient>();
+        var sut = CreateTodoService(client);
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([TodoCalendar(calendarHref, "Todos")]);
+        client.QueryCalendarResourceHrefsAsync(
+                calendarHref,
+                CalendarEntityKind.Todo,
+                null,
+                null,
+                Arg.Any<CancellationToken>())
+            .Returns([]);
+        CalendarResourceCreateRequest? dispatched = null;
+        client.CreateCalendarResourceAsync(
+                Arg.Do<CalendarResourceCreateRequest>(request => dispatched = request),
+                Arg.Any<CancellationToken>())
+            .Returns(CalendarResourceCreateResult.Dispatched(resourceHref));
+        client.GetCalendarResourceAsync(resourceHref, Arg.Any<CancellationToken>()).Returns(_ =>
+            CalendarResourceRead.Success(resourceHref, "\"todo-series-r1\"", dispatched!.AuthoritativeUtf8));
+        var start = new CalendarTemporalValue(CalendarTemporalKind.Date, "2026-08-17");
+        var due = new CalendarTemporalValue(CalendarTemporalKind.Date, "2026-08-18");
+        var recurrence = new CalendarTodoRecurrenceSetCreate(
+            RecurrenceDates:
+            [
+                new CalendarRecurrenceDateCreate(Value: new CalendarTemporalValue(
+                    CalendarTemporalKind.Date,
+                    "2026-08-24"))
+            ],
+            ExceptionDates:
+            [
+                new CalendarTemporalValue(CalendarTemporalKind.Date, "2026-08-24")
+            ],
+            Overrides:
+            [
+                new CalendarTodoRecurrenceOverrideCreate(
+                    new CalendarTemporalValue(CalendarTemporalKind.Date, "2026-08-24"),
+                    CalendarRecurrenceOverrideStatus.Cancelled,
+                    new CalendarTodoCreateFields(
+                        Summary: "Cancelled occurrence",
+                        Start: new CalendarTemporalValue(CalendarTemporalKind.Date, "2026-08-25"),
+                        Due: new CalendarTemporalValue(CalendarTemporalKind.Date, "2026-08-26")))
+            ]);
+
+        var result = await sut.CreateTodoAsync(
+            new CalendarTodoCreateRequest(
+                CalendarCreateDestination.Default,
+                "recurring-todo",
+                new CalendarTodoCreateFields(
+                    Summary: "Weekly review",
+                    Start: start,
+                    Due: due,
+                    RecurrenceSet: recurrence)),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityCreateCode.Success);
+        var content = Encoding.UTF8.GetString(dispatched!.AuthoritativeUtf8.Span);
+        content.ShouldNotContain("RRULE:");
+        content.ShouldContain("RDATE;VALUE=DATE:20260824\r\n");
+        content.ShouldContain("EXDATE;VALUE=DATE:20260824\r\n");
+        content.ShouldContain("RECURRENCE-ID;VALUE=DATE:20260824\r\n");
+        content.ShouldContain("STATUS:CANCELLED\r\n");
+        content.Split("BEGIN:VTODO\r\n", StringSplitOptions.None).Length.ShouldBe(3);
+    }
+
+    [Fact]
+    public async Task CreateTodoAsync_InvalidRecurrenceFamiliesAndOverrideStatesFailBeforeUidLookupOrPut()
+    {
+        const string calendarHref = "https://cal.example/todos/";
+        var client = Substitute.For<ICalendarClient>();
+        var sut = CreateTodoService(client);
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([TodoCalendar(calendarHref, "Todos")]);
+        var masterStart = new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-17T13:00:00Z");
+        var matchingIdentity = new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-18T13:00:00Z");
+        var invalidFields = new CalendarTodoCreateFields[]
+        {
+            new(Start: masterStart, RecurrenceSet: new CalendarTodoRecurrenceSetCreate(
+                RecurrenceDates:
+                [
+                    new CalendarRecurrenceDateCreate(Value: new CalendarTemporalValue(
+                        CalendarTemporalKind.Date,
+                        "2026-08-18"))
+                ])),
+            new(Start: masterStart, RecurrenceSet: new CalendarTodoRecurrenceSetCreate(
+                Rule: "FREQ=DAILY;COUNT=2",
+                Overrides:
+                [
+                    new CalendarTodoRecurrenceOverrideCreate(
+                        new CalendarTemporalValue(CalendarTemporalKind.Date, "2026-08-18"),
+                        CalendarRecurrenceOverrideStatus.Active,
+                        new CalendarTodoCreateFields(Start: masterStart))
+                ])),
+            new(Start: masterStart, RecurrenceSet: new CalendarTodoRecurrenceSetCreate(
+                Rule: "FREQ=DAILY;COUNT=2",
+                Overrides:
+                [
+                    new CalendarTodoRecurrenceOverrideCreate(
+                        matchingIdentity,
+                        CalendarRecurrenceOverrideStatus.Cancelled,
+                        new CalendarTodoCreateFields(Start: matchingIdentity, Status: "NEEDS-ACTION"))
+                ])),
+            new(Start: masterStart, RecurrenceSet: new CalendarTodoRecurrenceSetCreate(
+                Rule: "FREQ=DAILY;COUNT=2",
+                Overrides:
+                [
+                    new CalendarTodoRecurrenceOverrideCreate(
+                        matchingIdentity,
+                        CalendarRecurrenceOverrideStatus.Active,
+                        new CalendarTodoCreateFields(Start: matchingIdentity, Status: "CANCELLED"))
+                ])),
+            new(Start: masterStart, RecurrenceSet: new CalendarTodoRecurrenceSetCreate(
+                Rule: "FREQ=DAILY;COUNT=2",
+                Overrides:
+                [
+                    new CalendarTodoRecurrenceOverrideCreate(
+                        matchingIdentity,
+                        CalendarRecurrenceOverrideStatus.Active,
+                        new CalendarTodoCreateFields(Start: matchingIdentity)),
+                    new CalendarTodoRecurrenceOverrideCreate(
+                        matchingIdentity,
+                        CalendarRecurrenceOverrideStatus.Active,
+                        new CalendarTodoCreateFields(Start: matchingIdentity))
+                ]))
+        };
+
+        foreach (var fields in invalidFields)
+        {
+            var result = await sut.CreateTodoAsync(
+                new CalendarTodoCreateRequest(CalendarCreateDestination.Default, "invalid-series", fields),
+                CancellationToken.None);
+
+            result.Code.ShouldBe(CalendarEntityCreateCode.InvalidCalendarData);
+            result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        }
+
+        await client.DidNotReceive().GetCalendarsAsync(Arg.Any<CancellationToken>());
+        await client.DidNotReceive().QueryCalendarResourceHrefsAsync(
+            Arg.Any<string>(),
+            Arg.Any<CalendarEntityKind>(),
+            Arg.Any<DateTimeOffset?>(),
+            Arg.Any<DateTimeOffset?>(),
+            Arg.Any<CancellationToken>());
+        await client.DidNotReceive().CreateCalendarResourceAsync(
+            Arg.Any<CalendarResourceCreateRequest>(),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -2459,11 +2657,10 @@ public sealed class CalendarEntityCreateServiceTests
             .Returns(
                 new CalendarResourceCreateResult(CalendarResourceCreateCode.Conflict, expectedHrefs[0]),
                 CalendarResourceCreateResult.Dispatched(expectedHrefs[1]));
-        client.GetCalendarResourceAsync(expectedHrefs[1], Arg.Any<CancellationToken>()).Returns(
-            CalendarResourceRead.Success(
-                expectedHrefs[1],
-                "\"r2\"",
-                Event("generated-2", "Generated")));
+        client.GetCalendarResourceAsync(expectedHrefs[1], Arg.Any<CancellationToken>()).Returns(_ =>
+            CalendarResourceRead.Success(expectedHrefs[1], "\"r2\"", requests[^1].AuthoritativeUtf8));
+        var start = new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-17T13:00:00Z");
+        var overrideStart = new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-18T13:00:00Z");
 
         var result = await sut.CreateEventAsync(
             new CalendarEventCreateRequest(
@@ -2471,13 +2668,240 @@ public sealed class CalendarEntityCreateServiceTests
                 null,
                 new CalendarEventCreateFields(
                     Summary: "Generated",
-                    Start: new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-17T13:00:00Z"))),
+                    Start: start,
+                    RecurrenceSet: new CalendarEventRecurrenceSetCreate(
+                        Rule: "FREQ=DAILY;COUNT=2",
+                        Overrides:
+                        [
+                            new CalendarEventRecurrenceOverrideCreate(
+                                overrideStart,
+                                CalendarRecurrenceOverrideStatus.Active,
+                                new CalendarEventCreateFields(Summary: "Generated override", Start: overrideStart))
+                        ]))),
             CancellationToken.None);
 
         result.Code.ShouldBe(CalendarEntityCreateCode.Success);
         requests.Select(request => request.ResourceHref).ShouldBe(expectedHrefs);
-        requests.Select(request => Encoding.UTF8.GetString(request.AuthoritativeUtf8.ToArray()))
-            .ShouldAllBe(content => content.Contains("UID:generated-", StringComparison.Ordinal));
+        for (var index = 0; index < requests.Count; index++)
+        {
+            var content = Encoding.UTF8.GetString(requests[index].AuthoritativeUtf8.Span);
+            content.Split($"UID:generated-{index + 1}\r\n", StringSplitOptions.None).Length.ShouldBe(3);
+        }
+    }
+
+    [Theory]
+    [InlineData("event", "FREQ=WEEKLY;BYDAY=TU;COUNT=2")]
+    [InlineData("todo", "FREQ=WEEKLY;BYDAY=TU;COUNT=2")]
+    [InlineData("event", "FREQ=DAILY;COUNT=10001")]
+    [InlineData("todo", "FREQ=DAILY;COUNT=10001")]
+    [InlineData("event", "FREQ=DAILY;COUNT=0")]
+    [InlineData("todo", "FREQ=DAILY;COUNT=0")]
+    [InlineData("event", "FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=30;COUNT=1")]
+    [InlineData("todo", "FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=30;COUNT=1")]
+    [InlineData("event", "FREQ=DAILY;UNTIL=20540102T130000Z")]
+    public async Task CreateRecurringEntityAsync_UnevaluableRuleFailsBeforeDiscoveryOrPut(
+        string entityKind,
+        string rule)
+    {
+        var expectedCode = Enum.Parse<CalendarEntityCreateCode>("RecurrenceUnevaluable");
+        var client = Substitute.For<ICalendarClient>();
+        var start = new CalendarTemporalValue(
+            CalendarTemporalKind.UtcDateTime,
+            "2026-08-17T13:00:00Z");
+
+        var result = entityKind == "event"
+            ? await CreateService(client, defaultEventName: "Events").CreateEventAsync(
+                new CalendarEventCreateRequest(
+                    CalendarCreateDestination.Default,
+                    "unevaluable-event",
+                    new CalendarEventCreateFields(
+                        Start: start,
+                        RecurrenceSet: new CalendarEventRecurrenceSetCreate(Rule: rule))),
+                CancellationToken.None)
+            : await CreateTodoService(client).CreateTodoAsync(
+                new CalendarTodoCreateRequest(
+                    CalendarCreateDestination.Default,
+                    "unevaluable-todo",
+                    new CalendarTodoCreateFields(
+                        Start: start,
+                        RecurrenceSet: new CalendarTodoRecurrenceSetCreate(Rule: rule))),
+                CancellationToken.None);
+
+        result.Code.ShouldBe(expectedCode);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        await client.DidNotReceive().GetCalendarsAsync(Arg.Any<CancellationToken>());
+        await client.DidNotReceive().CreateCalendarResourceAsync(
+            Arg.Any<CalendarResourceCreateRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("FREQ=DAILY;COUNT=10000")]
+    [InlineData("FREQ=DAILY;UNTIL=20540101T130000Z")]
+    [InlineData("FREQ=DAILY")]
+    public async Task CreateEventAsync_ProfileAcceptedRuleBoundaryProceedsToDiscovery(string rule)
+    {
+        var client = Substitute.For<ICalendarClient>();
+        var sut = CreateService(client, defaultEventName: "Events");
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([]);
+
+        var result = await sut.CreateEventAsync(
+            new CalendarEventCreateRequest(
+                CalendarCreateDestination.Default,
+                "accepted-rule",
+                new CalendarEventCreateFields(
+                    Start: new CalendarTemporalValue(
+                        CalendarTemporalKind.UtcDateTime,
+                        "2026-08-17T13:00:00Z"),
+                    RecurrenceSet: new CalendarEventRecurrenceSetCreate(Rule: rule))),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityCreateCode.NotFound);
+        await client.Received(1).GetCalendarsAsync(Arg.Any<CancellationToken>());
+        await client.DidNotReceive().CreateCalendarResourceAsync(
+            Arg.Any<CalendarResourceCreateRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("event")]
+    [InlineData("todo")]
+    public async Task CreateRecurringEntityAsync_ThisAndPriorOverrideFailsUnevaluableBeforeDiscovery(
+        string entityKind)
+    {
+        var expectedCode = Enum.Parse<CalendarEntityCreateCode>("RecurrenceUnevaluable");
+        var client = Substitute.For<ICalendarClient>();
+        var start = new CalendarTemporalValue(
+            CalendarTemporalKind.UtcDateTime,
+            "2026-08-17T13:00:00Z");
+        var identity = new CalendarTemporalValue(
+            CalendarTemporalKind.UtcDateTime,
+            "2026-08-18T13:00:00Z");
+
+        var result = entityKind == "event"
+            ? await CreateService(client, defaultEventName: "Events").CreateEventAsync(
+                new CalendarEventCreateRequest(
+                    CalendarCreateDestination.Default,
+                    "prior-event",
+                    new CalendarEventCreateFields(
+                        Start: start,
+                        RecurrenceSet: new CalendarEventRecurrenceSetCreate(
+                            Rule: "FREQ=DAILY;COUNT=2",
+                            Overrides:
+                            [
+                                new CalendarEventRecurrenceOverrideCreate(
+                                    identity,
+                                    CalendarRecurrenceOverrideStatus.Active,
+                                    new CalendarEventCreateFields(Start: identity),
+                                    CalendarRecurrenceOverrideRange.ThisAndPrior)
+                            ]))),
+                CancellationToken.None)
+            : await CreateTodoService(client).CreateTodoAsync(
+                new CalendarTodoCreateRequest(
+                    CalendarCreateDestination.Default,
+                    "prior-todo",
+                    new CalendarTodoCreateFields(
+                        Start: start,
+                        RecurrenceSet: new CalendarTodoRecurrenceSetCreate(
+                            Rule: "FREQ=DAILY;COUNT=2",
+                            Overrides:
+                            [
+                                new CalendarTodoRecurrenceOverrideCreate(
+                                    identity,
+                                    CalendarRecurrenceOverrideStatus.Active,
+                                    new CalendarTodoCreateFields(Start: identity),
+                                    CalendarRecurrenceOverrideRange.ThisAndPrior)
+                            ]))),
+                CancellationToken.None);
+
+        result.Code.ShouldBe(expectedCode);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        await client.DidNotReceive().GetCalendarsAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CreateEventAsync_EmitsOneSupportingVtimezonePerDistinctIanaZone()
+    {
+        const string calendarHref = "https://cal.example/events/";
+        const string resourceHref = "https://cal.example/events/dst-zones.ics";
+        var client = Substitute.For<ICalendarClient>();
+        var sut = CreateService(client, defaultEventName: "Events");
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref, "Events")]);
+        client.QueryCalendarResourceHrefsAsync(
+                calendarHref,
+                CalendarEntityKind.Event,
+                null,
+                null,
+                Arg.Any<CancellationToken>())
+            .Returns([]);
+        CalendarResourceCreateRequest? dispatched = null;
+        client.CreateCalendarResourceAsync(
+                Arg.Do<CalendarResourceCreateRequest>(request => dispatched = request),
+                Arg.Any<CancellationToken>())
+            .Returns(CalendarResourceCreateResult.Dispatched(resourceHref));
+        client.GetCalendarResourceAsync(resourceHref, Arg.Any<CancellationToken>()).Returns(_ =>
+            CalendarResourceRead.Success(resourceHref, "\"zones-r1\"", dispatched!.AuthoritativeUtf8));
+        var newYorkStart = new CalendarTemporalValue(
+            CalendarTemporalKind.ZonedDateTime,
+            "2026-03-07T09:00:00",
+            "America/New_York");
+        var recurrence = new CalendarEventRecurrenceSetCreate(
+            Rule: "FREQ=DAILY;COUNT=3",
+            RecurrenceDates:
+            [
+                new CalendarRecurrenceDateCreate(Value: new CalendarTemporalValue(
+                    CalendarTemporalKind.ZonedDateTime,
+                    "2026-03-10T09:00:00",
+                    "America/New_York"))
+            ],
+            ExceptionDates:
+            [
+                new CalendarTemporalValue(
+                    CalendarTemporalKind.ZonedDateTime,
+                    "2026-03-09T09:00:00",
+                    "America/New_York")
+            ],
+            Overrides:
+            [
+                new CalendarEventRecurrenceOverrideCreate(
+                    new CalendarTemporalValue(
+                        CalendarTemporalKind.ZonedDateTime,
+                        "2026-03-08T09:00:00",
+                        "America/New_York"),
+                    CalendarRecurrenceOverrideStatus.Active,
+                    new CalendarEventCreateFields(
+                        Summary: "Paris exception",
+                        Start: new CalendarTemporalValue(
+                            CalendarTemporalKind.ZonedDateTime,
+                            "2026-03-08T15:00:00",
+                            "Europe/Paris"),
+                        End: new CalendarTemporalValue(
+                            CalendarTemporalKind.ZonedDateTime,
+                            "2026-03-08T16:00:00",
+                            "Europe/Paris")))
+            ]);
+
+        var result = await sut.CreateEventAsync(
+            new CalendarEventCreateRequest(
+                CalendarCreateDestination.Default,
+                "dst-zones",
+                new CalendarEventCreateFields(
+                    Summary: "DST series",
+                    Start: newYorkStart,
+                    End: new CalendarTemporalValue(
+                        CalendarTemporalKind.ZonedDateTime,
+                        "2026-03-07T10:00:00",
+                        "America/New_York"),
+                    RecurrenceSet: recurrence)),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityCreateCode.Success);
+        var content = Encoding.UTF8.GetString(dispatched!.AuthoritativeUtf8.Span);
+        content.Split("BEGIN:VTIMEZONE\r\n", StringSplitOptions.None).Length.ShouldBe(3);
+        content.Split("TZID:America/New_York\r\n", StringSplitOptions.None).Length.ShouldBe(2);
+        content.Split("TZID:Europe/Paris\r\n", StringSplitOptions.None).Length.ShouldBe(2);
+        content.ShouldContain("DTSTART;TZID=America/New_York:20260307T090000\r\n");
+        content.ShouldContain("DTSTART;TZID=Europe/Paris:20260308T150000\r\n");
     }
 
     [Fact]

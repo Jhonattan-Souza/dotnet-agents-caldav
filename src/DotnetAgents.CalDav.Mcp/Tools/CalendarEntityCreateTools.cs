@@ -10,7 +10,7 @@ using ModelContextProtocol.Server;
 
 namespace DotnetAgents.CalDav.Mcp.Tools;
 
-/// <summary>Creates complete non-recurring Events and To-dos.</summary>
+/// <summary>Creates complete Events and To-dos, including typed recurrence.</summary>
 [McpServerToolType]
 public sealed class CalendarEntityCreateTools
 {
@@ -243,6 +243,8 @@ public sealed class CalendarEntityCreateTools
             ("outside_scope", "selection", "The selected Calendar is outside the configured Calendar Scope.", "originScopeAuthorization"),
         CalendarEntityCreateCode.UnsupportedCapability =>
             ("unsupported_capability", "capabilityAndProjection", "The selected Calendar does not advertise the requested Entity Kind.", "selectionDiscoveryCapability"),
+        CalendarEntityCreateCode.RecurrenceUnevaluable =>
+            ("recurrence_unevaluable", "capabilityAndProjection", "The Recurrence Set could not be evaluated.", "completeResourceSemantics"),
         CalendarEntityCreateCode.OpaqueResource =>
             ("opaque_resource", "capabilityAndProjection", "An existing Calendar resource cannot be projected safely.", "targetRevision"),
         CalendarEntityCreateCode.ConcurrencyUnavailable =>

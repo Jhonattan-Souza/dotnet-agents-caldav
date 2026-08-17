@@ -23,9 +23,17 @@ public sealed class CalendarResourceCreateProtocolTests
     }
 
     [Fact]
-    public async Task CreateAsync_ReplaysConditionalPutAcrossMethodPreservingRedirect()
+    public async Task CreateAsync_ReplaysRecurringUtf8ExactlyAcrossOneSafeRedirectWithoutNormalizationOrRetry()
     {
-        var body = Encoding.UTF8.GetBytes("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n");
+        var body = Encoding.UTF8.GetBytes(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Transport evidence//EN\r\n"
+            + "BEGIN:VEVENT\r\nUID:recurring-é\r\nDTSTAMP:20260817T120000Z\r\n"
+            + "DTSTART:20260817T130000Z\r\nRRULE:FREQ=DAILY;COUNT=3\r\n"
+            + "RDATE:20260821T130000Z\r\nRDATE:20260820T130000Z\r\n"
+            + "EXDATE:20260818T130000Z\r\nX-OPAQUE;X-ORDER=two,one:kept\r\nEND:VEVENT\r\n"
+            + "BEGIN:VEVENT\r\nUID:recurring-é\r\nDTSTAMP:20260817T120000Z\r\n"
+            + "RECURRENCE-ID:20260819T130000Z\r\nDTSTART:20260819T150000Z\r\nEND:VEVENT\r\n"
+            + "END:VCALENDAR\r\n");
         var requests = new List<(string Href, string Method, string IfNoneMatch, byte[] Body)>();
         using var httpClient = new HttpClient(new Handler(async request =>
         {
@@ -56,6 +64,7 @@ public sealed class CalendarResourceCreateProtocolTests
             ("https://example.com/calendars/user/events/new.ics", "PUT", "*"),
             ("https://example.com/calendars/user/events/canonical.ics", "PUT", "*")
         ]);
+        requests.Count.ShouldBe(2);
         requests.ShouldAllBe(request => request.Body.SequenceEqual(body));
     }
 
