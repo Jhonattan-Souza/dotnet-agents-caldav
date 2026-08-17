@@ -5,6 +5,14 @@ namespace DotnetAgents.CalDav.Mcp.Tools;
 
 internal static class CalendarEntityCreateArgumentParser
 {
+    private static readonly HashSet<string> PatchTextFields = new(StringComparer.Ordinal)
+    {
+        "summary", "description", "duration", "location", "status", "transparency", "classification", "url"
+    };
+    private static readonly HashSet<string> PatchTemporalFields = new(StringComparer.Ordinal)
+    {
+        "start", "end", "due", "completed"
+    };
     private static readonly string[] RootProperties = ["destination", "entity"];
     private static readonly string[] EventEntityProperties = ["kind", "uid", "fields"];
     private static readonly string[] TodoEntityProperties = ["kind", "uid", "fields"];
@@ -21,6 +29,79 @@ internal static class CalendarEntityCreateArgumentParser
         "attachments", "comments", "styledDescriptions", "images", "conferences", "links", "concepts",
         "structuredDataUris", "locationUris", "resourceUris"
     ];
+
+    internal static bool TryParseStructuredCollectionItem(
+        string field,
+        JsonElement value,
+        out object item)
+    {
+        item = null!;
+        return field switch
+        {
+            "attendees" => TryBox<CalendarAttendee>(value, TryParseAttendee, out item),
+            "participants" => TryBox<CalendarParticipant>(value, TryParseParticipant, out item),
+            "contacts" or "resources" or "comments" or "styledDescriptions" =>
+                TryBox<CalendarTextValue>(value, TryParseTextValue, out item),
+            "relatedTo" => TryBox<CalendarRelation>(value, TryParseRelation, out item),
+            "requestStatuses" => TryBox<CalendarRequestStatus>(value, TryParseRequestStatus, out item),
+            "alarms" => TryBox<CalendarAlarm>(value, TryParseAlarm, out item),
+            "attachments" or "images" or "conferences" or "links" or "locationUris" or "resourceUris" =>
+                TryBox<CalendarNamedUri>(value, TryParseNamedUri, out item),
+            "concepts" or "structuredDataUris" => TryBox<CalendarUriValue>(value, TryParseUriValue, out item),
+            _ => false
+        };
+    }
+
+    internal static bool TryParsePatchScalarValue(string field, JsonElement value, out object parsed)
+    {
+        parsed = null!;
+        if (PatchTextFields.Contains(field))
+        {
+            if (value.ValueKind != JsonValueKind.String)
+                return false;
+            parsed = value.GetString()!;
+            return true;
+        }
+        if (field is "priority" or "percentComplete")
+        {
+            if (!value.TryGetInt32(out var integer))
+                return false;
+            parsed = integer;
+            return true;
+        }
+        return TryParseComplexPatchScalarValue(field, value, out parsed);
+    }
+
+    private static bool TryParseComplexPatchScalarValue(string field, JsonElement value, out object parsed)
+    {
+        parsed = null!;
+        if (PatchTemporalFields.Contains(field))
+        {
+            if (!TryParseTemporal(value, out var temporal) || temporal is null)
+                return false;
+            parsed = temporal;
+            return true;
+        }
+        if (field == "geo")
+        {
+            if (!TryParseGeo(value, out var geo) || geo is null)
+                return false;
+            parsed = geo;
+            return true;
+        }
+        return field == "organizer" && TryBox<CalendarNamedUri>(value, TryParseNamedUri, out parsed);
+    }
+
+    private static bool TryBox<T>(JsonElement value, TryParseValue<T> parser, out object item)
+    {
+        item = null!;
+        if (!parser(value, out var parsed))
+            return false;
+        item = parsed!;
+        return true;
+    }
+
+    private delegate bool TryParseValue<T>(JsonElement value, out T parsed);
 
     public static bool TryParseEvent(
         IDictionary<string, JsonElement>? arguments,

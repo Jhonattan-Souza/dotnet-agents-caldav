@@ -36,6 +36,26 @@ public interface ICalendarService
         CalendarTodoCreateRequest request,
         CancellationToken cancellationToken);
 
+    /// <summary>Applies one revision-bound semantic patch to an Event.</summary>
+    Task<CalendarEntityPatchResult> PatchEventAsync(
+        CalendarEventPatchRequest request,
+        CancellationToken cancellationToken);
+
+    /// <summary>Applies one revision-bound semantic patch to a To-do.</summary>
+    Task<CalendarEntityPatchResult> PatchTodoAsync(
+        CalendarTodoPatchRequest request,
+        CancellationToken cancellationToken);
+
+    /// <summary>Validates one Event patch losslessly without dispatching a write.</summary>
+    Task<CalendarEntityPatchReviewResult> ReviewEventPatchAsync(
+        CalendarEventPatchRequest request,
+        CancellationToken cancellationToken);
+
+    /// <summary>Validates one To-do patch losslessly without dispatching a write.</summary>
+    Task<CalendarEntityPatchReviewResult> ReviewTodoPatchAsync(
+        CalendarTodoPatchRequest request,
+        CancellationToken cancellationToken);
+
     /// <summary>Deletes one reviewed resource and succeeds only after verified absence.</summary>
     Task<CalendarResourceDeleteResult> DeleteResourceAsync(
         CalendarResourceRevisionReference revision,

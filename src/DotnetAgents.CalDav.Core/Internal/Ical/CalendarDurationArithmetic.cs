@@ -63,6 +63,55 @@ internal static class CalendarDurationArithmetic
         }
     }
 
+    public static CalendarTemporalValue? ShiftExplicitEnd(
+        CalendarTemporalValue oldStart,
+        CalendarTemporalValue oldEnd,
+        CalendarTemporalValue newStart,
+        CalendarTemporalResolver resolver)
+    {
+        if (oldStart.Kind is CalendarTemporalKind.Date or CalendarTemporalKind.FloatingDateTime)
+            return ShiftByLocalClock(oldStart, oldEnd, newStart);
+        var resolvedOldStart = resolver.Resolve(ToCalDateTime(oldStart));
+        var resolvedOldEnd = resolver.Resolve(ToCalDateTime(oldEnd));
+        var resolvedNewStart = resolver.Resolve(ToCalDateTime(newStart), generated: true);
+        if (resolvedOldStart.Value is null || resolvedOldEnd.Value is null || resolvedNewStart.Value is null)
+            return null;
+        var duration = resolvedOldEnd.Value.Value - resolvedOldStart.Value.Value;
+        return ResolveAccurate(newStart, resolvedNewStart.Value.Value, duration, resolver).Value;
+    }
+
+    private static CalendarTemporalValue? ShiftByLocalClock(
+        CalendarTemporalValue oldStart,
+        CalendarTemporalValue oldEnd,
+        CalendarTemporalValue newStart)
+    {
+        var oldStartValue = ParseLocal(oldStart);
+        var duration = ParseLocal(oldEnd) - oldStartValue;
+        if (duration <= TimeSpan.Zero)
+            return null;
+        var shifted = ParseLocal(newStart) + duration;
+        var format = newStart.Kind == CalendarTemporalKind.Date ? "yyyy-MM-dd" : "yyyy-MM-dd'T'HH:mm:ss";
+        var value = shifted.ToString(format, CultureInfo.InvariantCulture);
+        return newStart with
+        {
+            Value = newStart.Kind == CalendarTemporalKind.UtcDateTime ? value + "Z" : value
+        };
+    }
+
+    public static CalendarTemporalValue AddNominalDay(CalendarTemporalValue start)
+    {
+        var shifted = ParseLocal(start).AddDays(1);
+        var format = start.Kind == CalendarTemporalKind.Date ? "yyyy-MM-dd" : "yyyy-MM-dd'T'HH:mm:ss";
+        var value = shifted.ToString(format, CultureInfo.InvariantCulture);
+        return start with { Value = start.Kind == CalendarTemporalKind.UtcDateTime ? value + "Z" : value };
+    }
+
+    private static DateTime ParseLocal(CalendarTemporalValue value)
+    {
+        var format = value.Kind == CalendarTemporalKind.Date ? "yyyy-MM-dd" : "yyyy-MM-dd'T'HH:mm:ss";
+        return DateTime.ParseExact(value.Value.TrimEnd('Z'), format, CultureInfo.InvariantCulture);
+    }
+
     private static CalendarDurationResolution ResolveAccurateCore(
         CalendarTemporalValue start,
         DateTimeOffset resolvedStart,

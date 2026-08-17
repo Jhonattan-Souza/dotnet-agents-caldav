@@ -38,6 +38,10 @@ public sealed class ContractCatalogTests
 
         catalog["$defs"]!["snapshotMutationOutcome"]!["oneOf"]!.AsArray().Count.ShouldBe(3);
         catalog["$defs"]!["deleteMutationOutcome"]!["oneOf"]!.AsArray().Count.ShouldBe(3);
+        var executionLimits = catalog["$defs"]!["executionLimits"]!.AsObject();
+        executionLimits["additionalProperties"]!.GetValue<bool>().ShouldBeFalse();
+        executionLimits["properties"]!["dimension"]!["enum"]!.AsArray()
+            .Select(item => item!.GetValue<string>()).ShouldBe(["elapsed_time"]);
         var mrtr = catalog["mrtrWireContract"]!.AsObject();
         mrtr["toolsCallParams"]!["oneOf"]!.AsArray().Count.ShouldBe(20);
         mrtr["toolsCallParams"]!["oneOf"]![0]!["properties"]!["arguments"]!["$ref"].ShouldNotBeNull();
@@ -158,6 +162,72 @@ public sealed class ContractCatalogTests
     }
 
     [Fact]
+    public void Patch_catalog_models_every_structured_collection_without_a_destructive_structured_data_scalar()
+    {
+        var definitions = ReadJson("mcp-tool-catalog.json")["$defs"]!;
+        var eventFields = ScalarFields(definitions["eventScalarPatch"]!);
+        var todoFields = ScalarFields(definitions["todoScalarPatch"]!);
+
+        eventFields.ShouldContain("organizer");
+        eventFields.ShouldNotContain("structuredData");
+        todoFields.ShouldContain("organizer");
+        todoFields.ShouldContain("percentComplete");
+        todoFields.ShouldNotContain("completed");
+        todoFields.ShouldNotContain("structuredData");
+        FindTool(ReadJson("mcp-tool-catalog.json"), "todos.patch")["description"]!.GetValue<string>()
+            .ShouldContain("todos.complete");
+
+        var expectedItemReferences = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["categories"] = "string",
+            ["attendees"] = "#/$defs/attendee",
+            ["participants"] = "#/$defs/participant",
+            ["contacts"] = "#/$defs/textProperty",
+            ["resources"] = "#/$defs/textProperty",
+            ["relatedTo"] = "#/$defs/relation",
+            ["requestStatuses"] = "#/$defs/requestStatus",
+            ["alarms"] = "#/$defs/alarm",
+            ["attachments"] = "#/$defs/namedUri",
+            ["comments"] = "#/$defs/textProperty",
+            ["styledDescriptions"] = "#/$defs/textProperty",
+            ["images"] = "#/$defs/namedUri",
+            ["conferences"] = "#/$defs/namedUri",
+            ["links"] = "#/$defs/namedUri",
+            ["concepts"] = "#/$defs/uriProperty",
+            ["structuredDataUris"] = "#/$defs/uriProperty",
+            ["locationUris"] = "#/$defs/namedUri",
+            ["resourceUris"] = "#/$defs/namedUri"
+        };
+        var branches = definitions["collectionPatch"]!["oneOf"]!.AsArray();
+
+        branches.Count.ShouldBe(expectedItemReferences.Count * 2);
+        foreach (var expected in expectedItemReferences)
+        {
+            var fieldBranches = branches.Where(branch =>
+                branch!["properties"]!["field"]!["const"]!.GetValue<string>() == expected.Key).ToArray();
+            fieldBranches.Length.ShouldBe(2);
+            fieldBranches.Select(branch => branch!["properties"]!["operation"]!["const"]!.GetValue<string>())
+                .OrderBy(value => value, StringComparer.Ordinal)
+                .ShouldBe(["addRemove", "replaceAll"]);
+            foreach (var branch in fieldBranches)
+            {
+                branch!["additionalProperties"]!.GetValue<bool>().ShouldBeFalse();
+                AssertItemType(branch, expected.Value);
+            }
+            var addRemove = fieldBranches.Single(branch =>
+                branch!["properties"]!["operation"]!["const"]!.GetValue<string>() == "addRemove")!;
+            var nonEmptyAlternatives = addRemove["anyOf"]!.AsArray();
+            nonEmptyAlternatives.Count.ShouldBe(2);
+            foreach (var name in new[] { "add", "remove" })
+            {
+                var alternative = nonEmptyAlternatives.Single(node =>
+                    node!["required"]!.AsArray().Single()!.GetValue<string>() == name)!;
+                alternative["properties"]![name]!["minItems"]!.GetValue<int>().ShouldBe(1);
+            }
+        }
+    }
+
+    [Fact]
     public void Evidence_catalog_has_one_complete_row_for_every_normative_requirement()
     {
         var catalog = File.ReadAllText(ContractPath("requirement-evidence-catalog.md"));
@@ -179,6 +249,9 @@ public sealed class ContractCatalogTests
         catalog.ShouldNotContain("assert this observable result:");
         catalog.ShouldNotContain("Run the catalog verifier and assert this observable result:");
         catalog.ShouldNotContain("committed named scenario must emit");
+        catalog.ShouldNotContain("missing or weak revisions fail before network");
+        catalog.ShouldContain(
+            "origin and Calendar discovery precede revision validation; missing or weak revisions fail before write");
         var oracles = catalog.Split('\n').Where(line => line.StartsWith("- Objective oracle:", StringComparison.Ordinal)).ToArray();
         oracles.Length.ShouldBe(96);
         oracles.Distinct(StringComparer.Ordinal).Count().ShouldBe(96);
@@ -314,6 +387,22 @@ public sealed class ContractCatalogTests
 
     private static JsonObject FindTool(JsonObject catalog, string name) =>
         catalog["tools"]!.AsArray().Single(tool => tool!["name"]!.GetValue<string>() == name)!.AsObject();
+
+    private static string[] ScalarFields(JsonNode scalarPatch) => scalarPatch["oneOf"]!.AsArray()
+        .Select(branch => branch!["properties"]!["field"]!["const"]!.GetValue<string>())
+        .Distinct(StringComparer.Ordinal)
+        .ToArray();
+
+    private static void AssertItemType(JsonNode branch, string expected)
+    {
+        var operation = branch["properties"]!["operation"]!["const"]!.GetValue<string>();
+        var arrayName = operation == "replaceAll" ? "values" : "add";
+        var items = branch["properties"]![arrayName]!["items"]!;
+        if (expected == "string")
+            items["type"]!.GetValue<string>().ShouldBe(expected);
+        else
+            items["$ref"]!.GetValue<string>().ShouldBe(expected);
+    }
 
     private static IEnumerable<string> ExpectedRequirementIds()
     {

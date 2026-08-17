@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 using DotnetAgents.CalDav.Core.Models;
 
@@ -32,6 +33,96 @@ internal static class CalendarEntityCreateFidelity
             return false;
         }
     }
+
+    public static bool IsPatchEquivalent(ReadOnlySpan<byte> intendedUtf8, ReadOnlySpan<byte> observedUtf8)
+    {
+        try
+        {
+            var intended = CanonicalizePatch(CalendarContentDocument.Parse(intendedUtf8));
+            var observed = CanonicalizePatch(CalendarContentDocument.Parse(observedUtf8));
+            return intended.SequenceEqual(observed, StringComparer.Ordinal);
+        }
+        catch (Exception exception) when (exception is FormatException or DecoderFallbackException)
+        {
+            return false;
+        }
+    }
+
+    internal static bool ArePropertiesEquivalent(
+        CalendarContentProperty left,
+        CalendarContentProperty right) => string.Equals(
+        CanonicalizeProperty(left, 0),
+        CanonicalizeProperty(right, 0),
+        StringComparison.Ordinal);
+
+    internal static IReadOnlyList<string> CanonicalizeSelectedProperties(
+        CalendarContentDocument document,
+        IReadOnlyList<CalendarComponentPathSegment> root,
+        IReadOnlySet<string> propertyNames)
+    {
+        var occurrences = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var canonical = new List<string>();
+        foreach (var property in document.Properties.Where(property =>
+                     IsAtOrBelow(property.ComponentPath, root) && propertyNames.Contains(property.Name)))
+        {
+            var key = $"{string.Join('/', property.ComponentPath.Select(PathPart))}|{property.Name}";
+            var occurrence = occurrences.GetValueOrDefault(key);
+            occurrences[key] = occurrence + 1;
+            canonical.Add(CanonicalizeProperty(property, occurrence));
+        }
+        canonical.Sort(StringComparer.Ordinal);
+        return canonical;
+    }
+
+    internal static byte[] PatchIntentDigest(ReadOnlySpan<byte> intendedUtf8)
+    {
+        var document = CalendarContentDocument.Parse(intendedUtf8);
+        var canonical = CanonicalizePatch(document, property => !IsGeneratedMasterLastModified(document, property));
+        return SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('\n', canonical)));
+    }
+
+    private static IReadOnlyList<string> CanonicalizePatch(
+        CalendarContentDocument document,
+        Func<CalendarContentProperty, bool>? includeProperty = null)
+    {
+        var occurrences = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var canonical = new List<string>();
+        foreach (var component in document.Components)
+            canonical.Add("COMPONENT|" + string.Join('/', component.Path.Select(PathPart)));
+        foreach (var property in document.Properties)
+        {
+            if (includeProperty is not null && !includeProperty(property))
+                continue;
+            var key = $"{string.Join('/', property.ComponentPath.Select(PathPart))}|{property.Name}";
+            var occurrence = occurrences.GetValueOrDefault(key);
+            occurrences[key] = occurrence + 1;
+            canonical.Add(CanonicalizeProperty(property, occurrence));
+        }
+        canonical.Sort(StringComparer.Ordinal);
+        return canonical;
+    }
+
+    private static bool IsGeneratedMasterLastModified(
+        CalendarContentDocument document,
+        CalendarContentProperty property) => property.Name.Equals("LAST-MODIFIED", StringComparison.OrdinalIgnoreCase)
+        && property.ComponentPath.Count == 2
+        && property.ComponentPath[1].Name is "VEVENT" or "VTODO"
+        && !property.Parameters.Any(parameter =>
+            parameter.Name.Equals("DERIVED", StringComparison.OrdinalIgnoreCase)
+            && parameter.Values.Any(value => value.Equals("TRUE", StringComparison.OrdinalIgnoreCase)))
+        && !document.Properties.Any(candidate =>
+            candidate.Name.Equals("RECURRENCE-ID", StringComparison.OrdinalIgnoreCase)
+            && candidate.ComponentPath.SequenceEqual(property.ComponentPath));
+
+    private static bool IsDerivedEntityProperty(CalendarContentProperty property) =>
+        property.ComponentPath.Count == 2
+        && property.ComponentPath[1].Name is "VEVENT" or "VTODO"
+        && DerivedEntityProperties.Contains(property.Name);
+
+    private static bool IsAtOrBelow(
+        IReadOnlyList<CalendarComponentPathSegment> path,
+        IReadOnlyList<CalendarComponentPathSegment> root) => path.Count >= root.Count
+        && path.Take(root.Count).SequenceEqual(root);
 
     private static IReadOnlyList<string> Canonicalize(CalendarContentDocument document)
     {

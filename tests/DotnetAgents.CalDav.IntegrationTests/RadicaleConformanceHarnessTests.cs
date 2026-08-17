@@ -215,6 +215,49 @@ public sealed class RadicaleConformanceHarnessTests(RadicaleConformanceFixture f
             TestContext.Current.CancellationToken);
     }
 
+    [Fact]
+    public async Task Pinned_profile_losslessly_patches_nonrecurring_event_with_exact_strong_revision()
+    {
+        var calendarHref = $"{fixture.BaseUrl}/conformance/conformance/";
+        const string resourceName = "pinned-patch-event.ics";
+        const string content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Conformance//EN\r\nBEGIN:VEVENT\r\nUID:pinned-patch-event\r\nDTSTAMP:20260815T120000Z\r\nDTSTART:20260818T130000Z\r\nSUMMARY:Before\r\nX-KEEP;X-DUP=One,one,TWO:opaque\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var seeded = await fixture.SeedResourceAsync(
+            resourceName,
+            content,
+            TestContext.Current.CancellationToken);
+        var href = calendarHref + resourceName;
+        await using var provider = CreateProvider(fixture.BaseUrl, calendarHref);
+        var service = provider.GetRequiredService<ICalendarService>();
+        var before = await service.GetResourceAsync(href, TestContext.Current.CancellationToken);
+        before.Snapshot.ShouldNotBeNull();
+
+        var result = await service.PatchEventAsync(
+            new CalendarEventPatchRequest(
+                new CalendarResourceRevisionReference(
+                    href,
+                    "pinned-patch-event",
+                    CalendarEntityKind.Event,
+                    before.Snapshot.EntityTag),
+                new CalendarMutationTarget("master"),
+                new CalendarEventPatch(
+                    Summary: new(CalendarScalarPatchOperation.Set, "After"),
+                    Categories: new(CalendarCollectionPatchOperation.AddRemove, Add: ["Pinned"]))),
+            TestContext.Current.CancellationToken);
+
+        result.Code.ShouldBe(CalendarEntityPatchCode.Success);
+        result.MutationState.ShouldBe(CalendarMutationState.Committed);
+        result.Snapshot!.Projection.Summary.ShouldBe("After");
+        var preservedParameter = result.Snapshot.CalendarProperties.Single(property => property.Name == "X-KEEP")
+            .Parameters.ShouldHaveSingleItem();
+        preservedParameter.Name.ShouldBe("X-DUP");
+        preservedParameter.Values.ShouldBe(["One", "one", "TWO"]);
+        result.Snapshot.CalendarProperties.Single(property => property.Name == "CATEGORIES")
+            .RawEncodedValue.ShouldBe("Pinned");
+
+        await fixture.DeleteResourceHrefAsync(href, result.Snapshot.EntityTag, TestContext.Current.CancellationToken);
+        seeded.EntityTag.ShouldNotBe(result.Snapshot.EntityTag);
+    }
+
     internal static ServiceProvider CreateProvider(
         string baseUrl,
         string calendarHref,

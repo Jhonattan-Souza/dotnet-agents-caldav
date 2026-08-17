@@ -37,6 +37,7 @@ public sealed class CalDavHostBuilder
             .WithTools<CalendarOccurrenceTools>()
             .WithTools<CalendarResourceTools>()
             .WithTools<CalendarEntityCreateTools>()
+            .WithTools<CalendarEntityPatchTools>()
             .WithTools<CalendarResourceDeleteTools>()
             .WithTools<TaskListTools>()
             .WithTools<ChatTaskTools>();
@@ -93,7 +94,9 @@ public sealed class CalDavHostBuilder
         ConfigureTool(options.ToolCollection, "calendar_occurrences.query");
         ConfigureTool(options.ToolCollection, "calendar_resources.get");
         ConfigureTool(options.ToolCollection, "events.create");
+        ConfigureTool(options.ToolCollection, "events.patch");
         ConfigureTool(options.ToolCollection, "todos.create");
+        ConfigureTool(options.ToolCollection, "todos.patch");
         ConfigureTool(options.ToolCollection, "calendar_resources.delete");
         ConfigureTool(options.ToolCollection, "calendar_resources.exact_get");
     }

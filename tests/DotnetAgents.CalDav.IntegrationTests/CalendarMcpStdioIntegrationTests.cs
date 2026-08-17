@@ -55,7 +55,9 @@ public sealed class CalendarMcpStdioIntegrationTests
             "calendar_occurrences.query",
             "calendar_resources.get",
             "events.create",
+            "events.patch",
             "todos.create",
+            "todos.patch",
             "calendar_resources.delete",
             "list_task_lists",
             "show_tasks",
@@ -385,18 +387,81 @@ public sealed class CalendarMcpStdioIntegrationTests
         collision.StructuredContent.Value.GetProperty("mutationState").GetString().ShouldBe("not_committed");
         var observedEvent = await GetResourceAsync(eventRevision.Href);
         var observedTodo = await GetResourceAsync(todoRevision.Href);
-        observedEvent.EntityTag.ShouldBe(eventRevision.EntityTag);
-        observedTodo.EntityTag.ShouldBe(todoRevision.EntityTag);
         var storedEvent = Encoding.UTF8.GetString(observedEvent.Utf8);
         var storedTodo = Encoding.UTF8.GetString(observedTodo.Utf8);
+        observedEvent.EntityTag.ShouldBe(eventRevision.EntityTag);
+        observedTodo.EntityTag.ShouldBe(todoRevision.EntityTag);
         storedEvent.ShouldContain("SUMMARY:Stdio create event");
         storedEvent.ShouldNotContain("Must not overwrite");
         storedEvent.ShouldContain("ATTACH;LABEL=Agenda:https://storage.example.test/stdio-event");
+        storedTodo.ShouldContain("SUMMARY:Stdio create todo");
         storedTodo.ShouldContain("COMMENT:Stored through stdio");
         stderr.ShouldBeEmpty();
 
-        await DeleteResourceAsync(eventRevision.Href, eventRevision.EntityTag);
-        await DeleteResourceAsync(todoRevision.Href, todoRevision.EntityTag);
+        await DeleteResourceAsync(eventRevision.Href, observedEvent.EntityTag);
+        await DeleteResourceAsync(todoRevision.Href, observedTodo.EntityTag);
+    }
+
+    [Fact]
+    public async Task CalendarEntityPatch_PatchesOneEventOverRealStdioAndRadicale()
+    {
+        const string uid = "stdio-patch-event";
+        var href = await PutResourceAsync(
+            _fixture.EventCalendarHref,
+            "stdio-patch-event.ics",
+            Event(uid, "SUMMARY:Before\r\nDTSTART:20260818T130000Z\r\nDURATION:PT1H\r\n"));
+        var before = await GetResourceAsync(href);
+        var stderr = new ConcurrentQueue<string>();
+        await using var client = await CreateClientAsync(
+            stderr,
+            exposeExact: false,
+            calendarHrefs: $"{_fixture.BaseUrl}{_fixture.EventCalendarHref}");
+
+        var patched = await client.CallToolAsync(
+            "events.patch",
+            PatchArguments(new ObservedRevision(href, before.EntityTag), "event", uid, "After"),
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        var revision = AssertCommittedCreate(
+            patched,
+            "event",
+            uid,
+            $"{_fixture.BaseUrl}{_fixture.EventCalendarHref}");
+        var observed = await GetResourceAsync(href);
+        observed.EntityTag.ShouldBe(revision.EntityTag);
+        var stored = Encoding.UTF8.GetString(observed.Utf8);
+        stored.ShouldContain("SUMMARY:After");
+        stored.ShouldContain("CATEGORIES:Patched");
+        stderr.ShouldBeEmpty();
+        await DeleteResourceAsync(href, observed.EntityTag);
+    }
+
+    [Fact]
+    public async Task CalendarEntityPatch_PatchesOneReviewedTodoOverRealStdioAndRadicale()
+    {
+        const string uid = "stdio-patch-todo";
+        var href = await PutResourceAsync("stdio-patch-todo.ics", Todo(uid, "SUMMARY:Before\r\n"));
+        var before = await GetResourceAsync(href);
+        var stderr = new ConcurrentQueue<string>();
+        await using var client = await CreateClientAsync(stderr, exposeExact: false);
+
+        var patched = await client.CallToolAsync(
+            "todos.patch",
+            PatchArguments(new ObservedRevision(href, before.EntityTag), "todo", uid, "After"),
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        var revision = AssertCommittedCreate(
+            patched,
+            "todo",
+            uid,
+            $"{_fixture.BaseUrl}{_fixture.TaskListHref}");
+        var observed = await GetResourceAsync(href);
+        observed.EntityTag.ShouldBe(revision.EntityTag);
+        var stored = Encoding.UTF8.GetString(observed.Utf8);
+        stored.ShouldContain("SUMMARY:After");
+        stored.ShouldContain("CATEGORIES:Patched");
+        stderr.ShouldBeEmpty();
+        await DeleteResourceAsync(href, revision.EntityTag);
     }
 
     [Fact]
@@ -534,7 +599,9 @@ public sealed class CalendarMcpStdioIntegrationTests
             "calendar_occurrences.query",
             "calendar_resources.get",
             "events.create",
+            "events.patch",
             "todos.create",
+            "todos.patch",
             "calendar_resources.delete",
             "calendar_resources.exact_get",
             "list_task_lists",
@@ -604,10 +671,50 @@ public sealed class CalendarMcpStdioIntegrationTests
             cancellationToken: TestContext.Current.CancellationToken);
     }
 
+    private static Dictionary<string, object?> PatchArguments(
+        ObservedRevision eventRevision,
+        string kind,
+        string uid,
+        string summary) => new()
+    {
+        ["snapshot"] = new Dictionary<string, object?>
+        {
+            ["href"] = eventRevision.Href,
+            ["entityUid"] = uid,
+            ["entityKind"] = kind,
+            ["entityTag"] = eventRevision.EntityTag
+        },
+        ["target"] = new Dictionary<string, object?> { ["scope"] = "master" },
+        ["patch"] = new Dictionary<string, object?>
+        {
+            ["scalars"] = new[]
+            {
+                new Dictionary<string, object?>
+                {
+                    ["field"] = "summary",
+                    ["operation"] = "set",
+                    ["value"] = summary
+                }
+            },
+            ["collections"] = new[]
+            {
+                new Dictionary<string, object?>
+                {
+                    ["field"] = "categories",
+                    ["operation"] = "addRemove",
+                    ["add"] = new[] { "Patched" }
+                }
+            }
+        }
+    };
+
     private async Task<string> PutResourceAsync(string name, string content)
+        => await PutResourceAsync(_fixture.TaskListHref, name, content);
+
+    private async Task<string> PutResourceAsync(string calendarHref, string name, string content)
     {
         using var client = CreateAuthenticatedClient();
-        var href = $"{_fixture.TaskListHref}{name}";
+        var href = $"{calendarHref}{name}";
         using var response = await client.PutAsync(
             href,
             new StringContent(content, Encoding.UTF8, "text/calendar"),
@@ -684,6 +791,10 @@ public sealed class CalendarMcpStdioIntegrationTests
     private static string Todo(string uid, string temporalLines) =>
         $"BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Integration//EN\r\nBEGIN:VTODO\r\n"
         + $"UID:{uid}\r\nDTSTAMP:20260815T120000Z\r\n{temporalLines}END:VTODO\r\nEND:VCALENDAR\r\n";
+
+    private static string Event(string uid, string temporalLines) =>
+        $"BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Integration//EN\r\nBEGIN:VEVENT\r\n"
+        + $"UID:{uid}\r\nDTSTAMP:20260815T120000Z\r\n{temporalLines}END:VEVENT\r\nEND:VCALENDAR\r\n";
 
     private static string RangeTodo() =>
         "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Integration//EN\r\n"
