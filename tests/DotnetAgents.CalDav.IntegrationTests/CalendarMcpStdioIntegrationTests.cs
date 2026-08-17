@@ -66,13 +66,7 @@ public sealed class CalendarMcpStdioIntegrationTests
             "calendar_occurrences.cancel",
             "calendar_occurrences.restore_cancellation",
             "calendar_resources.move",
-            "calendar_resources.delete",
-            "list_task_lists",
-            "show_tasks",
-            "add_task",
-            "find_tasks",
-            "complete_task_by_summary",
-            "delete_task_by_summary"
+            "calendar_resources.delete"
         ]);
         listedTools.Tools.ShouldNotContain(tool => tool.Name == "calendar_resources.exact_get");
         calendarTool.InputSchema.GetProperty("type").GetString().ShouldBe("object");
@@ -86,7 +80,7 @@ public sealed class CalendarMcpStdioIntegrationTests
         structured.GetProperty("pagination").GetProperty("mode").GetString().ShouldBe("non_snapshot");
         structured.GetProperty("items").GetArrayLength().ShouldBe(1);
         structured.GetProperty("items")[0].GetProperty("calendar").GetProperty("href").GetString()
-            .ShouldBe($"{_fixture.BaseUrl}{_fixture.TaskListHref}");
+            .ShouldBe($"{_fixture.BaseUrl}{_fixture.TodoCalendarHref}");
         stderr.ShouldBeEmpty();
     }
 
@@ -103,7 +97,7 @@ public sealed class CalendarMcpStdioIntegrationTests
             ["calendar"] = new Dictionary<string, object?>
             {
                 ["by"] = "href",
-                ["href"] = $"{_fixture.BaseUrl}{_fixture.TaskListHref}"
+                ["href"] = $"{_fixture.BaseUrl}{_fixture.TodoCalendarHref}"
             }
         };
 
@@ -159,7 +153,7 @@ public sealed class CalendarMcpStdioIntegrationTests
         candidate.EnumerateObject().Select(property => property.Name)
             .ShouldBe(["calendar", "displayName", "entityKinds"]);
         candidate.GetProperty("calendar").GetProperty("href").GetString()
-            .ShouldBe($"{_fixture.BaseUrl}{_fixture.TaskListHref}");
+            .ShouldBe($"{_fixture.BaseUrl}{_fixture.TodoCalendarHref}");
         candidate.GetProperty("displayName").GetString().ShouldBe("Tasks");
         candidate.GetProperty("entityKinds").EnumerateObject().Select(property => property.Name)
             .ShouldBe(["event", "todo"]);
@@ -190,7 +184,7 @@ public sealed class CalendarMcpStdioIntegrationTests
                     ["calendar"] = new Dictionary<string, object?>
                     {
                         ["by"] = "href",
-                        ["href"] = $"{_fixture.BaseUrl}{_fixture.TaskListHref}"
+                        ["href"] = $"{_fixture.BaseUrl}{_fixture.TodoCalendarHref}"
                     }
                 },
                 ["from"] = new Dictionary<string, object?>
@@ -288,7 +282,7 @@ public sealed class CalendarMcpStdioIntegrationTests
     {
         var stderr = new ConcurrentQueue<string>();
         var eventCalendarHref = $"{_fixture.BaseUrl}{_fixture.EventCalendarHref}";
-        var todoCalendarHref = $"{_fixture.BaseUrl}{_fixture.TaskListHref}";
+        var todoCalendarHref = $"{_fixture.BaseUrl}{_fixture.TodoCalendarHref}";
         await using var client = await CreateClientAsync(
             stderr,
             exposeExact: false,
@@ -626,7 +620,7 @@ public sealed class CalendarMcpStdioIntegrationTests
             patched,
             "todo",
             uid,
-            $"{_fixture.BaseUrl}{_fixture.TaskListHref}");
+            $"{_fixture.BaseUrl}{_fixture.TodoCalendarHref}");
         var observed = await GetResourceAsync(href);
         observed.EntityTag.ShouldBe(revision.EntityTag);
         var stored = Encoding.UTF8.GetString(observed.Utf8);
@@ -696,7 +690,7 @@ public sealed class CalendarMcpStdioIntegrationTests
             todoResult,
             "todo",
             todoUid,
-            $"{_fixture.BaseUrl}{_fixture.TaskListHref}");
+            $"{_fixture.BaseUrl}{_fixture.TodoCalendarHref}");
         var storedTodo = Encoding.UTF8.GetString((await GetResourceAsync(todoHref)).Utf8);
         storedTodo.Split("SUMMARY:Reviewed all", StringSplitOptions.None).Length.ShouldBe(3);
         storedTodo.ShouldContain("X-MASTER:keep");
@@ -724,17 +718,17 @@ public sealed class CalendarMcpStdioIntegrationTests
             await CallOccurrenceMutationAsync(client, "add", revision, uid, "2026-08-20T09:00:00Z"),
             "todo",
             uid,
-            $"{_fixture.BaseUrl}{_fixture.TaskListHref}");
+            $"{_fixture.BaseUrl}{_fixture.TodoCalendarHref}");
         revision = AssertCommittedCreate(
             await CallOccurrenceMutationAsync(client, "exclude", revision, uid, "2026-08-19T09:00:00Z"),
             "todo",
             uid,
-            $"{_fixture.BaseUrl}{_fixture.TaskListHref}");
+            $"{_fixture.BaseUrl}{_fixture.TodoCalendarHref}");
         revision = AssertCommittedCreate(
             await CallOccurrenceMutationAsync(client, "cancel", revision, uid, "2026-08-19T09:00:00Z"),
             "todo",
             uid,
-            $"{_fixture.BaseUrl}{_fixture.TaskListHref}");
+            $"{_fixture.BaseUrl}{_fixture.TodoCalendarHref}");
         revision = AssertCommittedCreate(
             await CallOccurrenceMutationAsync(
                 client,
@@ -744,7 +738,7 @@ public sealed class CalendarMcpStdioIntegrationTests
                 "2026-08-19T09:00:00Z"),
             "todo",
             uid,
-            $"{_fixture.BaseUrl}{_fixture.TaskListHref}");
+            $"{_fixture.BaseUrl}{_fixture.TodoCalendarHref}");
         revision = AssertCommittedCreate(
             await CallOccurrenceMutationAsync(
                 client,
@@ -754,7 +748,7 @@ public sealed class CalendarMcpStdioIntegrationTests
                 "2026-08-19T09:00:00Z"),
             "todo",
             uid,
-            $"{_fixture.BaseUrl}{_fixture.TaskListHref}");
+            $"{_fixture.BaseUrl}{_fixture.TodoCalendarHref}");
 
         observed = await GetResourceAsync(href);
         observed.EntityTag.ShouldBe(revision.EntityTag);
@@ -792,7 +786,7 @@ public sealed class CalendarMcpStdioIntegrationTests
             result,
             "todo",
             uid,
-            $"{_fixture.BaseUrl}{_fixture.TaskListHref}");
+            $"{_fixture.BaseUrl}{_fixture.TodoCalendarHref}");
         observed = await GetResourceAsync(href);
         observed.EntityTag.ShouldBe(revision.EntityTag);
         var stored = Encoding.UTF8.GetString(observed.Utf8);
@@ -829,8 +823,8 @@ public sealed class CalendarMcpStdioIntegrationTests
         var source = await GetResourceAsync(sourceHref);
         var stderr = new ConcurrentQueue<string>();
         var authorizedCalendars = string.Join(',',
-            $"{_fixture.BaseUrl}{_fixture.TaskListHref}",
-            $"{_fixture.BaseUrl}{_fixture.ShoppingListHref}");
+            $"{_fixture.BaseUrl}{_fixture.TodoCalendarHref}",
+            $"{_fixture.BaseUrl}{_fixture.ShoppingCalendarHref}");
         await using var client = await CreateClientAsync(
             stderr,
             exposeExact: false,
@@ -853,7 +847,7 @@ public sealed class CalendarMcpStdioIntegrationTests
                     ["calendar"] = new Dictionary<string, object?>
                     {
                         ["by"] = "href",
-                        ["href"] = $"{_fixture.BaseUrl}{_fixture.ShoppingListHref}"
+                        ["href"] = $"{_fixture.BaseUrl}{_fixture.ShoppingCalendarHref}"
                     }
                 }
             },
@@ -865,7 +859,7 @@ public sealed class CalendarMcpStdioIntegrationTests
         structured.GetProperty("mutationState").GetString().ShouldBe("committed");
         var revision = structured.GetProperty("snapshot").GetProperty("resourceRevision");
         var destinationHref = revision.GetProperty("href").GetString().ShouldNotBeNull();
-        destinationHref.ShouldStartWith($"{_fixture.BaseUrl}{_fixture.ShoppingListHref}");
+        destinationHref.ShouldStartWith($"{_fixture.BaseUrl}{_fixture.ShoppingCalendarHref}");
         var projection = structured.GetProperty("snapshot").GetProperty("projection");
         projection.GetProperty("uid").GetString().ShouldBe(uid);
         projection.GetProperty("kind").GetString().ShouldBe("todo");
@@ -1024,13 +1018,7 @@ public sealed class CalendarMcpStdioIntegrationTests
             "calendar_resources.exact_get",
             "calendar_resources.exact_create",
             "calendar_resources.exact_replace",
-            "calendar_resources.exact_move",
-            "list_task_lists",
-            "show_tasks",
-            "add_task",
-            "find_tasks",
-            "complete_task_by_summary",
-            "delete_task_by_summary"
+            "calendar_resources.exact_move"
         ]);
         listed.Resources.ShouldBeEmpty();
         read.Contents.ShouldHaveSingleItem().ShouldBeOfType<BlobResourceContents>().DecodedData
@@ -1316,7 +1304,7 @@ public sealed class CalendarMcpStdioIntegrationTests
     }
 
     private async Task<string> PutResourceAsync(string name, string content)
-        => await PutResourceAsync(_fixture.TaskListHref, name, content);
+        => await PutResourceAsync(_fixture.TodoCalendarHref, name, content);
 
     private async Task<string> PutResourceAsync(string calendarHref, string name, string content)
     {
@@ -1341,7 +1329,7 @@ public sealed class CalendarMcpStdioIntegrationTests
                     ["calendar"] = new Dictionary<string, object?>
                     {
                         ["by"] = "href",
-                        ["href"] = $"{_fixture.BaseUrl}{_fixture.TaskListHref}"
+                        ["href"] = $"{_fixture.BaseUrl}{_fixture.TodoCalendarHref}"
                     }
                 },
                 ["from"] = new Dictionary<string, object?> { ["kind"] = "utcDateTime", ["value"] = from },
@@ -1454,7 +1442,7 @@ public sealed class CalendarMcpStdioIntegrationTests
         ["CALDAV_URL"] = _fixture.BaseUrl,
         ["CALDAV_USERNAME"] = "caldavtest",
         ["CALDAV_PASSWORD"] = "caldavtest123",
-        ["CALDAV_CALENDAR_HREFS"] = $"{_fixture.BaseUrl}{_fixture.TaskListHref}"
+        ["CALDAV_CALENDAR_HREFS"] = $"{_fixture.BaseUrl}{_fixture.TodoCalendarHref}"
     };
 
     private static string Todo(string uid, string temporalLines) =>

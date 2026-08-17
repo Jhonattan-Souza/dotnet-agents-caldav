@@ -9,17 +9,6 @@ namespace DotnetAgents.CalDav.Mcp.Tests.Unit;
 public class CalDavMcpRunnerTests
 {
     [Theory]
-    [InlineData("true")]
-    [InlineData("True")]
-    [InlineData("TRUE")]
-    public void ShouldExposeAdvancedTools_ReturnsTrue_ForCaseInsensitiveTrue(string envValue)
-    {
-        var result = CalDavMcpRunner.ShouldExposeAdvancedTools(_ => envValue);
-
-        result.ShouldBeTrue();
-    }
-
-    [Theory]
     [InlineData("true", true)]
     [InlineData("TRUE", true)]
     [InlineData("false", false)]
@@ -27,6 +16,20 @@ public class CalDavMcpRunnerTests
     public void ShouldExposeExactTools_UsesIndependentOptIn(string? envValue, bool expected)
     {
         CalDavMcpRunner.ShouldExposeExactTools(_ => envValue).ShouldBe(expected);
+    }
+
+    [Fact]
+    public void ShouldExposeExactTools_ReadsOnlyTheFrozenExactGateName()
+    {
+        var requestedNames = new List<string>();
+
+        CalDavMcpRunner.ShouldExposeExactTools(name =>
+        {
+            requestedNames.Add(name);
+            return null;
+        }).ShouldBeFalse();
+
+        requestedNames.ShouldBe(["CALDAV_EXPOSE_EXACT_TOOLS"]);
     }
 
     [Fact]

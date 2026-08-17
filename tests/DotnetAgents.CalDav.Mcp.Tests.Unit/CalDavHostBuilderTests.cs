@@ -34,7 +34,7 @@ public class CalDavHostBuilderTests
     }
 
     [Fact]
-    public void BuildHost_RegistersTaskService_FromCore()
+    public void BuildHost_RegistersCalendarService_FromCore()
     {
         // Arrange
         var builder = CalDavHostBuilder.CreateBuilder();
@@ -44,9 +44,9 @@ public class CalDavHostBuilderTests
         using var host = builder.Build();
 
         // Assert
-        var taskService = host.Services.GetService<ITaskService>();
-        taskService.ShouldNotBeNull();
-        taskService.ShouldBeAssignableTo<ITaskService>();
+        var calendarService = host.Services.GetService<ICalendarService>();
+        calendarService.ShouldNotBeNull();
+        calendarService.ShouldBeAssignableTo<ICalendarService>();
     }
 
     [Fact]
@@ -61,8 +61,7 @@ public class CalDavHostBuilderTests
 
         // Assert — host builds without throwing
         host.ShouldNotBeNull();
-        var taskService = host.Services.GetService<ITaskService>();
-        taskService.ShouldNotBeNull();
+        host.Services.GetService<ICalendarService>().ShouldNotBeNull();
     }
 
     [Fact]
@@ -122,18 +121,6 @@ public class CalDavHostBuilderTests
     }
 
     [Fact]
-    public void CreateBuilder_RegistersTaskCompletionAsTransient()
-    {
-        var builder = CalDavHostBuilder.CreateBuilder();
-
-        var registration = builder.Services.SingleOrDefault(
-            descriptor => descriptor.ServiceType == typeof(TaskCompletion));
-
-        registration.ShouldNotBeNull();
-        registration.Lifetime.ShouldBe(ServiceLifetime.Transient);
-    }
-
-    [Fact]
     public void CreateBuilder_HasNoConsoleLoggingProviders()
     {
         // The MCP server uses stdio transport (JSON-RPC over stdin/stdout).
@@ -185,7 +172,7 @@ public class CalDavHostBuilderTests
     }
 
     [Fact]
-    public void CreateBuilder_DefaultMode_RegistersCalendarDiscoveryAlongsideChatSafeLegacyTools()
+    public void CreateBuilder_DefaultMode_RegistersOnlySemanticCalendarToolTypes()
     {
         // Arrange & Act
         var builder = CalDavHostBuilder.CreateBuilder();
@@ -202,9 +189,7 @@ public class CalDavHostBuilderTests
             typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarEntityCreateTools),
             typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarEntityPatchTools),
             typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarResourceMoveTools),
-            typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarResourceDeleteTools),
-            typeof(DotnetAgents.CalDav.Mcp.Tools.TaskListTools),
-            typeof(DotnetAgents.CalDav.Mcp.Tools.ChatTaskTools)
+            typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarResourceDeleteTools)
         ]);
 
     }
@@ -488,70 +473,7 @@ public class CalDavHostBuilderTests
             "calendar_occurrences.cancel",
             "calendar_occurrences.restore_cancellation",
             "calendar_resources.move",
-            "calendar_resources.delete",
-            "list_task_lists",
-            "show_tasks",
-            "add_task",
-            "find_tasks",
-            "complete_task_by_summary",
-            "delete_task_by_summary"
-        ]);
-    }
-
-    [Fact]
-    public void CreateBuilder_AdvancedMode_KeepsLegacyAdvancedTools()
-    {
-        var builder = CalDavHostBuilder.CreateBuilder(exposeAdvancedTools: true);
-
-        var registeredToolTypes = GetRegisteredMcpToolTypes(builder.Services);
-
-        registeredToolTypes.ShouldContain(typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarTools));
-        registeredToolTypes.ShouldContain(typeof(DotnetAgents.CalDav.Mcp.Tools.TaskQueryTools));
-        registeredToolTypes.ShouldContain(typeof(DotnetAgents.CalDav.Mcp.Tools.TaskMutationTools));
-    }
-
-    [Fact]
-    public void BuildHost_AdvancedMode_ListsRankedToolsThenOrdinalFallback()
-    {
-        var builder = CalDavHostBuilder.CreateBuilder(exposeAdvancedTools: true);
-        builder.Services.ConfigureCalDav(ValidOptions);
-        using var host = builder.Build();
-
-        var tools = host.Services.GetRequiredService<IOptions<ModelContextProtocol.Server.McpServerOptions>>().Value
-            .ToolCollection!
-            .ToArray()
-            .Select(tool => tool.ProtocolTool.Name);
-
-        tools.ShouldBe(
-        [
-            "calendars.list",
-            "calendar_entities.query",
-            "calendar_occurrences.query",
-            "calendar_resources.get",
-            "events.create",
-            "events.patch",
-            "todos.create",
-            "todos.patch",
-            "todos.complete",
-            "calendar_occurrences.add",
-            "calendar_occurrences.exclude",
-            "calendar_occurrences.restore_exclusion",
-            "calendar_occurrences.cancel",
-            "calendar_occurrences.restore_cancellation",
-            "calendar_resources.move",
-            "calendar_resources.delete",
-            "list_task_lists",
-            "show_tasks",
-            "add_task",
-            "find_tasks",
-            "complete_task_by_summary",
-            "delete_task_by_summary",
-            "complete_task",
-            "create_task",
-            "delete_task",
-            "get_task",
-            "list_tasks",
-            "update_task"
+            "calendar_resources.delete"
         ]);
     }
 

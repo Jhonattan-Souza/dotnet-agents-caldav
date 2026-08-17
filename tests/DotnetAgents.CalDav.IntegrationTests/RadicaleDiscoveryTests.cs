@@ -1,7 +1,10 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
+using DotnetAgents.CalDav.Core.Abstractions;
+using DotnetAgents.CalDav.Core.DependencyInjection;
 using DotnetAgents.CalDav.IntegrationTests.Fixtures;
+using Microsoft.Extensions.DependencyInjection;
 using Shouldly;
 using Xunit;
 
@@ -88,7 +91,7 @@ public class RadicaleDiscoveryTests(RadicaleFixture fixture) : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Radicale_TaskCollectionExists_And_HasVtodo()
+    public async Task Radicale_TodoCalendarExists_And_HasVtodo()
     {
         const string propfindBody = """
             <?xml version="1.0" encoding="utf-8"?>
@@ -104,7 +107,7 @@ public class RadicaleDiscoveryTests(RadicaleFixture fixture) : IAsyncLifetime
             </d:propfind>
             """;
 
-        var request = new HttpRequestMessage(new HttpMethod("PROPFIND"), fixture.TaskListHref)
+        var request = new HttpRequestMessage(new HttpMethod("PROPFIND"), fixture.TodoCalendarHref)
         {
             Content = new StringContent(propfindBody, Encoding.UTF8, "application/xml")
         };
@@ -112,20 +115,31 @@ public class RadicaleDiscoveryTests(RadicaleFixture fixture) : IAsyncLifetime
 
         var response = await _diagClient.SendAsync(request, TestContext.Current.CancellationToken);
         response.StatusCode.ShouldBe(HttpStatusCode.MultiStatus,
-            $"Status: {response.StatusCode}, Path: {fixture.TaskListHref}");
+            $"Status: {response.StatusCode}, Path: {fixture.TodoCalendarHref}");
         var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         body.Contains("VTODO", StringComparison.OrdinalIgnoreCase).ShouldBeTrue(
             $"Expected VTODO support in task collection response: {body}");
     }
 
     [Fact]
-    public async Task Radicale_CalendarHomeSet_DiscoverableViaProductionCode()
+    public async Task Radicale_CalendarHomeSet_DiscoverableViaCalendarClient()
     {
-        var taskLists = await fixture.TaskService.GetTaskListsAsync(TestContext.Current.CancellationToken);
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddCalDavCalendars(options =>
+        {
+            options.BaseUrl = fixture.BaseUrl;
+            options.Username = "caldavtest";
+            options.Password = "caldavtest123";
+        });
+        await using var provider = services.BuildServiceProvider();
 
-        taskLists.ShouldNotBeEmpty();
-        taskLists.ShouldContain(
-            taskList => taskList.Href.TrimEnd('/') == fixture.TaskListHref.TrimEnd('/'),
-            $"Expected task list '{fixture.TaskListHref}' to be discovered via production code.");
+        var calendars = await provider.GetRequiredService<ICalendarClient>()
+            .GetCalendarsAsync(TestContext.Current.CancellationToken);
+
+        calendars.ShouldContain(
+            calendar => calendar.Href.TrimEnd('/').EndsWith(fixture.TodoCalendarHref.TrimEnd('/'), StringComparison.Ordinal)
+                && calendar.TodoSupport == Core.Models.EntityKindSupport.Advertised,
+            $"Expected To-do Calendar '{fixture.TodoCalendarHref}' to be discovered via production code.");
     }
 }

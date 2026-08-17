@@ -3,24 +3,17 @@ using System.Text;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Configurations;
 using DotNet.Testcontainers.Containers;
-using DotnetAgents.CalDav.Core.Abstractions;
-using DotnetAgents.CalDav.Core.Configuration;
-using DotnetAgents.CalDav.Core.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace DotnetAgents.CalDav.IntegrationTests.Fixtures;
 
 /// <summary>
 /// xUnit collection fixture that manages a Radicale CalDAV container via Testcontainers,
-/// seeds multiple task collections, and provides a production-wired <see cref="ITaskService"/>.
+/// seeds Event and To-do Calendars for live protocol tests.
 /// </summary>
 public sealed class RadicaleFixture : IAsyncLifetime
 {
     private IContainer? _container;
-    private ServiceProvider? _serviceProvider;
-
     private const string TestUsername = "caldavtest";
     private const string TestPassword = "caldavtest123";
     private const int RadicalePort = 5232;
@@ -29,20 +22,17 @@ public sealed class RadicaleFixture : IAsyncLifetime
     private const string ShoppingCollectionName = "shopping";
     private const string WorkCollectionName = "work";
 
-    /// <summary>Production-wired <see cref="ITaskService"/> for test consumption.</summary>
-    public ITaskService TaskService { get; private set; } = null!;
-
-    /// <summary>The href of the seeded task collection (e.g. <c>/caldavtest/tasks/</c>).</summary>
-    public string TaskListHref { get; private set; } = null!;
+    /// <summary>The href of the seeded To-do Calendar (e.g. <c>/caldavtest/tasks/</c>).</summary>
+    public string TodoCalendarHref { get; private set; } = null!;
 
     /// <summary>The href of the isolated seeded Event calendar.</summary>
     public string EventCalendarHref { get; private set; } = null!;
 
-    /// <summary>The href of the seeded shopping task collection.</summary>
-    public string ShoppingListHref { get; private set; } = null!;
+    /// <summary>The href of the seeded Shopping To-do Calendar.</summary>
+    public string ShoppingCalendarHref { get; private set; } = null!;
 
-    /// <summary>The href of the seeded work task collection.</summary>
-    public string WorkListHref { get; private set; } = null!;
+    /// <summary>The href of the seeded Work To-do Calendar.</summary>
+    public string WorkCalendarHref { get; private set; } = null!;
 
     /// <summary>The base URL of the Radicale container (e.g. <c>http://localhost:31234</c>).</summary>
     public string BaseUrl { get; private set; } = null!;
@@ -96,43 +86,26 @@ public sealed class RadicaleFixture : IAsyncLifetime
             "Events",
             "VEVENT",
             cancellationToken);
-        TaskListHref = await CreateCalendarCollectionAsync(
+        TodoCalendarHref = await CreateCalendarCollectionAsync(
             TaskCollectionName,
             "Tasks",
             "VTODO",
             cancellationToken);
-        ShoppingListHref = await CreateCalendarCollectionAsync(
+        ShoppingCalendarHref = await CreateCalendarCollectionAsync(
             ShoppingCollectionName,
             "Shopping",
             "VTODO",
             cancellationToken);
-        WorkListHref = await CreateCalendarCollectionAsync(
+        WorkCalendarHref = await CreateCalendarCollectionAsync(
             WorkCollectionName,
             "Work",
             "VTODO",
             cancellationToken);
 
-        // 3. Wire production DI (AddCalDavTasks) against the live container.
-        var services = new ServiceCollection();
-        services.AddLogging(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Debug));
-        services.AddCalDavTasks(options =>
-        {
-            options.BaseUrl = BaseUrl;
-            options.Username = TestUsername;
-            options.Password = TestPassword;
-        });
-
-        _serviceProvider = services.BuildServiceProvider();
-        TaskService = _serviceProvider.GetRequiredService<ITaskService>();
     }
 
     public async ValueTask DisposeAsync()
     {
-        if (_serviceProvider is not null)
-        {
-            await _serviceProvider.DisposeAsync();
-        }
-
         if (_container is not null)
         {
             await _container.DisposeAsync();

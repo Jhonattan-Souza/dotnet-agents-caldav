@@ -42,7 +42,6 @@ public class CalDavEnvironmentMapperTests
         configure(options);
 
         options.CalendarHrefs.ShouldBe("https://caldav.example.com/a/,https://caldav.example.com/b/");
-        options.TaskLists.ShouldBeNull();
     }
 
     [Fact]
@@ -110,6 +109,29 @@ public class CalDavEnvironmentMapperTests
 
         options.DefaultTodoCalendarName.ShouldBeNull();
         options.DefaultEventCalendarName.ShouldBeNull();
+    }
+
+    [Fact]
+    public void MapFromEnvironment_ReadsOnlyTheFrozenCalendarEnvironmentNames()
+    {
+        var requestedNames = new List<string>();
+
+        var configure = CalDavEnvironmentMapper.MapFromEnvironment(name =>
+        {
+            requestedNames.Add(name);
+            return null;
+        });
+        configure(new CalDavOptions());
+
+        requestedNames.ShouldBe(
+        [
+            "CALDAV_URL",
+            "CALDAV_USERNAME",
+            "CALDAV_PASSWORD",
+            "CALDAV_CALENDAR_HREFS",
+            "CALDAV_DEFAULT_TODO_CALENDAR_NAME",
+            "CALDAV_DEFAULT_EVENT_CALENDAR_NAME"
+        ]);
     }
 
 }

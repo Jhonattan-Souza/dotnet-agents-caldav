@@ -359,13 +359,13 @@ public sealed class ContractCatalogTests
     }
 
     [Fact]
-    public void Agent_instructions_name_the_current_default_semantic_subset()
+    public void Agent_instructions_name_the_frozen_default_semantic_catalog()
     {
         var instructions = File.ReadAllText(Path.Combine(RepositoryRoot(), "AGENTS.md"));
 
-        instructions.ShouldContain("default host exposes the implemented 15-tool semantic subset");
+        instructions.ShouldContain("default host exposes exactly the frozen 16-tool semantic catalog");
         instructions.ShouldContain("including `todos.complete`");
-        instructions.ShouldNotContain("16-tool semantic catalog");
+        instructions.ShouldContain("It contains no legacy aliases");
     }
 
     private const string RadicaleConformanceIndexDigest = "sha256:3a0080ea51ac69dcd74e345b9587dc14a8c8af0652046069005749f9a75c5c80";

@@ -4,7 +4,7 @@ namespace DotnetAgents.CalDav.Core.Configuration;
 
 /// <summary>
 /// Configuration options for the CalDAV client.
-/// Bound from configuration via <c>AddCalDavTasks</c> DI extension.
+/// Bound from configuration via <c>AddCalDavCalendars</c> DI extension.
 /// </summary>
 public sealed class CalDavOptions
 {
@@ -18,12 +18,6 @@ public sealed class CalDavOptions
 
     /// <summary>Password or token for authentication.</summary>
     public string Password { get; set; } = string.Empty;
-
-    /// <summary>Comma-separated list of calendar hrefs to restrict task list discovery. Empty = discover all.</summary>
-    public string? TaskLists { get; set; }
-
-    /// <summary>Display name of the default task list used when no explicit list is specified by the user.</summary>
-    public string? DefaultTaskList { get; set; }
 
     /// <summary>Comma-separated exact canonical Calendar href allowlist. Empty means every discovered Calendar.</summary>
     public string? CalendarHrefs { get; set; }

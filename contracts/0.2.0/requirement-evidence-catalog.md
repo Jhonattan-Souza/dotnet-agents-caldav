@@ -667,10 +667,10 @@ Every requirement row contains the normative statement, source, interoperability
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: real MCP client over stdio.
-- Named scenario or fixture: `0.2.0/mcp/cal-mcp-002`; committed issue #40 targets: `CalDavHostBuilderTests.CreateBuilder_DefaultMode_RegistersCalendarDiscoveryAlongsideChatSafeLegacyTools` and `BuildHost_DefaultMode_ListsToolsInCanonicalWireOrder`.
+- Named scenario or fixture: `0.2.0/mcp/cal-mcp-002`; `CalDavHostBuilderTests.BuildHost_DefaultMode_ListsToolsInCanonicalWireOrder` and `CalendarMcpStdioIntegrationTests.CalendarList_UsesNativeDiscoverAndReturnsStructuredContentOverStdio`.
 - Objective oracle: Given tools/list, when catalog is emitted, then the 16 default names exactly equal the committed discovery order and no exact tool appears without opt-in.
-- Implementation status: the catalog position and default exposure are implemented through `calendar_resources.move`; remaining semantic tools retain their owning-ticket status.
-- Evidence status: `CalDavHostBuilderTests` and native stdio discovery assert the canonical order with move immediately before delete.
+- Implementation status: implemented. The default host exposes exactly the frozen 16-tool semantic catalog with no legacy aliases.
+- Evidence status: `CalDavHostBuilderTests` and native stdio discovery assert the exact canonical order and absence of exact tools without opt-in.
 
 ## CAL-MCP-003
 
@@ -981,8 +981,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: packed-artifact check.
 - Named scenario or fixture: `0.2.0/release/cal-release-001`.
 - Objective oracle: Given packed NuGet metadata for version 0.2.0 and prior 0.1.x clients, when artifact inspection runs, then package/server identity is unchanged, version is 0.2.0, no legacy mode/alias/parallel abstraction appears, and no CalDAV data migration request is issued.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented for the runtime and shipped assembly surface; release-version substitution remains owned by the release packaging slice.
+- Evidence status: `LegacyContractRemovalTests` proves the legacy public types and registration name are absent; host and native-stdio discovery prove there is no legacy tool mode or alias.
 
 ## CAL-RELEASE-002
 
@@ -993,8 +993,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: packed-artifact check.
 - Named scenario or fixture: `0.2.0/release/cal-release-002`.
 - Objective oracle: Given the 12 removed 0.1.x tool names and migration table, when packed catalog/docs are inspected, then every old name is absent and each listed task operation maps to the exact calendars/entities/resources/todos 0.2 tool with revision-bound delete.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented for the runtime catalog. All twelve 0.1.x tools and their backing MCP types are removed.
+- Evidence status: exact default and opt-in host/native-stdio catalog assertions contain only the frozen 0.2.0 tools; `LegacyContractRemovalTests` proves the legacy tool types are absent.
 
 ## CAL-RELEASE-003
 
@@ -1005,8 +1005,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: packed-artifact check.
 - Named scenario or fixture: `0.2.0/release/cal-release-003`.
 - Objective oracle: Given environment containing CALDAV_URL/USERNAME/PASSWORD, new calendar/default/exact variables and each old task variable, when startup validates, then required retained values map once, new names map once, old names are ignored/rejected, and metadata lists no old name.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented. Runtime mapping reads only the retained and replacement Calendar environment names; the old task and advanced-gate names are not interpreted.
+- Evidence status: `CalDavEnvironmentMapperTests.MapFromEnvironment_ReadsOnlyTheFrozenCalendarEnvironmentNames`, `CalDavMcpRunnerTests`, and `McpMetadataTests` assert the runtime and metadata environment surface.
 
 ## CAL-RELEASE-004
 

@@ -15,16 +15,6 @@ internal static class DavResponseParser
     private static readonly XNamespace CalDav = "urn:ietf:params:xml:ns:caldav";
     private static readonly XNamespace AppleCs = "http://apple.com/ns/ical/";
 
-    /// <summary>Parses a multistatus XML body into a list of <see cref="TaskList"/> records.</summary>
-    public static IReadOnlyList<TaskList> ParseTaskLists(string multistatusXml)
-    {
-        var doc = ParseDocument(multistatusXml);
-        return doc.Descendants(Dav + "response")
-            .Select(TryParseTaskList)
-            .OfType<TaskList>()
-            .ToList();
-    }
-
     /// <summary>Parses every discovered Calendar collection with independent component evidence.</summary>
     public static IReadOnlyList<CalendarDescriptor> ParseCalendars(string multistatusXml)
     {
@@ -51,19 +41,6 @@ internal static class DavResponseParser
         return doc.Descendants(Dav + "current-user-principal")
             .Descendants(Dav + "href")
             .FirstOrDefault()?.Value?.Trim();
-    }
-
-    /// <summary>
-    /// Parses a multistatus REPORT response into href → (etag, icalData) tuples.
-    /// </summary>
-    public static IReadOnlyList<(string Href, string? ETag, string ICalData)> ParseCalendarData(string multistatusXml)
-    {
-        var doc = ParseDocument(multistatusXml);
-        return doc.Descendants(Dav + "response")
-            .Select(TryParseCalendarDataResponse)
-            .Where(entry => entry.HasValue)
-            .Select(entry => entry!.Value)
-            .ToList();
     }
 
     /// <summary>Parses successful Calendar Object Resource hrefs from a REPORT multistatus.</summary>
@@ -126,29 +103,6 @@ internal static class DavResponseParser
         return href;
     }
 
-    private static TaskList? TryParseTaskList(XElement response)
-    {
-        var href = response.Element(Dav + "href")?.Value?.Trim() ?? string.Empty;
-        if (string.IsNullOrEmpty(href))
-            return null;
-
-        if (!IsCalendarCollection(response))
-            return null;
-
-        var supportedComponents = GetSupportedComponentNames(response);
-        if (!SupportsVtodo(supportedComponents))
-            return null;
-
-        return new TaskList
-        {
-            Href = href,
-            DisplayName = GetTaskListDisplayName(response, href),
-            Description = GetPropValue(response, Dav + "description"),
-            Color = GetPropValue(response, AppleCs + "calendar-color"),
-            SupportedComponents = supportedComponents
-        };
-    }
-
     private static XDocument ParseDocument(string xml)
     {
         var settings = new XmlReaderSettings
@@ -197,34 +151,8 @@ internal static class DavResponseParser
         };
     }
 
-    private static (string Href, string? ETag, string ICalData)? TryParseCalendarDataResponse(XElement response)
-    {
-        var href = response.Element(Dav + "href")?.Value?.Trim() ?? string.Empty;
-        if (string.IsNullOrEmpty(href) || !HasSuccessStatus(response))
-            return null;
-
-        var calendarData = GetPropValue(response, CalDav + "calendar-data");
-        if (calendarData is null)
-            return null;
-
-        return (href, GetPropValue(response, Dav + "getetag")?.Trim('"'), calendarData);
-    }
-
     private static bool IsCalendarCollection(XElement response) =>
         response.Descendants(Dav + "resourcetype").FirstOrDefault()?.Element(CalDav + "calendar") is not null;
-
-    private static List<string> GetSupportedComponentNames(XElement response) =>
-        response.Descendants(CalDav + "comp")
-            .Select(component => component.Attribute("name")?.Value)
-            .OfType<string>()
-            .ToList();
-
-    private static bool SupportsVtodo(IReadOnlyCollection<string> supportedComponents) =>
-        supportedComponents.Any(component => string.Equals(component, "VTODO", StringComparison.OrdinalIgnoreCase));
-
-    private static string GetTaskListDisplayName(XElement response, string href) =>
-        GetPropValue(response, Dav + "displayname")
-        ?? href.TrimEnd('/').Split('/').Last();
 
     private static (string? Name, DisplayNameProvenance Provenance) GetDisplayName(
         string? displayName,
@@ -264,12 +192,6 @@ internal static class DavResponseParser
             return [];
 
         return [new CapabilityEvidence("supported-calendar-component-set", string.Join(',', components))];
-    }
-
-    private static bool HasSuccessStatus(XElement response)
-    {
-        var status = response.Element(Dav + "status")?.Value;
-        return status is null || IsSuccessStatus(status);
     }
 
     private static string? GetPropValue(XElement response, XName propertyName)

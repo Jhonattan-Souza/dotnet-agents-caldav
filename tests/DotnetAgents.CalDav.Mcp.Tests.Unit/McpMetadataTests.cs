@@ -38,7 +38,7 @@ public class McpMetadataTests
     }
 
     [Fact]
-    public void McpServerJson_ContainsExpectedEnvironmentVariables()
+    public void McpServerJson_DeclaresOnlyFrozenCalendarEnvironmentVariables()
     {
         var serverJsonPath = GetOutputFilePath(".mcp", "server.json");
         File.Exists(serverJsonPath).ShouldBeTrue(".mcp/server.json must exist for this test");
@@ -54,51 +54,21 @@ public class McpMetadataTests
             .Select(e => e.GetProperty("name").GetString()!)
             .ToList();
 
-        envVarNames.ShouldContain("CALDAV_URL");
-        envVarNames.ShouldContain("CALDAV_USERNAME");
-        envVarNames.ShouldContain("CALDAV_PASSWORD");
-        envVarNames.ShouldContain("CALDAV_EXPOSE_EXACT_TOOLS");
-    }
-
-    [Fact]
-    public void McpServerJson_ContainsOptionalTaskListsVariable()
-    {
-        var serverJsonPath = GetOutputFilePath(".mcp", "server.json");
-        File.Exists(serverJsonPath).ShouldBeTrue(".mcp/server.json must exist for this test");
-
-        var json = File.ReadAllText(serverJsonPath);
-        using var doc = JsonDocument.Parse(json);
-        var root = doc.RootElement;
-
-        var envVars = root.GetProperty("packages")[0].GetProperty("environmentVariables");
-
-        var envVarNames = envVars.EnumerateArray()
-            .Select(e => e.GetProperty("name").GetString()!)
-            .ToList();
-
-        envVarNames.ShouldContain("CALDAV_TASK_LISTS");
-        envVarNames.ShouldContain("CALDAV_CALENDAR_HREFS");
-    }
-
-    [Fact]
-    public void McpServerJson_ContainsOptionalDefaultTaskListVariable()
-    {
-        var serverJsonPath = GetOutputFilePath(".mcp", "server.json");
-        File.Exists(serverJsonPath).ShouldBeTrue(".mcp/server.json must exist for this test");
-
-        var json = File.ReadAllText(serverJsonPath);
-        using var doc = JsonDocument.Parse(json);
-        var root = doc.RootElement;
-
-        var envVars = root.GetProperty("packages")[0].GetProperty("environmentVariables");
-
-        var envVarNames = envVars.EnumerateArray()
-            .Select(e => e.GetProperty("name").GetString()!)
-            .ToList();
-
-        envVarNames.ShouldContain("CALDAV_DEFAULT_TASK_LIST");
-        envVarNames.ShouldContain("CALDAV_DEFAULT_TODO_CALENDAR_NAME");
-        envVarNames.ShouldContain("CALDAV_DEFAULT_EVENT_CALENDAR_NAME");
+        envVarNames.ShouldBe(
+        [
+            "CALDAV_URL",
+            "CALDAV_USERNAME",
+            "CALDAV_PASSWORD",
+            "CALDAV_CALENDAR_HREFS",
+            "CALDAV_DEFAULT_TODO_CALENDAR_NAME",
+            "CALDAV_DEFAULT_EVENT_CALENDAR_NAME",
+            "CALDAV_EXPOSE_EXACT_TOOLS"
+        ]);
+        var description = root.GetProperty("description").GetString()!;
+        description.ShouldContain("Calendars");
+        description.ShouldContain("Events");
+        description.ShouldContain("To-dos");
+        description.ShouldNotContain("task management", Case.Insensitive);
     }
 
     // ─── packaging metadata ─────────────────────────────────────────────────────

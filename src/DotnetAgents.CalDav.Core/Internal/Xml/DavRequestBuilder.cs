@@ -48,47 +48,6 @@ internal static class DavRequestBuilder
         return doc.ToString(SaveOptions.DisableFormatting);
     }
 
-    /// <summary>
-    /// Builds a REPORT calendar-query body for VTODO items.
-    /// Optionally filters by completion status and date range.
-    /// </summary>
-    public static string BuildCalendarQuery(bool completedOnly = false)
-    {
-        var vtodoFilter = new XElement(CalDav + "comp-filter",
-            new XAttribute("name", "VTODO")
-        );
-
-        if (completedOnly)
-        {
-            vtodoFilter.Add(new XElement(CalDav + "prop-filter",
-                new XAttribute("name", "STATUS"),
-                new XElement(CalDav + "text-match", "COMPLETED")
-            ));
-        }
-
-        var filter = new XElement(CalDav + "filter",
-            new XElement(CalDav + "comp-filter",
-                new XAttribute("name", "VCALENDAR"),
-                vtodoFilter
-            )
-        );
-
-        var doc = new XDocument(
-            new XDeclaration("1.0", "utf-8", null),
-            new XElement(CalDav + "calendar-query",
-                new XAttribute(XNamespace.Xmlns + "d", Dav.NamespaceName),
-                new XAttribute(XNamespace.Xmlns + "c", CalDav.NamespaceName),
-                new XElement(Dav + "prop",
-                    new XElement(Dav + "getetag"),
-                    new XElement(CalDav + "calendar-data")
-                ),
-                filter
-            )
-        );
-
-        return doc.ToString(SaveOptions.DisableFormatting);
-    }
-
     /// <summary>Builds a minimal Calendar Entity candidate REPORT for one requested kind.</summary>
     public static string BuildCalendarEntityQuery(
         CalendarEntityKind entityKind,

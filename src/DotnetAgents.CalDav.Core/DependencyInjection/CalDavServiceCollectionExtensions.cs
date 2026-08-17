@@ -14,18 +14,18 @@ using Polly;
 namespace DotnetAgents.CalDav.Core.DependencyInjection;
 
 /// <summary>
-/// Extension methods for registering CalDAV task services with <see cref="IServiceCollection"/>.
+/// Extension methods for registering CalDAV Calendar services with <see cref="IServiceCollection"/>.
 /// </summary>
 public static class CalDavServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers the CalDAV task client and related services.
+    /// Registers the CalDAV Calendar client and related services.
     /// Configures <see cref="CalDavOptions"/> with validation-on-start semantics.
     /// </summary>
     /// <param name="services">The service collection to register with.</param>
     /// <param name="configure">Action to configure <see cref="CalDavOptions"/>.</param>
     /// <returns>The service collection for chaining.</returns>
-    public static IServiceCollection AddCalDavTasks(
+    public static IServiceCollection AddCalDavCalendars(
         this IServiceCollection services,
         Action<CalDavOptions> configure)
     {
@@ -40,10 +40,8 @@ public static class CalDavServiceCollectionExtensions
         // Register the IValidateOptions implementation for complex cross-property validation
         services.AddSingleton<IValidateOptions<CalDavOptions>, ValidateCalDavOptions>();
 
-        // Register ICalDavClient as a typed HttpClient. AddHttpClient creates a transient
-        // ICalDavClient per request; IHttpClientFactory pools HttpMessageHandlers for DNS refresh
-        // while creating new HttpClient instances. Register ITaskService as transient to match
-        // the typed-client lifetime — a singleton would capture a stale/transient client forever.
+        // AddHttpClient creates a transient client per request while IHttpClientFactory pools
+        // HttpMessageHandlers for DNS refresh.
         //
         // SocketsHttpHandler is used instead of HttpClientHandler for:
         // - PooledConnectionLifetime: proactively recycle stale connections before the server
@@ -96,15 +94,10 @@ public static class CalDavServiceCollectionExtensions
             options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(30);
         });
 
-        services.AddTransient<ICalDavClient>(serviceProvider => serviceProvider.GetRequiredService<CalDavClient>());
         services.AddTransient<ICalendarClient>(serviceProvider => serviceProvider.GetRequiredService<CalDavClient>());
         services.AddSingleton<TimeProvider>(TimeProvider.System);
         services.AddSingleton<ICalendarEntityIdentityGenerator, CalendarEntityIdentityGenerator>();
         services.AddTransient<ICalendarService, CalendarService>();
-
-        // ITaskService is retained internally during the staged 0.2.0 replacement.
-        services.AddTransient<ITaskService, TaskService>();
-        services.AddSingleton<ITaskListResolver, TaskListResolver>();
 
         return services;
     }
