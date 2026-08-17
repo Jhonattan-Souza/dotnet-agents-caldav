@@ -74,10 +74,15 @@ internal static class CalendarEntityCreateFidelity
         return canonical;
     }
 
-    internal static byte[] PatchIntentDigest(ReadOnlySpan<byte> intendedUtf8)
+    internal static byte[] PatchIntentDigest(
+        ReadOnlySpan<byte> intendedUtf8,
+        CalendarMutationTarget target)
     {
         var document = CalendarContentDocument.Parse(intendedUtf8);
-        var canonical = CanonicalizePatch(document, property => !IsGeneratedMasterLastModified(document, property));
+        var targetPath = FindPatchTargetPath(document, target);
+        var canonical = CanonicalizePatch(
+            document,
+            property => !IsGeneratedTargetLastModified(property, targetPath));
         return SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('\n', canonical)));
     }
 
@@ -102,17 +107,38 @@ internal static class CalendarEntityCreateFidelity
         return canonical;
     }
 
-    private static bool IsGeneratedMasterLastModified(
+    private static IReadOnlyList<CalendarComponentPathSegment> FindPatchTargetPath(
         CalendarContentDocument document,
-        CalendarContentProperty property) => property.Name.Equals("LAST-MODIFIED", StringComparison.OrdinalIgnoreCase)
+        CalendarMutationTarget target) => document.Components.Single(component => component.Path.Count == 2
+            && component.Path[1].Name is "VEVENT" or "VTODO"
+            && IsTargetComponent(document, component, target)).Path;
+
+    private static bool IsTargetComponent(
+        CalendarContentDocument document,
+        CalendarContentComponent component,
+        CalendarMutationTarget target)
+    {
+        var recurrence = document.Properties.SingleOrDefault(property =>
+            property.ComponentPath.SequenceEqual(component.Path)
+            && property.Name.Equals("RECURRENCE-ID", StringComparison.OrdinalIgnoreCase));
+        if (target.Scope == "master")
+            return recurrence is null;
+        return recurrence is not null
+            && !recurrence.Parameters.Any(parameter => parameter.Name.Equals("RANGE", StringComparison.OrdinalIgnoreCase))
+            && CalendarPatchValueSerializer.ParseTemporal(recurrence).GetCanonicalSortKey()
+                == target.RecurrenceIdentity!.GetCanonicalSortKey();
+    }
+
+    private static bool IsGeneratedTargetLastModified(
+        CalendarContentProperty property,
+        IReadOnlyList<CalendarComponentPathSegment> targetPath) => property.Name.Equals(
+            "LAST-MODIFIED",
+            StringComparison.OrdinalIgnoreCase)
         && property.ComponentPath.Count == 2
-        && property.ComponentPath[1].Name is "VEVENT" or "VTODO"
+        && property.ComponentPath.SequenceEqual(targetPath)
         && !property.Parameters.Any(parameter =>
             parameter.Name.Equals("DERIVED", StringComparison.OrdinalIgnoreCase)
-            && parameter.Values.Any(value => value.Equals("TRUE", StringComparison.OrdinalIgnoreCase)))
-        && !document.Properties.Any(candidate =>
-            candidate.Name.Equals("RECURRENCE-ID", StringComparison.OrdinalIgnoreCase)
-            && candidate.ComponentPath.SequenceEqual(property.ComponentPath));
+            && parameter.Values.Any(value => value.Equals("TRUE", StringComparison.OrdinalIgnoreCase)));
 
     private static bool IsDerivedEntityProperty(CalendarContentProperty property) =>
         property.ComponentPath.Count == 2

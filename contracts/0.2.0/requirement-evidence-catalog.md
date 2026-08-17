@@ -165,8 +165,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/resource/cal-resource-003`.
 - Objective oracle: Given a query snapshot with href `https://cal.example/a.ics`, UID `u1`, kind event, ETag `"r1"`, when patch/exact-replace/move/delete are invoked, then patch rejects anything but the complete snapshot and each existing-resource operation sends exactly one `If-Match: "r1"`.
-- Implementation status: implemented for Event and To-do Semantic Patch: a coherent direct snapshot and strong resource revision are required; ordinary master fields remain patchable on recurring masters, while recurrence-anchor/membership changes, overrides, and occurrence projections are rejected before write. Exact replacement, move, and downstream occurrence mutation remain planned.
-- Evidence status: issue #43 Core and MCP targets `CalendarEntityPatchServiceTests`, `CalendarEntityPatchMatrixTests`, and `CalendarEntityPatchToolsTests` pass locally and are included in the CI test run.
+- Implementation status: implemented for Event and To-do Semantic Patch: a coherent direct snapshot and strong resource revision are required; ordinary master fields and one explicitly identified existing occurrence are patchable on recurring resources. One-occurrence mutation materializes or edits a complete individual override while occurrence projections remain read-only; recurrence-anchor/membership changes and other mutation scopes are rejected before write. Exact replacement and move remain planned.
+- Evidence status: issue #43 Core and MCP targets plus issue #45 `CalendarEntityPatchServiceTests` one-occurrence corpus, `CalendarResourceUpdateProtocolTests`, native-stdio Radicale, and pinned-profile Radicale targets pass locally and are included in the CI test run.
 
 ## CAL-RESOURCE-004
 
@@ -609,8 +609,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/recur/cal-recur-004`.
 - Objective oracle: Given master plus overrides, when one-occurrence, this-and-future, and entire-set patches run, then one creates one complete override, future changes anchor forward while preserving unrelated exceptions, and entire-set changes all same-UID overrides only.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented for `one-occurrence`: the exact series revision and original Recurrence Identity select an existing temporal DTSTART/RRULE/RDATE/override member of a genuine recurrence set; a complete same-kind/same-UID individual override inherits unaddressed effective master or nearest-range semantics, retains original identity and unrelated identity parameters when moved, and supersedes an applicable range. Shared recurrence-structure validation returns `recurrence_unevaluable`, expansion observes the exact 2,000-identity ceiling, and RDATE PERIOD remains the frozen pre-PUT `unsupported_capability`. `this-and-future` and `entire-set` remain planned.
+- Evidence status: issue #45 targets `CalendarEntityPatchServiceTests` one-occurrence cases for moved timing, temporal RDATE, nearest-range inheritance and identity-parameter preservation, exact-individual precedence in both component orders, VTODO inheritance, named-zone DST, cancellation/range/EXDATE preservation, malformed/non-recurring/nonexistent targets, unsupported recurrence structure/PERIOD, exact bounds, stale revision, and no-change; pinned-profile and native-stdio Radicale targets cover conditional persistence.
 
 ## CAL-RECUR-005
 
@@ -717,8 +717,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-006`.
 - Objective oracle: Given first-class and ORGANIZER scalar set/clear plus field-specific categories and structured collection addRemove/replaceAll with master/identity scopes, when patch runs, then exact typed closed schemas admit only the named value type, modeled operations reach only their target, every replaceAll produces MRTR, and wrong scope/identity returns invalid_input with zero PUT.
-- Implementation status: implemented for master-scoped Event and To-do patch, including recurring-master fields that do not change recurrence membership: exact frozen scalar and field-specific collection unions are parsed strictly, scalar/addRemove edits execute directly, replaceAll always enters MRTR, and recurrence-definition/membership and occurrence scopes fail before write for downstream tickets.
-- Evidence status: `ContractCatalogTests` and `CalendarEntityPatchToolsTests` cover exact schema closure, every typed field mapping, direct versus MRTR routing, and wrong-scope zero-write rejection and pass locally.
+- Implementation status: implemented for master- and one-occurrence-scoped Event and To-do patch: the exact frozen scalar and field-specific collection unions plus the frozen original-identity wrapper are parsed strictly, scalar/addRemove edits execute directly, and replaceAll always enters MRTR with target/identity-bound preview and clock-stable intent. One-occurrence requires an identity and reserves cancellation/restoration status changes for their dedicated operations; master forbids an identity; `this-and-future`, `entire-set`, and recurrence-definition/membership edits fail before write for downstream tickets.
+- Evidence status: `ContractCatalogTests` and `CalendarEntityPatchToolsTests` cover exact schema closure, every typed field mapping, direct versus MRTR routing, strict occurrence-target admission, target/sibling-bound continuation, and wrong-scope zero-write rejection; the native-stdio Radicale target proves real MCP binding and execution.
 
 ## CAL-MCP-007
 
@@ -765,8 +765,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-010`.
 - Objective oracle: Given declined, expired, mismatched arguments, changed ETag, invalid owner, direct semantic create, scalar single-resource patch, one-occurrence mutation and todo completion, when called, then first five have no write and typed confirmation failure; the four direct operations execute without MRTR.
-- Implementation status: implemented for Event and To-do patch: decline, expiry, ownership/argument/revision mismatch write nothing; scalar and unambiguous addRemove edits execute directly, while destructive replaceAll alone requires MRTR in this slice. Other direct operations retain their owning-ticket status.
-- Evidence status: focused MRTR continuation tests prove exact zero-write rejection and direct-versus-review routing and pass locally.
+- Implementation status: implemented for Event and To-do patch, including one-occurrence: decline, expiry, ownership/argument/revision mismatch write nothing; scalar and unambiguous addRemove edits execute directly for master or one existing occurrence, while destructive replaceAll alone requires MRTR in this slice. Other direct operations retain their owning-ticket status.
+- Evidence status: focused MRTR continuation tests prove exact zero-write rejection and direct-versus-review routing; `CalendarEntityPatchToolsTests.PatchEventRawAsync_ParsesOneOccurrenceIdentityAndExecutesDirectly` and the native-stdio Radicale occurrence target prove the explicit one-occurrence direct path.
 
 ## CAL-MCP-011
 

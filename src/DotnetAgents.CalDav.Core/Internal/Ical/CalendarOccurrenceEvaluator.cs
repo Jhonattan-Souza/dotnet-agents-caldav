@@ -108,6 +108,13 @@ internal static class CalendarOccurrenceEvaluator
                 property.ComponentPath[1].Occurrence))
             .Any(HasInvalidComponentDuration);
 
+    internal static bool HasUnevaluableRecurrenceStructure(CalendarResourceSnapshot snapshot)
+    {
+        var properties = GetEntityProperties(snapshot);
+        var masterProperties = properties.Where(property => property.ComponentPath[1].Occurrence == 0).ToArray();
+        return HasUnevaluableRecurrenceShape(snapshot, properties, masterProperties);
+    }
+
     private static bool IsInvalidObservanceRecurrenceDate(CalendarProperty property) =>
         property.Name.Equals("RDATE", StringComparison.OrdinalIgnoreCase)
         && property.ValueType == CalendarPropertyValueType.Period
@@ -307,7 +314,7 @@ internal static class CalendarOccurrenceEvaluator
             var identityKey = GetIdentitySortKey(sourceStart);
             if (ExceedsEntityLimit(identities, identityKey))
                 return Failure(CalendarOccurrenceQueryCode.LimitExhausted, identities.Count);
-            if (excluded.Contains(identityKey) || definition.Cancelled)
+            if (ShouldSkipDetachedOverride(definition, overrides, excluded, identityKey))
                 continue;
             var sourceEnd = ResolveDetachedSourceEnd(
                 sourceStart, sourceDuration, sourceExactDuration, nominalDuration, resolver);
@@ -326,6 +333,14 @@ internal static class CalendarOccurrenceEvaluator
         return new CalendarOccurrenceEvaluation(
             CalendarOccurrenceQueryCode.Success, items.Values.ToArray(), identities.Count, identities);
     }
+
+    private static bool ShouldSkipDetachedOverride(
+        OverrideDefinition definition,
+        OverridePlan overrides,
+        IReadOnlySet<string> excluded,
+        string identityKey) => definition.IsRange && overrides.Individuals.ContainsKey(identityKey)
+        || excluded.Contains(identityKey)
+        || definition.Cancelled;
 
     private static CalendarDurationResolution ResolveDetachedSourceEnd(
         CalendarTemporalValue sourceStart,

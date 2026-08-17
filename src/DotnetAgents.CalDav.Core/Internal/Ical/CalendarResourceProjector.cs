@@ -114,8 +114,12 @@ internal static class CalendarResourceProjector
                 : CalendarResourceProjectionKind.Todo,
             DecodeText(GetRequiredValue(owned, "UID")),
             recurrenceProperty is null ? null : GetTemporalIdentity(recurrenceProperty),
+            recurrenceProperty is not null && HasRecurrenceRange(recurrenceProperty),
             owned);
     }
+
+    private static bool HasRecurrenceRange(CalendarContentProperty property) => property.Parameters
+        .Any(parameter => parameter.Name.Equals("RANGE", StringComparison.OrdinalIgnoreCase));
 
     private static string? ValidateComponents(IReadOnlyList<CalendarContentComponent> components)
     {
@@ -191,7 +195,7 @@ internal static class CalendarResourceProjector
         if (entities.Any(entity => !string.Equals(entity.Uid, masters[0].Uid, StringComparison.Ordinal)))
             return "recurrence_override_uid_mismatch";
         if (entities.Where(entity => entity.RecurrenceIdentity is not null)
-            .GroupBy(entity => entity.RecurrenceIdentity, StringComparer.Ordinal).Any(group => group.Count() > 1))
+            .GroupBy(entity => (entity.RecurrenceIdentity, entity.IsRange)).Any(group => group.Count() > 1))
             return "recurrence_identity_duplicate";
 
         var recurrenceError = ValidateRecurrenceFamily(entities, masters[0]);
@@ -519,5 +523,6 @@ internal static class CalendarResourceProjector
         CalendarResourceProjectionKind Kind,
         string? Uid,
         string? RecurrenceIdentity,
+        bool IsRange,
         IReadOnlyList<CalendarContentProperty> Properties);
 }

@@ -107,8 +107,10 @@ public sealed record CalendarTodoPatch(
     bool RecurrenceSetAddressed = false,
     bool RequiresConfirmation = false);
 
-/// <summary>Master-only mutation target delivered by this vertical slice.</summary>
-public sealed record CalendarMutationTarget(string Scope);
+/// <summary>Explicit master or original Recurrence Identity mutation target.</summary>
+public sealed record CalendarMutationTarget(
+    string Scope,
+    CalendarTemporalValue? RecurrenceIdentity = null);
 
 /// <summary>Revision-bound Event semantic patch request.</summary>
 public sealed record CalendarEventPatchRequest(
@@ -135,6 +137,7 @@ public enum CalendarEntityPatchCode
     OutsideScope,
     EntityKindMismatch,
     OpaqueResource,
+    RecurrenceUnevaluable,
     Conflict,
     ConcurrencyUnavailable,
     UnsupportedCapability,
