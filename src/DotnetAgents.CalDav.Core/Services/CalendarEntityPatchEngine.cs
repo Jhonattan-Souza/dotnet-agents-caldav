@@ -77,6 +77,13 @@ internal sealed class CalendarEntityPatchEngine(
             DeadlineFailure,
             cancellationToken);
 
+    public Task<CalendarEntityPatchResult> CompleteTodoAsync(
+        CalendarTodoCompletionRequest request,
+        CancellationToken cancellationToken) => ExecuteWithinPreDispatchDeadlineAsync(
+            token => CompleteTodoWithinDeadlineAsync(request, token),
+            DeadlineFailure,
+            cancellationToken);
+
     private async Task<T> ExecuteWithinPreDispatchDeadlineAsync<T>(
         Func<CancellationToken, Task<T>> execute,
         Func<T> deadlineFailure,
@@ -211,6 +218,56 @@ internal sealed class CalendarEntityPatchEngine(
                 phase: CalendarEntityPatchPhase.AdmissionAndPayload));
         }
         return new(edit.AuthoritativeUtf8, null);
+    }
+
+    private async Task<CalendarEntityPatchResult> CompleteTodoWithinDeadlineAsync(
+        CalendarTodoCompletionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var currentRead = await ReadAsync(request.Snapshot.Href, CalendarEntityKind.Todo, cancellationToken);
+        if (currentRead.Failure is not null)
+            return currentRead.Failure;
+        var current = currentRead.Read!;
+        if (current.Snapshot is null)
+            return FromReadFailure(current.Code);
+        if (current.Snapshot.AuthoritativeUtf8.Length > MaximumAuthoritativeBytes)
+        {
+            return Failure(
+                CalendarEntityPatchCode.PayloadTooLarge,
+                current.Snapshot,
+                phase: CalendarEntityPatchPhase.AdmissionAndPayload);
+        }
+
+        var validationFailure = ValidatePreparedOccurrence(request.Snapshot, current.Snapshot);
+        if (validationFailure is not null)
+            return validationFailure;
+        var edit = CalendarTodoCompletionEditor.TryComplete(
+            current.Snapshot,
+            request.RecurrenceIdentity,
+            timeProvider.GetUtcNow(),
+            cancellationToken);
+        if (edit.Failure is not null)
+            return edit.Failure;
+        if (edit.AuthoritativeUtf8 is null)
+        {
+            return new CalendarEntityPatchResult(
+                CalendarEntityPatchCode.NoChange,
+                CalendarMutationState.NotAttempted,
+                current.Snapshot,
+                Phase: CalendarEntityPatchPhase.CompleteResourceSemantics);
+        }
+        if (edit.AuthoritativeUtf8.Length > MaximumAuthoritativeBytes)
+        {
+            return Failure(
+                CalendarEntityPatchCode.PayloadTooLarge,
+                current.Snapshot,
+                phase: CalendarEntityPatchPhase.AdmissionAndPayload);
+        }
+        return await DispatchAsync(
+            request.Snapshot,
+            edit.AuthoritativeUtf8,
+            CalendarEntityKind.Todo,
+            cancellationToken);
     }
 
     private async Task<PreparedPatch> PrepareAsync(

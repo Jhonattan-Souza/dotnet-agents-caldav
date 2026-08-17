@@ -12,6 +12,68 @@ namespace DotnetAgents.CalDav.Mcp.Tests.Unit;
 public sealed class CalendarOccurrenceMutationToolsTests
 {
     [Fact]
+    public async Task CompleteTodoRawAsync_UsesFrozenRevisionWithoutCallerCompletionTime()
+    {
+        var service = Substitute.For<ICalendarService>();
+        CalendarTodoCompletionRequest? observed = null;
+        service.CompleteTodoAsync(
+                Arg.Do<CalendarTodoCompletionRequest>(request => observed = request),
+                Arg.Any<CancellationToken>())
+            .Returns(new CalendarEntityPatchResult(
+                CalendarEntityPatchCode.NoChange,
+                CalendarMutationState.NotAttempted));
+        var sut = CreateSut(service);
+        var arguments = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+            "{\"snapshot\":{\"href\":\"https://cal.example/work/series.ics\","
+            + "\"entityUid\":\"series-1\",\"entityKind\":\"todo\",\"entityTag\":\"\\\"v1\\\"\"}}");
+
+        var result = await sut.CompleteTodoRawAsync(arguments, CancellationToken.None);
+
+        result.IsError.ShouldBe(false);
+        observed.ShouldNotBeNull();
+        observed.Snapshot.EntityKind.ShouldBe(CalendarEntityKind.Todo);
+        observed.RecurrenceIdentity.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task CompleteTodoRawAsync_RejectsLegacyCallerCompletionTimeWithoutServiceCall()
+    {
+        var service = Substitute.For<ICalendarService>();
+        var arguments = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+            "{\"snapshot\":{\"href\":\"https://cal.example/work/series.ics\","
+            + "\"entityUid\":\"series-1\",\"entityKind\":\"todo\",\"entityTag\":\"\\\"v1\\\"\"},"
+            + "\"completedAt\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-17T12:00:00Z\"}}");
+
+        var result = await CreateSut(service).CompleteTodoRawAsync(arguments, CancellationToken.None);
+
+        result.IsError.ShouldBe(true);
+        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("invalid_input");
+        await service.DidNotReceive().CompleteTodoAsync(
+            Arg.Any<CalendarTodoCompletionRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("this-and-future")]
+    [InlineData("entire-set")]
+    public async Task CompleteTodoRawAsync_RejectsBroadCompletionScopeWithoutServiceCall(string scope)
+    {
+        var service = Substitute.For<ICalendarService>();
+        var arguments = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+            "{\"snapshot\":{\"href\":\"https://cal.example/work/series.ics\","
+            + "\"entityUid\":\"series-1\",\"entityKind\":\"todo\",\"entityTag\":\"\\\"v1\\\"\"},"
+            + $"\"scope\":\"{scope}\"}}");
+
+        var result = await CreateSut(service).CompleteTodoRawAsync(arguments, CancellationToken.None);
+
+        result.IsError.ShouldBe(true);
+        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("invalid_input");
+        await service.DidNotReceive().CompleteTodoAsync(
+            Arg.Any<CalendarTodoCompletionRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task AddRawAsync_UsesFrozenRevisionAndOriginalIdentity()
     {
         var service = Substitute.For<ICalendarService>();

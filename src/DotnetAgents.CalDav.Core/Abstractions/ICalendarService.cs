@@ -81,6 +81,11 @@ public interface ICalendarService
         CalendarOccurrenceMutationRequest request,
         CancellationToken cancellationToken);
 
+    /// <summary>Records one injected completion instant for a non-recurring To-do or one recurring Occurrence.</summary>
+    Task<CalendarEntityPatchResult> CompleteTodoAsync(
+        CalendarTodoCompletionRequest request,
+        CancellationToken cancellationToken);
+
     /// <summary>Deletes one reviewed resource and succeeds only after verified absence.</summary>
     Task<CalendarResourceDeleteResult> DeleteResourceAsync(
         CalendarResourceRevisionReference revision,

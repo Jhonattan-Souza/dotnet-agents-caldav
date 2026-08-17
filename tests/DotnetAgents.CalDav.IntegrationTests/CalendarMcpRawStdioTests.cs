@@ -351,6 +351,25 @@ public sealed class CalendarMcpRawStdioTests
         result.ToString().ShouldNotContain("private-b");
     }
 
+    [Theory]
+    [InlineData("\"completedAt\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-17T12:00:00Z\"}")]
+    [InlineData("\"scope\":\"this-and-future\"")]
+    [InlineData("\"scope\":\"entire-set\"")]
+    public async Task TodoCompletion_RejectsCallerTimeAndBroadScopesOverRawStdio(string forbiddenMember)
+    {
+        var request = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{"
+            + "\"name\":\"todos.complete\",\"arguments\":{"
+            + "\"snapshot\":{\"href\":\"https://cal.example/tasks/private-a.ics\","
+            + "\"entityUid\":\"private-a\",\"entityKind\":\"todo\",\"entityTag\":\"\\\"r1\\\"\"},"
+            + forbiddenMember
+            + "}}}";
+
+        var result = await InvokeRawAsync(request);
+
+        AssertTypedError(result, "invalid_input", "schemaLexicalDiscriminator");
+        result.ToString().ShouldNotContain("private-a");
+    }
+
     [Fact]
     public async Task CalendarOccurrenceMutation_OversizedArgumentsReturnRedactedAdmissionFailureBeforeNetwork()
     {

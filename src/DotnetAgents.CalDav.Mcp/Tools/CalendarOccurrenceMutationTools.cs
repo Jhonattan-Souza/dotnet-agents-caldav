@@ -33,6 +33,20 @@ public sealed class CalendarOccurrenceMutationTools
     }
 
     [McpServerTool(
+        Name = "todos.complete",
+        ReadOnly = false,
+        Destructive = false,
+        Idempotent = false,
+        OpenWorld = true,
+        UseStructuredContent = true,
+        OutputSchemaType = typeof(CalendarEntityCreateSuccessResult)),
+     Description("Record completion for one revision-bound To-do or identified To-do occurrence at an explicitly supplied absolute snapshot href.")]
+    public Task<CallToolResult> CompleteTodoAsync(
+        RequestContext<CallToolRequestParams> requestContext,
+        CancellationToken cancellationToken) =>
+        CompleteTodoRawAsync(requestContext.Params?.Arguments, cancellationToken);
+
+    [McpServerTool(
         Name = "calendar_occurrences.add",
         ReadOnly = false,
         Destructive = false,
@@ -106,41 +120,62 @@ public sealed class CalendarOccurrenceMutationTools
         IDictionary<string, JsonElement>? arguments,
         CancellationToken cancellationToken) => await ExecuteRawAsync(
         arguments,
+        ParseOccurrenceMutation,
         _calendarService.AddOccurrenceAsync,
+        "Occurrence mutation",
+        cancellationToken);
+
+    internal async Task<CallToolResult> CompleteTodoRawAsync(
+        IDictionary<string, JsonElement>? arguments,
+        CancellationToken cancellationToken) => await ExecuteRawAsync(
+        arguments,
+        ParseTodoCompletion,
+        _calendarService.CompleteTodoAsync,
+        "To-do Completion",
         cancellationToken);
 
     internal async Task<CallToolResult> ExcludeRawAsync(
         IDictionary<string, JsonElement>? arguments,
         CancellationToken cancellationToken) => await ExecuteRawAsync(
         arguments,
+        ParseOccurrenceMutation,
         _calendarService.ExcludeOccurrenceAsync,
+        "Occurrence mutation",
         cancellationToken);
 
     internal async Task<CallToolResult> RestoreExclusionRawAsync(
         IDictionary<string, JsonElement>? arguments,
         CancellationToken cancellationToken) => await ExecuteRawAsync(
         arguments,
+        ParseOccurrenceMutation,
         _calendarService.RestoreOccurrenceExclusionAsync,
+        "Occurrence mutation",
         cancellationToken);
 
     internal async Task<CallToolResult> CancelRawAsync(
         IDictionary<string, JsonElement>? arguments,
         CancellationToken cancellationToken) => await ExecuteRawAsync(
         arguments,
+        ParseOccurrenceMutation,
         _calendarService.CancelOccurrenceAsync,
+        "Occurrence mutation",
         cancellationToken);
 
     internal async Task<CallToolResult> RestoreCancellationRawAsync(
         IDictionary<string, JsonElement>? arguments,
         CancellationToken cancellationToken) => await ExecuteRawAsync(
         arguments,
+        ParseOccurrenceMutation,
         _calendarService.RestoreOccurrenceCancellationAsync,
+        "Occurrence mutation",
         cancellationToken);
 
-    private async Task<CallToolResult> ExecuteRawAsync(
+    private async Task<CallToolResult> ExecuteRawAsync<TRequest>(
         IDictionary<string, JsonElement>? arguments,
-        Func<CalendarOccurrenceMutationRequest, CancellationToken, Task<CalendarEntityPatchResult>> execute,
-        CancellationToken cancellationToken)
+        Func<IDictionary<string, JsonElement>?, TRequest?> parse,
+        Func<TRequest, CancellationToken, Task<CalendarEntityPatchResult>> execute,
+        string operation,
+        CancellationToken cancellationToken) where TRequest : class
     {
         if (CalendarQueryToolSupport.MeasureArguments(arguments, arguments ?? new Dictionary<string, JsonElement>())
             > MaximumArgumentBytes)
@@ -148,11 +183,14 @@ public sealed class CalendarOccurrenceMutationTools
         using var lease = await _admission.AcquireAsync(cancellationToken).ConfigureAwait(false);
         if (lease is null)
             return BusyError();
-        if (!TryParse(arguments, out var request))
+        var request = parse(arguments);
+        if (request is null)
             return InputError(payloadTooLarge: false);
         try
         {
-            return ToToolResult(await execute(request, cancellationToken).ConfigureAwait(false));
+            return ToToolResult(
+                await execute(request, cancellationToken).ConfigureAwait(false),
+                operation);
         }
         catch (OperationCanceledException)
         {
@@ -160,11 +198,32 @@ public sealed class CalendarOccurrenceMutationTools
         }
         catch (Exception)
         {
-            return ToToolResult(new CalendarEntityPatchResult(
-                CalendarEntityPatchCode.Indeterminate,
-                CalendarMutationState.Unknown,
-                Phase: CalendarEntityPatchPhase.PostWriteVerificationOrReconciliation));
+            return ToToolResult(
+                new CalendarEntityPatchResult(
+                    CalendarEntityPatchCode.Indeterminate,
+                    CalendarMutationState.Unknown,
+                    Phase: CalendarEntityPatchPhase.PostWriteVerificationOrReconciliation),
+                operation);
         }
+    }
+
+    private static CalendarOccurrenceMutationRequest? ParseOccurrenceMutation(
+        IDictionary<string, JsonElement>? arguments) => TryParse(arguments, out var request) ? request : null;
+
+    private static CalendarTodoCompletionRequest? ParseTodoCompletion(
+        IDictionary<string, JsonElement>? arguments)
+    {
+        if (arguments is null
+            || arguments.Count is < 1 or > 2
+            || !arguments.TryGetValue("snapshot", out var snapshot)
+            || !TryRevision(snapshot, out var revision)
+            || revision.EntityKind != CalendarEntityKind.Todo)
+            return null;
+        if (!arguments.TryGetValue("recurrenceIdentity", out var recurrenceIdentity))
+            return arguments.Count == 1 ? new(revision) : null;
+        return arguments.Count == 2 && TryRecurrenceIdentity(recurrenceIdentity, out var identity)
+            ? new(revision, identity)
+            : null;
     }
 
     private static bool TryParse(
@@ -256,13 +315,13 @@ public sealed class CalendarOccurrenceMutationTools
         DateTimeStyles.None,
         out _);
 
-    private static CallToolResult ToToolResult(CalendarEntityPatchResult result)
+    private static CallToolResult ToToolResult(CalendarEntityPatchResult result, string operation)
     {
         var mapped = result.Code switch
         {
-            CalendarEntityPatchCode.Success when result.Snapshot is not null => Success(result.Snapshot),
-            CalendarEntityPatchCode.NoChange => NoChange(result.Snapshot?.Diagnostics ?? []),
-            _ => Error(result)
+            CalendarEntityPatchCode.Success when result.Snapshot is not null => Success(result.Snapshot, operation),
+            CalendarEntityPatchCode.NoChange => NoChange(result.Snapshot?.Diagnostics ?? [], operation),
+            _ => Error(result, operation)
         };
         return CalendarQueryToolSupport.EnsureBoundedResult(mapped, (_, _) => NamedError(
             "payload_too_large",
@@ -272,7 +331,7 @@ public sealed class CalendarOccurrenceMutationTools
             MutationState(result.MutationState)));
     }
 
-    private static CallToolResult Success(CalendarResourceSnapshot snapshot) => new()
+    private static CallToolResult Success(CalendarResourceSnapshot snapshot, string operation) => new()
     {
         IsError = false,
         StructuredContent = JsonSerializer.SerializeToElement(new CalendarEntityCreateSuccessResult(
@@ -280,26 +339,28 @@ public sealed class CalendarOccurrenceMutationTools
             "committed",
             CalendarSnapshotResult.FromSnapshot(snapshot),
             snapshot.Diagnostics.Select(CalendarDiagnosticResult.FromResourceDiagnostic).ToArray())),
-        Content = [new TextContentBlock { Text = "Occurrence mutation completed." }]
+        Content = [new TextContentBlock { Text = operation + " completed." }]
     };
 
-    private static CallToolResult NoChange(IReadOnlyList<CalendarResourceDiagnostic> diagnostics) => new()
+    private static CallToolResult NoChange(
+        IReadOnlyList<CalendarResourceDiagnostic> diagnostics,
+        string operation) => new()
     {
         IsError = false,
         StructuredContent = JsonSerializer.SerializeToElement(new CalendarEntityPatchNoChangeResult(
             "no_change",
             "not_attempted",
             diagnostics.Select(CalendarDiagnosticResult.FromResourceDiagnostic).ToArray())),
-        Content = [new TextContentBlock { Text = "Occurrence mutation made no change." }]
+        Content = [new TextContentBlock { Text = operation + " made no change." }]
     };
 
-    private static CallToolResult Error(CalendarEntityPatchResult result) => new()
+    private static CallToolResult Error(CalendarEntityPatchResult result, string operation) => new()
     {
         IsError = true,
         StructuredContent = JsonSerializer.SerializeToElement(new CalendarEntityCreateErrorResult(
             Code(result.Code),
             Category(result.Code),
-            "The Occurrence mutation could not be completed.",
+            $"The {operation} could not be completed.",
             result.Retryable,
             Phase(result.Phase),
             MutationState(result.MutationState),
@@ -308,7 +369,7 @@ public sealed class CalendarOccurrenceMutationTools
             Limits: result.LimitDimension is null
                 ? null
                 : new CalendarEntityCreateLimits(Dimension: "elapsed_time"))),
-        Content = [new TextContentBlock { Text = "Occurrence mutation failed." }]
+        Content = [new TextContentBlock { Text = operation + " failed." }]
     };
 
     private static string Code(CalendarEntityPatchCode code) => string.Concat(code.ToString().SelectMany(
