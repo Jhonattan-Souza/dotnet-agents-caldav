@@ -53,6 +53,9 @@ public sealed class StrictToolInputGuardTests
     [InlineData("calendar_resources.delete", 262_144, false, null)]
     [InlineData("calendar_resources.delete", 262_145, true, "payload_too_large")]
     [InlineData("calendar_resources.delete", 1, true, "invalid_input")]
+    [InlineData("calendar_resources.move", 262_144, false, null)]
+    [InlineData("calendar_resources.move", 262_145, true, "payload_too_large")]
+    [InlineData("calendar_resources.move", 1, true, "invalid_input")]
     public void Reject_AppliesQuerySpecificAdmissionBeforeDuplicateValidation(
         string toolName,
         int? argumentBytes,

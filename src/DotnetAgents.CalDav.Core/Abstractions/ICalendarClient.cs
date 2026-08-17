@@ -29,6 +29,12 @@ public interface ICalendarClient
         CalendarResourceDeleteRequest request,
         CancellationToken cancellationToken);
 
+    /// <summary>Atomically moves one resource with exact source revision and no-overwrite conditions.</summary>
+    Task<CalendarResourceMoveDispatchResult> MoveCalendarResourceAsync(
+        CalendarResourceMoveDispatchRequest request,
+        CancellationToken cancellationToken) => Task.FromResult(
+            new CalendarResourceMoveDispatchResult(CalendarResourceMoveDispatchCode.UnsupportedCapability));
+
     /// <summary>Conditionally replaces one complete Calendar Object Resource without retrying.</summary>
     Task<CalendarResourceUpdateDispatchResult> UpdateCalendarResourceAsync(
         CalendarResourceUpdateRequest request,

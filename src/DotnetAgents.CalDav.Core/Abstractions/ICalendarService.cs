@@ -86,6 +86,14 @@ public interface ICalendarService
         CalendarTodoCompletionRequest request,
         CancellationToken cancellationToken);
 
+    /// <summary>Atomically moves one reviewed resource to a selected compatible Calendar.</summary>
+    Task<CalendarResourceMoveResult> MoveResourceAsync(
+        CalendarResourceMoveRequest request,
+        CancellationToken cancellationToken) => Task.FromResult(new CalendarResourceMoveResult(
+            CalendarResourceMoveCode.UnsupportedCapability,
+            CalendarMutationState.NotAttempted,
+            Phase: CalendarResourceMovePhase.SelectionDiscoveryCapability));
+
     /// <summary>Deletes one reviewed resource and succeeds only after verified absence.</summary>
     Task<CalendarResourceDeleteResult> DeleteResourceAsync(
         CalendarResourceRevisionReference revision,

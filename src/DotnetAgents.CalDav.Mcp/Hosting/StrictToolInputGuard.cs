@@ -44,6 +44,7 @@ internal static class StrictToolInputGuard
             "calendar_occurrences.add" or "calendar_occurrences.exclude"
                 or "calendar_occurrences.restore_exclusion" or "calendar_occurrences.cancel"
                 or "calendar_occurrences.restore_cancellation" => RejectOccurrenceMutation(evidence),
+            "calendar_resources.move" => RejectMove(evidence),
             "calendar_resources.delete" => RejectDelete(evidence),
             _ => null
         };
@@ -68,6 +69,9 @@ internal static class StrictToolInputGuard
 
     private static CallToolResult? RejectDelete(StrictToolInputEvidence evidence) =>
         Reject(evidence, CalendarResourceDeleteTools.MaximumArgumentBytes, CalendarResourceDeleteTools.CreateInputGuardError);
+
+    private static CallToolResult? RejectMove(StrictToolInputEvidence evidence) =>
+        Reject(evidence, CalendarResourceMoveTools.MaximumArgumentBytes, CalendarResourceMoveTools.CreateInputGuardError);
 
     private static CallToolResult? Reject(
         StrictToolInputEvidence evidence,

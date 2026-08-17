@@ -21,6 +21,7 @@ internal sealed class OrderedToolCollection : McpServerPrimitiveCollection<McpSe
         ["calendar_occurrences.restore_exclusion"] = 11,
         ["calendar_occurrences.cancel"] = 12,
         ["calendar_occurrences.restore_cancellation"] = 13,
+        ["calendar_resources.move"] = 14,
         ["calendar_resources.delete"] = 15,
         ["calendar_resources.exact_get"] = 16,
         ["list_task_lists"] = 17,

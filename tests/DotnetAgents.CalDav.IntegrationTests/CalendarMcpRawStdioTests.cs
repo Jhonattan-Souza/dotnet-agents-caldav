@@ -171,6 +171,20 @@ public sealed class CalendarMcpRawStdioTests
     }
 
     [Fact]
+    public async Task CalendarResourceMove_RootDuplicateDestinationReturnsTypedInvalidInputBeforeNetwork()
+    {
+        const string request = """
+            {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"calendar_resources.move","arguments":{"revision":{"href":"https://cal.example/tasks/a.ics","entityUid":"private-move","entityKind":"todo","entityTag":"\"r1\""},"destination":{"mode":"default"},"destination":{"mode":"selected","calendar":{"by":"href","href":"https://cal.example/archive/"}}}}}
+            """;
+
+        var result = await InvokeRawAsync(request);
+
+        AssertTypedError(result, "invalid_input", "schemaLexicalDiscriminator");
+        result.GetProperty("structuredContent").GetProperty("mutationState").GetString().ShouldBe("not_attempted");
+        result.ToString().ShouldNotContain("private-move");
+    }
+
+    [Fact]
     public async Task CalendarEntityPatch_RawStdioRejectsOverrideReconciliationWithoutRequiredKindBeforeNetwork()
     {
         const string request = """
@@ -200,6 +214,26 @@ public sealed class CalendarMcpRawStdioTests
         var result = await InvokeRawAsync(request);
 
         AssertTypedError(result, expectedCode, expectedPhase);
+    }
+
+    [Theory]
+    [InlineData(262_144, "invalid_input", "schemaLexicalDiscriminator")]
+    [InlineData(262_145, "payload_too_large", "admissionAndPayload")]
+    public async Task CalendarResourceMove_EnforcesExact256KiBArgumentBoundary(
+        int argumentBytes,
+        string expectedCode,
+        string expectedPhase)
+    {
+        var arguments = MoveArgumentsAtSize(argumentBytes);
+        Encoding.UTF8.GetByteCount(arguments).ShouldBe(argumentBytes);
+        var request = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"calendar_resources.move\",\"arguments\":"
+            + arguments
+            + "}}";
+
+        var result = await InvokeRawAsync(request);
+
+        AssertTypedError(result, expectedCode, expectedPhase);
+        result.GetProperty("structuredContent").GetProperty("mutationState").GetString().ShouldBe("not_attempted");
     }
 
     [Theory]
@@ -591,6 +625,25 @@ public sealed class CalendarMcpRawStdioTests
                 entityKind = "todo",
                 entityTag = "\"r1\""
             },
+            ["padding"] = string.Empty
+        };
+        var fixedBytes = JsonSerializer.SerializeToUtf8Bytes(value).Length;
+        value["padding"] = new string('x', argumentBytes - fixedBytes);
+        return JsonSerializer.Serialize(value);
+    }
+
+    private static string MoveArgumentsAtSize(int argumentBytes)
+    {
+        var value = new Dictionary<string, object?>
+        {
+            ["revision"] = new
+            {
+                href = "https://cal.example/tasks/a.ics",
+                entityUid = "todo-1",
+                entityKind = "todo",
+                entityTag = "\"r1\""
+            },
+            ["destination"] = new { mode = "default" },
             ["padding"] = string.Empty
         };
         var fixedBytes = JsonSerializer.SerializeToUtf8Bytes(value).Length;

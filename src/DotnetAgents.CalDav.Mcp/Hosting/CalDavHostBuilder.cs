@@ -39,6 +39,7 @@ public sealed class CalDavHostBuilder
             .WithTools<CalendarResourceTools>()
             .WithTools<CalendarEntityCreateTools>()
             .WithTools<CalendarEntityPatchTools>()
+            .WithTools<CalendarResourceMoveTools>()
             .WithTools<CalendarResourceDeleteTools>()
             .WithTools<TaskListTools>()
             .WithTools<ChatTaskTools>();
@@ -104,6 +105,7 @@ public sealed class CalDavHostBuilder
         ConfigureTool(options.ToolCollection, "calendar_occurrences.restore_exclusion");
         ConfigureTool(options.ToolCollection, "calendar_occurrences.cancel");
         ConfigureTool(options.ToolCollection, "calendar_occurrences.restore_cancellation");
+        ConfigureTool(options.ToolCollection, "calendar_resources.move");
         ConfigureTool(options.ToolCollection, "calendar_resources.delete");
         ConfigureTool(options.ToolCollection, "calendar_resources.exact_get");
     }
