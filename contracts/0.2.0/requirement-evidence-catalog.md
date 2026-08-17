@@ -609,8 +609,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/recur/cal-recur-004`.
 - Objective oracle: Given master plus overrides, when one-occurrence, this-and-future, and entire-set patches run, then one creates one complete override, future changes anchor forward while preserving unrelated exceptions, and entire-set changes all same-UID overrides only.
-- Implementation status: implemented for `one-occurrence`: the exact series revision and original Recurrence Identity select an existing temporal DTSTART/RRULE/RDATE/override member of a genuine recurrence set; a complete same-kind/same-UID individual override inherits unaddressed effective master or nearest-range semantics, retains original identity and unrelated identity parameters when moved, and supersedes an applicable range. Shared recurrence-structure validation returns `recurrence_unevaluable`, expansion observes the exact 2,000-identity ceiling, and RDATE PERIOD remains the frozen pre-PUT `unsupported_capability`. `this-and-future` and `entire-set` remain planned.
-- Evidence status: issue #45 targets `CalendarEntityPatchServiceTests` one-occurrence cases for moved timing, temporal RDATE, nearest-range inheritance and identity-parameter preservation, exact-individual precedence in both component orders, VTODO inheritance, named-zone DST, cancellation/range/EXDATE preservation, malformed/non-recurring/nonexistent targets, unsupported recurrence structure/PERIOD, exact bounds, stale revision, and no-change; pinned-profile and native-stdio Radicale targets cover conditional persistence.
+- Implementation status: implemented for all three scopes. `one-occurrence` materializes one complete individual override; `this-and-future` creates or updates the exact original-identity RANGE override and applies addressed scalar or relative temporal changes through later overrides; `entire-set` applies addressed semantics to master and every same-UID override. All scopes preserve unaddressed source slices, individual/later-range precedence, deliberate temporal offsets, and mandatory non-derived LAST-MODIFIED effects on each changed component. Shared recurrence-structure validation returns `recurrence_unevaluable`.
+- Evidence status: issues #45 and #47 target `CalendarEntityPatchServiceTests` for complete individual materialization, RANGE creation/update and precedence, sparse and explicit relative timing, Event/To-do entire-set parity, lossless properties, no-change, exact reconciliation, stale revision, and temporal-family rejection; pinned-profile, native-stdio, and raw-stdio targets cover MRTR and one conditional persistence plus verified readback.
 
 ## CAL-RECUR-005
 
@@ -620,9 +620,9 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/recur/cal-recur-005`.
-- Objective oracle: Given recurrence-definition edit leaving an orphan EXDATE/override and a temporal-family change, when patch runs, then orphan case returns invalid_calendar_data unless reconciliation is supplied and family change requires exact replacement with zero semantic PUT.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Objective oracle: Given a recurrence-definition edit leaving orphan EXDATE or individual/RANGE override identities and a temporal-family change, when patch runs, then the orphan case returns invalid_calendar_data unless the same recurrence-set scalar supplies an exact one-to-one remove reconciliation for every orphan, missing/extra/duplicate/wrong-kind reconciliation writes nothing, and family change requires Exact Replacement with zero semantic PUT.
+- Implementation status: the frozen patch contract now carries an optional closed `orphanReconciliations` array on both recurrence-set `set` and `clear`; each entry identifies an EXDATE or the exact individual/RANGE override at an original Recurrence Identity and authorizes removal only. Retargeting or transforming an orphan remains Exact Replacement.
+- Evidence status: issue #47 targets strict catalog/parser parity and Event/To-do semantic corpus cases for exact reconciliation completeness, atomic rejection, lossless non-orphan preservation, MRTR revision binding, and one conditional PUT plus verified readback.
 
 ## CAL-RECUR-006
 

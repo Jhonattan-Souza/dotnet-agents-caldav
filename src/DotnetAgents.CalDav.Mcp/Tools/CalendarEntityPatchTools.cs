@@ -110,7 +110,7 @@ public sealed class CalendarEntityPatchTools
             return BusyError();
         if (!CalendarEntityPatchArgumentParser.TryParseEvent(arguments, out var request))
             return Error();
-        if (RequiresConfirmation(request.Patch))
+        if (RequiresConfirmation(request.Target, request.Patch))
             return await ConfirmEventAsync(request, arguments!, requestState, inputResponses, mrtrSupported, cancellationToken);
         return await ExecuteMutationAsync(
             token => _calendarService.PatchEventAsync(request, token), cancellationToken);
@@ -136,7 +136,7 @@ public sealed class CalendarEntityPatchTools
             return BusyError();
         if (!CalendarEntityPatchArgumentParser.TryParseTodo(arguments, out var request))
             return Error();
-        if (RequiresConfirmation(request.Patch))
+        if (RequiresConfirmation(request.Target, request.Patch))
             return await ConfirmTodoAsync(request, arguments!, requestState, inputResponses, mrtrSupported, cancellationToken);
         return await ExecuteMutationAsync(
             token => _calendarService.PatchTodoAsync(request, token), cancellationToken);
@@ -157,6 +157,7 @@ public sealed class CalendarEntityPatchTools
         inputResponses,
         mrtrSupported,
         ReplaceAllFields(request.Patch.Categories, request.Patch.Collections),
+        request.Patch.RecurrenceSet is not null,
         token => _calendarService.ReviewEventPatchAsync(request, token),
         token => _calendarService.PatchEventAsync(request, token),
         cancellationToken);
@@ -176,6 +177,7 @@ public sealed class CalendarEntityPatchTools
         inputResponses,
         mrtrSupported,
         ReplaceAllFields(request.Patch.Categories, request.Patch.Collections),
+        request.Patch.RecurrenceSet is not null,
         token => _calendarService.ReviewTodoPatchAsync(request, token),
         token => _calendarService.PatchTodoAsync(request, token),
         cancellationToken);
@@ -189,6 +191,7 @@ public sealed class CalendarEntityPatchTools
         IDictionary<string, InputResponse>? inputResponses,
         bool mrtrSupported,
         IReadOnlyList<ReplaceAllField> fields,
+        bool changesRecurrenceDefinition,
         Func<CancellationToken, Task<CalendarEntityPatchReviewResult>> review,
         Func<CancellationToken, Task<CalendarEntityPatchResult>> execute,
         CancellationToken cancellationToken)
@@ -206,6 +209,7 @@ public sealed class CalendarEntityPatchTools
                 inputResponses,
                 mrtrSupported,
                 fields,
+                changesRecurrenceDefinition,
                 review,
                 execute,
                 linked.Token).ConfigureAwait(false);
@@ -234,11 +238,17 @@ public sealed class CalendarEntityPatchTools
         IDictionary<string, InputResponse>? inputResponses,
         bool mrtrSupported,
         IReadOnlyList<ReplaceAllField> fields,
+        bool changesRecurrenceDefinition,
         Func<CancellationToken, Task<CalendarEntityPatchReviewResult>> review,
         Func<CancellationToken, Task<CalendarEntityPatchResult>> execute,
         CancellationToken cancellationToken)
     {
-        var confirmationMessage = CreateConfirmationMessage(operation, revision, target, fields);
+        var confirmationMessage = CreateConfirmationMessage(
+            operation,
+            revision,
+            target,
+            fields,
+            changesRecurrenceDefinition);
         if (!IsConfirmationPreviewWithinBudget(confirmationMessage))
             return ConfirmationPreviewPayloadError();
         var binding = BindArguments(arguments);
@@ -454,7 +464,8 @@ public sealed class CalendarEntityPatchTools
         string operation,
         CalendarResourceRevisionReference revision,
         CalendarMutationTarget target,
-        IReadOnlyList<ReplaceAllField> fields)
+        IReadOnlyList<ReplaceAllField> fields,
+        bool changesRecurrenceDefinition)
     {
         var kind = revision.EntityKind == CalendarEntityKind.Event ? "event" : "todo";
         var replacements = string.Join(", ", fields.Select(field => $"{field.Name}={field.Count}"));
@@ -464,6 +475,13 @@ public sealed class CalendarEntityPatchTools
                 + (target.RecurrenceIdentity.TimeZoneId is null
                     ? string.Empty
                     : $" ({target.RecurrenceIdentity.TimeZoneId})");
+        if (target.Scope is "this-and-future" or "entire-set" || changesRecurrenceDefinition)
+        {
+            var impact = changesRecurrenceDefinition
+                ? "recurrence definition and explicitly reconciled orphans"
+                : $"{target.Scope} recurrence scope";
+            return $"Confirm {operation} for href {revision.Href}, UID {revision.EntityUid}, kind {kind}, scope {target.Scope}{identity}, expected ETag {revision.EntityTag}. High-impact change: {impact}.";
+        }
         return $"Confirm {operation} replaceAll for href {revision.Href}, UID {revision.EntityUid}, kind {kind}, scope {target.Scope}{identity}, expected ETag {revision.EntityTag}. Destructive fields and replacement counts: {replacements}.";
     }
 
@@ -476,12 +494,16 @@ public sealed class CalendarEntityPatchTools
             ConfirmationTitle,
             ConfirmationDescription)).Length;
 
-    private static bool RequiresConfirmation(CalendarEventPatch patch) =>
-        patch.Categories?.Operation == CalendarCollectionPatchOperation.ReplaceAll
+    private static bool RequiresConfirmation(CalendarMutationTarget target, CalendarEventPatch patch) =>
+        target.Scope is "this-and-future" or "entire-set"
+        || patch.RecurrenceSet is not null
+        || patch.Categories?.Operation == CalendarCollectionPatchOperation.ReplaceAll
         || patch.Collections?.Any(item => item.Operation == CalendarCollectionPatchOperation.ReplaceAll) == true;
 
-    private static bool RequiresConfirmation(CalendarTodoPatch patch) =>
-        patch.Categories?.Operation == CalendarCollectionPatchOperation.ReplaceAll
+    private static bool RequiresConfirmation(CalendarMutationTarget target, CalendarTodoPatch patch) =>
+        target.Scope is "this-and-future" or "entire-set"
+        || patch.RecurrenceSet is not null
+        || patch.Categories?.Operation == CalendarCollectionPatchOperation.ReplaceAll
         || patch.Collections?.Any(item => item.Operation == CalendarCollectionPatchOperation.ReplaceAll) == true;
 
     private static CallToolResult Success(CalendarResourceSnapshot snapshot) => new()

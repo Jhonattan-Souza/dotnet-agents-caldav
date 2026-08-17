@@ -42,7 +42,8 @@ internal static class CalendarEntityPatchArgumentParser
             Organizer: Get<CalendarNamedUri>(scalars, "organizer"),
             Categories: categories,
             Collections: collections,
-            RecurrenceSetAddressed: recurrence));
+            RecurrenceSet: recurrence,
+            RecurrenceSetAddressed: recurrence is not null));
         return true;
     }
 
@@ -67,7 +68,8 @@ internal static class CalendarEntityPatchArgumentParser
             Organizer: Get<CalendarNamedUri>(scalars, "organizer"),
             Categories: categories,
             Collections: collections,
-            RecurrenceSetAddressed: recurrence));
+            RecurrenceSet: recurrence,
+            RecurrenceSetAddressed: recurrence is not null));
         return true;
     }
 
@@ -113,7 +115,7 @@ internal static class CalendarEntityPatchArgumentParser
         target = null!;
         if (!TryString(value, "scope", out var scope))
             return false;
-        if (scope == "master" && HasExactProperties(value, "scope"))
+        if (scope is "master" or "entire-set" && HasExactProperties(value, "scope"))
         {
             target = new(scope);
             return true;
@@ -127,7 +129,8 @@ internal static class CalendarEntityPatchArgumentParser
         out CalendarMutationTarget target)
     {
         target = null!;
-        if (scope != "one-occurrence" || !HasExactProperties(value, "scope", "recurrenceIdentity")
+        if (scope is not ("one-occurrence" or "this-and-future")
+            || !HasExactProperties(value, "scope", "recurrenceIdentity")
             || !value.TryGetProperty("recurrenceIdentity", out var identity)
             || !HasExactProperties(identity, "value")
             || !identity.TryGetProperty("value", out var temporal)
@@ -177,10 +180,10 @@ internal static class CalendarEntityPatchArgumentParser
         JsonElement patch,
         IReadOnlySet<string> allowedFields,
         out Dictionary<string, ScalarValue> scalars,
-        out bool recurrence)
+        out CalendarRecurrenceSetPatch? recurrence)
     {
         scalars = new(StringComparer.Ordinal);
-        recurrence = false;
+        recurrence = null;
         if (!patch.TryGetProperty("scalars", out var values))
             return true;
         if (values.ValueKind != JsonValueKind.Array || values.GetArrayLength() == 0)
@@ -189,8 +192,262 @@ internal static class CalendarEntityPatchArgumentParser
         {
             if (!TryParseScalar(value, allowedFields, out var field, out var scalar) || !scalars.TryAdd(field, scalar))
                 return false;
-            recurrence |= field == "recurrenceSet";
+            if (field == "recurrenceSet"
+                && !TryParseRecurrenceSetPatch(value, scalar.Operation, out recurrence))
+                return false;
         }
+        return true;
+    }
+
+    private static bool TryParseRecurrenceSetPatch(
+        JsonElement scalar,
+        CalendarScalarPatchOperation operation,
+        out CalendarRecurrenceSetPatch patch)
+    {
+        patch = null!;
+        if (!TryParseOrphanReconciliations(scalar, out var reconciliations))
+            return false;
+        CalendarRecurrenceSetPatchValue? value = null;
+        if (operation == CalendarScalarPatchOperation.Set
+            && (!scalar.TryGetProperty("value", out var recurrence)
+                || !TryParseRecurrenceSetValue(recurrence, out value)))
+            return false;
+        patch = new(operation, value, reconciliations);
+        return true;
+    }
+
+    private static bool TryParseOrphanReconciliations(
+        JsonElement scalar,
+        out IReadOnlyList<CalendarOrphanReconciliation> reconciliations)
+    {
+        reconciliations = [];
+        if (!scalar.TryGetProperty("orphanReconciliations", out var values))
+            return true;
+        if (values.ValueKind != JsonValueKind.Array)
+            return false;
+        var parsed = new List<CalendarOrphanReconciliation>();
+        foreach (var value in values.EnumerateArray())
+        {
+            if (!TryParseOrphanReconciliation(value, out var reconciliation))
+                return false;
+            parsed.Add(reconciliation);
+        }
+        reconciliations = parsed;
+        return true;
+    }
+
+    private static bool TryParseOrphanReconciliation(
+        JsonElement value,
+        out CalendarOrphanReconciliation reconciliation)
+    {
+        reconciliation = null!;
+        if (!TryString(value, "kind", out var kind)
+            || !TryString(value, "disposition", out var disposition)
+            || disposition != "remove"
+            || !value.TryGetProperty("recurrenceIdentity", out var identity)
+            || !TryRecurrenceIdentity(identity, out var parsedIdentity))
+            return false;
+        return kind == "exdate"
+            ? TryExdateReconciliation(value, parsedIdentity, out reconciliation)
+            : TryOverrideReconciliation(value, kind, parsedIdentity, out reconciliation);
+    }
+
+    private static bool TryExdateReconciliation(
+        JsonElement value,
+        CalendarTemporalValue identity,
+        out CalendarOrphanReconciliation reconciliation)
+    {
+        reconciliation = new(CalendarOrphanKind.ExceptionDate, identity);
+        return HasExactProperties(value, "kind", "recurrenceIdentity", "disposition");
+    }
+
+    private static bool TryOverrideReconciliation(
+        JsonElement value,
+        string kind,
+        CalendarTemporalValue identity,
+        out CalendarOrphanReconciliation reconciliation)
+    {
+        reconciliation = null!;
+        if (kind != "override"
+            || !HasExactProperties(value, "kind", "recurrenceIdentity", "overrideKind", "disposition")
+            || !TryString(value, "overrideKind", out var overrideKind))
+            return false;
+        var parsed = overrideKind switch
+        {
+            "individual" => CalendarOrphanOverrideKind.Individual,
+            "this-and-future" => CalendarOrphanOverrideKind.ThisAndFuture,
+            _ => (CalendarOrphanOverrideKind?)null
+        };
+        if (parsed is null)
+            return false;
+        reconciliation = new(CalendarOrphanKind.Override, identity, parsed);
+        return true;
+    }
+
+    private static bool TryParseRecurrenceSetValue(
+        JsonElement value,
+        out CalendarRecurrenceSetPatchValue recurrence)
+    {
+        recurrence = null!;
+        if (value.ValueKind != JsonValueKind.Object)
+            return false;
+        var names = value.EnumerateObject().Select(property => property.Name).ToArray();
+        if (names.Distinct(StringComparer.Ordinal).Count() != names.Length
+            || names.Any(name => name is not ("rrule" or "rdates" or "exdates" or "overrides")))
+            return false;
+        string? rule = null;
+        if (value.TryGetProperty("rrule", out var ruleValue)
+            && (ruleValue.ValueKind != JsonValueKind.String
+                || string.IsNullOrEmpty(rule = ruleValue.GetString())))
+            return false;
+        if (!TryOptionalTemporalArray(value, "rdates", out var recurrenceDates)
+            || !TryOptionalTemporalArray(value, "exdates", out var exceptionDates)
+            || !TryOptionalOverrides(value, out var overrides))
+            return false;
+        recurrence = new(rule, recurrenceDates, exceptionDates, overrides);
+        return true;
+    }
+
+    private static bool TryOptionalTemporalArray(
+        JsonElement owner,
+        string name,
+        out IReadOnlyList<CalendarTemporalValue>? values)
+    {
+        values = null;
+        if (!owner.TryGetProperty(name, out var array))
+            return true;
+        if (array.ValueKind != JsonValueKind.Array)
+            return false;
+        var parsed = new List<CalendarTemporalValue>();
+        foreach (var value in array.EnumerateArray())
+        {
+            if (!TryTemporal(value, out var temporal))
+                return false;
+            parsed.Add(temporal);
+        }
+        values = parsed;
+        return true;
+    }
+
+    private static bool TryOptionalOverrides(
+        JsonElement owner,
+        out IReadOnlyList<CalendarRecurrenceOverridePatchValue>? overrides)
+    {
+        overrides = null;
+        if (!owner.TryGetProperty("overrides", out var array))
+            return true;
+        if (array.ValueKind != JsonValueKind.Array)
+            return false;
+        var parsed = new List<CalendarRecurrenceOverridePatchValue>();
+        foreach (var value in array.EnumerateArray())
+        {
+            if (!TryOverride(value, out var occurrenceOverride))
+                return false;
+            parsed.Add(occurrenceOverride);
+        }
+        overrides = parsed;
+        return true;
+    }
+
+    private static bool TryOverride(JsonElement value, out CalendarRecurrenceOverridePatchValue occurrenceOverride)
+    {
+        occurrenceOverride = null!;
+        if (!HasOverrideShape(value)
+            || !TryOverrideIdentityAndTokens(value, out var parsedIdentity, out var entityKind, out var status))
+            return false;
+        var kind = entityKind switch
+        {
+            "event" => CalendarEntityKind.Event,
+            "todo" => CalendarEntityKind.Todo,
+            _ => (CalendarEntityKind?)null
+        };
+        var parsedStatus = status switch
+        {
+            "active" => CalendarRecurrenceOverrideStatus.Active,
+            "cancelled" => CalendarRecurrenceOverrideStatus.Cancelled,
+            _ => (CalendarRecurrenceOverrideStatus?)null
+        };
+        if (kind is null || parsedStatus is null)
+            return false;
+        CalendarRecurrenceOverrideRange? range = null;
+        if (value.TryGetProperty("range", out var rangeValue)
+            && (rangeValue.ValueKind != JsonValueKind.String
+                || !TryRange(rangeValue.GetString(), out range)))
+            return false;
+        if (!TryOptionalTemporal(value, "movedStart", out var movedStart)
+            || !TryOptionalTemporal(value, "movedEnd", out var movedEnd))
+            return false;
+        occurrenceOverride = new(parsedIdentity, kind.Value, parsedStatus.Value, range, movedStart, movedEnd);
+        return true;
+    }
+
+    private static bool HasOverrideShape(JsonElement value)
+    {
+        if (value.ValueKind != JsonValueKind.Object)
+            return false;
+        var names = value.EnumerateObject().Select(property => property.Name).ToArray();
+        return names.Length >= 3
+            && names.Distinct(StringComparer.Ordinal).Count() == names.Length
+            && names.All(name => name is "recurrenceIdentity" or "entityKind" or "range" or "status"
+                or "movedStart" or "movedEnd");
+    }
+
+    private static bool TryOverrideIdentityAndTokens(
+        JsonElement value,
+        out CalendarTemporalValue identity,
+        out string entityKind,
+        out string status)
+    {
+        identity = null!;
+        entityKind = string.Empty;
+        status = string.Empty;
+        return value.TryGetProperty("recurrenceIdentity", out var identityElement)
+            && TryRecurrenceIdentity(identityElement, out identity)
+            && TryString(value, "entityKind", out entityKind)
+            && TryString(value, "status", out status);
+    }
+
+    private static bool TryRange(string? value, out CalendarRecurrenceOverrideRange? range)
+    {
+        range = value switch
+        {
+            "this-and-prior" => CalendarRecurrenceOverrideRange.ThisAndPrior,
+            "this-and-future" => CalendarRecurrenceOverrideRange.ThisAndFuture,
+            _ => null
+        };
+        return range is not null;
+    }
+
+    private static bool TryOptionalTemporal(
+        JsonElement owner,
+        string name,
+        out CalendarTemporalValue? value)
+    {
+        value = null;
+        if (!owner.TryGetProperty(name, out var element))
+            return true;
+        if (!TryTemporal(element, out var temporal))
+            return false;
+        value = temporal;
+        return true;
+    }
+
+    private static bool TryRecurrenceIdentity(JsonElement value, out CalendarTemporalValue identity)
+    {
+        identity = null!;
+        return HasExactProperties(value, "value")
+            && value.TryGetProperty("value", out var temporal)
+            && TryTemporal(temporal, out identity);
+    }
+
+    private static bool TryTemporal(JsonElement value, out CalendarTemporalValue temporal)
+    {
+        temporal = null!;
+        if (!CalendarEntityCreateArgumentParser.TryParsePatchScalarValue("start", value, out var parsed)
+            || parsed is not CalendarTemporalValue candidate
+            || !HasValidTemporalLexicalForm(candidate))
+            return false;
+        temporal = candidate;
         return true;
     }
 
@@ -214,7 +471,9 @@ internal static class CalendarEntityPatchArgumentParser
     private static bool TryClearScalar(JsonElement value, string field, out ScalarValue scalar)
     {
         scalar = new(CalendarScalarPatchOperation.Clear, null);
-        return HasExactProperties(value, "field", "operation");
+        return field == "recurrenceSet"
+            ? HasAllowedRecurrenceProperties(value, hasValue: false)
+            : HasExactProperties(value, "field", "operation");
     }
 
     private static bool TrySetScalar(
@@ -224,7 +483,9 @@ internal static class CalendarEntityPatchArgumentParser
         out ScalarValue scalar)
     {
         scalar = default;
-        if (operation != "set" || !HasExactProperties(value, "field", "operation", "value"))
+        if (operation != "set" || (field == "recurrenceSet"
+                ? !HasAllowedRecurrenceProperties(value, hasValue: true)
+                : !HasExactProperties(value, "field", "operation", "value")))
             return false;
         if (field == "recurrenceSet")
         {
@@ -235,6 +496,17 @@ internal static class CalendarEntityPatchArgumentParser
             return false;
         scalar = new(CalendarScalarPatchOperation.Set, parsed);
         return true;
+    }
+
+    private static bool HasAllowedRecurrenceProperties(JsonElement value, bool hasValue)
+    {
+        var expected = hasValue
+            ? new HashSet<string>(["field", "operation", "value"], StringComparer.Ordinal)
+            : new HashSet<string>(["field", "operation"], StringComparer.Ordinal);
+        var actual = value.EnumerateObject().Select(property => property.Name).ToArray();
+        return actual.Distinct(StringComparer.Ordinal).Count() == actual.Length
+            && actual.All(name => expected.Contains(name) || name == "orphanReconciliations")
+            && expected.All(actual.Contains);
     }
 
     private static CalendarScalarPatch<T>? Get<T>(IReadOnlyDictionary<string, ScalarValue> values, string field)

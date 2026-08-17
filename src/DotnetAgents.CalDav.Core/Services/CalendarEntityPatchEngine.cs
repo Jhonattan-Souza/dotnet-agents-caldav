@@ -277,6 +277,7 @@ internal sealed class CalendarEntityPatchEngine(
         Organizer: patch.Organizer,
         Categories: patch.Categories,
         Collections: patch.Collections,
+        RecurrenceSet: patch.RecurrenceSet,
         RecurrenceSetAddressed: patch.RecurrenceSetAddressed,
         RequiresConfirmation: patch.RequiresConfirmation);
 
@@ -560,7 +561,7 @@ internal sealed class CalendarEntityPatchEngine(
         CalendarEventPatch patch,
         CalendarEntityKind expectedKind) =>
         IsValidTarget(target)
-        && !patch.RecurrenceSetAddressed
+        && patch.RecurrenceSetAddressed == (patch.RecurrenceSet is not null)
         && !patch.RequiresConfirmation
         && HasPatchIntent(patch)
         && HasValidScalars(patch)
@@ -571,8 +572,8 @@ internal sealed class CalendarEntityPatchEngine(
 
     private static bool IsValidTarget(CalendarMutationTarget target) => target.Scope switch
     {
-        "master" => target.RecurrenceIdentity is null,
-        "one-occurrence" => target.RecurrenceIdentity is not null,
+        "master" or "entire-set" => target.RecurrenceIdentity is null,
+        "one-occurrence" or "this-and-future" => target.RecurrenceIdentity is not null,
         _ => false
     };
 
@@ -611,7 +612,7 @@ internal sealed class CalendarEntityPatchEngine(
     {
         patch.Summary, patch.Description, patch.Start, patch.End, patch.Due, patch.Duration, patch.Location,
         patch.Geo, patch.Status, patch.Transparency, patch.Classification, patch.Priority, patch.PercentComplete,
-        patch.Url, patch.Organizer, patch.Categories, patch.Collections
+        patch.Url, patch.Organizer, patch.Categories, patch.Collections, patch.RecurrenceSet
     }.Any(value => value is not null);
 
     private static bool HasValidScalars(CalendarEventPatch patch) => new[]

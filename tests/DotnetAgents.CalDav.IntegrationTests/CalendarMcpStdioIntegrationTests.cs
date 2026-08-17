@@ -634,6 +634,77 @@ public sealed class CalendarMcpStdioIntegrationTests
     }
 
     [Fact]
+    public async Task CalendarEntityPatch_AppliesReviewedRangeEventAndEntireTodoOverNativeStdioAndRadicale()
+    {
+        const string eventUid = "stdio-patch-range-event";
+        const string eventContent = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Integration//EN\r\nBEGIN:VEVENT\r\nUID:stdio-patch-range-event\r\nDTSTAMP:20260815T120000Z\r\nDTSTART:20260818T130000Z\r\nRRULE:FREQ=DAILY;COUNT=4\r\nSUMMARY:Master\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nUID:stdio-patch-range-event\r\nDTSTAMP:20260815T120000Z\r\nRECURRENCE-ID:20260820T130000Z\r\nDTSTART:20260820T150000Z\r\nSUMMARY:Individual\r\nX-KEEP:event-offset\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var eventHref = await PutResourceAsync(
+            _fixture.EventCalendarHref,
+            "stdio-patch-range-event.ics",
+            eventContent);
+        var eventBefore = await GetResourceAsync(eventHref);
+        var eventStderr = new ConcurrentQueue<string>();
+        await using var eventClient = await CreateClientAsync(
+            eventStderr,
+            exposeExact: false,
+            calendarHrefs: $"{_fixture.BaseUrl}{_fixture.EventCalendarHref}",
+            confirmMutations: true);
+
+        var eventResult = await eventClient.CallToolAsync(
+            "events.patch",
+            BroadPatchArguments(
+                new ObservedRevision(eventHref, eventBefore.EntityTag),
+                "event",
+                eventUid,
+                "this-and-future",
+                "Reviewed future",
+                "2026-08-19T13:00:00Z"),
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        var eventRevision = AssertCommittedCreate(
+            eventResult,
+            "event",
+            eventUid,
+            $"{_fixture.BaseUrl}{_fixture.EventCalendarHref}");
+        var storedEvent = Encoding.UTF8.GetString((await GetResourceAsync(eventHref)).Utf8);
+        storedEvent.ShouldContain("RECURRENCE-ID;RANGE=THISANDFUTURE:20260819T130000Z");
+        storedEvent.Split("SUMMARY:Reviewed future", StringSplitOptions.None).Length.ShouldBe(3);
+        storedEvent.ShouldContain("X-KEEP:event-offset");
+        eventStderr.ShouldBeEmpty();
+
+        const string todoUid = "stdio-patch-entire-todo";
+        const string todoContent = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Integration//EN\r\nBEGIN:VTODO\r\nUID:stdio-patch-entire-todo\r\nDTSTAMP:20260815T120000Z\r\nDTSTART:20260818T090000Z\r\nDUE:20260818T100000Z\r\nRRULE:FREQ=DAILY;COUNT=2\r\nSUMMARY:Master\r\nX-MASTER:keep\r\nEND:VTODO\r\nBEGIN:VTODO\r\nUID:stdio-patch-entire-todo\r\nDTSTAMP:20260815T120000Z\r\nRECURRENCE-ID:20260819T090000Z\r\nDTSTART:20260819T110000Z\r\nDUE:20260819T120000Z\r\nSUMMARY:Override\r\nX-OVERRIDE:keep\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+        var todoHref = await PutResourceAsync("stdio-patch-entire-todo.ics", todoContent);
+        var todoBefore = await GetResourceAsync(todoHref);
+        var todoStderr = new ConcurrentQueue<string>();
+        await using var todoClient = await CreateClientAsync(todoStderr, exposeExact: false, confirmMutations: true);
+
+        var todoResult = await todoClient.CallToolAsync(
+            "todos.patch",
+            BroadPatchArguments(
+                new ObservedRevision(todoHref, todoBefore.EntityTag),
+                "todo",
+                todoUid,
+                "entire-set",
+                "Reviewed all"),
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        var todoRevision = AssertCommittedCreate(
+            todoResult,
+            "todo",
+            todoUid,
+            $"{_fixture.BaseUrl}{_fixture.TaskListHref}");
+        var storedTodo = Encoding.UTF8.GetString((await GetResourceAsync(todoHref)).Utf8);
+        storedTodo.Split("SUMMARY:Reviewed all", StringSplitOptions.None).Length.ShouldBe(3);
+        storedTodo.ShouldContain("X-MASTER:keep");
+        storedTodo.ShouldContain("X-OVERRIDE:keep");
+        todoStderr.ShouldBeEmpty();
+
+        await DeleteResourceAsync(eventHref, eventRevision.EntityTag);
+        await DeleteResourceAsync(todoHref, todoRevision.EntityTag);
+    }
+
+    [Fact]
     public async Task CalendarOccurrenceMembership_RoundTripsAllDirectMutationsOverNativeStdioAndRadicale()
     {
         const string uid = "stdio-occurrence-membership";
@@ -991,6 +1062,51 @@ public sealed class CalendarMcpStdioIntegrationTests
             }
         }
     };
+
+    private static Dictionary<string, object?> BroadPatchArguments(
+        ObservedRevision revision,
+        string kind,
+        string uid,
+        string scope,
+        string summary,
+        string? recurrenceIdentity = null)
+    {
+        var target = new Dictionary<string, object?> { ["scope"] = scope };
+        if (recurrenceIdentity is not null)
+        {
+            target["recurrenceIdentity"] = new Dictionary<string, object?>
+            {
+                ["value"] = new Dictionary<string, object?>
+                {
+                    ["kind"] = "utcDateTime",
+                    ["value"] = recurrenceIdentity
+                }
+            };
+        }
+        return new Dictionary<string, object?>
+        {
+            ["snapshot"] = new Dictionary<string, object?>
+            {
+                ["href"] = revision.Href,
+                ["entityUid"] = uid,
+                ["entityKind"] = kind,
+                ["entityTag"] = revision.EntityTag
+            },
+            ["target"] = target,
+            ["patch"] = new Dictionary<string, object?>
+            {
+                ["scalars"] = new[]
+                {
+                    new Dictionary<string, object?>
+                    {
+                        ["field"] = "summary",
+                        ["operation"] = "set",
+                        ["value"] = summary
+                    }
+                }
+            }
+        };
+    }
 
     private async Task<string> PutResourceAsync(string name, string content)
         => await PutResourceAsync(_fixture.TaskListHref, name, content);

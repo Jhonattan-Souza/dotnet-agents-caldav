@@ -201,6 +201,47 @@ internal static class CalendarOccurrencePatchBuilder
         }
     }
 
+    public static CalendarOccurrencePatchTarget SelectRangeTarget(
+        CalendarResourceSnapshot snapshot,
+        CalendarContentDocument document,
+        CalendarTemporalValue identity,
+        CalendarEntityKind kind,
+        CancellationToken cancellationToken)
+    {
+        var inspection = InspectMembership(snapshot, document, identity, kind, cancellationToken);
+        if (inspection.Failure is not null)
+            return new(null, null, inspection.Failure);
+        if (!inspection.Exists || inspection.IsExcluded || inspection.Master is null)
+            return Failed(inspection.IsExcluded ? CalendarEntityPatchCode.InvalidInput : CalendarEntityPatchCode.NotFound, snapshot);
+        var key = identity.GetCanonicalSortKey();
+        var exact = GetOverrides(document, kind).FirstOrDefault(item => item.IsRange && item.Key == key)?.Component;
+        if (exact is not null)
+            return new(document, exact, null);
+        var materialized = MaterializeOverride(snapshot, document, inspection.Master, inspection.Range, identity, kind);
+        var component = materialized.Component;
+        var recurrenceId = CalendarPatchValueSerializer.Temporal("RECURRENCE-ID", identity);
+        recurrenceId = "RECURRENCE-ID;RANGE=THISANDFUTURE" + recurrenceId["RECURRENCE-ID".Length..];
+        var ranged = CalendarContentDocument.Parse(materialized.Document.SetOrClearSinglePropertySlice(
+            component.Path,
+            "RECURRENCE-ID",
+            recurrenceId));
+        return new(ranged, ranged.GetComponent(component.Path), null);
+    }
+
+    public static bool IsIncludedByRecurrenceDefinition(
+        CalendarContentDocument document,
+        CalendarContentComponent master,
+        CalendarTemporalValue identity,
+        CancellationToken cancellationToken)
+    {
+        var start = GetProperty(document, master, "DTSTART")
+            ?? throw new FormatException("A recurring component requires DTSTART.");
+        var key = identity.GetCanonicalSortKey();
+        return CalendarPatchValueSerializer.ParseTemporal(start).GetCanonicalSortKey() == key
+            || IsRecurrenceDate(document, master, key)
+            || IsGeneratedByRule(document, master, identity, [], cancellationToken);
+    }
+
     private static CalendarOccurrencePatchTarget Failed(
         CalendarEntityPatchCode code,
         CalendarResourceSnapshot snapshot) => new(
@@ -480,7 +521,7 @@ internal static class CalendarOccurrencePatchBuilder
         CalendarTemporalValue identity,
         CalendarEntityKind kind)
     {
-        if (kind != CalendarEntityKind.Event || GetProperty(document, individual, "DTSTART") is not null)
+        if (GetProperty(document, individual, "DTSTART") is not null)
             return new(document, individual, null);
         if (!IsCancelled(document, individual))
             return Failed(CalendarEntityPatchCode.InvalidCalendarData, snapshot);

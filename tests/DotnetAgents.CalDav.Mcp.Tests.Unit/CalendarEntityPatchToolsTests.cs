@@ -65,10 +65,74 @@ public sealed class CalendarEntityPatchToolsTests
             Arg.Any<CalendarEventPatchRequest>(), Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task ThisAndFuture_patch_parses_exact_orphan_reconciliations_and_requires_dry_review()
+    {
+        var service = Substitute.For<ICalendarService>();
+        service.ReviewEventPatchAsync(Arg.Any<CalendarEventPatchRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CalendarEntityPatchReviewResult(
+                null,
+                Enumerable.Range(0, 32).Select(value => (byte)value).ToArray()));
+        var sut = CreateTool(service, new MutableTimeProvider(DateTimeOffset.Parse("2026-08-17T12:00:00Z")));
+        var arguments = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+            """
+            {"snapshot":{"href":"https://cal.example/events/event-1.ics","entityUid":"event-1","entityKind":"event","entityTag":"\"r1\""},"target":{"scope":"this-and-future","recurrenceIdentity":{"value":{"kind":"utcDateTime","value":"2026-08-21T10:00:00Z"}}},"patch":{"scalars":[{"field":"recurrenceSet","operation":"clear","orphanReconciliations":[{"kind":"exdate","recurrenceIdentity":{"value":{"kind":"utcDateTime","value":"2026-08-22T10:00:00Z"}},"disposition":"remove"},{"kind":"override","recurrenceIdentity":{"value":{"kind":"utcDateTime","value":"2026-08-22T10:00:00Z"}},"overrideKind":"this-and-future","disposition":"remove"}]}]}}
+            """);
+
+        var required = await Should.ThrowAsync<InputRequiredException>(() => sut.PatchEventRawAsync(
+            arguments, null, null, true, CancellationToken.None));
+
+        required.Result.InputRequests!["confirm_replace_all"].ElicitationParams!.Message.ShouldBe(
+            "Confirm events.patch for href https://cal.example/events/event-1.ics, UID event-1, kind event, scope this-and-future, original Recurrence Identity 2026-08-21T10:00:00Z, expected ETag \"r1\". High-impact change: recurrence definition and explicitly reconciled orphans.");
+        await service.Received(1).ReviewEventPatchAsync(
+            Arg.Is<CalendarEventPatchRequest>(request =>
+                request.Target.Scope == "this-and-future"
+                && request.Patch.RecurrenceSet != null
+                && request.Patch.RecurrenceSet.Operation == CalendarScalarPatchOperation.Clear
+                && request.Patch.RecurrenceSet.OrphanReconciliations.Count == 2
+                && request.Patch.RecurrenceSet.OrphanReconciliations[1].OverrideKind
+                    == CalendarOrphanOverrideKind.ThisAndFuture),
+            Arg.Any<CancellationToken>());
+        await service.DidNotReceive().PatchEventAsync(
+            Arg.Any<CalendarEventPatchRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ThisAndFuture_continuation_re_reviews_and_changed_revision_writes_nothing()
+    {
+        var digest = Enumerable.Range(0, 32).Select(value => (byte)value).ToArray();
+        var service = Substitute.For<ICalendarService>();
+        service.ReviewEventPatchAsync(Arg.Any<CalendarEventPatchRequest>(), Arg.Any<CancellationToken>()).Returns(
+            new CalendarEntityPatchReviewResult(null, digest),
+            new CalendarEntityPatchReviewResult(new CalendarEntityPatchResult(
+                CalendarEntityPatchCode.Conflict,
+                CalendarMutationState.NotAttempted,
+                Phase: CalendarEntityPatchPhase.TargetRevision)));
+        var sut = CreateTool(service, new MutableTimeProvider(DateTimeOffset.Parse("2026-08-17T12:00:00Z")));
+        var arguments = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+            """
+            {"snapshot":{"href":"https://cal.example/events/event-1.ics","entityUid":"event-1","entityKind":"event","entityTag":"\"r1\""},"target":{"scope":"this-and-future","recurrenceIdentity":{"value":{"kind":"utcDateTime","value":"2026-08-21T10:00:00Z"}}},"patch":{"scalars":[{"field":"summary","operation":"set","value":"Future"}]}}
+            """);
+        var first = await Should.ThrowAsync<InputRequiredException>(() => sut.PatchEventRawAsync(
+            arguments, null, null, true, CancellationToken.None));
+
+        var result = await sut.PatchEventRawAsync(
+            arguments,
+            first.Result.RequestState,
+            Confirmation("accept", true),
+            true,
+            CancellationToken.None);
+
+        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("conflict");
+        await service.Received(2).ReviewEventPatchAsync(
+            Arg.Any<CalendarEventPatchRequest>(), Arg.Any<CancellationToken>());
+        await service.DidNotReceive().PatchEventAsync(
+            Arg.Any<CalendarEventPatchRequest>(), Arg.Any<CancellationToken>());
+    }
+
     [Theory]
     [InlineData("{\"scope\":\"one-occurrence\"}")]
     [InlineData("{\"scope\":\"master\",\"recurrenceIdentity\":{\"value\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-21T10:00:00Z\"}}}")]
-    [InlineData("{\"scope\":\"this-and-future\",\"recurrenceIdentity\":{\"value\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-21T10:00:00Z\"}}}")]
     [InlineData("{\"scope\":\"one-occurrence\",\"recurrenceIdentity\":{\"value\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-21T10:00:00\"}}}")]
     public async Task PatchEventRawAsync_RejectsMalformedOrUndeliveredOccurrenceTargetsBeforeService(string target)
     {
@@ -106,6 +170,78 @@ public sealed class CalendarEntityPatchToolsTests
         await service.Received(1).PatchTodoAsync(
             Arg.Is<CalendarTodoPatchRequest>(request => request.Patch.PercentComplete!.Value == 50),
             Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task EntireSet_patch_parses_complete_frozen_recurrence_value_before_dry_review()
+    {
+        var service = Substitute.For<ICalendarService>();
+        service.ReviewEventPatchAsync(Arg.Any<CalendarEventPatchRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CalendarEntityPatchReviewResult(null, new byte[32]));
+        var sut = CreateTool(service, new MutableTimeProvider(DateTimeOffset.Parse("2026-08-17T12:00:00Z")));
+        var arguments = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+            """
+            {"snapshot":{"href":"https://cal.example/events/event-1.ics","entityUid":"event-1","entityKind":"event","entityTag":"\"r1\""},"target":{"scope":"entire-set"},"patch":{"scalars":[{"field":"recurrenceSet","operation":"set","value":{"rrule":"FREQ=DAILY;COUNT=3","rdates":[{"kind":"date","value":"2026-08-20"},{"kind":"utcDateTime","value":"2026-08-21T10:00:00Z"},{"kind":"floatingDateTime","value":"2026-08-22T10:00:00"},{"kind":"zonedDateTime","value":"2026-08-23T10:00:00","timeZoneId":"America/Sao_Paulo"}],"exdates":[{"kind":"utcDateTime","value":"2026-08-24T10:00:00Z"}],"overrides":[{"recurrenceIdentity":{"value":{"kind":"utcDateTime","value":"2026-08-21T10:00:00Z"}},"entityKind":"event","range":"this-and-future","status":"active","movedStart":{"kind":"utcDateTime","value":"2026-08-21T11:00:00Z"},"movedEnd":{"kind":"utcDateTime","value":"2026-08-21T12:00:00Z"}},{"recurrenceIdentity":{"value":{"kind":"date","value":"2026-08-22"}},"entityKind":"todo","range":"this-and-prior","status":"cancelled"}]},"orphanReconciliations":[{"kind":"exdate","recurrenceIdentity":{"value":{"kind":"utcDateTime","value":"2026-08-24T10:00:00Z"}},"disposition":"remove"},{"kind":"override","recurrenceIdentity":{"value":{"kind":"utcDateTime","value":"2026-08-25T10:00:00Z"}},"overrideKind":"individual","disposition":"remove"}]}]}}
+            """);
+
+        _ = await Should.ThrowAsync<InputRequiredException>(() => sut.PatchEventRawAsync(
+            arguments, null, null, true, CancellationToken.None));
+
+        await service.Received(1).ReviewEventPatchAsync(
+            Arg.Is<CalendarEventPatchRequest>(request =>
+                request.Target.Scope == "entire-set"
+                && request.Patch.RecurrenceSet!.Value!.RecurrenceDates!.Count == 4
+                && request.Patch.RecurrenceSet.Value.ExceptionDates!.Count == 1
+                && request.Patch.RecurrenceSet.Value.Overrides!.Count == 2
+                && request.Patch.RecurrenceSet.Value.Overrides[0].Range
+                    == CalendarRecurrenceOverrideRange.ThisAndFuture
+                && request.Patch.RecurrenceSet.Value.Overrides[1].Range
+                    == CalendarRecurrenceOverrideRange.ThisAndPrior
+                && request.Patch.RecurrenceSet.OrphanReconciliations[1].OverrideKind
+                    == CalendarOrphanOverrideKind.Individual),
+            Arg.Any<CancellationToken>());
+    }
+
+    public static TheoryData<string> InvalidRecurrenceSetScalars => new()
+    {
+        "{\"field\":\"recurrenceSet\",\"operation\":\"set\",\"value\":[]}",
+        "{\"field\":\"recurrenceSet\",\"operation\":\"set\",\"value\":{\"unknown\":true}}",
+        "{\"field\":\"recurrenceSet\",\"operation\":\"set\",\"value\":{\"rrule\":\"\"}}",
+        "{\"field\":\"recurrenceSet\",\"operation\":\"set\",\"value\":{\"rdates\":{}}}",
+        "{\"field\":\"recurrenceSet\",\"operation\":\"set\",\"value\":{\"rdates\":[42]}}",
+        "{\"field\":\"recurrenceSet\",\"operation\":\"set\",\"value\":{\"overrides\":{}}}",
+        "{\"field\":\"recurrenceSet\",\"operation\":\"set\",\"value\":{\"overrides\":[42]}}",
+        "{\"field\":\"recurrenceSet\",\"operation\":\"set\",\"value\":{\"overrides\":[{\"entityKind\":\"event\",\"status\":\"active\",\"range\":\"this-and-future\"}]}}",
+        "{\"field\":\"recurrenceSet\",\"operation\":\"set\",\"value\":{\"overrides\":[{\"recurrenceIdentity\":{\"value\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-21T10:00:00Z\"}},\"entityKind\":\"other\",\"status\":\"active\"}]}}",
+        "{\"field\":\"recurrenceSet\",\"operation\":\"set\",\"value\":{\"overrides\":[{\"recurrenceIdentity\":{\"value\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-21T10:00:00Z\"}},\"entityKind\":\"event\",\"status\":\"other\"}]}}",
+        "{\"field\":\"recurrenceSet\",\"operation\":\"set\",\"value\":{\"overrides\":[{\"recurrenceIdentity\":{\"value\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-21T10:00:00Z\"}},\"entityKind\":\"event\",\"status\":\"active\",\"range\":\"other\"}]}}",
+        "{\"field\":\"recurrenceSet\",\"operation\":\"set\",\"value\":{\"overrides\":[{\"recurrenceIdentity\":{\"value\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-21T10:00:00Z\"}},\"entityKind\":\"event\",\"status\":\"active\",\"movedStart\":42}]}}",
+        "{\"field\":\"recurrenceSet\",\"operation\":\"clear\",\"orphanReconciliations\":{}}",
+        "{\"field\":\"recurrenceSet\",\"operation\":\"clear\",\"orphanReconciliations\":[{\"kind\":\"other\",\"recurrenceIdentity\":{\"value\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-21T10:00:00Z\"}},\"disposition\":\"remove\"}]}",
+        "{\"field\":\"recurrenceSet\",\"operation\":\"clear\",\"orphanReconciliations\":[{\"kind\":\"exdate\",\"recurrenceIdentity\":{\"value\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-21T10:00:00Z\"}},\"disposition\":\"retain\"}]}",
+        "{\"field\":\"recurrenceSet\",\"operation\":\"clear\",\"orphanReconciliations\":[{\"kind\":\"exdate\",\"recurrenceIdentity\":{\"value\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-21T10:00:00Z\"}},\"overrideKind\":\"individual\",\"disposition\":\"remove\"}]}",
+        "{\"field\":\"recurrenceSet\",\"operation\":\"clear\",\"orphanReconciliations\":[{\"kind\":\"override\",\"recurrenceIdentity\":{\"value\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-21T10:00:00Z\"}},\"disposition\":\"remove\"}]}",
+        "{\"field\":\"recurrenceSet\",\"operation\":\"clear\",\"orphanReconciliations\":[{\"kind\":\"override\",\"recurrenceIdentity\":{\"value\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-21T10:00:00Z\"}},\"overrideKind\":\"other\",\"disposition\":\"remove\"}]}"
+    };
+
+    [Theory]
+    [MemberData(nameof(InvalidRecurrenceSetScalars))]
+    public async Task EntireSet_patch_rejects_non_frozen_recurrence_shapes_before_review(string scalar)
+    {
+        var service = Substitute.For<ICalendarService>();
+        var arguments = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+            """
+            {"snapshot":{"href":"https://cal.example/events/event-1.ics","entityUid":"event-1","entityKind":"event","entityTag":"\"r1\""},"target":{"scope":"entire-set"},"patch":{"scalars":[{"field":"summary","operation":"set","value":"placeholder"}]}}
+            """)!;
+        arguments["patch"] = JsonDocument.Parse("{\"scalars\":[" + scalar + "]}").RootElement.Clone();
+
+        var result = await new CalendarEntityPatchTools(service, TimeProvider.System)
+            .PatchEventRawAsync(arguments, CancellationToken.None);
+
+        result.IsError.ShouldBe(true);
+        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("invalid_input");
+        await service.DidNotReceive().ReviewEventPatchAsync(
+            Arg.Any<CalendarEventPatchRequest>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -204,7 +340,7 @@ public sealed class CalendarEntityPatchToolsTests
             ("priority", 5),
             ("url", "https://example.test/event"),
             ("organizer", new { uri = "mailto:owner@example.test", parameters = Array.Empty<object>() }),
-            ("recurrenceSet", new { rrules = new[] { "FREQ=DAILY" } })
+            ("recurrenceSet", new { rrule = "FREQ=DAILY" })
         };
         foreach (var item in eventSets)
         {
@@ -225,7 +361,7 @@ public sealed class CalendarEntityPatchToolsTests
             ("priority", 5),
             ("percentComplete", 50),
             ("organizer", new { uri = "mailto:owner@example.test", parameters = Array.Empty<object>() }),
-            ("recurrenceSet", new { rrules = new[] { "FREQ=DAILY" } })
+            ("recurrenceSet", new { rrule = "FREQ=DAILY" })
         };
         foreach (var item in todoSets)
             CalendarEntityPatchArgumentParser.TryParseTodo(

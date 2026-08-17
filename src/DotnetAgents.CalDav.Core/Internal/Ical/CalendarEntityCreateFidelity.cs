@@ -82,7 +82,9 @@ internal static class CalendarEntityCreateFidelity
         var targetPath = FindPatchTargetPath(document, target);
         var canonical = CanonicalizePatch(
             document,
-            property => !IsGeneratedTargetLastModified(property, targetPath));
+            property => target.Scope is "this-and-future" or "entire-set"
+                ? !IsGeneratedLastModified(property)
+                : !IsGeneratedTargetLastModified(property, targetPath));
         return SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('\n', canonical)));
     }
 
@@ -121,21 +123,28 @@ internal static class CalendarEntityCreateFidelity
         var recurrence = document.Properties.SingleOrDefault(property =>
             property.ComponentPath.SequenceEqual(component.Path)
             && property.Name.Equals("RECURRENCE-ID", StringComparison.OrdinalIgnoreCase));
-        if (target.Scope == "master")
+        if (target.Scope is "master" or "entire-set")
             return recurrence is null;
-        return recurrence is not null
-            && !recurrence.Parameters.Any(parameter => parameter.Name.Equals("RANGE", StringComparison.OrdinalIgnoreCase))
-            && CalendarPatchValueSerializer.ParseTemporal(recurrence).GetCanonicalSortKey()
-                == target.RecurrenceIdentity!.GetCanonicalSortKey();
+        if (recurrence is null
+            || CalendarPatchValueSerializer.ParseTemporal(recurrence).GetCanonicalSortKey()
+                != target.RecurrenceIdentity!.GetCanonicalSortKey())
+            return false;
+        var isRange = recurrence.Parameters.Any(parameter =>
+            parameter.Name.Equals("RANGE", StringComparison.OrdinalIgnoreCase)
+            && parameter.Values.Any(value => value.Equals("THISANDFUTURE", StringComparison.OrdinalIgnoreCase)));
+        return target.Scope == "this-and-future" ? isRange : !isRange;
     }
 
     private static bool IsGeneratedTargetLastModified(
         CalendarContentProperty property,
-        IReadOnlyList<CalendarComponentPathSegment> targetPath) => property.Name.Equals(
+        IReadOnlyList<CalendarComponentPathSegment> targetPath) => IsGeneratedLastModified(property)
+        && property.ComponentPath.SequenceEqual(targetPath);
+
+    private static bool IsGeneratedLastModified(CalendarContentProperty property) => property.Name.Equals(
             "LAST-MODIFIED",
             StringComparison.OrdinalIgnoreCase)
         && property.ComponentPath.Count == 2
-        && property.ComponentPath.SequenceEqual(targetPath)
+        && property.ComponentPath[1].Name is "VEVENT" or "VTODO"
         && !property.Parameters.Any(parameter =>
             parameter.Name.Equals("DERIVED", StringComparison.OrdinalIgnoreCase)
             && parameter.Values.Any(value => value.Equals("TRUE", StringComparison.OrdinalIgnoreCase)));
