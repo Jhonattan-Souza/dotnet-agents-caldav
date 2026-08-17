@@ -197,6 +197,7 @@ public sealed class RadicaleConformanceHarnessTests(RadicaleConformanceFixture f
             CalendarPropertyValueType.Uri,
             "https://storage.example.test/todo-reference",
             new CalendarParameter("LABEL", ["Reference"]),
+            new CalendarParameter("VALUE", ["URI"]),
             new CalendarParameter("X-STORED", ["todo-marker"]));
         AssertLosslessProperty(
             createdTodo.Snapshot!,

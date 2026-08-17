@@ -2697,7 +2697,7 @@
         "$ref": "#/$defs/exactCreateInput"
       },
       "outputSchema": {
-        "$ref": "#/$defs/snapshotMutationOutcome"
+        "$ref": "#/$defs/exactSnapshotMutationOutcome"
       },
       "annotations": {
         "readOnlyHint": false,
@@ -2705,7 +2705,7 @@
         "idempotentHint": false,
         "openWorldHint": true
       },
-      "description": "Create an exact UTF-8 resource at an explicit destination resource href."
+      "description": "Create an exact UTF-8 resource at an explicitly provided absolute destination resource href."
     },
     {
       "name": "calendar_resources.exact_replace",
@@ -2718,7 +2718,7 @@
         "$ref": "#/$defs/exactReplaceInput"
       },
       "outputSchema": {
-        "$ref": "#/$defs/snapshotMutationOutcome"
+        "$ref": "#/$defs/exactSnapshotMutationOutcome"
       },
       "annotations": {
         "readOnlyHint": false,
@@ -2726,7 +2726,7 @@
         "idempotentHint": false,
         "openWorldHint": true
       },
-      "description": "Confirm and replace one revision-bound resource with exact UTF-8 content."
+      "description": "Confirm and replace one revision-bound resource at its explicitly provided absolute href with exact UTF-8 content."
     },
     {
       "name": "calendar_resources.exact_move",
@@ -2739,7 +2739,7 @@
         "$ref": "#/$defs/exactMoveInput"
       },
       "outputSchema": {
-        "$ref": "#/$defs/snapshotMutationOutcome"
+        "$ref": "#/$defs/exactSnapshotMutationOutcome"
       },
       "annotations": {
         "readOnlyHint": false,
@@ -2747,7 +2747,7 @@
         "idempotentHint": false,
         "openWorldHint": true
       },
-      "description": "Confirm and move one revision-bound resource to an explicit destination href."
+      "description": "Confirm and move one revision-bound resource to an explicitly provided absolute destination href."
     }
   ],
   "$defs": {
@@ -3742,8 +3742,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "destinationHref",
-        "utf8Resource"
+        "destinationHref"
       ],
       "properties": {
         "destinationHref": {
@@ -3753,15 +3752,31 @@
         "utf8Resource": {
           "type": "string",
           "minLength": 1
+        },
+        "base64Utf8Resource": {
+          "type": "string",
+          "minLength": 1,
+          "contentEncoding": "base64"
         }
-      }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "utf8Resource"
+          ]
+        },
+        {
+          "required": [
+            "base64Utf8Resource"
+          ]
+        }
+      ]
     },
     "exactReplaceInput": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "revision",
-        "utf8Resource"
+        "revision"
       ],
       "properties": {
         "revision": {
@@ -3770,8 +3785,25 @@
         "utf8Resource": {
           "type": "string",
           "minLength": 1
+        },
+        "base64Utf8Resource": {
+          "type": "string",
+          "minLength": 1,
+          "contentEncoding": "base64"
         }
-      }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "utf8Resource"
+          ]
+        },
+        {
+          "required": [
+            "base64Utf8Resource"
+          ]
+        }
+      ]
     },
     "exactMoveInput": {
       "type": "object",
@@ -7501,6 +7533,25 @@
         }
       ]
     },
+    "exactConflictSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "calendar",
+        "resourceRevision"
+      ],
+      "properties": {
+        "calendar": {
+          "$ref": "#/$defs/calendarHref"
+        },
+        "resourceRevision": {
+          "$ref": "#/$defs/resourceRevision"
+        },
+        "entityRevision": {
+          "$ref": "#/$defs/revisionReference"
+        }
+      }
+    },
     "occurrenceSnapshot": {
       "type": "object",
       "additionalProperties": false,
@@ -7961,6 +8012,107 @@
         },
         {
           "$ref": "#/$defs/mutationErrorOutcome"
+        }
+      ]
+    },
+    "exactMutationErrorOutcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "category",
+        "message",
+        "retryable",
+        "phase",
+        "mutationState"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "invalid_input",
+            "invalid_calendar_data",
+            "not_found",
+            "outside_scope",
+            "entity_kind_mismatch",
+            "unsupported_capability",
+            "conflict",
+            "destination_conflict",
+            "concurrency_unavailable",
+            "limit_exhausted",
+            "payload_too_large",
+            "busy",
+            "upstream_unauthorized",
+            "upstream_forbidden",
+            "upstream_rate_limited",
+            "upstream_unavailable",
+            "upstream_protocol_error",
+            "confirmation_expired",
+            "confirmation_mismatch",
+            "fidelity_failure",
+            "committed_but_unverified",
+            "committed_but_concurrency_unavailable",
+            "indeterminate"
+          ]
+        },
+        "category": {
+          "enum": [
+            "input",
+            "selection",
+            "capabilityAndProjection",
+            "state",
+            "limitsAndAdmission",
+            "upstream",
+            "confirmation",
+            "postWriteTruth"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "phase": {
+          "enum": [
+            "transportAuthorization",
+            "admissionAndPayload",
+            "schemaLexicalDiscriminator",
+            "originScopeAuthorization",
+            "selectionDiscoveryCapability",
+            "targetRevision",
+            "completeResourceSemantics",
+            "mrtr",
+            "execution",
+            "postWriteVerificationOrReconciliation"
+          ]
+        },
+        "mutationState": {
+          "enum": [
+            "not_attempted",
+            "not_committed",
+            "committed",
+            "unknown"
+          ]
+        },
+        "currentSnapshot": {
+          "$ref": "#/$defs/exactConflictSnapshot"
+        },
+        "retryAfterMs": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "exactSnapshotMutationOutcome": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/snapshotMutationSuccess"
+        },
+        {
+          "$ref": "#/$defs/nonMutatingMutationSuccess"
+        },
+        {
+          "$ref": "#/$defs/exactMutationErrorOutcome"
         }
       ]
     },

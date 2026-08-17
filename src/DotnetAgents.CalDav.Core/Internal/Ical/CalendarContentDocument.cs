@@ -40,9 +40,16 @@ internal sealed partial class CalendarContentDocument
             ["FLOAT"] = CalendarPropertyValueType.Float,
             ["PERIOD"] = CalendarPropertyValueType.Period,
             ["RECUR"] = CalendarPropertyValueType.Recur,
-            ["BINARY"] = CalendarPropertyValueType.Binary
+            ["BINARY"] = CalendarPropertyValueType.Binary,
+            ["UID"] = CalendarPropertyValueType.Uid,
+            ["XML-REFERENCE"] = CalendarPropertyValueType.XmlReference
         }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+    private static readonly FrozenSet<string> NoDefaultPropertyNames = new[]
+    {
+        "CONFERENCE", "IMAGE", "LINK", "REFRESH-INTERVAL", "SOURCE", "STRUCTURED-DATA", "STYLED-DESCRIPTION"
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
     private static readonly FrozenSet<string> RegisteredPropertyNames = DefaultValueTypes.Keys
+        .Concat(NoDefaultPropertyNames)
         .Concat(["TZOFFSETFROM", "TZOFFSETTO"])
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
     private static readonly FrozenSet<string> ProjectionExtensionsUnsupportedByIcalNet = new[]
@@ -53,24 +60,26 @@ internal sealed partial class CalendarContentDocument
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private readonly byte[] _authoritativeUtf8;
     private readonly string _content;
+    private readonly int[] _rawOffsets;
 
     private static FrozenDictionary<string, CalendarPropertyValueType> CreateDefaultValueTypes()
     {
         var mappings = new Dictionary<string, CalendarPropertyValueType>(StringComparer.OrdinalIgnoreCase);
         AddDefaultValueTypes(mappings, CalendarPropertyValueType.Uri,
-            "ATTACH", "ATTENDEE", "CALENDAR-ADDRESS", "CONCEPT", "CONFERENCE", "IMAGE", "LINK", "ORGANIZER", "SOURCE", "TZURL", "URL");
+            "ATTACH", "ATTENDEE", "CALENDAR-ADDRESS", "CONCEPT", "ORGANIZER", "TZURL", "URL");
         AddDefaultValueTypes(mappings, CalendarPropertyValueType.DateTime,
             "ACKNOWLEDGED", "COMPLETED", "CREATED", "DTEND", "DTSTAMP", "DTSTART", "DUE", "EXDATE", "LAST-MODIFIED", "RDATE", "RECURRENCE-ID");
-        AddDefaultValueTypes(mappings, CalendarPropertyValueType.Duration, "DURATION", "REFRESH-INTERVAL", "TRIGGER");
+        AddDefaultValueTypes(mappings, CalendarPropertyValueType.Duration, "DURATION", "TRIGGER");
         AddDefaultValueTypes(mappings, CalendarPropertyValueType.Integer, "PERCENT-COMPLETE", "PRIORITY", "REPEAT", "SEQUENCE");
         AddDefaultValueTypes(mappings, CalendarPropertyValueType.Float, "GEO");
         AddDefaultValueTypes(mappings, CalendarPropertyValueType.Period, "FREEBUSY");
         AddDefaultValueTypes(mappings, CalendarPropertyValueType.Recur, "EXRULE", "RRULE");
         AddDefaultValueTypes(mappings, CalendarPropertyValueType.Text,
             "ACTION", "CALSCALE", "CATEGORIES", "CLASS", "COLOR", "COMMENT", "CONTACT", "DESCRIPTION", "LOCATION",
-            "METHOD", "NAME", "PARTICIPANT-TYPE", "PRODID", "PROXIMITY", "REFID", "RELATED-TO", "REQUEST-STATUS",
-            "RESOURCES", "RESOURCE-TYPE", "STATUS", "STRUCTURED-DATA", "STYLED-DESCRIPTION", "SUMMARY", "TRANSP",
+            "LOCATION-TYPE", "METHOD", "NAME", "PARTICIPANT-TYPE", "PRODID", "PROXIMITY", "REFID", "REQUEST-STATUS",
+            "RESOURCES", "RESOURCE-TYPE", "STATUS", "SUMMARY", "TRANSP",
             "TZID", "TZNAME", "UID", "VERSION");
+        AddDefaultValueTypes(mappings, CalendarPropertyValueType.Uid, "RELATED-TO");
         return mappings.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
     }
 
@@ -86,11 +95,13 @@ internal sealed partial class CalendarContentDocument
     private CalendarContentDocument(
         byte[] authoritativeUtf8,
         string content,
+        int[] rawOffsets,
         IReadOnlyList<CalendarContentProperty> properties,
         IReadOnlyList<CalendarContentComponent> components)
     {
         _authoritativeUtf8 = authoritativeUtf8;
         _content = content;
+        _rawOffsets = rawOffsets;
         Properties = properties;
         Components = components;
     }
@@ -102,21 +113,92 @@ internal sealed partial class CalendarContentDocument
     public static CalendarContentDocument Parse(ReadOnlySpan<byte> authoritativeUtf8)
     {
         var bytes = authoritativeUtf8.ToArray();
-        var content = StrictUtf8.GetString(bytes);
-        var logicalLines = Unfold(ReadPhysicalLines(content));
+        var decoded = DecodeContent(bytes);
+        var logicalLines = Unfold(ReadPhysicalLines(decoded.Content));
         var (properties, components) = ParseContent(logicalLines);
-        return new CalendarContentDocument(bytes, content, properties, components);
+        return new CalendarContentDocument(bytes, decoded.Content, decoded.RawOffsets, properties, components);
+    }
+
+    private static DecodedContent DecodeContent(byte[] authoritativeUtf8)
+    {
+        try
+        {
+            var content = StrictUtf8.GetString(authoritativeUtf8);
+            return new DecodedContent(
+                content,
+                MapCharacterOffsets(content, authoritativeUtf8, Enumerable.Range(0, authoritativeUtf8.Length + 1).ToArray()));
+        }
+        catch (DecoderFallbackException)
+        {
+            var unfolded = UnfoldRawBytes(authoritativeUtf8);
+            var content = StrictUtf8.GetString(unfolded.Bytes);
+            return new DecodedContent(content, MapCharacterOffsets(content, unfolded.Bytes, unfolded.RawOffsets));
+        }
+    }
+
+    private static RawUnfoldedContent UnfoldRawBytes(ReadOnlySpan<byte> authoritativeUtf8)
+    {
+        var unfolded = new byte[authoritativeUtf8.Length];
+        var rawOffsets = new int[authoritativeUtf8.Length + 1];
+        var written = 0;
+        for (var index = 0; index < authoritativeUtf8.Length; index++)
+        {
+            if (authoritativeUtf8[index] == (byte)'\r'
+                && index + 2 < authoritativeUtf8.Length
+                && authoritativeUtf8[index + 1] == (byte)'\n'
+                && authoritativeUtf8[index + 2] is (byte)' ' or (byte)'\t')
+            {
+                index += 2;
+                continue;
+            }
+            if (authoritativeUtf8[index] == (byte)'\n'
+                && index + 1 < authoritativeUtf8.Length
+                && authoritativeUtf8[index + 1] is (byte)' ' or (byte)'\t')
+            {
+                index++;
+                continue;
+            }
+            rawOffsets[written] = index;
+            unfolded[written++] = authoritativeUtf8[index];
+            rawOffsets[written] = index + 1;
+        }
+        return new RawUnfoldedContent(unfolded[..written], rawOffsets[..(written + 1)]);
+    }
+
+    private static int[] MapCharacterOffsets(
+        string content,
+        ReadOnlySpan<byte> decodedUtf8,
+        IReadOnlyList<int> rawByteOffsets)
+    {
+        var rawOffsets = new int[content.Length + 1];
+        var characterIndex = 0;
+        var byteIndex = 0;
+        foreach (var rune in content.EnumerateRunes())
+        {
+            rawOffsets[characterIndex] = rawByteOffsets[byteIndex];
+            if (rune.Utf16SequenceLength == 2)
+                rawOffsets[characterIndex + 1] = rawByteOffsets[byteIndex];
+            characterIndex += rune.Utf16SequenceLength;
+            byteIndex += rune.Utf8SequenceLength;
+            rawOffsets[characterIndex] = rawByteOffsets[byteIndex];
+        }
+        if (byteIndex != decodedUtf8.Length)
+            throw new DecoderFallbackException("The UTF-8 character map is incomplete.");
+        return rawOffsets;
     }
 
     public byte[] Replay() => _authoritativeUtf8.ToArray();
 
     internal static bool IsRegisteredPropertyName(string name) => RegisteredPropertyNames.Contains(name);
 
+    internal static bool HasNoDefaultValueType(string name) => NoDefaultPropertyNames.Contains(name);
+
     internal static bool IsProjectionExtensionUnsupportedByIcalNet(string name) =>
         ProjectionExtensionsUnsupportedByIcalNet.Contains(name);
 
     internal static bool IsValidRegisteredUnknownValue(CalendarContentProperty property) =>
-        property.Name is "TZOFFSETFROM" or "TZOFFSETTO"
+        (property.Name.Equals("TZOFFSETFROM", StringComparison.OrdinalIgnoreCase)
+            || property.Name.Equals("TZOFFSETTO", StringComparison.OrdinalIgnoreCase))
         && !property.Parameters.Any(parameter => parameter.Name.Equals("VALUE", StringComparison.OrdinalIgnoreCase))
         && property.RawEncodedValue is not "-0000" and not "-000000"
         && UtcOffsetPattern().IsMatch(property.RawEncodedValue);
@@ -184,13 +266,9 @@ internal sealed partial class CalendarContentDocument
         var colon = FindPhysicalUnquoted(property.OriginalSlice, ':');
         var ending = property.OriginalSlice.EndsWith("\r\n", StringComparison.Ordinal) ? "\r\n"
             : property.OriginalSlice.EndsWith('\n') ? "\n" : string.Empty;
-        var edited = new StringBuilder(_content.Length - property.Length + colon + rawEncodedValue.Length + ending.Length + 1);
-        edited.Append(_content, 0, property.Start);
-        edited.Append(property.OriginalSlice, 0, colon + 1);
-        edited.Append(rawEncodedValue);
-        edited.Append(ending);
-        edited.Append(_content, property.Start + property.Length, _content.Length - property.Start - property.Length);
-        return StrictUtf8.GetBytes(edited.ToString());
+        var valueStart = property.Start + colon + 1;
+        var valueLength = property.Length - colon - 1 - ending.Length;
+        return ReplaceRange(valueStart, valueLength, rawEncodedValue);
     }
 
     public byte[] SetOrClearSingleProperty(
@@ -228,13 +306,8 @@ internal sealed partial class CalendarContentDocument
                 component.Start + component.Length - component.EndSlice.Length,
                 0,
                 string.Concat(appendedSlices)))
-            .OrderByDescending(edit => edit.Start)
-            .ThenByDescending(edit => edit.Length)
             .ToArray();
-        var edited = new StringBuilder(_content);
-        foreach (var edit in edits)
-            edited.Remove(edit.Start, edit.Length).Insert(edit.Start, edit.Replacement);
-        return StrictUtf8.GetBytes(edited.ToString());
+        return ApplyEdits(edits);
     }
 
     public byte[] SetOrClearSinglePropertySlice(
@@ -383,13 +456,8 @@ internal sealed partial class CalendarContentDocument
             .Append(new ContentEdit(
                 component.Start + component.Length - component.EndSlice.Length,
                 0,
-                string.Concat(appendedSlices)))
-            .OrderByDescending(edit => edit.Start)
-            .ThenByDescending(edit => edit.Length);
-        var edited = new StringBuilder(_content);
-        foreach (var edit in edits)
-            edited.Remove(edit.Start, edit.Length).Insert(edit.Start, edit.Replacement);
-        return StrictUtf8.GetBytes(edited.ToString());
+                string.Concat(appendedSlices)));
+        return ApplyEdits(edits);
     }
 
     public static string EncodeText(string value) => value
@@ -419,12 +487,28 @@ internal sealed partial class CalendarContentDocument
     }
 
     private byte[] ReplaceRange(int start, int length, string replacement)
+        => ApplyEdits([new ContentEdit(start, length, replacement)]);
+
+    private byte[] ApplyEdits(IEnumerable<ContentEdit> contentEdits)
     {
-        var edited = new StringBuilder(_content.Length - length + replacement.Length);
-        edited.Append(_content, 0, start);
-        edited.Append(replacement);
-        edited.Append(_content, start + length, _content.Length - start - length);
-        return StrictUtf8.GetBytes(edited.ToString());
+        var edits = contentEdits
+            .OrderBy(edit => edit.Start)
+            .ThenByDescending(edit => edit.Length)
+            .ToArray();
+        using var edited = new MemoryStream(_authoritativeUtf8.Length);
+        var rawPosition = 0;
+        foreach (var edit in edits)
+        {
+            var rawStart = _rawOffsets[edit.Start];
+            var rawEnd = _rawOffsets[edit.Start + edit.Length];
+            if (rawStart < rawPosition)
+                throw new InvalidOperationException("Calendar content edits cannot overlap.");
+            edited.Write(_authoritativeUtf8.AsSpan(rawPosition, rawStart - rawPosition));
+            edited.Write(StrictUtf8.GetBytes(edit.Replacement));
+            rawPosition = rawEnd;
+        }
+        edited.Write(_authoritativeUtf8.AsSpan(rawPosition));
+        return edited.ToArray();
     }
 
     private static (IReadOnlyList<CalendarContentProperty> Properties, IReadOnlyList<CalendarContentComponent> Components)
@@ -745,4 +829,8 @@ internal sealed partial class CalendarContentDocument
     private sealed record ContentRange(int Start, int Length);
 
     private sealed record ContentEdit(int Start, int Length, string Replacement);
+
+    private sealed record DecodedContent(string Content, int[] RawOffsets);
+
+    private sealed record RawUnfoldedContent(byte[] Bytes, int[] RawOffsets);
 }

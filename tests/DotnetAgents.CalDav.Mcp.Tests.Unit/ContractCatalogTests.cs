@@ -106,7 +106,10 @@ public sealed class ContractCatalogTests
         FindTool(catalog, "calendar_resources.exact_move")["inputSchema"]!["$ref"]!.GetValue<string>()
             .ShouldBe("#/$defs/exactMoveInput");
         catalog["$defs"]!["calendarDestination"]!["oneOf"]!.AsArray().Count.ShouldBe(2);
-        catalog["$defs"]!["exactCreateInput"]!["properties"]!.AsObject().ShouldContainKey("destinationHref");
+        var exactCreateInput = catalog["$defs"]!["exactCreateInput"]!;
+        exactCreateInput["properties"]!.AsObject().ShouldContainKey("destinationHref");
+        exactCreateInput["properties"]!.AsObject().ShouldContainKey("base64Utf8Resource");
+        exactCreateInput["oneOf"]!.AsArray().Count.ShouldBe(2);
         catalog["$defs"]!["exactMoveInput"]!["properties"]!.AsObject().ShouldNotContainKey("requestState");
         catalog["$defs"]!["exactGetSuccess"]!["properties"]!["resourceLink"]!["properties"]!["type"]!["const"]!
             .GetValue<string>().ShouldBe("resource_link");

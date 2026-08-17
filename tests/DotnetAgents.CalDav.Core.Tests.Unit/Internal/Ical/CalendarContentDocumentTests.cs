@@ -9,6 +9,19 @@ namespace DotnetAgents.CalDav.Core.Tests.Unit.Internal.Ical;
 public sealed class CalendarContentDocumentTests
 {
     [Fact]
+    public void Parse_UnfoldsRawBytesBeforeStrictUtf8DecodingAndReplaysAuthority()
+    {
+        var prefix = Encoding.UTF8.GetBytes("BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:u1\r\nSUMMARY:Caf");
+        var suffix = Encoding.UTF8.GetBytes("\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n");
+        byte[] bytes = [.. prefix, 0xc3, (byte)'\r', (byte)'\n', (byte)' ', 0xa9, .. suffix];
+
+        var document = CalendarContentDocument.Parse(bytes);
+
+        document.Properties.Single(property => property.Name == "SUMMARY").RawEncodedValue.ShouldBe("Café");
+        document.Replay().ShouldBe(bytes);
+    }
+
+    [Fact]
     public void Parse_PreservesFoldedSlicesUnknownValuesAndRepeatedParameterOccurrences()
     {
         const string content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\nBEGIN:VEVENT\r\nUID:u1\r\nDTSTAMP:20260815T120000Z\r\nDTSTART:20260816T090000Z\r\nDESCRIPTION:Ol\u00e1 \ud83c\udf0d and a long value\r\n continued exactly\r\n\r\nX-LINK;X-LABEL=One,one;X-LABEL=TWO;VALUE=URI:https://example.test/a,b;c\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
@@ -91,14 +104,15 @@ public sealed class CalendarContentDocumentTests
     }
 
     [Theory]
-    [InlineData(CalendarPropertyValueType.Uri, "ATTACH,ATTENDEE,CALENDAR-ADDRESS,CONCEPT,CONFERENCE,IMAGE,LINK,ORGANIZER,SOURCE,TZURL,URL")]
+    [InlineData(CalendarPropertyValueType.Uri, "ATTACH,ATTENDEE,CALENDAR-ADDRESS,CONCEPT,ORGANIZER,TZURL,URL")]
     [InlineData(CalendarPropertyValueType.DateTime, "ACKNOWLEDGED,COMPLETED,CREATED,DTEND,DTSTAMP,DTSTART,DUE,EXDATE,LAST-MODIFIED,RDATE,RECURRENCE-ID")]
-    [InlineData(CalendarPropertyValueType.Duration, "DURATION,REFRESH-INTERVAL,TRIGGER")]
+    [InlineData(CalendarPropertyValueType.Duration, "DURATION,TRIGGER")]
     [InlineData(CalendarPropertyValueType.Integer, "PERCENT-COMPLETE,PRIORITY,REPEAT,SEQUENCE")]
     [InlineData(CalendarPropertyValueType.Float, "GEO")]
     [InlineData(CalendarPropertyValueType.Period, "FREEBUSY")]
     [InlineData(CalendarPropertyValueType.Recur, "EXRULE,RRULE")]
-    [InlineData(CalendarPropertyValueType.Text, "ACTION,CALSCALE,CATEGORIES,CLASS,COLOR,COMMENT,CONTACT,DESCRIPTION,LOCATION,METHOD,NAME,PARTICIPANT-TYPE,PRODID,PROXIMITY,REFID,RELATED-TO,REQUEST-STATUS,RESOURCES,RESOURCE-TYPE,STATUS,STRUCTURED-DATA,STYLED-DESCRIPTION,SUMMARY,TRANSP,TZID,TZNAME,UID,VERSION")]
+    [InlineData(CalendarPropertyValueType.Text, "ACTION,CALSCALE,CATEGORIES,CLASS,COLOR,COMMENT,CONTACT,DESCRIPTION,LOCATION,METHOD,NAME,PARTICIPANT-TYPE,PRODID,PROXIMITY,REFID,REQUEST-STATUS,RESOURCES,RESOURCE-TYPE,STATUS,SUMMARY,TRANSP,TZID,TZNAME,UID,VERSION")]
+    [InlineData(CalendarPropertyValueType.Uid, "RELATED-TO")]
     public void GetDefaultValueType_ExhaustivelyClassifiesRegisteredFrozenValues(
         CalendarPropertyValueType expected,
         string propertyNames)
@@ -108,6 +122,21 @@ public sealed class CalendarContentDocumentTests
             CalendarContentDocument.IsRegisteredPropertyName(propertyName).ShouldBeTrue();
             CalendarContentDocument.GetDefaultValueType(propertyName).ShouldBe(expected);
         }
+    }
+
+    [Theory]
+    [InlineData("CONFERENCE")]
+    [InlineData("IMAGE")]
+    [InlineData("LINK")]
+    [InlineData("REFRESH-INTERVAL")]
+    [InlineData("SOURCE")]
+    [InlineData("STRUCTURED-DATA")]
+    [InlineData("STYLED-DESCRIPTION")]
+    public void GetDefaultValueType_PreservesRegisteredNoDefaultValuesAsUnknown(string propertyName)
+    {
+        CalendarContentDocument.IsRegisteredPropertyName(propertyName).ShouldBeTrue();
+        CalendarContentDocument.HasNoDefaultValueType(propertyName).ShouldBeTrue();
+        CalendarContentDocument.GetDefaultValueType(propertyName).ShouldBe(CalendarPropertyValueType.Unknown);
     }
 
     [Theory]
@@ -122,6 +151,8 @@ public sealed class CalendarContentDocumentTests
     [InlineData("PERIOD", CalendarPropertyValueType.Period)]
     [InlineData("RECUR", CalendarPropertyValueType.Recur)]
     [InlineData("BINARY", CalendarPropertyValueType.Binary)]
+    [InlineData("UID", CalendarPropertyValueType.Uid)]
+    [InlineData("XML-REFERENCE", CalendarPropertyValueType.XmlReference)]
     [InlineData("X-UNKNOWN", CalendarPropertyValueType.Unknown)]
     public void Parse_ClassifiesEveryFrozenExplicitValueType(
         string explicitValue,
@@ -145,6 +176,7 @@ public sealed class CalendarContentDocumentTests
 
     [Theory]
     [InlineData("BEGIN:VCALENDAR\rEND:VCALENDAR\r\n")]
+    [InlineData("BEGIN:VCALENDAR\r")]
     [InlineData(" SUMMARY:value\r\n")]
     [InlineData("BEGIN:VCALENDAR\r\nMALFORMED\r\nEND:VCALENDAR\r\n")]
     [InlineData("X-PROP:value\r\n")]
@@ -183,6 +215,94 @@ public sealed class CalendarContentDocumentTests
 
         Should.Throw<InvalidOperationException>(() =>
             document.ReplaceSinglePropertyValue(document.Components.Single().Path, "SUMMARY", "new"));
+    }
+
+    [Fact]
+    public void SetOrClearSingleProperty_RejectsAmbiguousSingleton()
+    {
+        const string content = "BEGIN:VCALENDAR\r\nSUMMARY:one\r\nSUMMARY:two\r\nEND:VCALENDAR\r\n";
+        var document = CalendarContentDocument.Parse(Encoding.UTF8.GetBytes(content));
+
+        Should.Throw<InvalidOperationException>(() => document.SetOrClearSingleProperty(
+            document.Components.Single().Path,
+            "SUMMARY",
+            "new"));
+    }
+
+    [Fact]
+    public void SetOrClearSingleProperty_ClearingAbsentPropertyReplaysExactBytes()
+    {
+        const string content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n";
+        var bytes = Encoding.UTF8.GetBytes(content);
+        var document = CalendarContentDocument.Parse(bytes);
+
+        var edited = document.SetOrClearSingleProperty(document.Components.Single().Path, "SUMMARY", null);
+
+        edited.ShouldBe(bytes);
+    }
+
+    [Fact]
+    public void SetOrClearSingleProperty_AppendsUsingTheComponentLineEnding()
+    {
+        const string content = "BEGIN:VCALENDAR\nEND:VCALENDAR\n";
+        var document = CalendarContentDocument.Parse(Encoding.UTF8.GetBytes(content));
+
+        var edited = document.SetOrClearSingleProperty(document.Components.Single().Path, "SUMMARY", "new");
+
+        Encoding.UTF8.GetString(edited).ShouldBe("BEGIN:VCALENDAR\nSUMMARY:new\nEND:VCALENDAR\n");
+    }
+
+    [Fact]
+    public void SetOrClearSinglePropertySlice_RejectsAmbiguousSingleton()
+    {
+        const string content = "BEGIN:VCALENDAR\r\nSUMMARY:one\r\nSUMMARY:two\r\nEND:VCALENDAR\r\n";
+        var document = CalendarContentDocument.Parse(Encoding.UTF8.GetBytes(content));
+
+        Should.Throw<InvalidOperationException>(() => document.SetOrClearSinglePropertySlice(
+            document.Components.Single().Path,
+            "SUMMARY",
+            "SUMMARY:new\r\n"));
+    }
+
+    [Theory]
+    [InlineData(null, "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n")]
+    [InlineData("SUMMARY:new\r\n", "BEGIN:VCALENDAR\r\nSUMMARY:new\r\nEND:VCALENDAR\r\n")]
+    public void SetOrClearSinglePropertySlice_HandlesAbsentSingleton(string? slice, string expected)
+    {
+        const string content = "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n";
+        var document = CalendarContentDocument.Parse(Encoding.UTF8.GetBytes(content));
+
+        var edited = document.SetOrClearSinglePropertySlice(
+            document.Components.Single().Path,
+            "SUMMARY",
+            slice);
+
+        Encoding.UTF8.GetString(edited).ShouldBe(expected);
+    }
+
+    [Theory]
+    [InlineData("DESCRIPTION:new\r\n")]
+    [InlineData("SUMMARY:one\r\nDESCRIPTION:two\r\n")]
+    [InlineData("SUMMARY\r\n")]
+    public void SetSinglePropertySlicePreservingParameters_RejectsInvalidReplacementSlice(string slice)
+    {
+        const string content = "BEGIN:VCALENDAR\r\nSUMMARY:old\r\nEND:VCALENDAR\r\n";
+        var document = CalendarContentDocument.Parse(Encoding.UTF8.GetBytes(content));
+
+        Should.Throw<ArgumentException>(() => document.SetSinglePropertySlicePreservingParameters(
+            document.Components.Single().Path,
+            "SUMMARY",
+            slice,
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase)));
+    }
+
+    [Theory]
+    [InlineData("tail\\", "tail\\")]
+    [InlineData("line\\Nnext", "line\nnext")]
+    [InlineData("escaped\\,comma", "escaped,comma")]
+    public void DecodeText_DecodesEscapesWithoutDroppingTrailingBackslash(string encoded, string expected)
+    {
+        CalendarContentDocument.DecodeText(encoded).ShouldBe(expected);
     }
 
     [Fact]
@@ -250,6 +370,46 @@ public sealed class CalendarContentDocumentTests
         var edited = document.ReplaceSinglePropertyValue(path, "SUMMARY", "new\\, exact");
 
         Encoding.UTF8.GetString(edited).ShouldBe(content.Replace("parameter\":old and\r\n folded\r\n", "parameter\":new\\, exact\r\n", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ReplaceSinglePropertyValue_PreservesUnrelatedFoldInsideUtf8Sequence()
+    {
+        var prefix = Encoding.UTF8.GetBytes(
+            "BEGIN:VCALENDAR\r\nSUMMARY:old\r\nDESCRIPTION:Caf");
+        var suffix = Encoding.UTF8.GetBytes("\r\nEND:VCALENDAR\r\n");
+        byte[] original = [.. prefix, 0xc3, (byte)'\r', (byte)'\n', (byte)' ', 0xa9, .. suffix];
+        var document = CalendarContentDocument.Parse(original);
+
+        var edited = document.ReplaceSinglePropertyValue(
+            document.Components.Single().Path,
+            "SUMMARY",
+            "new");
+
+        var expectedPrefix = Encoding.UTF8.GetBytes(
+            "BEGIN:VCALENDAR\r\nSUMMARY:new\r\nDESCRIPTION:Caf");
+        byte[] expected = [.. expectedPrefix, 0xc3, (byte)'\r', (byte)'\n', (byte)' ', 0xa9, .. suffix];
+        edited.ShouldBe(expected);
+    }
+
+    [Fact]
+    public void ReplaceSinglePropertyValue_PreservesAddressedHeaderFoldWhenAnotherFoldSplitsUtf8()
+    {
+        var prefix = Encoding.UTF8.GetBytes(
+            "BEGIN:VCALENDAR\r\nSUMMARY;LANGUAGE=en\r\n :old\r\nDESCRIPTION:Caf");
+        var suffix = Encoding.UTF8.GetBytes("\r\nEND:VCALENDAR\r\n");
+        byte[] original = [.. prefix, 0xc3, (byte)'\r', (byte)'\n', (byte)' ', 0xa9, .. suffix];
+        var document = CalendarContentDocument.Parse(original);
+
+        var edited = document.ReplaceSinglePropertyValue(
+            document.Components.Single().Path,
+            "SUMMARY",
+            "new");
+
+        var expectedPrefix = Encoding.UTF8.GetBytes(
+            "BEGIN:VCALENDAR\r\nSUMMARY;LANGUAGE=en\r\n :new\r\nDESCRIPTION:Caf");
+        byte[] expected = [.. expectedPrefix, 0xc3, (byte)'\r', (byte)'\n', (byte)' ', 0xa9, .. suffix];
+        edited.ShouldBe(expected);
     }
 
     [Fact]
@@ -461,12 +621,9 @@ public sealed class CalendarContentDocumentTests
     [Theory]
     [InlineData("CALENDAR-ADDRESS:urn:uuid:speaker")]
     [InlineData("PARTICIPANT-TYPE:SPEAKER")]
-    [InlineData("CONCEPT:https://example.test/concept")]
     [InlineData("CONFERENCE:https://example.test/conference")]
     [InlineData("IMAGE:https://example.test/image")]
-    [InlineData("LINK:https://example.test/link")]
     [InlineData("STRUCTURED-DATA;VALUE=URI:https://example.test/data")]
-    [InlineData("STYLED-DESCRIPTION:<b>wrong path</b>")]
     public void Project_RejectsRemovedExtensionPropertiesOnUnsupportedComponentPaths(string property)
     {
         var content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\n"
