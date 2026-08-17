@@ -1,4 +1,3 @@
-using System.Text;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Models;
 using DotnetAgents.CalDav.Mcp.Tools;
@@ -33,12 +32,10 @@ internal static class ExactCalendarResourceHandler
         {
             Contents =
             [
-                new TextResourceContents
-                {
-                    Uri = uri,
-                    MimeType = "text/calendar; charset=utf-8",
-                    Text = new UTF8Encoding(false, true).GetString(read.Snapshot.AuthoritativeUtf8.Span)
-                }
+                BlobResourceContents.FromBytes(
+                    read.Snapshot.AuthoritativeUtf8,
+                    uri,
+                    "text/calendar; charset=utf-8")
             ],
             TimeToLive = TimeSpan.Zero,
             CacheScope = CacheScope.Private

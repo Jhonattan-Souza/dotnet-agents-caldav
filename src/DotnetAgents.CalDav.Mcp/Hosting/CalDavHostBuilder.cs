@@ -55,6 +55,7 @@ public sealed class CalDavHostBuilder
         {
             mcpBuilder
                 .WithTools<ExactCalendarResourceTools>()
+                .WithTools<ExactCalendarResourceWriteTools>()
                 .WithListResourcesHandler((_, _) => ValueTask.FromResult(ExactCalendarResourceHandler.List()))
                 .WithReadResourceHandler(async (request, cancellationToken) =>
                 {
@@ -108,6 +109,9 @@ public sealed class CalDavHostBuilder
         ConfigureTool(options.ToolCollection, "calendar_resources.move");
         ConfigureTool(options.ToolCollection, "calendar_resources.delete");
         ConfigureTool(options.ToolCollection, "calendar_resources.exact_get");
+        ConfigureTool(options.ToolCollection, "calendar_resources.exact_create");
+        ConfigureTool(options.ToolCollection, "calendar_resources.exact_replace");
+        ConfigureTool(options.ToolCollection, "calendar_resources.exact_move");
     }
 
     private static void ConfigureTool(

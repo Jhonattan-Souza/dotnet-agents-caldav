@@ -121,6 +121,13 @@ public sealed class CalendarResourceTools
         _ => Error("upstream_protocol_error", "upstream", "The Calendar Object Resource response was invalid.", false, "execution")
     };
 
+    internal static CallToolResult CreateInputGuardError(bool payloadTooLarge) => Error(
+        payloadTooLarge ? "payload_too_large" : "invalid_input",
+        payloadTooLarge ? "limitsAndAdmission" : "input",
+        payloadTooLarge ? "The resource read arguments are too large." : "The resource read input is invalid.",
+        false,
+        payloadTooLarge ? "admissionAndPayload" : "schemaLexicalDiscriminator");
+
     private static CallToolResult CreateHttpError(HttpStatusCode? statusCode) => statusCode switch
     {
         HttpStatusCode.Unauthorized => Error("upstream_unauthorized", "upstream", "The Calendar Object Resource read was not authorized.", false, "execution"),

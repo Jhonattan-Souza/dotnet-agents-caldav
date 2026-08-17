@@ -589,6 +589,60 @@ public class CalDavHostBuilderTests
         tool.ProtocolTool.Annotations.OpenWorldHint.ShouldBe(true);
     }
 
+    [Fact]
+    public void BuildHost_ExactMode_AdvertisesEveryFrozenExactWriteInOrder()
+    {
+        var builder = CalDavHostBuilder.CreateBuilder(exposeExactTools: true);
+        builder.Services.ConfigureCalDav(ValidOptions);
+        using var host = builder.Build();
+
+        var toolNames = host.Services
+            .GetRequiredService<IOptions<ModelContextProtocol.Server.McpServerOptions>>()
+            .Value.ToolCollection!
+            .ToArray()
+            .Select(tool => tool.ProtocolTool.Name)
+            .Where(name => name.StartsWith("calendar_resources.exact_", StringComparison.Ordinal));
+
+        toolNames.ShouldBe(
+        [
+            "calendar_resources.exact_get",
+            "calendar_resources.exact_create",
+            "calendar_resources.exact_replace",
+            "calendar_resources.exact_move"
+        ]);
+        var exactDescriptions = host.Services
+            .GetRequiredService<IOptions<ModelContextProtocol.Server.McpServerOptions>>()
+            .Value.ToolCollection!
+            .ToArray()
+            .Where(tool => tool.ProtocolTool.Name.StartsWith("calendar_resources.exact_", StringComparison.Ordinal))
+            .ToDictionary(tool => tool.ProtocolTool.Name, tool => tool.ProtocolTool.Description);
+        exactDescriptions["calendar_resources.exact_create"].ShouldBe(
+            "Create an exact UTF-8 resource at an explicitly provided absolute destination resource href.");
+        exactDescriptions["calendar_resources.exact_replace"].ShouldBe(
+            "Confirm and replace one revision-bound resource at its explicitly provided absolute href with exact UTF-8 content.");
+        exactDescriptions["calendar_resources.exact_move"].ShouldBe(
+            "Confirm and move one revision-bound resource to an explicitly provided absolute destination href.");
+    }
+
+    [Fact]
+    public void BuildHost_ExactCatalogConstructionDoesNotContactConfiguredOrigin()
+    {
+        var builder = CalDavHostBuilder.CreateBuilder(exposeExactTools: true);
+        builder.Services.ConfigureCalDav(options =>
+        {
+            options.BaseUrl = "http://127.0.0.1:1";
+            options.Username = "configured-principal";
+            options.Password = "invalid-upstream-credential";
+        });
+
+        using var host = builder.Build();
+
+        host.Services.GetRequiredService<IOptions<ModelContextProtocol.Server.McpServerOptions>>()
+            .Value.ToolCollection!
+            .TryGetPrimitive("calendar_resources.exact_create", out _)
+            .ShouldBeTrue();
+    }
+
     private static IReadOnlyList<Type> GetRegisteredMcpToolTypes(IServiceCollection services)
     {
         // The MCP SDK registers each [McpServerTool] method as an McpServerTool service.

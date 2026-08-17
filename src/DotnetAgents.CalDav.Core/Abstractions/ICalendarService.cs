@@ -26,6 +26,36 @@ public interface ICalendarService
     /// <summary>Reads one authoritative Calendar Object Resource snapshot.</summary>
     Task<CalendarResourceRead> GetResourceAsync(string href, CancellationToken cancellationToken);
 
+    /// <summary>Creates one caller-authored complete resource at one explicit destination href.</summary>
+    Task<CalendarExactResourceResult> ExactCreateResourceAsync(
+        CalendarExactCreateRequest request,
+        CancellationToken cancellationToken);
+
+    /// <summary>Validates an exact create without dispatching a write.</summary>
+    Task<CalendarExactResourceReviewResult> ReviewExactCreateResourceAsync(
+        CalendarExactCreateRequest request,
+        CancellationToken cancellationToken);
+
+    /// <summary>Replaces one reviewed resource with caller-authored complete content.</summary>
+    Task<CalendarExactResourceResult> ExactReplaceResourceAsync(
+        CalendarExactReplaceRequest request,
+        CancellationToken cancellationToken);
+
+    /// <summary>Validates an exact replacement without dispatching a write.</summary>
+    Task<CalendarExactResourceReviewResult> ReviewExactReplaceResourceAsync(
+        CalendarExactReplaceRequest request,
+        CancellationToken cancellationToken);
+
+    /// <summary>Atomically moves one reviewed resource to one explicit destination href.</summary>
+    Task<CalendarExactResourceResult> ExactMoveResourceAsync(
+        CalendarExactMoveRequest request,
+        CancellationToken cancellationToken);
+
+    /// <summary>Validates an exact move without dispatching a write.</summary>
+    Task<CalendarExactResourceReviewResult> ReviewExactMoveResourceAsync(
+        CalendarExactMoveRequest request,
+        CancellationToken cancellationToken);
+
     /// <summary>Creates one complete Event, including typed recurrence, and returns the observed server revision.</summary>
     Task<CalendarEntityCreateResult> CreateEventAsync(
         CalendarEventCreateRequest request,

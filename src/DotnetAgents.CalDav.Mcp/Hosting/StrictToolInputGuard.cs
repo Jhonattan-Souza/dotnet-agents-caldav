@@ -12,6 +12,7 @@ internal static class StrictToolInputGuard
 {
     private const string ArgumentBytesKey = "DotnetAgents.CalDav.Mcp.StrictToolInputGuard.ArgumentBytes";
     private const string DuplicateKey = "DotnetAgents.CalDav.Mcp.StrictToolInputGuard.Duplicate";
+    private const string InvalidStringKey = "DotnetAgents.CalDav.Mcp.StrictToolInputGuard.InvalidString";
 
     public static McpMessageFilter Incoming => next => async (context, cancellationToken) =>
     {
@@ -27,6 +28,10 @@ internal static class StrictToolInputGuard
                     ? argumentBytes
                     : null,
                 request.Items.TryGetValue(DuplicateKey, out var duplicate) && duplicate is true);
+            evidence = evidence with
+            {
+                HasInvalidString = request.Items.TryGetValue(InvalidStringKey, out var invalid) && invalid is true
+            };
             var rejection = Reject(request.Params?.Name, evidence);
             return rejection is null
                 ? next(request, cancellationToken)
@@ -46,6 +51,9 @@ internal static class StrictToolInputGuard
                 or "calendar_occurrences.restore_cancellation" => RejectOccurrenceMutation(evidence),
             "calendar_resources.move" => RejectMove(evidence),
             "calendar_resources.delete" => RejectDelete(evidence),
+            "calendar_resources.exact_get" => RejectExactGet(evidence),
+            "calendar_resources.exact_create" or "calendar_resources.exact_replace" => RejectExactWrite(evidence),
+            "calendar_resources.exact_move" => RejectExactMove(evidence),
             _ => null
         };
     }
@@ -73,6 +81,19 @@ internal static class StrictToolInputGuard
     private static CallToolResult? RejectMove(StrictToolInputEvidence evidence) =>
         Reject(evidence, CalendarResourceMoveTools.MaximumArgumentBytes, CalendarResourceMoveTools.CreateInputGuardError);
 
+    private static CallToolResult? RejectExactGet(StrictToolInputEvidence evidence) =>
+        Reject(evidence, CalendarQueryToolSupport.MaximumArgumentBytes, CalendarResourceTools.CreateInputGuardError);
+
+    private static CallToolResult? RejectExactWrite(StrictToolInputEvidence evidence) => Reject(
+        evidence,
+        ExactCalendarResourceWriteTools.MaximumArgumentBytes,
+        ExactCalendarResourceWriteTools.CreateInputGuardError);
+
+    private static CallToolResult? RejectExactMove(StrictToolInputEvidence evidence) => Reject(
+        evidence,
+        ExactCalendarResourceWriteTools.MaximumMetadataArgumentBytes,
+        ExactCalendarResourceWriteTools.CreateInputGuardError);
+
     private static CallToolResult? Reject(
         StrictToolInputEvidence evidence,
         int maximumArgumentBytes,
@@ -80,7 +101,7 @@ internal static class StrictToolInputGuard
     {
         if (evidence.ArgumentBytes > maximumArgumentBytes)
             return createError(true);
-        return evidence.HasDuplicateProperty ? createError(false) : null;
+        return evidence.HasDuplicateProperty || evidence.HasInvalidString ? createError(false) : null;
     }
 
     internal static StrictToolInputEvidence InspectArguments(JsonNode? arguments)
@@ -90,11 +111,14 @@ internal static class StrictToolInputGuard
         try
         {
             var utf8 = Encoding.UTF8.GetBytes(arguments.ToJsonString());
-            return new StrictToolInputEvidence(utf8.Length, ContainsDuplicateProperty(utf8));
+            return new StrictToolInputEvidence(
+                utf8.Length,
+                ContainsDuplicateProperty(utf8),
+                ContainsInvalidString(utf8));
         }
         catch (InvalidOperationException)
         {
-            return new StrictToolInputEvidence(null, true);
+            return new StrictToolInputEvidence(null, false, true);
         }
     }
 
@@ -118,6 +142,11 @@ internal static class StrictToolInputGuard
             context.Items[ArgumentBytesKey] = argumentBytes;
         if (evidence.HasDuplicateProperty)
             context.Items[DuplicateKey] = true;
+        if (evidence.HasInvalidString)
+        {
+            context.Items[InvalidStringKey] = true;
+            parameters["arguments"] = new JsonObject();
+        }
     }
 
     private static bool ContainsDuplicateProperty(ReadOnlySpan<byte> utf8)
@@ -146,8 +175,28 @@ internal static class StrictToolInputGuard
         }
         return false;
     }
+
+    private static bool ContainsInvalidString(ReadOnlySpan<byte> utf8)
+    {
+        var reader = new Utf8JsonReader(utf8);
+        while (reader.Read())
+        {
+            if (reader.TokenType is not (JsonTokenType.String or JsonTokenType.PropertyName))
+                continue;
+            try
+            {
+                _ = reader.GetString();
+            }
+            catch (InvalidOperationException)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
 }
 
 internal readonly record struct StrictToolInputEvidence(
     int? ArgumentBytes,
-    bool HasDuplicateProperty);
+    bool HasDuplicateProperty,
+    bool HasInvalidString = false);

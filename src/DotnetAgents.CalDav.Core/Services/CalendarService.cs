@@ -107,6 +107,36 @@ internal sealed class CalendarService : ICalendarService
     public Task<CalendarResourceRead> GetResourceAsync(string href, CancellationToken cancellationToken) =>
         GetResourceAsync(href, expectedKind: null, cancellationToken);
 
+    /// <inheritdoc />
+    public async Task<CalendarExactResourceResult> ExactCreateResourceAsync(
+        CalendarExactCreateRequest request,
+        CancellationToken cancellationToken) => await ExactResourceEngine().CreateAsync(request, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<CalendarExactResourceReviewResult> ReviewExactCreateResourceAsync(
+        CalendarExactCreateRequest request,
+        CancellationToken cancellationToken) => await ExactResourceEngine().ReviewCreateAsync(request, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<CalendarExactResourceResult> ExactReplaceResourceAsync(
+        CalendarExactReplaceRequest request,
+        CancellationToken cancellationToken) => await ExactResourceEngine().ReplaceAsync(request, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<CalendarExactResourceReviewResult> ReviewExactReplaceResourceAsync(
+        CalendarExactReplaceRequest request,
+        CancellationToken cancellationToken) => await ExactResourceEngine().ReviewReplaceAsync(request, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<CalendarExactResourceResult> ExactMoveResourceAsync(
+        CalendarExactMoveRequest request,
+        CancellationToken cancellationToken) => await ExactResourceEngine().MoveAsync(request, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<CalendarExactResourceReviewResult> ReviewExactMoveResourceAsync(
+        CalendarExactMoveRequest request,
+        CancellationToken cancellationToken) => await ExactResourceEngine().ReviewMoveAsync(request, cancellationToken);
+
     private async Task<CalendarResourceRead> GetResourceAsync(
         string href,
         CalendarEntityKind? expectedKind,
@@ -223,6 +253,12 @@ internal sealed class CalendarService : ICalendarService
         _calendarClient,
         (href, kind, cancellationToken) => GetResourceAsync(href, kind, cancellationToken),
         _timeProvider);
+
+    private CalendarExactResourceEngine ExactResourceEngine() => new(
+        _calendarClient,
+        _options.Value,
+        _timeProvider,
+        ApplyScope);
 
     private async Task<CalendarResourceRead> CreateSnapshotAsync(
         CalendarDescriptor calendar,

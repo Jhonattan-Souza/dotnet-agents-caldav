@@ -472,13 +472,63 @@ public sealed class CalendarMcpRawStdioTests
         AssertTypedError(result, "payload_too_large", "admissionAndPayload");
     }
 
+    [Fact]
+    public async Task ExactCreate_InvalidSurrogateEscapeReturnsTypedInvalidInputOverRawStdio()
+    {
+        const string request = """
+            {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"calendar_resources.exact_create","arguments":{"destinationHref":"https://cal.example/events/a.ics","utf8Resource":"\uD800"}}}
+            """;
+
+        var result = await InvokeRawAsync(request, exposeExact: true);
+
+        AssertTypedError(result, "invalid_input", "schemaLexicalDiscriminator");
+    }
+
+    [Theory]
+    [InlineData("duplicate")]
+    [InlineData("invalid-surrogate")]
+    public async Task ExactGet_MalformedRawInputReturnsTypedInvalidInputWithoutNetwork(string scenario)
+    {
+        await using var server = new AmbiguousCreateServer();
+        var arguments = scenario == "duplicate"
+            ? "{\"href\":\"https://cal.example/events/a.ics\",\"href\":\"https://cal.example/events/b.ics\"}"
+            : "{\"href\":\"\\uD800\"}";
+        var request = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"calendar_resources.exact_get\",\"arguments\":"
+            + arguments + "}}";
+
+        var result = await InvokeRawAsync(request, server.BaseUrl, server.CalendarHref, exposeExact: true);
+
+        AssertTypedError(result, "invalid_input", "schemaLexicalDiscriminator");
+        server.RequestCount.ShouldBe(0);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public async Task ExactGet_EnforcesRawArgumentBoundaryBeforeNetwork(int extraByte)
+    {
+        await using var server = new AmbiguousCreateServer();
+        var arguments = ExactGetArgumentsAtSize(CalendarQueryToolSupport.MaximumArgumentBytes + extraByte);
+        var request = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"calendar_resources.exact_get\",\"arguments\":"
+            + arguments + "}}";
+
+        var result = await InvokeRawAsync(request, server.BaseUrl, server.CalendarHref, exposeExact: true);
+
+        AssertTypedError(
+            result,
+            extraByte == 0 ? "invalid_input" : "payload_too_large",
+            extraByte == 0 ? "schemaLexicalDiscriminator" : "admissionAndPayload");
+        server.RequestCount.ShouldBe(0);
+    }
+
     private static async Task<JsonElement> InvokeRawAsync(
         string toolRequest,
         string baseUrl = "http://127.0.0.1:1",
-        string calendarHref = "http://127.0.0.1:1/calendars/test/")
+        string calendarHref = "http://127.0.0.1:1/calendars/test/",
+        bool exposeExact = false)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-        using var process = StartServer(baseUrl, calendarHref);
+        using var process = StartServer(baseUrl, calendarHref, exposeExact);
         try
         {
             await process.StandardInput.WriteLineAsync(
@@ -493,7 +543,8 @@ public sealed class CalendarMcpRawStdioTests
             process.StandardInput.Close();
             await process.WaitForExitAsync(timeout.Token);
             (await process.StandardError.ReadToEndAsync(timeout.Token)).ShouldBeEmpty();
-            return response.GetProperty("result").Clone();
+            response.TryGetProperty("result", out var result).ShouldBeTrue(response.ToString());
+            return result.Clone();
         }
         finally
         {
@@ -651,7 +702,19 @@ public sealed class CalendarMcpRawStdioTests
         return JsonSerializer.Serialize(value);
     }
 
-    private static Process StartServer(string baseUrl, string calendarHref)
+    private static string ExactGetArgumentsAtSize(int argumentBytes)
+    {
+        var value = new Dictionary<string, object?>
+        {
+            ["href"] = "https://cal.example/events/a.ics",
+            ["padding"] = string.Empty
+        };
+        var fixedBytes = JsonSerializer.SerializeToUtf8Bytes(value).Length;
+        value["padding"] = new string('x', argumentBytes - fixedBytes);
+        return JsonSerializer.Serialize(value);
+    }
+
+    private static Process StartServer(string baseUrl, string calendarHref, bool exposeExact = false)
     {
         var startInfo = new ProcessStartInfo("dotnet", GetServerAssemblyPath())
         {
@@ -665,6 +728,7 @@ public sealed class CalendarMcpRawStdioTests
         startInfo.Environment["CALDAV_USERNAME"] = "test";
         startInfo.Environment["CALDAV_PASSWORD"] = "test";
         startInfo.Environment["CALDAV_CALENDAR_HREFS"] = calendarHref;
+        startInfo.Environment["CALDAV_EXPOSE_EXACT_TOOLS"] = exposeExact ? "true" : "false";
         return Process.Start(startInfo)!;
     }
 
@@ -719,6 +783,7 @@ public sealed class CalendarMcpRawStdioTests
         private readonly Task _serve;
         private int _getCount;
         private int _putCount;
+        private int _requestCount;
 
         public AmbiguousCreateServer(bool failDiscovery = false)
         {
@@ -738,6 +803,8 @@ public sealed class CalendarMcpRawStdioTests
         public int GetCount => Volatile.Read(ref _getCount);
 
         public int PutCount => Volatile.Read(ref _putCount);
+
+        public int RequestCount => Volatile.Read(ref _requestCount);
 
         public async ValueTask DisposeAsync()
         {
@@ -773,6 +840,7 @@ public sealed class CalendarMcpRawStdioTests
 
         private async Task RespondAsync(HttpListenerContext context)
         {
+            Interlocked.Increment(ref _requestCount);
             var method = context.Request.HttpMethod;
             if (method == "PROPFIND")
             {

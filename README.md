@@ -70,7 +70,12 @@ Add this MCP server to VS Code, Claude Desktop, Cursor, or any MCP client:
 - `calendar_occurrences.cancel` — Create or update one complete cancelled override.
 - `calendar_occurrences.restore_cancellation` — Remove only cancelled status from one override.
 - `calendar_resources.delete` — Delete an entire resource from an explicitly supplied revision reference (href, UID, kind, and exact strong ETag) after MCP MRTR review and confirmation; success requires verified absence.
-- `calendar_resources.exact_get` — Opt-in exact read through a protected MCP resource link; enable with `CALDAV_EXPOSE_EXACT_TOOLS=true`.
+- `calendar_resources.exact_get` — Opt-in byte-preserving exact read through a protected MCP blob resource link.
+- `calendar_resources.exact_create` — Create a complete caller-authored Calendar Object Resource from Unicode text or canonical base64 bytes at an explicit href after MRTR confirmation.
+- `calendar_resources.exact_replace` — Replace a strong-tagged resource with complete caller-authored Unicode text or canonical base64 bytes after MRTR confirmation.
+- `calendar_resources.exact_move` — Atomically move a strong-tagged resource to an explicit href after MRTR confirmation.
+
+The four exact tools are enabled with `CALDAV_EXPOSE_EXACT_TOOLS=true`; this flag controls the deterministic stdio catalog without contacting the server. The configured CalDAV credentials are the stdio authorization context, 401/403 responses become typed call failures, and exact writes require client support for MCP Multi Round-Trip Requests.
 
 The staged default catalog is `calendars.list`, `calendar_entities.query`, `calendar_occurrences.query`, `calendar_resources.get`, `events.create`, `events.patch`, `todos.create`, `todos.patch`, `calendar_occurrences.add`, `calendar_occurrences.exclude`, `calendar_occurrences.restore_exclusion`, `calendar_occurrences.cancel`, `calendar_occurrences.restore_cancellation`, `calendar_resources.delete`, `list_task_lists`, `show_tasks`, `add_task`, `find_tasks`, `complete_task_by_summary`, and `delete_task_by_summary`. Set `CALDAV_EXPOSE_ADVANCED_TOOLS=true` to also expose the legacy href-based advanced tools.
 

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Models;
@@ -29,9 +30,28 @@ public sealed class ExactCalendarResourceTools
         UseStructuredContent = true,
         OutputSchemaType = typeof(CalendarExactGetSuccessResult)),
      Description("Read one confirmed absolute href through a protected MCP resource link.")]
-    public async Task<CallToolResult> GetAsync(
-        [Description("Canonical absolute Calendar Object Resource href.")] string href,
+    public Task<CallToolResult> GetToolAsync(
+        RequestContext<CallToolRequestParams> requestContext,
+        CancellationToken cancellationToken) => GetRawAsync(
+            requestContext.Params?.Arguments,
+            cancellationToken);
+
+    internal async Task<CallToolResult> GetRawAsync(
+        IDictionary<string, JsonElement>? arguments,
         CancellationToken cancellationToken)
+    {
+        if (CalendarQueryToolSupport.MeasureArguments(
+                arguments,
+                arguments ?? new Dictionary<string, JsonElement>()) > CalendarQueryToolSupport.MaximumArgumentBytes)
+        {
+            return CalendarResourceTools.CreateInputGuardError(payloadTooLarge: true);
+        }
+        if (!ExactCalendarResourceArgumentParser.TryParseGet(arguments, out var href))
+            return CalendarResourceTools.CreateInputGuardError(payloadTooLarge: false);
+        return await GetAsync(href, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<CallToolResult> GetAsync(string href, CancellationToken cancellationToken)
     {
         return await CalendarResourceTools.ExecuteReadAsync(
             _calendarService,

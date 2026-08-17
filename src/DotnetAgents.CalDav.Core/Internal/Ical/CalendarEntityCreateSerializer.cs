@@ -303,6 +303,11 @@ internal static class CalendarEntityCreateSerializer
     {
         ValidateAbsoluteUri(value.Uri);
         content.Append(name);
+        if (CalendarContentDocument.HasNoDefaultValueType(name)
+            && !value.Parameters.Any(parameter => parameter.Name.Equals("VALUE", StringComparison.OrdinalIgnoreCase)))
+        {
+            content.Append(";VALUE=URI");
+        }
         AppendParameter(content, labelParameter, value.Label);
         AppendParameters(content, value.Parameters);
         content.Append(':').Append(value.Uri).Append("\r\n");
@@ -316,6 +321,11 @@ internal static class CalendarEntityCreateSerializer
         foreach (var value in values ?? [])
         {
             content.Append(name);
+            if (CalendarContentDocument.HasNoDefaultValueType(name)
+                && !value.Parameters.Any(parameter => parameter.Name.Equals("VALUE", StringComparison.OrdinalIgnoreCase)))
+            {
+                content.Append(";VALUE=TEXT");
+            }
             AppendParameters(content, value.Parameters);
             content.Append(':').Append(EscapeText(value.Value)).Append("\r\n");
         }

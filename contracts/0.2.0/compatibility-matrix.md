@@ -22,7 +22,7 @@ Every component cell uses exactly one closed class. `preserved but unevaluable` 
 | Strong ETag conditional mutation | supported | required typed rejection | supported | implemented for Event and To-do patch and semantic move | `CAL-RESOURCE-009`; exact If-Match, no weak-tag bypass, no blind retry |
 | Strict preconditions mode | supported | required typed rejection | pinned-profile-only | implemented | `strict-preconditions` fixture variant |
 | Calendar alarms and URI values | supported | preserved but unevaluable | preserved but unevaluable | implemented for Event and To-do semantic create and patch | `CAL-EVENT-006`; typed values remain inert and unaddressed patch content is preserved losslessly |
-| Exact replacement | supported | unsafe through Ical.Net | pinned-profile-only | planned | `CAL-RESOURCE-008`; caller UTF-8 is sent unchanged |
+| Exact replacement | supported | unsafe through Ical.Net | pinned-profile-only | implemented | `CAL-RESOURCE-008`, `CAL-MCP-003`; caller UTF-8 is sent unchanged, strong-ETag conditioned, and verified from authoritative readback; the deterministic stdio catalog is configuration-gated while the configured CalDAV principal is authorized by the upstream authority at call time |
 | Atomic cross-Calendar semantic move | supported | unsafe through Ical.Net | pinned-profile-only | implemented for Event and To-do | `CAL-RESOURCE-012`; one conditional no-overwrite MOVE, destination byte/UID/kind verification, and source-absence verification; no copy-then-delete fallback |
 | Other CalDAV servers | pinned-profile-only | required typed rejection | pinned-profile-only | planned | `CAL-BASE-002`; capability negotiation may operate, but no interoperability claim |
 

@@ -48,6 +48,20 @@ internal static class CalendarEntityCreateFidelity
         }
     }
 
+    public static bool IsExactEquivalent(ReadOnlySpan<byte> intendedUtf8, ReadOnlySpan<byte> observedUtf8)
+    {
+        try
+        {
+            var intended = CanonicalizePatch(CalendarContentDocument.Parse(intendedUtf8));
+            var observed = CanonicalizePatch(CalendarContentDocument.Parse(observedUtf8));
+            return intended.SequenceEqual(observed, StringComparer.Ordinal);
+        }
+        catch (Exception exception) when (exception is FormatException or DecoderFallbackException)
+        {
+            return false;
+        }
+    }
+
     internal static bool ArePropertiesEquivalent(
         CalendarContentProperty left,
         CalendarContentProperty right) => string.Equals(

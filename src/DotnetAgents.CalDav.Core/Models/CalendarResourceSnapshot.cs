@@ -48,6 +48,8 @@ public enum CalendarPropertyValueType
     Period,
     Recur,
     Binary,
+    Uid,
+    XmlReference,
     Unknown
 }
 

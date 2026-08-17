@@ -1022,6 +1022,9 @@ public sealed class CalendarMcpStdioIntegrationTests
             "calendar_resources.move",
             "calendar_resources.delete",
             "calendar_resources.exact_get",
+            "calendar_resources.exact_create",
+            "calendar_resources.exact_replace",
+            "calendar_resources.exact_move",
             "list_task_lists",
             "show_tasks",
             "add_task",
@@ -1030,12 +1033,103 @@ public sealed class CalendarMcpStdioIntegrationTests
             "delete_task_by_summary"
         ]);
         listed.Resources.ShouldBeEmpty();
-        read.Contents.ShouldHaveSingleItem().ShouldBeOfType<TextResourceContents>().Text
-            .ShouldBe(Encoding.UTF8.GetString(observed.Utf8));
+        read.Contents.ShouldHaveSingleItem().ShouldBeOfType<BlobResourceContents>().DecodedData
+            .ToArray().ShouldBe(observed.Utf8);
 
         await PutResourceAsync("exact-read-1.ics", content.Replace("Exact integration", "Changed revision", StringComparison.Ordinal));
         await Should.ThrowAsync<ModelContextProtocol.McpException>(() =>
             client.ReadResourceAsync(link.Uri, cancellationToken: TestContext.Current.CancellationToken).AsTask());
+        stderr.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task ExactWrites_PreserveCallerResourceAcrossMrtrCreateReplaceAndAtomicMove()
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        var uid = $"exact-write-{suffix}";
+        var calendarHref = $"{_fixture.BaseUrl}{_fixture.EventCalendarHref}";
+        var sourceHref = $"{calendarHref}exact-source-{suffix}.ics";
+        var destinationHref = $"{calendarHref}exact-destination-{suffix}.ics";
+        var createdContent = ExactEvent(uid, "Created", "X-INERT:<script>alert(1)</script>");
+        var replacedContent = ExactEvent(uid, "Replaced", "X-INERT:<script>alert(2)</script>");
+        var stderr = new ConcurrentQueue<string>();
+        await using var client = await CreateClientAsync(
+            stderr,
+            exposeExact: true,
+            calendarHrefs: calendarHref,
+            confirmMutations: true);
+
+        var created = await client.CallToolAsync(
+            "calendar_resources.exact_create",
+            new Dictionary<string, object?>
+            {
+                ["destinationHref"] = sourceHref,
+                ["utf8Resource"] = createdContent
+            },
+            cancellationToken: TestContext.Current.CancellationToken);
+        var createdRevision = created.StructuredContent!.Value.GetProperty("snapshot")
+            .GetProperty("entityRevision");
+        var replaced = await client.CallToolAsync(
+            "calendar_resources.exact_replace",
+            new Dictionary<string, object?>
+            {
+                ["revision"] = ExactRevisionArguments(createdRevision),
+                ["utf8Resource"] = replacedContent
+            },
+            cancellationToken: TestContext.Current.CancellationToken);
+        var replacedRevision = replaced.StructuredContent!.Value.GetProperty("snapshot")
+            .GetProperty("entityRevision");
+        var moved = await client.CallToolAsync(
+            "calendar_resources.exact_move",
+            new Dictionary<string, object?>
+            {
+                ["revision"] = ExactRevisionArguments(replacedRevision),
+                ["destinationHref"] = destinationHref
+            },
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        created.IsError.ShouldBe(false);
+        replaced.IsError.ShouldBe(false);
+        moved.IsError.ShouldBe(false);
+        moved.StructuredContent!.Value.GetProperty("snapshot").GetProperty("resourceRevision")
+            .GetProperty("href").GetString().ShouldBe(destinationHref);
+        (await GetStatusAsync(sourceHref)).ShouldBe(HttpStatusCode.NotFound);
+        var observed = await GetResourceAsync(destinationHref);
+        Encoding.UTF8.GetString(observed.Utf8).ShouldContain("SUMMARY:Replaced");
+        Encoding.UTF8.GetString(observed.Utf8).ShouldContain("X-INERT:<script>alert(2)</script>");
+        stderr.ShouldBeEmpty();
+        await DeleteResourceAsync(destinationHref, observed.EntityTag);
+    }
+
+    [Fact]
+    public async Task ExactCreate_WrongCredentialIsTypedDeniedWithoutWriteOrLeak()
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        var destinationHref = $"{_fixture.BaseUrl}{_fixture.EventCalendarHref}unauthorized-{suffix}.ics";
+        const string wrongPassword = "wrong-password-must-not-leak";
+        var stderr = new ConcurrentQueue<string>();
+        await using var client = await CreateClientAsync(
+            stderr,
+            exposeExact: true,
+            calendarHrefs: $"{_fixture.BaseUrl}{_fixture.EventCalendarHref}",
+            confirmMutations: true,
+            password: wrongPassword);
+
+        var tools = await client.ListToolsAsync(new ListToolsRequestParams(), TestContext.Current.CancellationToken);
+        var result = await client.CallToolAsync(
+            "calendar_resources.exact_create",
+            new Dictionary<string, object?>
+            {
+                ["destinationHref"] = destinationHref,
+                ["utf8Resource"] = ExactEvent($"unauthorized-{suffix}", "Denied", "X-INERT:credential-bound")
+            },
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        tools.Tools.ShouldContain(tool => tool.Name == "calendar_resources.exact_create");
+        result.IsError.ShouldBe(true);
+        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("upstream_unauthorized");
+        JsonSerializer.Serialize(result).ShouldNotContain(wrongPassword);
+        (await GetStatusAsync(destinationHref)).ShouldBe(HttpStatusCode.NotFound);
         stderr.ShouldBeEmpty();
     }
 
@@ -1044,7 +1138,8 @@ public sealed class CalendarMcpStdioIntegrationTests
         bool exposeExact,
         string? baseUrl = null,
         string? calendarHrefs = null,
-        bool confirmMutations = false)
+        bool confirmMutations = false,
+        string? password = null)
     {
         var environment = CreateEnvironment();
         if (baseUrl is not null)
@@ -1054,6 +1149,8 @@ public sealed class CalendarMcpStdioIntegrationTests
         }
         if (calendarHrefs is not null)
             environment["CALDAV_CALENDAR_HREFS"] = calendarHrefs;
+        if (password is not null)
+            environment["CALDAV_PASSWORD"] = password;
         environment["CALDAV_EXPOSE_EXACT_TOOLS"] = exposeExact ? "true" : "false";
         var transport = new StdioClientTransport(new StdioClientTransportOptions
         {
@@ -1299,6 +1396,20 @@ public sealed class CalendarMcpStdioIntegrationTests
             }
         }
     };
+
+    private static Dictionary<string, object?> ExactRevisionArguments(JsonElement revision) => new()
+    {
+        ["href"] = revision.GetProperty("href").GetString(),
+        ["entityUid"] = revision.GetProperty("entityUid").GetString(),
+        ["entityKind"] = revision.GetProperty("entityKind").GetString(),
+        ["entityTag"] = revision.GetProperty("entityTag").GetString()
+    };
+
+    private static string ExactEvent(string uid, string summary, string inertLine) =>
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Exact Integration//EN\r\n"
+        + $"BEGIN:VEVENT\r\nUID:{uid}\r\nDTSTAMP:20260817T120000Z\r\n"
+        + $"DTSTART:20260818T120000Z\r\nSUMMARY:{summary}\r\n{inertLine}\r\n"
+        + "END:VEVENT\r\nEND:VCALENDAR\r\n";
 
     private async Task DeleteResourceAsync(string href, string? entityTag = null)
     {

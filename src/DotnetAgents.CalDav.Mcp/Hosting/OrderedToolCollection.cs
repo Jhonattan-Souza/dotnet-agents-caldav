@@ -24,12 +24,15 @@ internal sealed class OrderedToolCollection : McpServerPrimitiveCollection<McpSe
         ["calendar_resources.move"] = 14,
         ["calendar_resources.delete"] = 15,
         ["calendar_resources.exact_get"] = 16,
-        ["list_task_lists"] = 17,
-        ["show_tasks"] = 18,
-        ["add_task"] = 19,
-        ["find_tasks"] = 20,
-        ["complete_task_by_summary"] = 21,
-        ["delete_task_by_summary"] = 22
+        ["calendar_resources.exact_create"] = 17,
+        ["calendar_resources.exact_replace"] = 18,
+        ["calendar_resources.exact_move"] = 19,
+        ["list_task_lists"] = 20,
+        ["show_tasks"] = 21,
+        ["add_task"] = 22,
+        ["find_tasks"] = 23,
+        ["complete_task_by_summary"] = 24,
+        ["delete_task_by_summary"] = 25
     };
 
     public OrderedToolCollection(IEnumerable<McpServerTool> tools)
