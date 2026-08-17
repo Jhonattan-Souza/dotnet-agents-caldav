@@ -524,6 +524,47 @@ public sealed class RadicaleConformanceHarnessTests(RadicaleConformanceFixture f
     }
 
     [Fact]
+    public async Task Pinned_profile_completes_one_todo_occurrence_with_one_exact_conditional_put()
+    {
+        var calendarHref = $"{fixture.BaseUrl}/conformance/conformance/";
+        const string resourceName = "pinned-todo-completion.ics";
+        const string content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Conformance//EN\r\nBEGIN:VTODO\r\nUID:pinned-todo-completion\r\nDTSTAMP:20260815T120000Z\r\nDTSTART:20260818T090000Z\r\nDUE:20260818T100000Z\r\nRRULE:FREQ=DAILY;COUNT=3\r\nSUMMARY:Completion series\r\nX-KEEP:opaque\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+        var seeded = await fixture.SeedResourceAsync(resourceName, content, TestContext.Current.CancellationToken);
+        var href = calendarHref + resourceName;
+        var requestTrace = new ConcurrentQueue<string>();
+        await using var provider = CreateProvider(fixture.BaseUrl, calendarHref, requestTrace);
+        var service = provider.GetRequiredService<ICalendarService>();
+
+        var result = await service.CompleteTodoAsync(
+            new CalendarTodoCompletionRequest(
+                new CalendarResourceRevisionReference(
+                    href,
+                    "pinned-todo-completion",
+                    CalendarEntityKind.Todo,
+                    seeded.EntityTag),
+                new CalendarTemporalValue(
+                    CalendarTemporalKind.UtcDateTime,
+                    "2026-08-19T09:00:00Z")),
+            TestContext.Current.CancellationToken);
+
+        result.Code.ShouldBe(CalendarEntityPatchCode.Success);
+        result.MutationState.ShouldBe(CalendarMutationState.Committed);
+        result.Snapshot!.EntityTag.ShouldNotBe(seeded.EntityTag);
+        requestTrace.Count(entry => entry.StartsWith("PUT:", StringComparison.Ordinal)).ShouldBe(1);
+        result.Snapshot.CalendarProperties.Count(property => property.Name == "STATUS"
+            && property.RawEncodedValue == "COMPLETED").ShouldBe(1);
+        result.Snapshot.CalendarProperties.Count(property => property.Name == "PERCENT-COMPLETE"
+            && property.RawEncodedValue == "100").ShouldBe(1);
+        result.Snapshot.CalendarProperties.Count(property => property.Name == "COMPLETED").ShouldBe(1);
+        result.Snapshot.CalendarProperties.Single(property => property.Name == "RECURRENCE-ID")
+            .RawEncodedValue.ShouldBe("20260819T090000Z");
+        result.Snapshot.CalendarProperties.Where(property => property.Name == "X-KEEP")
+            .Select(property => property.RawEncodedValue).ShouldBe(["opaque", "opaque"]);
+
+        await fixture.DeleteResourceHrefAsync(href, result.Snapshot.EntityTag, TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
     public async Task Pinned_profile_applies_entire_event_and_range_todo_with_one_put_each()
     {
         var calendarHref = $"{fixture.BaseUrl}/conformance/conformance/";

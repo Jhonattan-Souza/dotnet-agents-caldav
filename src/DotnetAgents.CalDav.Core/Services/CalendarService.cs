@@ -188,6 +188,11 @@ internal sealed class CalendarService : ICalendarService
         CancellationToken cancellationToken) => await PatchEntityEngine().RestoreOccurrenceCancellationAsync(request, cancellationToken);
 
     /// <inheritdoc />
+    public async Task<CalendarEntityPatchResult> CompleteTodoAsync(
+        CalendarTodoCompletionRequest request,
+        CancellationToken cancellationToken) => await PatchEntityEngine().CompleteTodoAsync(request, cancellationToken);
+
+    /// <inheritdoc />
     public async Task<CalendarResourceDeleteResult> DeleteResourceAsync(
         CalendarResourceRevisionReference revision,
         CancellationToken cancellationToken) => await new CalendarResourceDeleteEngine(

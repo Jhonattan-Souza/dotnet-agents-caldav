@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
@@ -58,6 +59,7 @@ public sealed class CalendarMcpStdioIntegrationTests
             "events.patch",
             "todos.create",
             "todos.patch",
+            "todos.complete",
             "calendar_occurrences.add",
             "calendar_occurrences.exclude",
             "calendar_occurrences.restore_exclusion",
@@ -768,6 +770,54 @@ public sealed class CalendarMcpStdioIntegrationTests
     }
 
     [Fact]
+    public async Task TodoCompletion_CompletesOneRecurringOccurrenceOverNativeStdioAndRadicale()
+    {
+        const string uid = "stdio-todo-completion";
+        var href = await PutResourceAsync("stdio-todo-completion.ics", Todo(
+            uid,
+            "SUMMARY:Completion series\r\nDTSTART:20260818T090000Z\r\n"
+            + "DUE:20260818T100000Z\r\nRRULE:FREQ=DAILY;COUNT=3\r\nX-KEEP:opaque\r\n"));
+        var observed = await GetResourceAsync(href);
+        var stderr = new ConcurrentQueue<string>();
+        await using var client = await CreateClientAsync(stderr, exposeExact: false);
+        var earliestCompletion = DateTimeOffset.UtcNow.AddSeconds(-1);
+
+        var result = await client.CallToolAsync(
+            "todos.complete",
+            TodoCompletionArguments(new ObservedRevision(href, observed.EntityTag), uid),
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        var revision = AssertCommittedCreate(
+            result,
+            "todo",
+            uid,
+            $"{_fixture.BaseUrl}{_fixture.TaskListHref}");
+        observed = await GetResourceAsync(href);
+        observed.EntityTag.ShouldBe(revision.EntityTag);
+        var stored = Encoding.UTF8.GetString(observed.Utf8);
+        stored.ShouldContain("RECURRENCE-ID:20260819T090000Z");
+        stored.ShouldContain("DTSTART:20260819T090000Z");
+        stored.ShouldContain("DUE:20260819T100000Z");
+        stored.ShouldContain("SUMMARY:Completion series");
+        stored.ShouldContain("X-KEEP:opaque");
+        stored.Split("STATUS:COMPLETED", StringSplitOptions.None).Length.ShouldBe(2);
+        stored.Split("PERCENT-COMPLETE:100", StringSplitOptions.None).Length.ShouldBe(2);
+        stored.Split("BEGIN:VTODO", StringSplitOptions.None).Length.ShouldBe(3);
+        stored.ShouldNotContain("RECURRENCE-ID:20260820T090000Z");
+        var completed = stored.Split("\r\n", StringSplitOptions.RemoveEmptyEntries)
+            .Single(line => line.StartsWith("COMPLETED:", StringComparison.Ordinal))["COMPLETED:".Length..];
+        var completionInstant = DateTimeOffset.ParseExact(
+            completed,
+            "yyyyMMdd'T'HHmmss'Z'",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal);
+        completionInstant.ShouldBeGreaterThanOrEqualTo(earliestCompletion);
+        completionInstant.ShouldBeLessThanOrEqualTo(DateTimeOffset.UtcNow.AddSeconds(1));
+        stderr.ShouldBeEmpty();
+        await DeleteResourceAsync(href, revision.EntityTag);
+    }
+
+    [Fact]
     public async Task CalendarResourceDelete_ConfirmedMrtrDeletesOneReviewedResourceOverStdio()
     {
         const string content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Integration//EN\r\nBEGIN:VTODO\r\nUID:stdio-delete-1\r\nDTSTAMP:20260815T120000Z\r\nSUMMARY:Reviewed delete\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
@@ -905,6 +955,7 @@ public sealed class CalendarMcpStdioIntegrationTests
             "events.patch",
             "todos.create",
             "todos.patch",
+            "todos.complete",
             "calendar_occurrences.add",
             "calendar_occurrences.exclude",
             "calendar_occurrences.restore_exclusion",
@@ -1168,6 +1219,27 @@ public sealed class CalendarMcpStdioIntegrationTests
             }
         },
         cancellationToken: TestContext.Current.CancellationToken);
+
+    private static Dictionary<string, object?> TodoCompletionArguments(
+        ObservedRevision revision,
+        string uid) => new()
+    {
+        ["snapshot"] = new Dictionary<string, object?>
+        {
+            ["href"] = revision.Href,
+            ["entityUid"] = uid,
+            ["entityKind"] = "todo",
+            ["entityTag"] = revision.EntityTag
+        },
+        ["recurrenceIdentity"] = new Dictionary<string, object?>
+        {
+            ["value"] = new Dictionary<string, object?>
+            {
+                ["kind"] = "utcDateTime",
+                ["value"] = "2026-08-19T09:00:00Z"
+            }
+        }
+    };
 
     private async Task DeleteResourceAsync(string href, string? entityTag = null)
     {

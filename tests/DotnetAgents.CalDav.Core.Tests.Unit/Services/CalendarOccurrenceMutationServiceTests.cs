@@ -407,6 +407,237 @@ public sealed class CalendarOccurrenceMutationServiceTests
     }
 
     [Fact]
+    public async Task CompleteTodoAsync_NonRecurringUsesOneInjectedInstantForEveryCompletionEffect()
+    {
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VTODO\r\nUID:series-1\r\nDTSTAMP:20260816T100000Z\r\nSUMMARY:Preserved\r\nX-KEEP:opaque\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+        const string expected = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VTODO\r\nUID:series-1\r\nDTSTAMP:20260816T100000Z\r\nSUMMARY:Preserved\r\nX-KEEP:opaque\r\nSTATUS:COMPLETED\r\nPERCENT-COMPLETE:100\r\nCOMPLETED:20260817T120000Z\r\nLAST-MODIFIED:20260817T120000Z\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+        var client = ClientReturning(original, expected);
+        CalendarResourceUpdateRequest? dispatched = null;
+        client.UpdateCalendarResourceAsync(
+                Arg.Do<CalendarResourceUpdateRequest>(request => dispatched = request),
+                Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceUpdateDispatchResult(CalendarResourceUpdateDispatchCode.Dispatched));
+        var request = new CalendarTodoCompletionRequest(
+            new CalendarResourceRevisionReference(Href, "series-1", CalendarEntityKind.Todo, "\"r1\""));
+
+        var result = await CreateService(client).CompleteTodoAsync(request, CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityPatchCode.Success);
+        dispatched.ShouldNotBeNull();
+        dispatched.EntityTag.ShouldBe("\"r1\"");
+        Encoding.UTF8.GetString(dispatched.AuthoritativeUtf8.Span).ShouldBe(expected);
+    }
+
+    [Fact]
+    public async Task CompleteTodoAsync_ReadsInjectedClockOnceForCoordinatedFields()
+    {
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VTODO\r\nUID:series-1\r\nDTSTAMP:20260816T100000Z\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+        var client = ClientReturning(original);
+        ReadOnlyMemory<byte> dispatched = default;
+        client.UpdateCalendarResourceAsync(
+                Arg.Do<CalendarResourceUpdateRequest>(request => dispatched = request.AuthoritativeUtf8),
+                Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceUpdateDispatchResult(CalendarResourceUpdateDispatchCode.Dispatched));
+        client.GetCalendarResourceAsync(Href, Arg.Any<CancellationToken>()).Returns(
+            _ => Read("\"r1\"", original),
+            _ => Read("\"r2\"", Encoding.UTF8.GetString(dispatched.Span)));
+        var timeProvider = new AdvancingTimeProvider(
+            new DateTimeOffset(2026, 8, 17, 12, 0, 0, TimeSpan.Zero));
+        var request = new CalendarTodoCompletionRequest(
+            new CalendarResourceRevisionReference(Href, "series-1", CalendarEntityKind.Todo, "\"r1\""));
+
+        var result = await CreateService(client, timeProvider).CompleteTodoAsync(request, CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityPatchCode.Success);
+        timeProvider.UtcNowReadCount.ShouldBe(1);
+        var outbound = Encoding.UTF8.GetString(dispatched.Span);
+        outbound.ShouldContain("COMPLETED:20260817T120000Z\r\n");
+        outbound.ShouldContain("LAST-MODIFIED:20260817T120000Z\r\n");
+    }
+
+    [Fact]
+    public async Task CompleteTodoAsync_RecurringCompletesOnlyTheTargetedOriginalIdentity()
+    {
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VTODO\r\nUID:series-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260818T090000Z\r\nDUE:20260818T100000Z\r\nRRULE:FREQ=DAILY;COUNT=3\r\nSUMMARY:Master\r\nX-KEEP:opaque\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+        var client = ClientReturning(original);
+        ReadOnlyMemory<byte> dispatched = default;
+        client.UpdateCalendarResourceAsync(
+                Arg.Do<CalendarResourceUpdateRequest>(request => dispatched = request.AuthoritativeUtf8),
+                Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceUpdateDispatchResult(CalendarResourceUpdateDispatchCode.Dispatched));
+        client.GetCalendarResourceAsync(Href, Arg.Any<CancellationToken>()).Returns(
+            _ => Read("\"r1\"", original),
+            _ => Read("\"r2\"", Encoding.UTF8.GetString(dispatched.Span)));
+        var request = new CalendarTodoCompletionRequest(
+            new CalendarResourceRevisionReference(Href, "series-1", CalendarEntityKind.Todo, "\"r1\""),
+            new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-19T09:00:00Z"));
+
+        var result = await CreateService(client).CompleteTodoAsync(request, CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityPatchCode.Success);
+        var outbound = Encoding.UTF8.GetString(dispatched.Span);
+        outbound.Split("BEGIN:VTODO", StringSplitOptions.None).Length.ShouldBe(3);
+        outbound.ShouldContain("RECURRENCE-ID:20260819T090000Z\r\n");
+        outbound.ShouldContain("DTSTART:20260819T090000Z\r\n");
+        outbound.ShouldContain("DUE:20260819T100000Z\r\n");
+        outbound.ShouldContain("SUMMARY:Master\r\n");
+        outbound.ShouldContain("X-KEEP:opaque\r\n");
+        outbound.Split("STATUS:COMPLETED", StringSplitOptions.None).Length.ShouldBe(2);
+        outbound.Split("PERCENT-COMPLETE:100", StringSplitOptions.None).Length.ShouldBe(2);
+        outbound.Split("COMPLETED:20260817T120000Z", StringSplitOptions.None).Length.ShouldBe(2);
+        outbound.ShouldNotContain("RECURRENCE-ID:20260820T090000Z");
+    }
+
+    [Fact]
+    public async Task CompleteTodoAsync_MaterializesFromEffectiveRangeAndPreservesLaterOverrides()
+    {
+        const string laterRange = "BEGIN:VTODO\r\nUID:series-1\r\nDTSTAMP:20260816T120000Z\r\nRECURRENCE-ID;RANGE=THISANDFUTURE:20260821T090000Z\r\nDTSTART:20260821T140000Z\r\nDUE:20260821T150000Z\r\nSUMMARY:Later range\r\nX-LATER:opaque\r\nEND:VTODO\r\n";
+        const string laterIndividual = "BEGIN:VTODO\r\nUID:series-1\r\nDTSTAMP:20260816T130000Z\r\nRECURRENCE-ID:20260822T090000Z\r\nDTSTART:20260822T160000Z\r\nDUE:20260822T170000Z\r\nSUMMARY:Later individual\r\nX-INDIVIDUAL:opaque\r\nEND:VTODO\r\n";
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VTODO\r\nUID:series-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260818T090000Z\r\nDUE:20260818T100000Z\r\nRRULE:FREQ=DAILY;COUNT=5\r\nSUMMARY:Master\r\nEND:VTODO\r\nBEGIN:VTODO\r\nUID:series-1\r\nDTSTAMP:20260816T110000Z\r\nRECURRENCE-ID;RANGE=THISANDFUTURE:20260819T090000Z\r\nDTSTART:20260819T110000Z\r\nDUE:20260819T120000Z\r\nSUMMARY:Effective range\r\nX-RANGE:opaque\r\nEND:VTODO\r\n" + laterRange + laterIndividual + "END:VCALENDAR\r\n";
+        var client = ClientReturning(original);
+        ReadOnlyMemory<byte> dispatched = default;
+        client.UpdateCalendarResourceAsync(
+                Arg.Do<CalendarResourceUpdateRequest>(request => dispatched = request.AuthoritativeUtf8),
+                Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceUpdateDispatchResult(CalendarResourceUpdateDispatchCode.Dispatched));
+        client.GetCalendarResourceAsync(Href, Arg.Any<CancellationToken>()).Returns(
+            _ => Read("\"r1\"", original),
+            _ => Read("\"r2\"", Encoding.UTF8.GetString(dispatched.Span)));
+        var request = new CalendarTodoCompletionRequest(
+            new CalendarResourceRevisionReference(Href, "series-1", CalendarEntityKind.Todo, "\"r1\""),
+            new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-20T09:00:00Z"));
+
+        var result = await CreateService(client).CompleteTodoAsync(request, CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityPatchCode.Success);
+        var outbound = Encoding.UTF8.GetString(dispatched.Span);
+        outbound.ShouldContain("RECURRENCE-ID:20260820T090000Z\r\n");
+        outbound.ShouldContain("DTSTART:20260820T110000Z\r\n");
+        outbound.ShouldContain("DUE:20260820T120000Z\r\n");
+        outbound.ShouldContain("SUMMARY:Effective range\r\n");
+        outbound.ShouldContain("X-RANGE:opaque\r\n");
+        outbound.ShouldContain(laterRange);
+        outbound.ShouldContain(laterIndividual);
+        outbound.Split("STATUS:COMPLETED", StringSplitOptions.None).Length.ShouldBe(2);
+        outbound.Split("BEGIN:VTODO", StringSplitOptions.None).Length.ShouldBe(6);
+        await client.Received(1).UpdateCalendarResourceAsync(
+            Arg.Is<CalendarResourceUpdateRequest>(update => update.EntityTag == "\"r1\""),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CompleteTodoAsync_CompletesExistingDueOnlyIndividualWithoutInventingStart()
+    {
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VTODO\r\nUID:series-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260818T090000Z\r\nDUE:20260818T100000Z\r\nRRULE:FREQ=DAILY;COUNT=2\r\nEND:VTODO\r\nBEGIN:VTODO\r\nUID:series-1\r\nDTSTAMP:20260816T110000Z\r\nRECURRENCE-ID:20260819T090000Z\r\nDUE:20260819T120000Z\r\nSTATUS:IN-PROCESS\r\nSUMMARY:Moved due-only\r\nX-KEEP:opaque\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+        var client = ClientReturning(original);
+        ReadOnlyMemory<byte> dispatched = default;
+        client.UpdateCalendarResourceAsync(
+                Arg.Do<CalendarResourceUpdateRequest>(request => dispatched = request.AuthoritativeUtf8),
+                Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceUpdateDispatchResult(CalendarResourceUpdateDispatchCode.Dispatched));
+        client.GetCalendarResourceAsync(Href, Arg.Any<CancellationToken>()).Returns(
+            _ => Read("\"r1\"", original),
+            _ => Read("\"r2\"", Encoding.UTF8.GetString(dispatched.Span)));
+        var request = new CalendarTodoCompletionRequest(
+            new CalendarResourceRevisionReference(Href, "series-1", CalendarEntityKind.Todo, "\"r1\""),
+            new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-19T09:00:00Z"));
+
+        var result = await CreateService(client).CompleteTodoAsync(request, CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityPatchCode.Success);
+        var outbound = Encoding.UTF8.GetString(dispatched.Span);
+        outbound.ShouldContain("RECURRENCE-ID:20260819T090000Z\r\n");
+        outbound.ShouldContain("DUE:20260819T120000Z\r\n");
+        outbound.ShouldContain("SUMMARY:Moved due-only\r\n");
+        outbound.ShouldContain("X-KEEP:opaque\r\n");
+        outbound.Split("DTSTART", StringSplitOptions.None).Length.ShouldBe(2);
+        outbound.ShouldContain("STATUS:COMPLETED\r\n");
+    }
+
+    [Theory]
+    [InlineData("recurring_without_identity", CalendarEntityPatchCode.InvalidInput)]
+    [InlineData("excluded", CalendarEntityPatchCode.NotFound)]
+    [InlineData("cancelled", CalendarEntityPatchCode.InvalidInput)]
+    [InlineData("unresolved", CalendarEntityPatchCode.TemporalUnresolved)]
+    [InlineData("unevaluable", CalendarEntityPatchCode.RecurrenceUnevaluable)]
+    [InlineData("completed", CalendarEntityPatchCode.NoChange)]
+    [InlineData("missing", CalendarEntityPatchCode.NotFound)]
+    [InlineData("wrong_kind", CalendarEntityPatchCode.EntityKindMismatch)]
+    public async Task CompleteTodoAsync_StateInteractionsAreDeterministicAndNeverWrite(
+        string state,
+        CalendarEntityPatchCode expectedCode)
+    {
+        var client = ClientReturning(TodoCompletionFixture(state));
+        var identity = state switch
+        {
+            "recurring_without_identity" => null,
+            "unresolved" => new CalendarTemporalValue(
+                CalendarTemporalKind.ZonedDateTime,
+                "2026-08-19T09:00:00",
+                "Private/Unknown"),
+            "missing" => new CalendarTemporalValue(
+                CalendarTemporalKind.UtcDateTime,
+                "2026-08-25T09:00:00Z"),
+            _ => new CalendarTemporalValue(
+                CalendarTemporalKind.UtcDateTime,
+                "2026-08-19T09:00:00Z")
+        };
+        var request = new CalendarTodoCompletionRequest(
+            new CalendarResourceRevisionReference(Href, "series-1", CalendarEntityKind.Todo, "\"r1\""),
+            identity);
+
+        var result = await CreateService(client).CompleteTodoAsync(request, CancellationToken.None);
+
+        result.Code.ShouldBe(expectedCode);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        await client.DidNotReceive().UpdateCalendarResourceAsync(
+            Arg.Any<CalendarResourceUpdateRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CompleteTodoAsync_StaleStrongRevisionReturnsConflictWithoutWrite()
+    {
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VTODO\r\nUID:series-1\r\nDTSTAMP:20260816T100000Z\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+        var client = ClientReturning(original);
+        var request = new CalendarTodoCompletionRequest(
+            new CalendarResourceRevisionReference(Href, "series-1", CalendarEntityKind.Todo, "\"stale\""));
+
+        var result = await CreateService(client).CompleteTodoAsync(request, CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityPatchCode.Conflict);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        await client.DidNotReceive().UpdateCalendarResourceAsync(
+            Arg.Any<CalendarResourceUpdateRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CompleteTodoAsync_PossiblyDispatchedWriteReconcilesWithoutBlindRetry()
+    {
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VTODO\r\nUID:series-1\r\nDTSTAMP:20260816T100000Z\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+        var client = ClientReturning(original);
+        ReadOnlyMemory<byte> dispatched = default;
+        client.UpdateCalendarResourceAsync(
+                Arg.Do<CalendarResourceUpdateRequest>(request => dispatched = request.AuthoritativeUtf8),
+                Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceUpdateDispatchResult(CalendarResourceUpdateDispatchCode.PossiblyDispatched));
+        client.GetCalendarResourceAsync(Href, Arg.Any<CancellationToken>()).Returns(
+            _ => Read("\"r1\"", original),
+            _ => Read("\"r2\"", Encoding.UTF8.GetString(dispatched.Span)));
+        var request = new CalendarTodoCompletionRequest(
+            new CalendarResourceRevisionReference(Href, "series-1", CalendarEntityKind.Todo, "\"r1\""));
+
+        var result = await CreateService(client).CompleteTodoAsync(request, CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityPatchCode.Success);
+        result.MutationState.ShouldBe(CalendarMutationState.Committed);
+        await client.Received(1).UpdateCalendarResourceAsync(
+            Arg.Any<CalendarResourceUpdateRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task AddOccurrenceAsync_StaleRevisionReturnsConflictWithoutBlindRetry()
     {
         var client = ClientReturning(EventFixture("base"));
@@ -511,6 +742,37 @@ public sealed class CalendarOccurrenceMutationServiceTests
             + "END:VCALENDAR\r\n";
     }
 
+    private static string TodoCompletionFixture(string state)
+    {
+        if (state == "wrong_kind")
+        {
+            return "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\n"
+                + "UID:series-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260818T090000Z\r\n"
+                + "RRULE:FREQ=DAILY;COUNT=2\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        }
+        var start = state == "unresolved"
+            ? "DTSTART;TZID=Private/Unknown:20260818T090000\r\n"
+            : "DTSTART:20260818T090000Z\r\n";
+        var rule = state == "unevaluable"
+            ? "RRULE:FREQ=DAILY;COUNT=2\r\nRRULE:FREQ=WEEKLY;COUNT=2\r\n"
+            : "RRULE:FREQ=DAILY;COUNT=2\r\n";
+        var exclusion = state == "excluded" ? "EXDATE:20260819T090000Z\r\n" : string.Empty;
+        var overrideContent = state switch
+        {
+            "cancelled" => "BEGIN:VTODO\r\nUID:series-1\r\nDTSTAMP:20260816T110000Z\r\nRECURRENCE-ID:20260819T090000Z\r\nDTSTART:20260819T090000Z\r\nSTATUS:CANCELLED\r\nEND:VTODO\r\n",
+            "completed" => "BEGIN:VTODO\r\nUID:series-1\r\nDTSTAMP:20260816T110000Z\r\nRECURRENCE-ID:20260819T090000Z\r\nDTSTART:20260819T090000Z\r\nSTATUS:COMPLETED\r\nPERCENT-COMPLETE:100\r\nCOMPLETED:20260816T120000Z\r\nEND:VTODO\r\n",
+            _ => string.Empty
+        };
+        return "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VTODO\r\n"
+            + "UID:series-1\r\nDTSTAMP:20260816T100000Z\r\n"
+            + start
+            + rule
+            + exclusion
+            + "END:VTODO\r\n"
+            + overrideContent
+            + "END:VCALENDAR\r\n";
+    }
+
     private static CalendarOccurrenceMutationRequest Request(CalendarTemporalValue identity) => new(
         new CalendarResourceRevisionReference(Href, "series-1", CalendarEntityKind.Event, "\"r1\""),
         identity);
@@ -519,7 +781,7 @@ public sealed class CalendarOccurrenceMutationServiceTests
         new CalendarResourceRevisionReference(Href, "series-1", CalendarEntityKind.Event, entityTag),
         new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, identity));
 
-    private static CalendarService CreateService(ICalendarClient client) => new(
+    private static CalendarService CreateService(ICalendarClient client, TimeProvider? timeProvider = null) => new(
         client,
         Options.Create(new CalDavOptions
         {
@@ -528,7 +790,7 @@ public sealed class CalendarOccurrenceMutationServiceTests
             Password = "pass"
         }),
         Substitute.For<ILogger<CalendarService>>(),
-        new FrozenTimeProvider(new DateTimeOffset(2026, 8, 17, 12, 0, 0, TimeSpan.Zero)),
+        timeProvider ?? new FrozenTimeProvider(new DateTimeOffset(2026, 8, 17, 12, 0, 0, TimeSpan.Zero)),
         Substitute.For<ICalendarEntityIdentityGenerator>());
 
     private static ICalendarClient ClientReturning(string original, string? observed = null)
@@ -556,5 +818,12 @@ public sealed class CalendarOccurrenceMutationServiceTests
     private sealed class FrozenTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => utcNow;
+    }
+
+    private sealed class AdvancingTimeProvider(DateTimeOffset firstUtcNow) : TimeProvider
+    {
+        public int UtcNowReadCount { get; private set; }
+
+        public override DateTimeOffset GetUtcNow() => firstUtcNow.AddMinutes(UtcNowReadCount++);
     }
 }

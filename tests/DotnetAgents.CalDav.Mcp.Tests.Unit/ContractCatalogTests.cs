@@ -89,6 +89,18 @@ public sealed class ContractCatalogTests
             .ShouldBe("#/$defs/eventPatchInput");
         FindTool(catalog, "todos.patch")["inputSchema"]!["$ref"]!.GetValue<string>()
             .ShouldBe("#/$defs/todoPatchInput");
+        FindTool(catalog, "todos.complete")["inputSchema"]!["$ref"]!.GetValue<string>()
+            .ShouldBe("#/$defs/completionInput");
+        var completionInput = catalog["$defs"]!["completionInput"]!.AsObject();
+        completionInput["additionalProperties"]!.GetValue<bool>().ShouldBeFalse();
+        completionInput["required"]!.AsArray().Select(item => item!.GetValue<string>())
+            .ShouldBe(["snapshot"]);
+        completionInput["properties"]!.AsObject().ShouldContainKey("recurrenceIdentity");
+        completionInput["properties"]!.AsObject().ShouldNotContainKey("completedAt");
+        completionInput["properties"]!["snapshot"]!["$ref"]!.GetValue<string>()
+            .ShouldBe("#/$defs/todoRevisionReference");
+        FindTool(catalog, "todos.complete")["description"]!.GetValue<string>()
+            .ShouldContain("explicitly supplied absolute snapshot href");
         FindTool(catalog, "calendar_resources.move")["inputSchema"]!["$ref"]!.GetValue<string>()
             .ShouldBe("#/$defs/semanticMoveInput");
         FindTool(catalog, "calendar_resources.exact_move")["inputSchema"]!["$ref"]!.GetValue<string>()
@@ -266,6 +278,17 @@ public sealed class ContractCatalogTests
         catalog.ShouldNotContain("missing or weak revisions fail before network");
         catalog.ShouldContain(
             "origin and Calendar discovery precede revision validation; missing or weak revisions fail before write");
+        var completionEvidence = catalog.Split("## CAL-RECUR-007", StringSplitOptions.None)[1]
+            .Split("## CAL-MCP-001", StringSplitOptions.None)[0];
+        completionEvidence.ShouldContain(
+            "CalendarOccurrenceMutationServiceTests.CompleteTodoAsync_RecurringCompletesOnlyTheTargetedOriginalIdentity");
+        completionEvidence.ShouldNotContain("Implementation status: planned");
+        var moveEvidence = catalog.Split("## CAL-RESOURCE-012", StringSplitOptions.None)[1]
+            .Split("## CAL-RESOURCE-013", StringSplitOptions.None)[0];
+        moveEvidence.ShouldContain("Implementation status: planned");
+        moveEvidence.ShouldNotContain("CompleteTodoAsync");
+        catalog.ShouldContain(
+            "CalendarMcpRawStdioTests.TodoCompletion_RejectsCallerTimeAndBroadScopesOverRawStdio");
         var oracles = catalog.Split('\n').Where(line => line.StartsWith("- Objective oracle:", StringComparison.Ordinal)).ToArray();
         oracles.Length.ShouldBe(96);
         oracles.Distinct(StringComparer.Ordinal).Count().ShouldBe(96);
@@ -324,6 +347,19 @@ public sealed class ContractCatalogTests
         matrix.ShouldContain("unsafe through Ical.Net");
         matrix.ShouldContain("required typed rejection");
         matrix.ShouldContain("pinned-profile-only");
+        matrix.ShouldContain(
+            "| To-do Completion | supported | unsafe through Ical.Net | pinned-profile-only | implemented |");
+        matrix.ShouldContain("completion instant comes only from the injected server clock");
+    }
+
+    [Fact]
+    public void Agent_instructions_name_the_current_default_semantic_subset()
+    {
+        var instructions = File.ReadAllText(Path.Combine(RepositoryRoot(), "AGENTS.md"));
+
+        instructions.ShouldContain("default host exposes the implemented 15-tool semantic subset");
+        instructions.ShouldContain("including `todos.complete`");
+        instructions.ShouldNotContain("16-tool semantic catalog");
     }
 
     private const string RadicaleConformanceIndexDigest = "sha256:3a0080ea51ac69dcd74e345b9587dc14a8c8af0652046069005749f9a75c5c80";
@@ -479,7 +515,10 @@ public sealed class ContractCatalogTests
             .Select(number => $"CAL-{area.Key}-{number:000}"));
     }
 
-    private static string ContractPath(string fileName)
+    private static string ContractPath(string fileName) =>
+        Path.Combine(RepositoryRoot(), "contracts", "0.2.0", fileName);
+
+    private static string RepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "DotnetAgentsCalDav.slnx")))
@@ -487,7 +526,7 @@ public sealed class ContractCatalogTests
             directory = directory.Parent;
         }
 
-        return Path.Combine(directory!.FullName, "contracts", "0.2.0", fileName);
+        return directory!.FullName;
     }
 
     private static string ExtractRowField(string row, string label) =>

@@ -237,8 +237,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/resource/cal-resource-009`.
 - Objective oracle: Given missing, weak, current, and stale ETags, when update runs, then missing/weak return `concurrency_unavailable`; stale 412 returns `conflict` plus authorized current snapshot and zero writes; current sends one exact strong If-Match without merge.
-- Implementation status: implemented for Semantic Patch: origin and Calendar discovery precede revision validation; missing or weak revisions fail before write, the exact caller strong ETag is sent in one `If-Match`, stale 412 returns conflict with a refreshed authorized snapshot when available, and there is no merge or unsafe bypass; other mutation families retain their existing ticket status.
-- Evidence status: `CalendarEntityPatchServiceTests`, `CalendarEntityPatchMatrixTests`, and `CalendarResourceUpdateProtocolTests` cover exact preconditions, stale conflict refresh, status mapping, and zero blind retries and pass locally.
+- Implementation status: implemented for Semantic Patch and To-do Completion: origin and Calendar discovery precede revision validation; missing or weak revisions fail before write, the exact caller strong ETag is sent in one `If-Match`, stale 412 returns conflict with a refreshed authorized snapshot when available, and there is no merge or unsafe bypass; other mutation families retain their existing ticket status.
+- Evidence status: `CalendarEntityPatchServiceTests`, `CalendarEntityPatchMatrixTests`, `CalendarResourceUpdateProtocolTests`, and `CalendarOccurrenceMutationServiceTests.CompleteTodoAsync_StaleStrongRevisionReturnsConflictWithoutWrite` cover exact preconditions, stale conflict refresh, status mapping, and zero blind retries and pass locally.
 
 ## CAL-RESOURCE-010
 
@@ -249,8 +249,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/resource/cal-resource-010`.
 - Objective oracle: Given a dispatch timeout with subsequent GET states committed, unchanged, and differing, when reconciliation runs, then no retry PUT occurs and results report respectively committed, not_committed, and unknown mutationState.
-- Implementation status: implemented for Semantic Patch: a possibly dispatched PUT is never retried, bounded refetch reconciliation classifies committed, unchanged/not-committed, or indeterminate/unknown, and every patch result carries the truthful frozen Mutation State.
-- Evidence status: issue #43 reconciliation targets cover committed, unchanged, differing, unavailable, and caller-cancelled post-dispatch observations with exactly one PUT and pass locally.
+- Implementation status: implemented for Semantic Patch and To-do Completion: a possibly dispatched PUT is never retried, bounded refetch reconciliation classifies committed, unchanged/not-committed, or indeterminate/unknown, and every result carries the truthful frozen Mutation State.
+- Evidence status: issue #43 reconciliation targets and `CalendarOccurrenceMutationServiceTests.CompleteTodoAsync_PossiblyDispatchedWriteReconcilesWithoutBlindRetry` cover committed, unchanged, differing, unavailable, and caller-cancelled post-dispatch observations with exactly one PUT and pass locally.
 
 ## CAL-RESOURCE-011
 
@@ -261,8 +261,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/resource/cal-resource-011`.
 - Objective oracle: Given post-write GET fixtures with matching semantics, missing GET, changed unknown slice, missing strong tag, and delete absence, when verification runs, then outputs are success, committed_but_unverified, fidelity_failure, committed_but_concurrency_unavailable, and deletion receipt only after 404 absence.
-- Implementation status: implemented for Semantic Patch: success requires a server-refetched snapshot with the addressed semantics, equivalent unaddressed occurrences/multiplicity/order/parameters, and a usable strong tag; missing verification, missing tag, and genuine drift map to the frozen committed outcomes. Other write families remain scoped to their owning tickets.
-- Evidence status: `CalendarEntityPatchMatrixTests` covers server normalization versus semantic/lossless drift and the committed-but-unverified/concurrency-unavailable outcomes; the native stdio and pinned-Radicale patch targets are included in the integration run.
+- Implementation status: implemented for Semantic Patch and To-do Completion: success requires a server-refetched snapshot with the addressed semantics, equivalent unaddressed occurrences/multiplicity/order/parameters, and a usable strong tag; missing verification, missing tag, and genuine drift map to the frozen committed outcomes. Other write families remain scoped to their owning tickets.
+- Evidence status: `CalendarEntityPatchMatrixTests` covers server normalization versus semantic/lossless drift and the committed-but-unverified/concurrency-unavailable outcomes; `CalendarMcpStdioIntegrationTests.TodoCompletion_CompletesOneRecurringOccurrenceOverNativeStdioAndRadicale` and the pinned-profile completion target prove authoritative readback with a rotated strong ETag.
 
 ## CAL-RESOURCE-012
 
@@ -645,8 +645,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/recur/cal-recur-007`.
 - Objective oracle: Given recurring VTODO identities and completion instant `2026-01-03T10:00:00Z`, when one occurrence completes, then only that override has COMPLETED/STATUS, future identities remain incomplete, and future/entire-set completion scopes return invalid_input.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented for non-recurring To-dos and one explicit original Recurrence Identity: the server reads its injected clock exactly once, writes coherent `STATUS:COMPLETED`, `PERCENT-COMPLETE:100`, `COMPLETED`, and `LAST-MODIFIED` values from that instant, and creates or edits only the addressed complete individual override. Excluded, cancelled, unresolved, unevaluable, already-completed, missing, wrong-kind, broad-scope, and caller-timestamp inputs fail deterministically without an unintended write.
+- Evidence status: `CalendarOccurrenceMutationServiceTests.CompleteTodoAsync_RecurringCompletesOnlyTheTargetedOriginalIdentity`, `CompleteTodoAsync_MaterializesFromEffectiveRangeAndPreservesLaterOverrides`, and the clock/non-recurring/due-only/state/revision/reconciliation companion targets; `CalendarOccurrenceMutationToolsTests`; `CalendarMcpRawStdioTests.TodoCompletion_RejectsCallerTimeAndBroadScopesOverRawStdio`; `CalendarMcpStdioIntegrationTests.TodoCompletion_CompletesOneRecurringOccurrenceOverNativeStdioAndRadicale`; and the pinned-profile completion conformance target pass locally.
 
 ## CAL-MCP-001
 
@@ -669,8 +669,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-002`; committed issue #40 targets: `CalDavHostBuilderTests.CreateBuilder_DefaultMode_RegistersCalendarDiscoveryAlongsideChatSafeLegacyTools` and `BuildHost_DefaultMode_ListsToolsInCanonicalWireOrder`.
 - Objective oracle: Given tools/list, when catalog is emitted, then the 16 default names exactly equal the committed discovery order and no exact tool appears without opt-in.
-- Implementation status: the `calendar_occurrences.query`, `events.patch`, and `todos.patch` catalog positions and default exposure are implemented; remaining semantic tools retain their owning-ticket status.
-- Evidence status: focused host discovery/order and strict patch-schema targets pass locally and are included in the CI test run.
+- Implementation status: the `calendar_occurrences.query`, `events.patch`, `todos.patch`, and `todos.complete` catalog positions and default exposure are implemented; remaining semantic tools retain their owning-ticket status.
+- Evidence status: focused host discovery/order, completion, and strict patch-schema targets pass locally and are included in the CI test run.
 
 ## CAL-MCP-003
 
@@ -693,8 +693,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-004`; committed issue #40 targets: `CalendarOccurrenceToolsTests.QueryRawAsync_AcceptsExactFrozenShapeWithoutEntityKindsAndDefaultsAbsentPageSize`, `QueryRawAsync_RejectsMissingNullAndUnknownFrozenShape`, `QueryAsync_EmitsExactOccurrenceShapeAndPaginatesByFrozenContinuationTuple`, and `CalendarMcpRawStdioTests.CalendarOccurrenceQuery_RootDuplicateArgumentsReturnTypedInvalidInputBeforeNetwork`.
 - Objective oracle: Given valid closed input, unknown sibling, duplicate JSON member, and typed failure, when tool validates, then valid authoritative structuredContent matches output schema with concise compatible text content, invalid values return schema-valid invalid_input, and parser rejects duplicate/unknown members.
-- Implementation status: implemented for `calendar_occurrences.query`, `events.patch`, and `todos.patch`, including closed discriminated inputs, duplicate/unknown rejection, exact field-specific typed unions, schema-valid structured results, and bounded compatible text; later tools remain planned.
-- Evidence status: focused MCP parser/tools, catalog closure, and native raw-stdio targets pass locally and are included in the CI test run.
+- Implementation status: implemented for `calendar_occurrences.query`, `events.patch`, `todos.patch`, and `todos.complete`, including closed discriminated inputs, duplicate/unknown rejection, exact field-specific typed unions, schema-valid structured results, and bounded compatible text. Completion accepts only the revision snapshot plus an optional original Recurrence Identity; caller timestamps and broad scopes are unknown properties and fail before service invocation. Later tools remain planned.
+- Evidence status: focused MCP parser/tools, catalog closure, `CalendarOccurrenceMutationToolsTests`, and `CalendarMcpRawStdioTests.TodoCompletion_RejectsCallerTimeAndBroadScopesOverRawStdio` pass locally and are included in the CI test run.
 
 ## CAL-MCP-005
 
@@ -705,8 +705,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-005`; committed issue #40 target: `CalendarOccurrenceToolsTests.QueryAsync_CursorIsNonceRandomTamperEvidentBoundToQueryCredentialsExpiryAndProcessKey` exercises default, selected, and all scope binding through the occurrence query cursor.
 - Objective oracle: Given by-name, by-href, default, selected, all scope, and a stale revision, when resolution/mutation runs, then exactly one selector branch is accepted, all is explicit, and mutation refetches expected href/UID/kind/ETag before write.
-- Implementation status: the read-only Calendar Scope path is implemented for occurrence queries; Event and To-do patch additionally require the complete direct revision reference and refetch href/UID/kind/ETag before write.
-- Evidence status: focused occurrence-query scope plus issue #43 direct-revision, mismatch, and conflict targets pass locally and are included in the CI test run.
+- Implementation status: the read-only Calendar Scope path is implemented for occurrence queries; Event patch, To-do patch, and To-do Completion additionally require the complete direct revision reference and refetch href/UID/kind/ETag before write.
+- Evidence status: focused occurrence-query scope plus issue #43 and #48 direct-revision, mismatch, and conflict targets pass locally and are included in the CI test run.
 
 ## CAL-MCP-006
 
@@ -741,8 +741,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-008`; committed issue #40 targets: `CalendarOccurrenceToolsTests.QueryAsync_MapsEveryDomainFailure`, `QueryAsync_PreservesDiscoveryPhaseForDiscovery404`, `QueryAsync_MalformedDiscoveryRetainsSelectionDiscoveryPhase`, and `CalendarMcpRawStdioTests.CalendarOccurrenceQuery_NormalRawCallReachesServiceAndReturnsTypedExecutionFailure`.
 - Objective oracle: Given invalid input, conflict, limit, upstream, unexpected exception, no_change, declined confirmation, invalid JSON, unknown method/tool, incompatible version and transport auth failure, when requests run, then tool failures use isError/schema-valid safe fields, protocol cases use their protocol/HTTP channel, and no_change/decline use isError false.
-- Implementation status: implemented for occurrence query plus Event and To-do patch failures: invalid input, conflict, concurrency/fidelity/limit/upstream outcomes remain schema-valid and redacted; unexpected failures are sanitized; `no_change` and confirmation decline remain successful MCP results. Other mutation tools retain their owning-ticket status.
-- Evidence status: focused MCP unit and native raw-stdio targets cover the patch status/reconciliation matrix, unexpected exceptions, no-change, and decline and pass locally.
+- Implementation status: implemented for occurrence query, Event and To-do patch, and To-do Completion failures: invalid input, conflict, concurrency/fidelity/limit/upstream outcomes remain schema-valid and redacted; unexpected failures are sanitized; `no_change` and confirmation decline remain successful MCP results. Other mutation tools retain their owning-ticket status.
+- Evidence status: focused MCP unit and native raw-stdio targets cover the patch and completion status/reconciliation matrices, unexpected exceptions, no-change, decline, legacy caller timestamps, and invalid broad scopes and pass locally.
 
 ## CAL-MCP-009
 
@@ -765,8 +765,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-010`.
 - Objective oracle: Given declined, expired, mismatched arguments, changed ETag, invalid owner, direct semantic create, scalar single-resource patch, one-occurrence mutation and todo completion, when called, then first five have no write and typed confirmation failure; the four direct operations execute without MRTR.
-- Implementation status: implemented for Event and To-do patch, including one-occurrence: decline, expiry, ownership/argument/revision mismatch write nothing; scalar and unambiguous addRemove edits execute directly for master or one existing occurrence, while destructive replaceAll alone requires MRTR in this slice. Other direct operations retain their owning-ticket status.
-- Evidence status: focused MRTR continuation tests prove exact zero-write rejection and direct-versus-review routing; `CalendarEntityPatchToolsTests.PatchEventRawAsync_ParsesOneOccurrenceIdentityAndExecutesDirectly` and the native-stdio Radicale occurrence target prove the explicit one-occurrence direct path.
+- Implementation status: implemented for Event and To-do patch, including one-occurrence, and To-do Completion: decline, expiry, ownership/argument/revision mismatch write nothing; scalar and unambiguous addRemove edits execute directly for master or one existing occurrence, destructive replaceAll alone requires MRTR, and explicit non-recurring or one-occurrence completion executes directly. Other direct operations retain their owning-ticket status.
+- Evidence status: focused MRTR continuation tests prove exact zero-write rejection and direct-versus-review routing; `CalendarEntityPatchToolsTests.PatchEventRawAsync_ParsesOneOccurrenceIdentityAndExecutesDirectly`, `CalendarOccurrenceMutationToolsTests.CompleteTodoRawAsync_UsesFrozenRevisionWithoutCallerCompletionTime`, and the native-stdio Radicale occurrence and completion targets prove the direct paths.
 
 ## CAL-MCP-011
 
@@ -1051,10 +1051,10 @@ Every requirement row contains the normative statement, source, interoperability
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: catalog verifier.
-- Named scenario or fixture: `0.2.0/evidence/cal-evidence-002`; issue #40 semantic targets are the `CalendarServiceTests.QueryOccurrencesAsync_*` corpus; issue #44 adds `CalendarEntityCreateServiceTests` recurrence creation partitions and strict `CalendarEntityCreateToolsTests`/`CalendarMcpRawStdioTests` inputs for kind-specific recurrence, PERIOD, exclusions, overrides, zones, collisions, and fidelity.
+- Named scenario or fixture: `0.2.0/evidence/cal-evidence-002`; issue #40 semantic targets are the `CalendarServiceTests.QueryOccurrencesAsync_*` corpus; issue #44 adds `CalendarEntityCreateServiceTests` recurrence creation partitions and strict `CalendarEntityCreateToolsTests`/`CalendarMcpRawStdioTests` inputs for kind-specific recurrence, PERIOD, exclusions, overrides, zones, collisions, and fidelity; issue #48 adds completion partitions for non-recurring/recurring, override/state, revision, ambiguous dispatch, strict input, and server clock behavior.
 - Objective oracle: Given semantic fixture inventory, when manifest is counted, then it contains named cases for discovery, snapshots, strict schemas, patch, temporal, recurrence, structured/inert/opaque content, concurrency, truth, limits, errors and MRTR plus listed pairwise cross-products.
-- Implementation status: occurrence-query equivalence partitions and recurrence-by-temporal, override-precedence, pagination-order, and limit cross-products are implemented; semantic-create partitions now cover Event/To-do RRULE and RDATE-only series, DTSTART inclusion, COUNT/UNTIL 10,000/10,001 and unbounded rules, EXDATE, complete overrides, DST/IANA zones across past/far-future clocks, collision retry, fidelity drift, malformed/valid PERIOD, duplicate RRULE, and pre-discovery validation. The remaining catalog-wide fixture inventory stays planned.
-- Evidence status: focused issue #40 and #44 corpus/schema/raw-stdio targets pass locally and are included in the CI test run; this partial slice does not claim completion of the broader inventory.
+- Implementation status: occurrence-query equivalence partitions and recurrence-by-temporal, override-precedence, pagination-order, and limit cross-products are implemented; semantic-create partitions cover Event/To-do recurrence boundaries; To-do Completion partitions now cross non-recurring/recurring, master/range/individual precedence, due-only overrides, excluded/cancelled/already-completed states, unresolved/unevaluable time, stale revision, ambiguous dispatch, and strict caller input. The remaining catalog-wide fixture inventory stays planned.
+- Evidence status: focused issue #40, #44, and #48 corpus/schema/raw-stdio targets pass locally and are included in the CI test run; this partial slice does not claim completion of the broader inventory.
 
 ## CAL-EVIDENCE-003
 
@@ -1063,10 +1063,10 @@ Every requirement row contains the normative statement, source, interoperability
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: catalog verifier.
-- Named scenario or fixture: `0.2.0/evidence/cal-evidence-003`; issue #44 targets `CalendarEntityCreateServiceTests.CreateEventAsync_RefetchedRecurrenceMismatchPreservesDispatchTruth`, generated-UID collision and complete-override create cases, and strict MCP/raw-stdio recurrence inputs.
+- Named scenario or fixture: `0.2.0/evidence/cal-evidence-003`; issue #44 targets `CalendarEntityCreateServiceTests.CreateEventAsync_RefetchedRecurrenceMismatchPreservesDispatchTruth`, generated-UID collision and complete-override create cases, and strict MCP/raw-stdio recurrence inputs; issue #48 targets `CalendarOccurrenceMutationServiceTests.CompleteTodoAsync_*` and strict completion MCP/raw-stdio inputs.
 - Objective oracle: Given corpus with lossless lines, invalid aggregates, recurrence/time, patch atomicity, error ordering, limits and reconciliation, when tests run, then byte/semantic assertions use source slices rather than regenerated Ical.Net output or snapshot approval.
-- Implementation status: implemented for the Semantic Create slice: recurrence/domain validation, error ordering, collision bounds, reconciliation, and authoritative recurrence-fidelity comparison use semantic corpus assertions; losslessness remains sourced from the authoritative content document rather than regenerated Ical.Net output. Remaining catalog-wide corpus work stays planned.
-- Evidence status: focused issue #44 Core/MCP/raw-stdio targets pass locally and are included in the CI test run.
+- Implementation status: implemented for Semantic Create and To-do Completion slices: recurrence/domain validation, error ordering, collision bounds, reconciliation, exact completion state, and authoritative recurrence-fidelity comparison use semantic corpus assertions; losslessness remains sourced from the authoritative content document rather than regenerated Ical.Net output. Remaining catalog-wide corpus work stays planned.
+- Evidence status: focused issue #44 and #48 Core/MCP/raw-stdio targets pass locally and are included in the CI test run.
 
 ## CAL-EVIDENCE-004
 
@@ -1087,10 +1087,10 @@ Every requirement row contains the normative statement, source, interoperability
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: catalog verifier.
-- Named scenario or fixture: `0.2.0/evidence/cal-evidence-005`; issue #40 target: `RadicaleConformanceHarnessTests.Pinned_profile_preserves_occurrence_boundary_dst_leap_range_and_typed_failures`; issue #44 target: the pinned-profile recurring Event/To-do semantic-create scenario, both executed by the baseline/strict/New_York matrix after PUT followed by authoritative GET.
+- Named scenario or fixture: `0.2.0/evidence/cal-evidence-005`; issue #40 target: `RadicaleConformanceHarnessTests.Pinned_profile_preserves_occurrence_boundary_dst_leap_range_and_typed_failures`; issue #44 target: the pinned-profile recurring Event/To-do semantic-create scenario; issue #48 target: `RadicaleConformanceHarnessTests.Pinned_profile_completes_one_todo_occurrence_with_one_exact_conditional_put` plus native stdio completion, all followed by authoritative GET.
 - Objective oracle: Given `RadicaleConformanceFixture` in baseline/strict/New_York variants, when the runtime and occurrence targets run, then TRX records index/platform/runtime/TZ/strict facts and authoritative post-PUT GET bytes prove half-open boundary behavior, DST, leap recurrence, RANGE precedence with moved original identity, and typed unresolved/unevaluable failures.
-- Implementation status: runtime evidence and recurrence/time-zone query fidelity are implemented; issue #44 adds recurring Event/To-do create with RDATE-only, exclusions, complete overrides, deterministic bounded/unbounded supporting VTIMEZONE, authoritative past/far-future readback, exact accepted 10,000 and rejected 10,001 RRULE write boundaries, and pre-discovery PERIOD rejection. Remaining live-server behaviors in this broad row stay planned.
-- Evidence status: focused issue #44 evidence passes locally; the recurring-create target runs against the digest-pinned fixture in the baseline/strict/New_York matrix.
+- Implementation status: runtime evidence and recurrence/time-zone query fidelity are implemented; issue #44 adds recurring Event/To-do create boundaries; issue #48 adds recurring To-do Completion with one exact conditional PUT, server-derived completion state, preservation, authoritative rotated-ETag readback, and a real MCP client over stdio. Remaining live-server behaviors in this broad row stay planned.
+- Evidence status: focused issue #44 and #48 evidence passes locally; recurring-create and completion targets run against the digest-pinned fixture, with completion also covered through native stdio.
 
 ## CAL-EVIDENCE-006
 

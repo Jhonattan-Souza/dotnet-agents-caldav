@@ -238,6 +238,35 @@ public class CalDavHostBuilderTests
     }
 
     [Fact]
+    public void BuildHost_AdvertisesFrozenTodoCompletionContractWithoutCallerTimestamp()
+    {
+        var builder = CalDavHostBuilder.CreateBuilder();
+        builder.Services.ConfigureCalDav(ValidOptions);
+        using var host = builder.Build();
+
+        var options = host.Services.GetRequiredService<IOptions<ModelContextProtocol.Server.McpServerOptions>>().Value;
+        options.ToolCollection!.TryGetPrimitive("todos.complete", out var tool).ShouldBeTrue();
+        var inputSchema = JsonNode.Parse(tool!.ProtocolTool.InputSchema.GetRawText())!.AsObject();
+        var outputSchema = JsonNode.Parse(tool.ProtocolTool.OutputSchema!.Value.GetRawText())!.AsObject();
+
+        inputSchema["additionalProperties"]!.GetValue<bool>().ShouldBeFalse();
+        inputSchema["required"]!.AsArray().Select(item => item!.GetValue<string>()).ShouldBe(["snapshot"]);
+        inputSchema["properties"]!.AsObject().ShouldContainKey("recurrenceIdentity");
+        inputSchema["properties"]!.AsObject().ShouldNotContainKey("completedAt");
+        inputSchema["$defs"]!["todoRevisionReference"]!["properties"]!["entityKind"]!["const"]!
+            .GetValue<string>().ShouldBe("todo");
+        outputSchema["oneOf"]!.AsArray().Count.ShouldBe(3);
+        tool.ProtocolTool.Description.ShouldNotBeNull()
+            .ShouldContain("explicitly supplied absolute snapshot href");
+        tool.ProtocolTool.Annotations!.ReadOnlyHint.ShouldBe(false);
+        tool.ProtocolTool.Annotations.DestructiveHint.ShouldBe(false);
+        tool.ProtocolTool.Annotations.IdempotentHint.ShouldBe(false);
+        tool.ProtocolTool.Annotations.OpenWorldHint.ShouldBe(true);
+        tool.ProtocolTool.Meta!["cache"]!["ttlMs"]!.GetValue<int>().ShouldBe(0);
+        tool.ProtocolTool.Meta["cache"]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
+    }
+
+    [Fact]
     public void BuildHost_AdvertisesFrozenResourceOutcomeSchemaAndPrivateNoCacheHint()
     {
         var builder = CalDavHostBuilder.CreateBuilder();
@@ -424,6 +453,7 @@ public class CalDavHostBuilderTests
             "events.patch",
             "todos.create",
             "todos.patch",
+            "todos.complete",
             "calendar_occurrences.add",
             "calendar_occurrences.exclude",
             "calendar_occurrences.restore_exclusion",
@@ -473,6 +503,7 @@ public class CalDavHostBuilderTests
             "events.patch",
             "todos.create",
             "todos.patch",
+            "todos.complete",
             "calendar_occurrences.add",
             "calendar_occurrences.exclude",
             "calendar_occurrences.restore_exclusion",

@@ -98,6 +98,7 @@ public sealed class CalDavHostBuilder
         ConfigureTool(options.ToolCollection, "events.patch");
         ConfigureTool(options.ToolCollection, "todos.create");
         ConfigureTool(options.ToolCollection, "todos.patch");
+        ConfigureTool(options.ToolCollection, "todos.complete");
         ConfigureTool(options.ToolCollection, "calendar_occurrences.add");
         ConfigureTool(options.ToolCollection, "calendar_occurrences.exclude");
         ConfigureTool(options.ToolCollection, "calendar_occurrences.restore_exclusion");
