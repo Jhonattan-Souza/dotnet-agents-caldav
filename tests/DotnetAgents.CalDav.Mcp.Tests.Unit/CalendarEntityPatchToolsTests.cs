@@ -41,6 +41,54 @@ public sealed class CalendarEntityPatchToolsTests
     }
 
     [Fact]
+    public async Task PatchEventRawAsync_ParsesOneOccurrenceIdentityAndExecutesDirectly()
+    {
+        var service = Substitute.For<ICalendarService>();
+        service.PatchEventAsync(Arg.Any<CalendarEventPatchRequest>(), Arg.Any<CancellationToken>())
+            .Returns(CalendarEntityPatchResult.Success(EventSnapshot()));
+        var sut = new CalendarEntityPatchTools(service, TimeProvider.System);
+        var arguments = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+            """
+            {"snapshot":{"href":"https://cal.example/events/event-1.ics","entityUid":"event-1","entityKind":"event","entityTag":"\"r1\""},"target":{"scope":"one-occurrence","recurrenceIdentity":{"value":{"kind":"utcDateTime","value":"2026-08-21T10:00:00Z"}}},"patch":{"scalars":[{"field":"summary","operation":"set","value":"Updated once"}]}}
+            """);
+
+        var result = await sut.PatchEventRawAsync(arguments, CancellationToken.None);
+
+        result.IsError.ShouldBe(false);
+        await service.Received(1).PatchEventAsync(
+            Arg.Is<CalendarEventPatchRequest>(request => request.Target.Scope == "one-occurrence"
+                && request.Target.RecurrenceIdentity == new CalendarTemporalValue(
+                    CalendarTemporalKind.UtcDateTime,
+                    "2026-08-21T10:00:00Z")),
+            Arg.Any<CancellationToken>());
+        await service.DidNotReceive().ReviewEventPatchAsync(
+            Arg.Any<CalendarEventPatchRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("{\"scope\":\"one-occurrence\"}")]
+    [InlineData("{\"scope\":\"master\",\"recurrenceIdentity\":{\"value\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-21T10:00:00Z\"}}}")]
+    [InlineData("{\"scope\":\"this-and-future\",\"recurrenceIdentity\":{\"value\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-21T10:00:00Z\"}}}")]
+    [InlineData("{\"scope\":\"one-occurrence\",\"recurrenceIdentity\":{\"value\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-21T10:00:00\"}}}")]
+    public async Task PatchEventRawAsync_RejectsMalformedOrUndeliveredOccurrenceTargetsBeforeService(string target)
+    {
+        var service = Substitute.For<ICalendarService>();
+        var arguments = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+            """
+            {"snapshot":{"href":"https://cal.example/events/event-1.ics","entityUid":"event-1","entityKind":"event","entityTag":"\"r1\""},"patch":{"scalars":[{"field":"summary","operation":"set","value":"Updated once"}]}}
+            """)!;
+        arguments["target"] = JsonSerializer.Deserialize<JsonElement>(target);
+
+        var result = await new CalendarEntityPatchTools(service, TimeProvider.System)
+            .PatchEventRawAsync(arguments, CancellationToken.None);
+
+        result.IsError.ShouldBe(true);
+        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("invalid_input");
+        await service.DidNotReceive().PatchEventAsync(
+            Arg.Any<CalendarEventPatchRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task PatchTodoRawAsync_ParsesTypedTodoScalar()
     {
         var service = Substitute.For<ICalendarService>();
@@ -701,6 +749,41 @@ public sealed class CalendarEntityPatchToolsTests
             Arg.Any<CalendarEventPatchRequest>(), Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task PatchEventRawAsync_OneOccurrenceReplaceAllPreviewNamesBoundIdentity()
+    {
+        var service = ReviewedService();
+        var sut = CreateTool(
+            service,
+            new MutableTimeProvider(DateTimeOffset.Parse("2026-08-16T12:00:00Z")));
+        var arguments = ReplaceAllArguments();
+        arguments["target"] = JsonSerializer.SerializeToElement(new
+        {
+            scope = "one-occurrence",
+            recurrenceIdentity = new
+            {
+                value = new { kind = "utcDateTime", value = "2026-08-21T10:00:00Z" }
+            }
+        });
+
+        var exception = await Should.ThrowAsync<InputRequiredException>(() => sut.PatchEventRawAsync(
+            arguments,
+            null,
+            null,
+            true,
+            CancellationToken.None));
+
+        var message = exception.Result.InputRequests.ShouldNotBeNull()["confirm_replace_all"]
+            .ElicitationParams.ShouldNotBeNull().Message;
+        message.ShouldContain("scope one-occurrence");
+        message.ShouldContain("original Recurrence Identity 2026-08-21T10:00:00Z");
+        await service.Received(1).ReviewEventPatchAsync(
+            Arg.Is<CalendarEventPatchRequest>(request => request.Target.RecurrenceIdentity != null),
+            Arg.Any<CancellationToken>());
+        await service.DidNotReceive().PatchEventAsync(
+            Arg.Any<CalendarEventPatchRequest>(), Arg.Any<CancellationToken>());
+    }
+
     [Theory]
     [InlineData(CalendarQueryToolSupport.MaximumHumanReadableBytes, true)]
     [InlineData(CalendarQueryToolSupport.MaximumHumanReadableBytes + 1, false)]
@@ -815,6 +898,128 @@ public sealed class CalendarEntityPatchToolsTests
         result.StructuredContent!.Value.GetProperty("outcome").GetString().ShouldBe("success");
         written.IsEmpty.ShouldBeFalse();
         await client.Received(1).UpdateCalendarResourceAsync(
+            Arg.Any<CalendarResourceUpdateRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task OneOccurrenceReplaceAll_confirmation_remains_bound_when_override_clock_advances()
+    {
+        const string href = "https://cal.example/events/event-1.ics";
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260820T100000Z\r\nRRULE:FREQ=DAILY;COUNT=2\r\nSUMMARY:Before\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var client = Substitute.For<ICalendarClient>();
+        var written = ReadOnlyMemory<byte>.Empty;
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
+            new CalendarDescriptor
+            {
+                Href = "https://cal.example/events/",
+                DisplayName = "Events",
+                DisplayNameProvenance = DisplayNameProvenance.DavDisplayName,
+                EventSupport = EntityKindSupport.Advertised,
+                TodoSupport = EntityKindSupport.NotAdvertised
+            }
+        ]);
+        client.GetCalendarResourceAsync(href, Arg.Any<CancellationToken>()).Returns(_ =>
+            written.IsEmpty
+                ? CalendarResourceRead.Success(href, "\"r1\"", Encoding.UTF8.GetBytes(original))
+                : CalendarResourceRead.Success(href, "\"r2\"", written));
+        client.UpdateCalendarResourceAsync(
+                Arg.Do<CalendarResourceUpdateRequest>(request => written = request.AuthoritativeUtf8),
+                Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceUpdateDispatchResult(CalendarResourceUpdateDispatchCode.Dispatched));
+        var time = new MutableTimeProvider(DateTimeOffset.Parse("2026-08-16T12:00:00Z"));
+        var service = new CalendarService(
+            client,
+            Options.Create(new CalDavOptions
+            {
+                BaseUrl = "https://cal.example/",
+                Username = "user",
+                Password = "secret"
+            }),
+            Substitute.For<ILogger<CalendarService>>(),
+            time,
+            Substitute.For<ICalendarEntityIdentityGenerator>());
+        var sut = CreateTool(service, time);
+        var arguments = ReplaceAllArguments();
+        arguments["target"] = JsonSerializer.SerializeToElement(new
+        {
+            scope = "one-occurrence",
+            recurrenceIdentity = new
+            {
+                value = new { kind = "utcDateTime", value = "2026-08-21T10:00:00Z" }
+            }
+        });
+        var first = await Should.ThrowAsync<InputRequiredException>(() => sut.PatchEventRawAsync(
+            arguments, null, null, true, CancellationToken.None));
+
+        time.Advance(TimeSpan.FromSeconds(1));
+        var result = await sut.PatchEventRawAsync(
+            arguments,
+            first.Result.RequestState,
+            Confirmation("accept", true),
+            true,
+            CancellationToken.None);
+
+        result.IsError.ShouldBe(false);
+        result.StructuredContent!.Value.GetProperty("outcome").GetString().ShouldBe("success");
+        written.IsEmpty.ShouldBeFalse();
+        await client.Received(1).UpdateCalendarResourceAsync(
+            Arg.Any<CalendarResourceUpdateRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task OneOccurrenceReplaceAll_confirmation_detects_untouched_sibling_override_drift()
+    {
+        const string href = "https://cal.example/events/event-1.ics";
+        var current = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260820T100000Z\r\nRRULE:FREQ=DAILY;COUNT=3\r\nSUMMARY:Before\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nRECURRENCE-ID:20260822T100000Z\r\nDTSTART:20260822T100000Z\r\nLAST-MODIFIED:20260815T100000Z\r\nSUMMARY:Sibling\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var client = Substitute.For<ICalendarClient>();
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
+            new CalendarDescriptor
+            {
+                Href = "https://cal.example/events/",
+                DisplayName = "Events",
+                DisplayNameProvenance = DisplayNameProvenance.DavDisplayName,
+                EventSupport = EntityKindSupport.Advertised,
+                TodoSupport = EntityKindSupport.NotAdvertised
+            }
+        ]);
+        client.GetCalendarResourceAsync(href, Arg.Any<CancellationToken>()).Returns(_ =>
+            CalendarResourceRead.Success(href, "\"r1\"", Encoding.UTF8.GetBytes(current)));
+        var time = new MutableTimeProvider(DateTimeOffset.Parse("2026-08-16T12:00:00Z"));
+        var service = new CalendarService(
+            client,
+            Options.Create(new CalDavOptions
+            {
+                BaseUrl = "https://cal.example/",
+                Username = "user",
+                Password = "secret"
+            }),
+            Substitute.For<ILogger<CalendarService>>(),
+            time,
+            Substitute.For<ICalendarEntityIdentityGenerator>());
+        var sut = CreateTool(service, time);
+        var arguments = ReplaceAllArguments();
+        arguments["target"] = JsonSerializer.SerializeToElement(new
+        {
+            scope = "one-occurrence",
+            recurrenceIdentity = new
+            {
+                value = new { kind = "utcDateTime", value = "2026-08-21T10:00:00Z" }
+            }
+        });
+        var first = await Should.ThrowAsync<InputRequiredException>(() => sut.PatchEventRawAsync(
+            arguments, null, null, true, CancellationToken.None));
+
+        current = current.Replace("LAST-MODIFIED:20260815T100000Z", "LAST-MODIFIED:20260815T100001Z", StringComparison.Ordinal);
+        var result = await sut.PatchEventRawAsync(
+            arguments,
+            first.Result.RequestState,
+            Confirmation("accept", true),
+            true,
+            CancellationToken.None);
+
+        result.IsError.ShouldBe(true);
+        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("confirmation_mismatch");
+        await client.DidNotReceive().UpdateCalendarResourceAsync(
             Arg.Any<CalendarResourceUpdateRequest>(), Arg.Any<CancellationToken>());
     }
 

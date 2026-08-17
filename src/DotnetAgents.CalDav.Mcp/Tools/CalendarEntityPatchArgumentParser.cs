@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using DotnetAgents.CalDav.Core.Models;
 
@@ -86,7 +87,7 @@ internal static class CalendarEntityPatchArgumentParser
             && arguments.TryGetValue("target", out var targetElement)
             && arguments.TryGetValue("patch", out patch)
             && TryRevision(snapshot, expectedKind, out revision)
-            && TryMaster(targetElement, out target)
+            && TryTarget(targetElement, out target)
             && HasPatchShape(patch);
     }
 
@@ -107,14 +108,60 @@ internal static class CalendarEntityPatchArgumentParser
         return true;
     }
 
-    private static bool TryMaster(JsonElement value, out CalendarMutationTarget target)
+    private static bool TryTarget(JsonElement value, out CalendarMutationTarget target)
     {
         target = null!;
-        if (!HasExactProperties(value, "scope") || !TryString(value, "scope", out var scope) || scope != "master")
+        if (!TryString(value, "scope", out var scope))
             return false;
-        target = new(scope);
+        if (scope == "master" && HasExactProperties(value, "scope"))
+        {
+            target = new(scope);
+            return true;
+        }
+        return TryOneOccurrence(value, scope, out target);
+    }
+
+    private static bool TryOneOccurrence(
+        JsonElement value,
+        string scope,
+        out CalendarMutationTarget target)
+    {
+        target = null!;
+        if (scope != "one-occurrence" || !HasExactProperties(value, "scope", "recurrenceIdentity")
+            || !value.TryGetProperty("recurrenceIdentity", out var identity)
+            || !HasExactProperties(identity, "value")
+            || !identity.TryGetProperty("value", out var temporal)
+            || !CalendarEntityCreateArgumentParser.TryParsePatchScalarValue("start", temporal, out var parsed)
+            || parsed is not CalendarTemporalValue recurrenceIdentity
+            || !HasValidTemporalLexicalForm(recurrenceIdentity))
+        {
+            return false;
+        }
+        target = new(scope, recurrenceIdentity);
         return true;
     }
+
+    private static bool HasValidTemporalLexicalForm(CalendarTemporalValue value) => value.Kind switch
+    {
+        CalendarTemporalKind.Date => DateOnly.TryParseExact(
+            value.Value,
+            "yyyy-MM-dd",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.None,
+            out _),
+        CalendarTemporalKind.UtcDateTime => value.Value.EndsWith('Z')
+            && TryDateTime(value.Value[..^1]),
+        CalendarTemporalKind.FloatingDateTime => TryDateTime(value.Value),
+        CalendarTemporalKind.ZonedDateTime => !string.IsNullOrEmpty(value.TimeZoneId) && TryDateTime(value.Value),
+        _ => false
+    };
+
+    private static bool TryDateTime(string value) => DateTime.TryParseExact(
+        value,
+        "yyyy-MM-dd'T'HH:mm:ss",
+        CultureInfo.InvariantCulture,
+        DateTimeStyles.None,
+        out _);
 
     private static bool HasPatchShape(JsonElement patch)
     {

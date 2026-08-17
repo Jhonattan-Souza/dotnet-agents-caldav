@@ -563,6 +563,44 @@ public sealed class CalendarMcpStdioIntegrationTests
     }
 
     [Fact]
+    public async Task CalendarEntityPatch_PatchesMovedOccurrenceOverNativeStdioAndRadicale()
+    {
+        const string uid = "stdio-patch-occurrence";
+        var href = await PutResourceAsync(
+            _fixture.EventCalendarHref,
+            "stdio-patch-occurrence.ics",
+            Event(uid, "SUMMARY:Master\r\nDESCRIPTION:Inherited\r\nDTSTART:20260818T130000Z\r\nDTEND:20260818T140000Z\r\nRRULE:FREQ=DAILY;COUNT=2\r\n"));
+        var before = await GetResourceAsync(href);
+        var stderr = new ConcurrentQueue<string>();
+        await using var client = await CreateClientAsync(
+            stderr,
+            exposeExact: false,
+            calendarHrefs: $"{_fixture.BaseUrl}{_fixture.EventCalendarHref}");
+
+        var patched = await client.CallToolAsync(
+            "events.patch",
+            OneOccurrencePatchArguments(new ObservedRevision(href, before.EntityTag), uid),
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        var revision = AssertCommittedCreate(
+            patched,
+            "event",
+            uid,
+            $"{_fixture.BaseUrl}{_fixture.EventCalendarHref}");
+        var observed = await GetResourceAsync(href);
+        observed.EntityTag.ShouldBe(revision.EntityTag);
+        var stored = Encoding.UTF8.GetString(observed.Utf8);
+        stored.ShouldContain("RECURRENCE-ID:20260819T130000Z");
+        stored.ShouldContain("DTSTART:20260819T160000Z");
+        stored.ShouldContain("DTEND:20260819T170000Z");
+        stored.ShouldContain("SUMMARY:Moved once");
+        stored.ShouldContain("DESCRIPTION:Inherited");
+        stored.Split("UID:stdio-patch-occurrence", StringSplitOptions.None).Length.ShouldBe(3);
+        stderr.ShouldBeEmpty();
+        await DeleteResourceAsync(href, observed.EntityTag);
+    }
+
+    [Fact]
     public async Task CalendarEntityPatch_PatchesOneReviewedTodoOverRealStdioAndRadicale()
     {
         const string uid = "stdio-patch-todo";
@@ -829,6 +867,53 @@ public sealed class CalendarMcpStdioIntegrationTests
                     ["field"] = "categories",
                     ["operation"] = "addRemove",
                     ["add"] = new[] { "Patched" }
+                }
+            }
+        }
+    };
+
+    private static Dictionary<string, object?> OneOccurrencePatchArguments(
+        ObservedRevision revision,
+        string uid) => new()
+    {
+        ["snapshot"] = new Dictionary<string, object?>
+        {
+            ["href"] = revision.Href,
+            ["entityUid"] = uid,
+            ["entityKind"] = "event",
+            ["entityTag"] = revision.EntityTag
+        },
+        ["target"] = new Dictionary<string, object?>
+        {
+            ["scope"] = "one-occurrence",
+            ["recurrenceIdentity"] = new Dictionary<string, object?>
+            {
+                ["value"] = new Dictionary<string, object?>
+                {
+                    ["kind"] = "utcDateTime",
+                    ["value"] = "2026-08-19T13:00:00Z"
+                }
+            }
+        },
+        ["patch"] = new Dictionary<string, object?>
+        {
+            ["scalars"] = new object[]
+            {
+                new Dictionary<string, object?>
+                {
+                    ["field"] = "summary",
+                    ["operation"] = "set",
+                    ["value"] = "Moved once"
+                },
+                new Dictionary<string, object?>
+                {
+                    ["field"] = "start",
+                    ["operation"] = "set",
+                    ["value"] = new Dictionary<string, object?>
+                    {
+                        ["kind"] = "utcDateTime",
+                        ["value"] = "2026-08-19T16:00:00Z"
+                    }
                 }
             }
         }

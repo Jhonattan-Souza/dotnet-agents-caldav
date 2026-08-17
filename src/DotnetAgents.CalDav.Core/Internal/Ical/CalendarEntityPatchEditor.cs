@@ -11,20 +11,38 @@ internal static class CalendarEntityPatchEditor
 
     public static (byte[]? AuthoritativeUtf8, CalendarEntityPatchResult? Failure) TryEdit(
         CalendarResourceSnapshot snapshot,
+        CalendarMutationTarget target,
         CalendarEventPatch patch,
         CalendarEntityKind expectedKind,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
     {
         try
         {
             var document = CalendarContentDocument.Parse(snapshot.AuthoritativeUtf8.Span);
-            var master = document.GetMasterComponent(expectedKind);
-            var effectivePatch = PrepareScalarPatch(snapshot, document, master, patch, expectedKind);
+            var selected = CalendarOccurrencePatchBuilder.SelectTarget(
+                snapshot,
+                document,
+                target,
+                expectedKind,
+                cancellationToken);
+            if (selected.Failure is not null)
+                return (null, selected.Failure);
+            document = selected.Document!;
+            var master = selected.Component!;
+            var targetPath = master.Path;
+            var effectivePatch = PrepareScalarPatch(
+                snapshot,
+                document,
+                master,
+                patch,
+                expectedKind,
+                target.Scope == "master");
             if (effectivePatch is null)
                 return (null, Failure(CalendarEntityPatchCode.InvalidInput, snapshot));
             var scalarEdit = ApplyScalars(document, master, effectivePatch);
             document = scalarEdit.Document;
-            master = document.GetMasterComponent(expectedKind);
+            master = document.GetComponent(targetPath);
             if (!HasValidAddressedFinalShape(document, master, effectivePatch, expectedKind))
                 return (null, Failure(CalendarEntityPatchCode.InvalidInput, snapshot));
             var changed = scalarEdit.Changed;
@@ -35,7 +53,7 @@ internal static class CalendarEntityPatchEditor
             if (categoryEdit.AuthoritativeUtf8 is not null)
             {
                 document = CalendarContentDocument.Parse(categoryEdit.AuthoritativeUtf8);
-                master = document.GetMasterComponent(expectedKind);
+                master = document.GetComponent(targetPath);
                 changed = true;
             }
             var structuredEdit = ApplyStructuredCollections(document, master, patch.Collections, expectedKind);
@@ -48,7 +66,7 @@ internal static class CalendarEntityPatchEditor
             return FinishEdit(
                 snapshot,
                 structuredEdit.Document,
-                structuredEdit.Document.GetMasterComponent(expectedKind),
+                structuredEdit.Document.GetComponent(targetPath),
                 changed || structuredEdit.Changed,
                 expectedKind,
                 now);
@@ -59,15 +77,31 @@ internal static class CalendarEntityPatchEditor
         }
     }
 
+    private static bool HasReservedCancellationTransition(
+        CalendarContentDocument document,
+        CalendarContentComponent component,
+        CalendarScalarPatch<string>? statusPatch)
+    {
+        if (statusPatch is null)
+            return false;
+        if (statusPatch is { Operation: CalendarScalarPatchOperation.Set, Value: { } requested }
+            && requested.Equals("CANCELLED", StringComparison.OrdinalIgnoreCase))
+            return true;
+        var current = FindProperty(document, component.Path, "STATUS")?.RawEncodedValue;
+        return current?.Equals("CANCELLED", StringComparison.OrdinalIgnoreCase) == true;
+    }
+
     private static CalendarEventPatch? PrepareScalarPatch(
         CalendarResourceSnapshot snapshot,
         CalendarContentDocument document,
         CalendarContentComponent master,
         CalendarEventPatch patch,
-        CalendarEntityKind kind)
+        CalendarEntityKind kind,
+        bool targetsMaster)
     {
-        if (IntroducesDerivedOrganizer(patch)
-            || patch.Start is not null && HasRecurrenceMembership(document, master, kind))
+        if (!targetsMaster && HasReservedCancellationTransition(document, master, patch.Status)
+            || IntroducesDerivedOrganizer(patch)
+            || targetsMaster && patch.Start is not null && HasRecurrenceMembership(document, master, kind))
             return null;
         var effectivePatch = PreserveExplicitEffectiveSpan(snapshot, document, master, patch, kind);
         return effectivePatch is not null && !HasAddressedDerivedScalar(document, master, effectivePatch)
@@ -182,7 +216,7 @@ internal static class CalendarEntityPatchEditor
             if (edit.AuthoritativeUtf8 is null)
                 continue;
             document = CalendarContentDocument.Parse(edit.AuthoritativeUtf8);
-            master = document.GetMasterComponent(kind);
+            master = document.GetComponent(master.Path);
             changed = true;
         }
         return (document, changed, null);

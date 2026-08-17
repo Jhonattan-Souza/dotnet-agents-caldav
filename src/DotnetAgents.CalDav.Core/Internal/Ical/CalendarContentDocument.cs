@@ -341,6 +341,18 @@ internal sealed partial class CalendarContentDocument
                 && property.Name.Equals("RECURRENCE-ID", StringComparison.OrdinalIgnoreCase)));
     }
 
+    public CalendarContentComponent GetComponent(IReadOnlyList<CalendarComponentPathSegment> path) =>
+        Components.Single(component => PathsEqual(component.Path, path));
+
+    public CalendarContentOccurrence GetComponentOccurrence(IReadOnlyList<CalendarComponentPathSegment> path)
+    {
+        var component = GetComponent(path);
+        return new CalendarContentOccurrence(
+            component.Start,
+            component.Length,
+            _content.Substring(component.Start, component.Length));
+    }
+
     public IReadOnlyList<CalendarContentOccurrence> GetDirectPropertyOccurrences(
         IReadOnlyList<CalendarComponentPathSegment> componentPath,
         string propertyName) => Properties.Where(property =>

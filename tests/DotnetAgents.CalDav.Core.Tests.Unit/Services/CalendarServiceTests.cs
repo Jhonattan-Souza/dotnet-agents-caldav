@@ -226,6 +226,32 @@ public sealed class CalendarServiceTests
         ]);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task QueryOccurrencesAsync_DetachedIndividualWinsSameIdentityRangeInEitherComponentOrder(
+        bool individualFirst)
+    {
+        const string range = "BEGIN:VEVENT\r\nUID:occurrence\r\nDTSTAMP:20260815T120000Z\r\n"
+            + "RECURRENCE-ID;RANGE=THISANDFUTURE:20260820T100000Z\r\n"
+            + "DTSTART:20260820T120000Z\r\nDURATION:PT1H\r\nEND:VEVENT\r\n";
+        const string individual = "BEGIN:VEVENT\r\nUID:occurrence\r\nDTSTAMP:20260815T120000Z\r\n"
+            + "RECURRENCE-ID:20260820T100000Z\r\n"
+            + "DTSTART:20260820T180000Z\r\nDURATION:PT1H\r\nEND:VEVENT\r\n";
+        var overrides = individualFirst ? individual + range : range + individual;
+
+        var result = await QuerySingleOccurrenceEventAsync(
+            "DTSTART:20260814T100000Z\r\nDURATION:PT1H\r\nRRULE:FREQ=DAILY;COUNT=1\r\n"
+            + "END:VEVENT\r\n"
+            + overrides[..^"END:VEVENT\r\n".Length],
+            "2026-08-20T00:00:00Z",
+            "2026-08-21T00:00:00Z");
+
+        var occurrence = result.Items.ShouldHaveSingleItem();
+        occurrence.RecurrenceIdentity.Value.ShouldBe("2026-08-20T10:00:00Z");
+        occurrence.Timing.EffectiveStart.Value.ShouldBe("2026-08-20T18:00:00Z");
+    }
+
     [Fact]
     public async Task QueryOccurrencesAsync_DetachedEventOverridesAreEnumeratedWithCancellationAndExdatePrecedence()
     {

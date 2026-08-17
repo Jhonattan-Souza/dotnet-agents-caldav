@@ -83,7 +83,7 @@ internal sealed class CalendarEntityPatchEngine(
         var prepared = await PrepareAsync(revision, target, patch, expectedKind, cancellationToken);
         return prepared.Outcome is not null
             ? new(prepared.Outcome)
-            : new(null, CalendarEntityCreateFidelity.PatchIntentDigest(prepared.AuthoritativeUtf8!));
+            : new(null, CalendarEntityCreateFidelity.PatchIntentDigest(prepared.AuthoritativeUtf8!, target));
     }
 
     private async Task<PreparedPatch> PrepareAsync(
@@ -115,9 +115,11 @@ internal sealed class CalendarEntityPatchEngine(
 
         var edit = CalendarEntityPatchEditor.TryEdit(
             current.Snapshot,
+            target,
             patch,
             expectedKind,
-            timeProvider.GetUtcNow());
+            timeProvider.GetUtcNow(),
+            cancellationToken);
         if (edit.Failure is not null)
             return new(null, edit.Failure);
         if (edit.AuthoritativeUtf8 is null)
@@ -410,7 +412,7 @@ internal sealed class CalendarEntityPatchEngine(
         CalendarMutationTarget target,
         CalendarEventPatch patch,
         CalendarEntityKind expectedKind) =>
-        string.Equals(target.Scope, "master", StringComparison.Ordinal)
+        IsValidTarget(target)
         && !patch.RecurrenceSetAddressed
         && !patch.RequiresConfirmation
         && HasPatchIntent(patch)
@@ -419,6 +421,13 @@ internal sealed class CalendarEntityPatchEngine(
         && HasValidCategoryPatch(patch.Categories)
         && HasValidStructuredCollections(patch.Collections)
         && HasValidStructuredValues(patch.Collections, expectedKind);
+
+    private static bool IsValidTarget(CalendarMutationTarget target) => target.Scope switch
+    {
+        "master" => target.RecurrenceIdentity is null,
+        "one-occurrence" => target.RecurrenceIdentity is not null,
+        _ => false
+    };
 
     private static bool HasValidScalarValues(CalendarEventPatch patch, CalendarEntityKind expectedKind)
     {

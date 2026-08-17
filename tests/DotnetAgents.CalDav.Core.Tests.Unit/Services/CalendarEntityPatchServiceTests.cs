@@ -412,6 +412,732 @@ public sealed class CalendarEntityPatchServiceTests
     }
 
     [Fact]
+    public async Task PatchEventAsync_OneOccurrenceCreatesCompleteMovedOverrideWithOriginalIdentity()
+    {
+        const string href = "https://cal.example/events/event-1.ics";
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260820T100000Z\r\nDTEND:20260820T110000Z\r\nRRULE:FREQ=DAILY;COUNT=3\r\nSUMMARY:Master\r\nDESCRIPTION:Inherited\r\nX-KEEP;P=One,one:opaque\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var client = ClientReturning(href, original);
+        ReadOnlyMemory<byte> dispatched = default;
+        client.UpdateCalendarResourceAsync(
+                Arg.Do<CalendarResourceUpdateRequest>(request => dispatched = request.AuthoritativeUtf8),
+                Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceUpdateDispatchResult(CalendarResourceUpdateDispatchCode.PossiblyDispatched));
+        var target = new CalendarMutationTarget(
+            "one-occurrence",
+            new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-21T10:00:00Z"));
+        var patch = new CalendarEventPatch(
+            Summary: new(CalendarScalarPatchOperation.Set, "Moved occurrence"),
+            Start: new(
+                CalendarScalarPatchOperation.Set,
+                new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-21T15:00:00Z")));
+
+        var result = await CreateService(client).PatchEventAsync(new CalendarEventPatchRequest(
+            new CalendarResourceRevisionReference(href, "event-1", CalendarEntityKind.Event, "\"r1\""),
+            target,
+            patch), CancellationToken.None);
+
+        result.MutationState.ShouldBe(CalendarMutationState.NotCommitted, Diagnostic(result));
+        var outbound = Encoding.UTF8.GetString(dispatched.Span);
+        outbound.ShouldContain("DTSTART:20260820T100000Z\r\nDTEND:20260820T110000Z\r\nRRULE:FREQ=DAILY;COUNT=3\r\nSUMMARY:Master\r\n");
+        outbound.ShouldContain("RECURRENCE-ID:20260821T100000Z\r\n");
+        outbound.ShouldContain("DTSTART:20260821T150000Z\r\nDTEND:20260821T160000Z\r\n");
+        outbound.ShouldContain("SUMMARY:Moved occurrence\r\nDESCRIPTION:Inherited\r\nX-KEEP;P=One,one:opaque\r\n");
+        outbound.Split("BEGIN:VEVENT", StringSplitOptions.None).Length.ShouldBe(3);
+    }
+
+    [Fact]
+    public async Task PatchEventAsync_OneOccurrenceInheritsNearestRangeOverrideWithoutRangeMarker()
+    {
+        const string href = "https://cal.example/events/event-1.ics";
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260820T100000Z\r\nDTEND:20260820T110000Z\r\nRRULE:FREQ=DAILY;COUNT=4\r\nSUMMARY:Master\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nRECURRENCE-ID;X-KEEP=one,two;RANGE=THISANDFUTURE:20260821T100000Z\r\nDTSTART:20260821T120000Z\r\nDTEND:20260821T140000Z\r\nSUMMARY:Range effective\r\nX-RANGE-KEEP:opaque\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var client = ClientReturning(href, original);
+        ReadOnlyMemory<byte> dispatched = default;
+        client.UpdateCalendarResourceAsync(
+                Arg.Do<CalendarResourceUpdateRequest>(request => dispatched = request.AuthoritativeUtf8),
+                Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceUpdateDispatchResult(CalendarResourceUpdateDispatchCode.PossiblyDispatched));
+
+        var result = await CreateService(client).PatchEventAsync(new CalendarEventPatchRequest(
+            new CalendarResourceRevisionReference(href, "event-1", CalendarEntityKind.Event, "\"r1\""),
+            new CalendarMutationTarget(
+                "one-occurrence",
+                new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-23T10:00:00Z")),
+            new CalendarEventPatch(Description: new(CalendarScalarPatchOperation.Set, "Patched"))), CancellationToken.None);
+
+        result.MutationState.ShouldBe(CalendarMutationState.NotCommitted, Diagnostic(result));
+        var outbound = Encoding.UTF8.GetString(dispatched.Span);
+        var individual = outbound[outbound.LastIndexOf("BEGIN:VEVENT", StringComparison.Ordinal)..];
+        individual.ShouldContain("RECURRENCE-ID;X-KEEP=one,two:20260823T100000Z\r\n");
+        individual.ShouldContain("DTSTART:20260823T120000Z\r\n");
+        individual.ShouldContain("DTEND:20260823T140000Z\r\n");
+        individual.ShouldContain("SUMMARY:Range effective\r\n");
+        individual.ShouldContain("X-RANGE-KEEP:opaque\r\n");
+        individual.ShouldContain("DESCRIPTION:Patched\r\n");
+        individual.ShouldNotContain("RANGE=THISANDFUTURE");
+        outbound.Split("RANGE=THISANDFUTURE", StringSplitOptions.None).Length.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task PatchEventAsync_OneOccurrencePreservesCancelledRangeState()
+    {
+        const string href = "https://cal.example/events/event-1.ics";
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260820T100000Z\r\nRRULE:FREQ=DAILY;COUNT=4\r\nSUMMARY:Master\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nRECURRENCE-ID;RANGE=THISANDFUTURE:20260821T100000Z\r\nDTSTART:20260821T120000Z\r\nSTATUS:CANCELLED\r\nSUMMARY:Cancelled range\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var client = ClientReturning(href, original);
+        ReadOnlyMemory<byte> dispatched = default;
+        client.UpdateCalendarResourceAsync(
+                Arg.Do<CalendarResourceUpdateRequest>(request => dispatched = request.AuthoritativeUtf8),
+                Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceUpdateDispatchResult(CalendarResourceUpdateDispatchCode.PossiblyDispatched));
+
+        var result = await CreateService(client).PatchEventAsync(new CalendarEventPatchRequest(
+            new CalendarResourceRevisionReference(href, "event-1", CalendarEntityKind.Event, "\"r1\""),
+            new CalendarMutationTarget(
+                "one-occurrence",
+                new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-22T10:00:00Z")),
+            new CalendarEventPatch(Summary: new(CalendarScalarPatchOperation.Set, "Still cancelled"))), CancellationToken.None);
+
+        result.MutationState.ShouldBe(CalendarMutationState.NotCommitted, Diagnostic(result));
+        var individual = Encoding.UTF8.GetString(dispatched.Span);
+        individual = individual[individual.LastIndexOf("BEGIN:VEVENT", StringComparison.Ordinal)..];
+        individual.ShouldContain("RECURRENCE-ID:20260822T100000Z\r\n");
+        individual.ShouldContain("DTSTART:20260822T120000Z\r\n");
+        individual.ShouldContain("STATUS:CANCELLED\r\n");
+        individual.ShouldContain("SUMMARY:Still cancelled\r\n");
+    }
+
+    [Fact]
+    public async Task PatchEventAsync_OneOccurrenceRejectsNonexistentIdentityWithoutWriting()
+    {
+        const string href = "https://cal.example/events/event-1.ics";
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260820T100000Z\r\nRRULE:FREQ=DAILY;COUNT=2\r\nSUMMARY:Master\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var client = ClientReturning(href, original);
+
+        var result = await CreateService(client).PatchEventAsync(new CalendarEventPatchRequest(
+            new CalendarResourceRevisionReference(href, "event-1", CalendarEntityKind.Event, "\"r1\""),
+            new CalendarMutationTarget(
+                "one-occurrence",
+                new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-24T10:00:00Z")),
+            new CalendarEventPatch(Summary: new(CalendarScalarPatchOperation.Set, "Must not be added"))), CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityPatchCode.NotFound);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        await client.DidNotReceive().UpdateCalendarResourceAsync(
+            Arg.Any<CalendarResourceUpdateRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task PatchEventAsync_OneOccurrenceRejectsStaleSeriesRevisionBeforeTargetEvaluation()
+    {
+        const string href = "https://cal.example/events/event-1.ics";
+        const string malformed = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n";
+        var client = ClientReturning(href, malformed, "\"r2\"");
+
+        var result = await CreateService(client).PatchEventAsync(new CalendarEventPatchRequest(
+            new CalendarResourceRevisionReference(href, "event-1", CalendarEntityKind.Event, "\"r1\""),
+            new CalendarMutationTarget(
+                "one-occurrence",
+                new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-21T10:00:00Z")),
+            new CalendarEventPatch(Summary: new(CalendarScalarPatchOperation.Set, "Must not be evaluated"))), CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityPatchCode.Conflict);
+        result.Phase.ShouldBe(CalendarEntityPatchPhase.TargetRevision);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        await client.DidNotReceive().UpdateCalendarResourceAsync(
+            Arg.Any<CalendarResourceUpdateRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task PatchEventAsync_OneOccurrenceRejectsMalformedIdentityAsCallerInputWithoutWriting()
+    {
+        const string href = "https://cal.example/events/event-1.ics";
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260820T100000Z\r\nRRULE:FREQ=DAILY;COUNT=2\r\nSUMMARY:Master\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var client = ClientReturning(href, original);
+
+        var result = await CreateService(client).PatchEventAsync(new CalendarEventPatchRequest(
+            new CalendarResourceRevisionReference(href, "event-1", CalendarEntityKind.Event, "\"r1\""),
+            new CalendarMutationTarget(
+                "one-occurrence",
+                new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "not-a-date-time")),
+            new CalendarEventPatch(Summary: new(CalendarScalarPatchOperation.Set, "Must not be evaluated"))), CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityPatchCode.InvalidInput);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        await client.DidNotReceive().UpdateCalendarResourceAsync(
+            Arg.Any<CalendarResourceUpdateRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task PatchEventAsync_OneOccurrenceRejectsBareNonRecurringMasterStartWithoutWriting()
+    {
+        const string href = "https://cal.example/events/event-1.ics";
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260820T100000Z\r\nSUMMARY:Not recurring\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var client = ClientReturning(href, original);
+
+        var result = await CreateService(client).PatchEventAsync(new CalendarEventPatchRequest(
+            new CalendarResourceRevisionReference(href, "event-1", CalendarEntityKind.Event, "\"r1\""),
+            new CalendarMutationTarget(
+                "one-occurrence",
+                new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-20T10:00:00Z")),
+            new CalendarEventPatch(Summary: new(CalendarScalarPatchOperation.Set, "Must remain master"))), CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityPatchCode.NotFound);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        await client.DidNotReceive().UpdateCalendarResourceAsync(
+            Arg.Any<CalendarResourceUpdateRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task PatchTodoAsync_OneOccurrenceRejectsBareNonRecurringMasterStartWithoutWriting()
+    {
+        const string calendarHref = "https://cal.example/todos/";
+        const string href = "https://cal.example/todos/todo-1.ics";
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VTODO\r\nUID:todo-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260820T100000Z\r\nSUMMARY:Not recurring\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+        var client = Substitute.For<ICalendarClient>();
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
+            new CalendarDescriptor
+            {
+                Href = calendarHref,
+                DisplayName = "Todos",
+                DisplayNameProvenance = DisplayNameProvenance.DavDisplayName,
+                EventSupport = EntityKindSupport.NotAdvertised,
+                TodoSupport = EntityKindSupport.Advertised
+            }
+        ]);
+        client.GetCalendarResourceAsync(href, Arg.Any<CancellationToken>()).Returns(Read(href, "\"r1\"", original));
+
+        var result = await CreateService(client).PatchTodoAsync(new CalendarTodoPatchRequest(
+            new CalendarResourceRevisionReference(href, "todo-1", CalendarEntityKind.Todo, "\"r1\""),
+            new CalendarMutationTarget(
+                "one-occurrence",
+                new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-20T10:00:00Z")),
+            new CalendarTodoPatch(Summary: new(CalendarScalarPatchOperation.Set, "Must remain master"))), CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityPatchCode.NotFound);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        await client.DidNotReceive().UpdateCalendarResourceAsync(
+            Arg.Any<CalendarResourceUpdateRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData(CalendarScalarPatchOperation.Set, "CANCELLED")]
+    [InlineData(CalendarScalarPatchOperation.Set, "CONFIRMED")]
+    [InlineData(CalendarScalarPatchOperation.Clear, null)]
+    public async Task PatchEventAsync_OneOccurrenceRejectsCancellationAndRestorationThroughGenericStatus(
+        CalendarScalarPatchOperation operation,
+        string? value)
+    {
+        const string href = "https://cal.example/events/event-1.ics";
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260820T100000Z\r\nRRULE:FREQ=DAILY;COUNT=2\r\nSUMMARY:Master\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nRECURRENCE-ID:20260821T100000Z\r\nDTSTART:20260821T100000Z\r\nSTATUS:CANCELLED\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var client = ClientReturning(href, original);
+
+        var result = await CreateService(client).PatchEventAsync(new CalendarEventPatchRequest(
+            new CalendarResourceRevisionReference(href, "event-1", CalendarEntityKind.Event, "\"r1\""),
+            new CalendarMutationTarget(
+                "one-occurrence",
+                new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-21T10:00:00Z")),
+            new CalendarEventPatch(Status: new(operation, value))), CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityPatchCode.InvalidInput);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        await client.DidNotReceive().UpdateCalendarResourceAsync(
+            Arg.Any<CalendarResourceUpdateRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData(CalendarScalarPatchOperation.Set, "CONFIRMED")]
+    [InlineData(CalendarScalarPatchOperation.Clear, null)]
+    public async Task PatchEventAsync_OneOccurrenceAllowsOrdinaryStatusMutation(
+        CalendarScalarPatchOperation operation,
+        string? value)
+    {
+        const string href = "https://cal.example/events/event-1.ics";
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260820T100000Z\r\nRRULE:FREQ=DAILY;COUNT=2\r\nSUMMARY:Master\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nRECURRENCE-ID:20260821T100000Z\r\nDTSTART:20260821T100000Z\r\nSTATUS:TENTATIVE\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var client = ClientReturning(href, original);
+        client.UpdateCalendarResourceAsync(
+                Arg.Any<CalendarResourceUpdateRequest>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceUpdateDispatchResult(CalendarResourceUpdateDispatchCode.PossiblyDispatched));
+
+        var result = await CreateService(client).PatchEventAsync(new CalendarEventPatchRequest(
+            new CalendarResourceRevisionReference(href, "event-1", CalendarEntityKind.Event, "\"r1\""),
+            new CalendarMutationTarget(
+                "one-occurrence",
+                new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-21T10:00:00Z")),
+            new CalendarEventPatch(Status: new(operation, value))), CancellationToken.None);
+
+        result.MutationState.ShouldBe(CalendarMutationState.NotCommitted, Diagnostic(result));
+        await client.Received(1).UpdateCalendarResourceAsync(
+            Arg.Any<CalendarResourceUpdateRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task PatchEventAsync_OneOccurrenceRejectsRdatePeriodBeforeWriting()
+    {
+        const string href = "https://cal.example/events/event-1.ics";
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260820T100000Z\r\nDURATION:PT1H\r\nRDATE;VALUE=PERIOD:20260821T100000Z/PT3H\r\nSUMMARY:Master\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var client = ClientReturning(href, original);
+
+        var result = await CreateService(client).PatchEventAsync(new CalendarEventPatchRequest(
+            new CalendarResourceRevisionReference(href, "event-1", CalendarEntityKind.Event, "\"r1\""),
+            new CalendarMutationTarget(
+                "one-occurrence",
+                new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-21T10:00:00Z")),
+            new CalendarEventPatch(Summary: new(CalendarScalarPatchOperation.Set, "Must not lose the period span"))), CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityPatchCode.UnsupportedCapability);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        await client.DidNotReceive().UpdateCalendarResourceAsync(
+            Arg.Any<CalendarResourceUpdateRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task PatchEventAsync_OneOccurrenceRejectsAnyRdatePeriodBeforeWriting()
+    {
+        const string href = "https://cal.example/events/event-1.ics";
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260820T100000Z\r\nDTEND:20260820T110000Z\r\nRRULE:FREQ=DAILY;COUNT=2\r\nRDATE;VALUE=PERIOD:20260824T100000Z/PT3H\r\nSUMMARY:Master\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var client = ClientReturning(href, original);
+
+        var result = await CreateService(client).PatchEventAsync(new CalendarEventPatchRequest(
+            new CalendarResourceRevisionReference(href, "event-1", CalendarEntityKind.Event, "\"r1\""),
+            new CalendarMutationTarget(
+                "one-occurrence",
+                new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-21T10:00:00Z")),
+            new CalendarEventPatch(Summary: new(CalendarScalarPatchOperation.Set, "Must not rewrite PERIOD"))), CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityPatchCode.UnsupportedCapability);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        await client.DidNotReceive().UpdateCalendarResourceAsync(
+            Arg.Any<CalendarResourceUpdateRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("RDATE")]
+    [InlineData("rdate")]
+    public async Task PatchEventAsync_OneOccurrenceTargetsExistingTemporalRdateWithoutImplicitAdd(
+        string propertyName)
+    {
+        const string href = "https://cal.example/events/event-1.ics";
+        var original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260820T100000Z\r\nDTEND:20260820T110000Z\r\n"
+            + propertyName + ":20260824T100000Z\r\nSUMMARY:Master\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var client = ClientReturning(href, original);
+        ReadOnlyMemory<byte> dispatched = default;
+        client.UpdateCalendarResourceAsync(
+                Arg.Do<CalendarResourceUpdateRequest>(request => dispatched = request.AuthoritativeUtf8),
+                Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceUpdateDispatchResult(CalendarResourceUpdateDispatchCode.PossiblyDispatched));
+
+        var result = await CreateService(client).PatchEventAsync(new CalendarEventPatchRequest(
+            new CalendarResourceRevisionReference(href, "event-1", CalendarEntityKind.Event, "\"r1\""),
+            new CalendarMutationTarget(
+                "one-occurrence",
+                new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-24T10:00:00Z")),
+            new CalendarEventPatch(Summary: new(CalendarScalarPatchOperation.Set, "RDATE occurrence"))), CancellationToken.None);
+
+        result.MutationState.ShouldBe(CalendarMutationState.NotCommitted, Diagnostic(result));
+        var individual = Encoding.UTF8.GetString(dispatched.Span);
+        individual = individual[individual.LastIndexOf("BEGIN:VEVENT", StringComparison.Ordinal)..];
+        individual.ShouldContain("RECURRENCE-ID:20260824T100000Z\r\n");
+        individual.ShouldContain("DTSTART:20260824T100000Z\r\n");
+        individual.ShouldContain("DTEND:20260824T110000Z\r\n");
+        individual.ShouldContain("SUMMARY:RDATE occurrence\r\n");
+    }
+
+    [Fact]
+    public async Task PatchEventAsync_OneOccurrenceTreatsLowerCaseRecurrencePropertyAsSeriesMembership()
+    {
+        const string href = "https://cal.example/events/event-1.ics";
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260820T100000Z\r\nDTEND:20260820T110000Z\r\nrdate:20260824T100000Z\r\nSUMMARY:Master\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var client = ClientReturning(href, original);
+        client.UpdateCalendarResourceAsync(
+                Arg.Any<CalendarResourceUpdateRequest>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceUpdateDispatchResult(CalendarResourceUpdateDispatchCode.PossiblyDispatched));
+
+        var result = await CreateService(client).PatchEventAsync(new CalendarEventPatchRequest(
+            new CalendarResourceRevisionReference(href, "event-1", CalendarEntityKind.Event, "\"r1\""),
+            new CalendarMutationTarget(
+                "one-occurrence",
+                new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-20T10:00:00Z")),
+            new CalendarEventPatch(Summary: new(CalendarScalarPatchOperation.Set, "First occurrence"))), CancellationToken.None);
+
+        result.MutationState.ShouldBe(CalendarMutationState.NotCommitted, Diagnostic(result));
+        await client.Received(1).UpdateCalendarResourceAsync(
+            Arg.Any<CalendarResourceUpdateRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("RRULE:FREQ=DAILY;COUNT=3\r\nRRULE:FREQ=WEEKLY;COUNT=2\r\n")]
+    [InlineData("RRULE:FREQ=DAILY;COUNT=3\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nRECURRENCE-ID;RANGE=THISANDPRIOR:20260821T100000Z\r\nDTSTART:20260821T120000Z\r\n")]
+    public async Task PatchEventAsync_OneOccurrenceReturnsRecurrenceUnevaluableForUnsupportedStructure(
+        string recurrence)
+    {
+        const string href = "https://cal.example/events/event-1.ics";
+        var original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260820T100000Z\r\n"
+            + recurrence + "SUMMARY:Master\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var client = ClientReturning(href, original);
+
+        var result = await CreateService(client).PatchEventAsync(new CalendarEventPatchRequest(
+            new CalendarResourceRevisionReference(href, "event-1", CalendarEntityKind.Event, "\"r1\""),
+            new CalendarMutationTarget(
+                "one-occurrence",
+                new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-21T10:00:00Z")),
+            new CalendarEventPatch(Summary: new(CalendarScalarPatchOperation.Set, "Must not evaluate"))), CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityPatchCode.RecurrenceUnevaluable);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        result.Phase.ShouldBe(CalendarEntityPatchPhase.CompleteResourceSemantics);
+        await client.DidNotReceive().UpdateCalendarResourceAsync(
+            Arg.Any<CalendarResourceUpdateRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task PatchEventAsync_OneOccurrenceRejectsMalformedIdentityBeforeUnsupportedRecurrenceStructure()
+    {
+        const string href = "https://cal.example/events/event-1.ics";
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260820T100000Z\r\nRRULE:FREQ=DAILY;COUNT=3\r\nRRULE:FREQ=WEEKLY;COUNT=2\r\nSUMMARY:Master\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var client = ClientReturning(href, original);
+
+        var result = await CreateService(client).PatchEventAsync(new CalendarEventPatchRequest(
+            new CalendarResourceRevisionReference(href, "event-1", CalendarEntityKind.Event, "\"r1\""),
+            new CalendarMutationTarget(
+                "one-occurrence",
+                new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "not-a-date-time")),
+            new CalendarEventPatch(Summary: new(CalendarScalarPatchOperation.Set, "Must not evaluate"))), CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityPatchCode.InvalidInput);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        await client.DidNotReceive().UpdateCalendarResourceAsync(
+            Arg.Any<CalendarResourceUpdateRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData(1999, false)]
+    [InlineData(2000, true)]
+    public async Task PatchEventAsync_OneOccurrenceEnforcesExactPerEntityOccurrenceLimit(
+        int daysAfterStart,
+        bool exhausted)
+    {
+        const string href = "https://cal.example/events/event-1.ics";
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260101T100000Z\r\nRRULE:FREQ=DAILY\r\nSUMMARY:Master\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var client = ClientReturning(href, original);
+        client.UpdateCalendarResourceAsync(
+                Arg.Any<CalendarResourceUpdateRequest>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceUpdateDispatchResult(CalendarResourceUpdateDispatchCode.PossiblyDispatched));
+        var targetDate = new DateOnly(2026, 1, 1).AddDays(daysAfterStart)
+            .ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+
+        var result = await CreateService(client).PatchEventAsync(new CalendarEventPatchRequest(
+            new CalendarResourceRevisionReference(href, "event-1", CalendarEntityKind.Event, "\"r1\""),
+            new CalendarMutationTarget(
+                "one-occurrence",
+                new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, targetDate + "T10:00:00Z")),
+            new CalendarEventPatch(Summary: new(CalendarScalarPatchOperation.Set, "Beyond cap"))), CancellationToken.None);
+
+        if (exhausted)
+        {
+            result.Code.ShouldBe(CalendarEntityPatchCode.LimitExhausted);
+            result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+            result.Phase.ShouldBe(CalendarEntityPatchPhase.CompleteResourceSemantics);
+            await client.DidNotReceive().UpdateCalendarResourceAsync(
+                Arg.Any<CalendarResourceUpdateRequest>(), Arg.Any<CancellationToken>());
+        }
+        else
+        {
+            result.MutationState.ShouldBe(CalendarMutationState.NotCommitted, Diagnostic(result));
+            await client.Received(1).UpdateCalendarResourceAsync(
+                Arg.Any<CalendarResourceUpdateRequest>(), Arg.Any<CancellationToken>());
+        }
+    }
+
+    [Fact]
+    public async Task PatchEventAsync_OneOccurrencePropagatesCancellationDuringBoundedMembershipEvaluation()
+    {
+        const string href = "https://cal.example/events/event-1.ics";
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260101T100000Z\r\nRRULE:FREQ=DAILY\r\nSUMMARY:Master\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var client = ClientReturning(href, original);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        var action = () => CreateService(client).PatchEventAsync(new CalendarEventPatchRequest(
+            new CalendarResourceRevisionReference(href, "event-1", CalendarEntityKind.Event, "\"r1\""),
+            new CalendarMutationTarget(
+                "one-occurrence",
+                new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2030-01-01T10:00:00Z")),
+            new CalendarEventPatch(Summary: new(CalendarScalarPatchOperation.Set, "Must not write"))), cancellation.Token);
+
+        await Should.ThrowAsync<OperationCanceledException>(action);
+        await client.DidNotReceive().UpdateCalendarResourceAsync(
+            Arg.Any<CalendarResourceUpdateRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task PatchEventAsync_OneOccurrenceDoesNotDeleteSuppressedOverrideWithoutRestorationIntent()
+    {
+        const string href = "https://cal.example/events/event-1.ics";
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260820T100000Z\r\nRRULE:FREQ=DAILY;COUNT=3\r\nEXDATE:20260821T100000Z\r\nSUMMARY:Master\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nRECURRENCE-ID:20260821T100000Z\r\nDTSTART:20260821T120000Z\r\nSUMMARY:Suppressed override\r\nX-KEEP:opaque\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var client = ClientReturning(href, original);
+
+        var result = await CreateService(client).PatchEventAsync(new CalendarEventPatchRequest(
+            new CalendarResourceRevisionReference(href, "event-1", CalendarEntityKind.Event, "\"r1\""),
+            new CalendarMutationTarget(
+                "one-occurrence",
+                new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-21T10:00:00Z")),
+            new CalendarEventPatch(Summary: new(CalendarScalarPatchOperation.Set, "Must remain suppressed"))), CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityPatchCode.InvalidInput);
+        result.Snapshot!.AuthoritativeUtf8.Span.SequenceEqual(Encoding.UTF8.GetBytes(original)).ShouldBeTrue();
+        await client.DidNotReceive().UpdateCalendarResourceAsync(
+            Arg.Any<CalendarResourceUpdateRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task PatchEventAsync_OneOccurrencePrefersExistingIndividualOverRangeAndPreservesCancellationState()
+    {
+        const string href = "https://cal.example/events/event-1.ics";
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260820T100000Z\r\nRRULE:FREQ=DAILY;COUNT=3\r\nSUMMARY:Master\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nRECURRENCE-ID;RANGE=THISANDFUTURE:20260821T100000Z\r\nDTSTART:20260821T140000Z\r\nSUMMARY:Range\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nRECURRENCE-ID:20260821T100000Z\r\nDTSTART:20260821T120000Z\r\nSTATUS:CANCELLED\r\nSUMMARY:Cancelled individual\r\nX-KEEP:opaque\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var client = ClientReturning(href, original);
+        ReadOnlyMemory<byte> dispatched = default;
+        client.UpdateCalendarResourceAsync(
+                Arg.Do<CalendarResourceUpdateRequest>(request => dispatched = request.AuthoritativeUtf8),
+                Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceUpdateDispatchResult(CalendarResourceUpdateDispatchCode.PossiblyDispatched));
+
+        var result = await CreateService(client).PatchEventAsync(new CalendarEventPatchRequest(
+            new CalendarResourceRevisionReference(href, "event-1", CalendarEntityKind.Event, "\"r1\""),
+            new CalendarMutationTarget(
+                "one-occurrence",
+                new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-21T10:00:00Z")),
+            new CalendarEventPatch(Summary: new(CalendarScalarPatchOperation.Set, "Still cancelled"))), CancellationToken.None);
+
+        result.MutationState.ShouldBe(CalendarMutationState.NotCommitted, Diagnostic(result));
+        var outbound = Encoding.UTF8.GetString(dispatched.Span);
+        outbound.ShouldContain("RECURRENCE-ID:20260821T100000Z\r\nDTSTART:20260821T120000Z\r\nSTATUS:CANCELLED\r\nSUMMARY:Still cancelled\r\nX-KEEP:opaque\r\n");
+        outbound.ShouldContain("RECURRENCE-ID;RANGE=THISANDFUTURE:20260821T100000Z\r\nDTSTART:20260821T140000Z\r\nSUMMARY:Range\r\n");
+        outbound.Split("BEGIN:VEVENT", StringSplitOptions.None).Length.ShouldBe(4);
+    }
+
+    [Fact]
+    public async Task PatchEventAsync_OneOccurrenceCompletesCancelledOverrideWithoutStartFromEffectiveMaster()
+    {
+        const string href = "https://cal.example/events/event-1.ics";
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260820T100000Z\r\nDTEND:20260820T110000Z\r\nRRULE:FREQ=DAILY;COUNT=3\r\nSUMMARY:Master\r\nDESCRIPTION:Inherited\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T120000Z\r\nRECURRENCE-ID:20260821T100000Z\r\nSTATUS:CANCELLED\r\nX-KEEP:opaque\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var client = ClientReturning(href, original);
+        ReadOnlyMemory<byte> dispatched = default;
+        client.UpdateCalendarResourceAsync(
+                Arg.Do<CalendarResourceUpdateRequest>(request => dispatched = request.AuthoritativeUtf8),
+                Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceUpdateDispatchResult(CalendarResourceUpdateDispatchCode.PossiblyDispatched));
+
+        var result = await CreateService(client).PatchEventAsync(new CalendarEventPatchRequest(
+            new CalendarResourceRevisionReference(href, "event-1", CalendarEntityKind.Event, "\"r1\""),
+            new CalendarMutationTarget(
+                "one-occurrence",
+                new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-21T10:00:00Z")),
+            new CalendarEventPatch(Summary: new(CalendarScalarPatchOperation.Set, "Still cancelled"))), CancellationToken.None);
+
+        result.MutationState.ShouldBe(CalendarMutationState.NotCommitted, Diagnostic(result));
+        var individual = Encoding.UTF8.GetString(dispatched.Span);
+        individual = individual[individual.LastIndexOf("BEGIN:VEVENT", StringComparison.Ordinal)..];
+        individual.ShouldContain("RECURRENCE-ID:20260821T100000Z\r\n");
+        individual.ShouldContain("DTSTART:20260821T100000Z\r\n");
+        individual.ShouldContain("DTEND:20260821T110000Z\r\n");
+        individual.ShouldContain("SUMMARY:Still cancelled\r\n");
+        individual.ShouldContain("DESCRIPTION:Inherited\r\n");
+        individual.ShouldContain("STATUS:CANCELLED\r\n");
+        individual.ShouldContain("X-KEEP:opaque\r\n");
+    }
+
+    [Fact]
+    public async Task PatchEventAsync_OneOccurrenceRejectsNonCancelledOverrideWithoutStartInsteadOfFillingIt()
+    {
+        const string href = "https://cal.example/events/event-1.ics";
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260820T100000Z\r\nDTEND:20260820T110000Z\r\nRRULE:FREQ=DAILY;COUNT=3\r\nSUMMARY:Master\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T120000Z\r\nRECURRENCE-ID:20260821T100000Z\r\nSUMMARY:Skeletal but active\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var client = ClientReturning(href, original);
+
+        var result = await CreateService(client).PatchEventAsync(new CalendarEventPatchRequest(
+            new CalendarResourceRevisionReference(href, "event-1", CalendarEntityKind.Event, "\"r1\""),
+            new CalendarMutationTarget(
+                "one-occurrence",
+                new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-21T10:00:00Z")),
+            new CalendarEventPatch(Summary: new(CalendarScalarPatchOperation.Set, "Must not be filled"))), CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityPatchCode.InvalidCalendarData);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        await client.DidNotReceive().UpdateCalendarResourceAsync(
+            Arg.Any<CalendarResourceUpdateRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task PatchEventAsync_OneOccurrencePreservesIntentionalAbsenceOnCompleteExistingEventOverride()
+    {
+        const string href = "https://cal.example/events/event-1.ics";
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260820T100000Z\r\nDTEND:20260820T110000Z\r\nRRULE:FREQ=DAILY;COUNT=3\r\nSUMMARY:Master\r\nDESCRIPTION:Inherited description\r\nATTENDEE:mailto:first@example.test\r\nATTENDEE:mailto:second@example.test\r\nBEGIN:VALARM\r\nACTION:DISPLAY\r\nDESCRIPTION:Reminder\r\nTRIGGER:-PT15M\r\nEND:VALARM\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T120000Z\r\nRECURRENCE-ID:20260821T100000Z\r\nDTSTART:20260821T120000Z\r\nSUMMARY:Explicit individual\r\nX-KEEP:opaque\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var client = ClientReturning(href, original);
+        ReadOnlyMemory<byte> dispatched = default;
+        client.UpdateCalendarResourceAsync(
+                Arg.Do<CalendarResourceUpdateRequest>(request => dispatched = request.AuthoritativeUtf8),
+                Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceUpdateDispatchResult(CalendarResourceUpdateDispatchCode.PossiblyDispatched));
+
+        var result = await CreateService(client).PatchEventAsync(new CalendarEventPatchRequest(
+            new CalendarResourceRevisionReference(href, "event-1", CalendarEntityKind.Event, "\"r1\""),
+            new CalendarMutationTarget(
+                "one-occurrence",
+                new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-21T10:00:00Z")),
+            new CalendarEventPatch(Location: new(CalendarScalarPatchOperation.Set, "Patched"))), CancellationToken.None);
+
+        result.MutationState.ShouldBe(CalendarMutationState.NotCommitted, Diagnostic(result));
+        var individual = Encoding.UTF8.GetString(dispatched.Span);
+        individual = individual[individual.LastIndexOf("BEGIN:VEVENT", StringComparison.Ordinal)..];
+        individual.ShouldContain("DTSTART:20260821T120000Z\r\n");
+        individual.ShouldContain("SUMMARY:Explicit individual\r\n");
+        individual.ShouldContain("X-KEEP:opaque\r\n");
+        individual.ShouldContain("LOCATION:Patched\r\n");
+        individual.ShouldNotContain("DTEND");
+        individual.ShouldNotContain("DESCRIPTION:Inherited description");
+        individual.ShouldNotContain("ATTENDEE");
+        individual.ShouldNotContain("VALARM");
+        individual.ShouldNotContain("RRULE");
+    }
+
+    [Fact]
+    public async Task PatchTodoAsync_OneOccurrenceCreatesCompleteSameUidTodoOverride()
+    {
+        const string calendarHref = "https://cal.example/events/";
+        const string href = "https://cal.example/events/todo-1.ics";
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VTODO\r\nUID:todo-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260820T100000Z\r\nDUE:20260820T110000Z\r\nRRULE:FREQ=DAILY;COUNT=2\r\nSUMMARY:Master todo\r\nDESCRIPTION:Inherited\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+        var client = Substitute.For<ICalendarClient>();
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
+            new CalendarDescriptor
+            {
+                Href = calendarHref,
+                DisplayName = "Todos",
+                DisplayNameProvenance = DisplayNameProvenance.DavDisplayName,
+                EventSupport = EntityKindSupport.NotAdvertised,
+                TodoSupport = EntityKindSupport.Advertised
+            }
+        ]);
+        client.GetCalendarResourceAsync(href, Arg.Any<CancellationToken>()).Returns(Read(href, "\"r1\"", original));
+        ReadOnlyMemory<byte> dispatched = default;
+        client.UpdateCalendarResourceAsync(
+                Arg.Do<CalendarResourceUpdateRequest>(request => dispatched = request.AuthoritativeUtf8),
+                Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceUpdateDispatchResult(CalendarResourceUpdateDispatchCode.PossiblyDispatched));
+
+        var result = await CreateService(client).PatchTodoAsync(new CalendarTodoPatchRequest(
+            new CalendarResourceRevisionReference(href, "todo-1", CalendarEntityKind.Todo, "\"r1\""),
+            new CalendarMutationTarget(
+                "one-occurrence",
+                new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-21T10:00:00Z")),
+            new CalendarTodoPatch(Summary: new(CalendarScalarPatchOperation.Set, "One todo"))), CancellationToken.None);
+
+        result.MutationState.ShouldBe(CalendarMutationState.NotCommitted, Diagnostic(result));
+        var outbound = Encoding.UTF8.GetString(dispatched.Span);
+        var individual = outbound[outbound.LastIndexOf("BEGIN:VTODO", StringComparison.Ordinal)..];
+        individual.ShouldContain("UID:todo-1\r\n");
+        individual.ShouldContain("RECURRENCE-ID:20260821T100000Z\r\n");
+        individual.ShouldContain("DTSTART:20260821T100000Z\r\n");
+        individual.ShouldContain("DUE:20260821T110000Z\r\n");
+        individual.ShouldContain("SUMMARY:One todo\r\n");
+        individual.ShouldContain("DESCRIPTION:Inherited\r\n");
+        individual.ShouldNotContain("RRULE");
+    }
+
+    [Fact]
+    public async Task PatchTodoAsync_OneOccurrencePreservesIntentionalAbsenceOnCompleteExistingTodoOverride()
+    {
+        const string calendarHref = "https://cal.example/todos/";
+        const string href = "https://cal.example/todos/todo-1.ics";
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VTODO\r\nUID:todo-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260820T100000Z\r\nDUE:20260820T110000Z\r\nRRULE:FREQ=DAILY;COUNT=2\r\nSUMMARY:Master todo\r\nDESCRIPTION:Inherited todo\r\nCATEGORIES:Work\r\nCATEGORIES:Home\r\nEND:VTODO\r\nBEGIN:VTODO\r\nUID:todo-1\r\nDTSTAMP:20260816T120000Z\r\nRECURRENCE-ID:20260821T100000Z\r\nDTSTART:20260821T120000Z\r\nSUMMARY:Explicit todo\r\nX-KEEP:opaque\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+        var client = Substitute.For<ICalendarClient>();
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
+            new CalendarDescriptor
+            {
+                Href = calendarHref,
+                DisplayName = "Todos",
+                DisplayNameProvenance = DisplayNameProvenance.DavDisplayName,
+                EventSupport = EntityKindSupport.NotAdvertised,
+                TodoSupport = EntityKindSupport.Advertised
+            }
+        ]);
+        client.GetCalendarResourceAsync(href, Arg.Any<CancellationToken>()).Returns(Read(href, "\"r1\"", original));
+        ReadOnlyMemory<byte> dispatched = default;
+        client.UpdateCalendarResourceAsync(
+                Arg.Do<CalendarResourceUpdateRequest>(request => dispatched = request.AuthoritativeUtf8),
+                Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceUpdateDispatchResult(CalendarResourceUpdateDispatchCode.PossiblyDispatched));
+
+        var result = await CreateService(client).PatchTodoAsync(new CalendarTodoPatchRequest(
+            new CalendarResourceRevisionReference(href, "todo-1", CalendarEntityKind.Todo, "\"r1\""),
+            new CalendarMutationTarget(
+                "one-occurrence",
+                new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-21T10:00:00Z")),
+            new CalendarTodoPatch(Description: new(CalendarScalarPatchOperation.Set, "Patched todo"))), CancellationToken.None);
+
+        result.MutationState.ShouldBe(CalendarMutationState.NotCommitted, Diagnostic(result));
+        var individual = Encoding.UTF8.GetString(dispatched.Span);
+        individual = individual[individual.LastIndexOf("BEGIN:VTODO", StringComparison.Ordinal)..];
+        individual.ShouldContain("DTSTART:20260821T120000Z\r\n");
+        individual.ShouldContain("SUMMARY:Explicit todo\r\n");
+        individual.ShouldContain("DESCRIPTION:Patched todo\r\n");
+        individual.ShouldContain("X-KEEP:opaque\r\n");
+        individual.ShouldNotContain("DUE");
+        individual.ShouldNotContain("CATEGORIES");
+        individual.ShouldNotContain("RRULE");
+    }
+
+    [Fact]
+    public async Task PatchEventAsync_OneOccurrenceKeepsNamedZoneWallTimeAcrossDst()
+    {
+        const string href = "https://cal.example/events/event-1.ics";
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260301T100000Z\r\nDTSTART;TZID=America/New_York:20260307T090000\r\nDTEND;TZID=America/New_York:20260307T100000\r\nRRULE:FREQ=DAILY;COUNT=3\r\nSUMMARY:DST series\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var client = ClientReturning(href, original);
+        ReadOnlyMemory<byte> dispatched = default;
+        client.UpdateCalendarResourceAsync(
+                Arg.Do<CalendarResourceUpdateRequest>(request => dispatched = request.AuthoritativeUtf8),
+                Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceUpdateDispatchResult(CalendarResourceUpdateDispatchCode.PossiblyDispatched));
+
+        var result = await CreateService(client).PatchEventAsync(new CalendarEventPatchRequest(
+            new CalendarResourceRevisionReference(href, "event-1", CalendarEntityKind.Event, "\"r1\""),
+            new CalendarMutationTarget(
+                "one-occurrence",
+                new CalendarTemporalValue(
+                    CalendarTemporalKind.ZonedDateTime,
+                    "2026-03-09T09:00:00",
+                    "America/New_York")),
+            new CalendarEventPatch(Summary: new(CalendarScalarPatchOperation.Set, "After DST"))), CancellationToken.None);
+
+        result.MutationState.ShouldBe(CalendarMutationState.NotCommitted, Diagnostic(result));
+        var outbound = Encoding.UTF8.GetString(dispatched.Span);
+        var individual = outbound[outbound.LastIndexOf("BEGIN:VEVENT", StringComparison.Ordinal)..];
+        individual.ShouldContain("RECURRENCE-ID;TZID=America/New_York:20260309T090000\r\n");
+        individual.ShouldContain("DTSTART;TZID=America/New_York:20260309T090000\r\n");
+        individual.ShouldContain("DTEND;TZID=America/New_York:20260309T100000\r\n");
+    }
+
+    [Fact]
+    public async Task PatchEventAsync_OneOccurrenceInheritedNoChangeDoesNotMaterializeOverride()
+    {
+        const string href = "https://cal.example/events/event-1.ics";
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260820T100000Z\r\nRRULE:FREQ=DAILY;COUNT=2\r\nSUMMARY:Inherited\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var client = ClientReturning(href, original);
+
+        var result = await CreateService(client).PatchEventAsync(new CalendarEventPatchRequest(
+            new CalendarResourceRevisionReference(href, "event-1", CalendarEntityKind.Event, "\"r1\""),
+            new CalendarMutationTarget(
+                "one-occurrence",
+                new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-21T10:00:00Z")),
+            new CalendarEventPatch(Summary: new(CalendarScalarPatchOperation.Set, "Inherited"))), CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityPatchCode.NoChange);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        await client.DidNotReceive().UpdateCalendarResourceAsync(
+            Arg.Any<CalendarResourceUpdateRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task PatchEventAsync_RejectsRecurringMasterStartMutationThatWouldChangeMembership()
     {
         const string href = "https://cal.example/events/event-1.ics";
@@ -711,7 +1437,7 @@ public sealed class CalendarEntityPatchServiceTests
         new FrozenTimeProvider(new DateTimeOffset(2026, 8, 17, 12, 0, 0, TimeSpan.Zero)),
         Substitute.For<ICalendarEntityIdentityGenerator>());
 
-    private static ICalendarClient ClientReturning(string href, string content)
+    private static ICalendarClient ClientReturning(string href, string content, string entityTag = "\"r1\"")
     {
         var client = Substitute.For<ICalendarClient>();
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
@@ -724,7 +1450,7 @@ public sealed class CalendarEntityPatchServiceTests
                 TodoSupport = EntityKindSupport.NotAdvertised
             }
         ]);
-        client.GetCalendarResourceAsync(href, Arg.Any<CancellationToken>()).Returns(Read(href, "\"r1\"", content));
+        client.GetCalendarResourceAsync(href, Arg.Any<CancellationToken>()).Returns(Read(href, entityTag, content));
         return client;
     }
 

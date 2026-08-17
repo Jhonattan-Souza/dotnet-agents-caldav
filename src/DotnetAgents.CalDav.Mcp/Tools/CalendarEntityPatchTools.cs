@@ -149,9 +149,10 @@ public sealed class CalendarEntityPatchTools
         IDictionary<string, InputResponse>? inputResponses,
         bool mrtrSupported,
         CancellationToken cancellationToken) => ConfirmAsync(
-        EventOperation,
-        request.Snapshot,
-        arguments,
+            EventOperation,
+            request.Snapshot,
+            request.Target,
+            arguments,
         requestState,
         inputResponses,
         mrtrSupported,
@@ -167,9 +168,10 @@ public sealed class CalendarEntityPatchTools
         IDictionary<string, InputResponse>? inputResponses,
         bool mrtrSupported,
         CancellationToken cancellationToken) => ConfirmAsync(
-        TodoOperation,
-        request.Snapshot,
-        arguments,
+            TodoOperation,
+            request.Snapshot,
+            request.Target,
+            arguments,
         requestState,
         inputResponses,
         mrtrSupported,
@@ -181,6 +183,7 @@ public sealed class CalendarEntityPatchTools
     private async Task<CallToolResult> ConfirmAsync(
         string operation,
         CalendarResourceRevisionReference revision,
+        CalendarMutationTarget target,
         IDictionary<string, JsonElement> arguments,
         string? requestState,
         IDictionary<string, InputResponse>? inputResponses,
@@ -197,6 +200,7 @@ public sealed class CalendarEntityPatchTools
             return await ConfirmWithinDeadlineAsync(
                 operation,
                 revision,
+                target,
                 arguments,
                 requestState,
                 inputResponses,
@@ -224,6 +228,7 @@ public sealed class CalendarEntityPatchTools
     private async Task<CallToolResult> ConfirmWithinDeadlineAsync(
         string operation,
         CalendarResourceRevisionReference revision,
+        CalendarMutationTarget target,
         IDictionary<string, JsonElement> arguments,
         string? requestState,
         IDictionary<string, InputResponse>? inputResponses,
@@ -233,7 +238,7 @@ public sealed class CalendarEntityPatchTools
         Func<CancellationToken, Task<CalendarEntityPatchResult>> execute,
         CancellationToken cancellationToken)
     {
-        var confirmationMessage = CreateConfirmationMessage(operation, revision, fields);
+        var confirmationMessage = CreateConfirmationMessage(operation, revision, target, fields);
         if (!IsConfirmationPreviewWithinBudget(confirmationMessage))
             return ConfirmationPreviewPayloadError();
         var binding = BindArguments(arguments);
@@ -448,11 +453,18 @@ public sealed class CalendarEntityPatchTools
     private static string CreateConfirmationMessage(
         string operation,
         CalendarResourceRevisionReference revision,
+        CalendarMutationTarget target,
         IReadOnlyList<ReplaceAllField> fields)
     {
         var kind = revision.EntityKind == CalendarEntityKind.Event ? "event" : "todo";
         var replacements = string.Join(", ", fields.Select(field => $"{field.Name}={field.Count}"));
-        return $"Confirm {operation} replaceAll for href {revision.Href}, UID {revision.EntityUid}, kind {kind}, scope master, expected ETag {revision.EntityTag}. Destructive fields and replacement counts: {replacements}.";
+        var identity = target.RecurrenceIdentity is null
+            ? string.Empty
+            : $", original Recurrence Identity {target.RecurrenceIdentity.Value}"
+                + (target.RecurrenceIdentity.TimeZoneId is null
+                    ? string.Empty
+                    : $" ({target.RecurrenceIdentity.TimeZoneId})");
+        return $"Confirm {operation} replaceAll for href {revision.Href}, UID {revision.EntityUid}, kind {kind}, scope {target.Scope}{identity}, expected ETag {revision.EntityTag}. Destructive fields and replacement counts: {replacements}.";
     }
 
     internal static bool IsConfirmationPreviewWithinBudget(string message) =>
@@ -559,7 +571,8 @@ public sealed class CalendarEntityPatchTools
         CalendarEntityPatchCode.NotFound or CalendarEntityPatchCode.RemovalNotFound
             or CalendarEntityPatchCode.RemovalAmbiguous or CalendarEntityPatchCode.OutsideScope
             or CalendarEntityPatchCode.EntityKindMismatch => "selection",
-        CalendarEntityPatchCode.OpaqueResource or CalendarEntityPatchCode.UnsupportedCapability => "capabilityAndProjection",
+        CalendarEntityPatchCode.OpaqueResource or CalendarEntityPatchCode.RecurrenceUnevaluable
+            or CalendarEntityPatchCode.UnsupportedCapability => "capabilityAndProjection",
         CalendarEntityPatchCode.Conflict or CalendarEntityPatchCode.ConcurrencyUnavailable => "state",
         CalendarEntityPatchCode.PayloadTooLarge or CalendarEntityPatchCode.LimitExhausted => "limitsAndAdmission",
         CalendarEntityPatchCode.FidelityFailure or CalendarEntityPatchCode.CommittedButUnverified

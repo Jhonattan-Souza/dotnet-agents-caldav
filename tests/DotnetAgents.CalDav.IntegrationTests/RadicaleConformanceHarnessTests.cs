@@ -482,6 +482,47 @@ public sealed class RadicaleConformanceHarnessTests(RadicaleConformanceFixture f
         seeded.EntityTag.ShouldNotBe(result.Snapshot.EntityTag);
     }
 
+    [Fact]
+    public async Task Pinned_profile_patches_one_range_affected_occurrence_as_complete_individual_override()
+    {
+        var calendarHref = $"{fixture.BaseUrl}/conformance/conformance/";
+        const string resourceName = "pinned-patch-one-occurrence.ics";
+        const string content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Conformance//EN\r\nBEGIN:VEVENT\r\nUID:pinned-patch-one-occurrence\r\nDTSTAMP:20260815T120000Z\r\nDTSTART:20260818T130000Z\r\nDTEND:20260818T140000Z\r\nRRULE:FREQ=DAILY;COUNT=4\r\nSUMMARY:Master\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nUID:pinned-patch-one-occurrence\r\nDTSTAMP:20260815T120000Z\r\nRECURRENCE-ID;RANGE=THISANDFUTURE:20260819T130000Z\r\nDTSTART:20260819T150000Z\r\nDTEND:20260819T170000Z\r\nSUMMARY:Range\r\nX-KEEP:range-opaque\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var seeded = await fixture.SeedResourceAsync(resourceName, content, TestContext.Current.CancellationToken);
+        var href = calendarHref + resourceName;
+        var requestTrace = new ConcurrentQueue<string>();
+        await using var provider = CreateProvider(fixture.BaseUrl, calendarHref, requestTrace);
+        var service = provider.GetRequiredService<ICalendarService>();
+
+        var result = await service.PatchEventAsync(
+            new CalendarEventPatchRequest(
+                new CalendarResourceRevisionReference(
+                    href,
+                    "pinned-patch-one-occurrence",
+                    CalendarEntityKind.Event,
+                    seeded.EntityTag),
+                new CalendarMutationTarget(
+                    "one-occurrence",
+                    new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-21T13:00:00Z")),
+                new CalendarEventPatch(Summary: new(CalendarScalarPatchOperation.Set, "Patched individual"))),
+            TestContext.Current.CancellationToken);
+
+        result.Code.ShouldBe(CalendarEntityPatchCode.Success);
+        result.MutationState.ShouldBe(CalendarMutationState.Committed);
+        result.Snapshot!.EntityTag.ShouldNotBe(seeded.EntityTag);
+        requestTrace.Count(entry => entry.StartsWith("PUT:", StringComparison.Ordinal)).ShouldBe(1);
+        var individual = result.Snapshot.CalendarProperties.Where(property =>
+            property.ComponentPath[^1].Name == "VEVENT" && property.ComponentPath[^1].Occurrence == 2).ToArray();
+        individual.Single(property => property.Name == "UID").RawEncodedValue.ShouldBe("pinned-patch-one-occurrence");
+        individual.Single(property => property.Name == "RECURRENCE-ID").RawEncodedValue.ShouldBe("20260821T130000Z");
+        individual.Single(property => property.Name == "DTSTART").RawEncodedValue.ShouldBe("20260821T150000Z");
+        individual.Single(property => property.Name == "DTEND").RawEncodedValue.ShouldBe("20260821T170000Z");
+        individual.Single(property => property.Name == "SUMMARY").RawEncodedValue.ShouldBe("Patched individual");
+        individual.Single(property => property.Name == "X-KEEP").RawEncodedValue.ShouldBe("range-opaque");
+
+        await fixture.DeleteResourceHrefAsync(href, result.Snapshot.EntityTag, TestContext.Current.CancellationToken);
+    }
+
     internal static ServiceProvider CreateProvider(
         string baseUrl,
         string calendarHref,
