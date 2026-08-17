@@ -165,8 +165,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/resource/cal-resource-003`.
 - Objective oracle: Given a query snapshot with href `https://cal.example/a.ics`, UID `u1`, kind event, ETag `"r1"`, when patch/exact-replace/move/delete are invoked, then patch rejects anything but the complete snapshot and each existing-resource operation sends exactly one `If-Match: "r1"`.
-- Implementation status: implemented for Event and To-do Semantic Patch: a coherent direct snapshot and strong resource revision are required; ordinary master fields and one explicitly identified existing occurrence are patchable on recurring resources. One-occurrence mutation materializes or edits a complete individual override while occurrence projections remain read-only; recurrence-anchor/membership changes and other mutation scopes are rejected before write. Exact replacement and move remain planned.
-- Evidence status: issue #43 Core and MCP targets plus issue #45 `CalendarEntityPatchServiceTests` one-occurrence corpus, `CalendarResourceUpdateProtocolTests`, native-stdio Radicale, and pinned-profile Radicale targets pass locally and are included in the CI test run.
+- Implementation status: implemented for Event and To-do Semantic Patch and Semantic Move. Move accepts only the complete direct resource revision, refetches href/UID/kind/strong ETag before dispatch, and uses that exact ETag on one MOVE; occurrence projections remain read-only. Exact replacement remains planned.
+- Evidence status: issue #43 Core and MCP patch targets plus `CalendarResourceMoveServiceTests`, `CalendarResourceMoveProtocolTests`, `CalendarResourceMoveToolsTests`, and the native-stdio Radicale move target cover direct-revision validation and exact conditional dispatch.
 
 ## CAL-RESOURCE-004
 
@@ -237,8 +237,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/resource/cal-resource-009`.
 - Objective oracle: Given missing, weak, current, and stale ETags, when update runs, then missing/weak return `concurrency_unavailable`; stale 412 returns `conflict` plus authorized current snapshot and zero writes; current sends one exact strong If-Match without merge.
-- Implementation status: implemented for Semantic Patch and To-do Completion: origin and Calendar discovery precede revision validation; missing or weak revisions fail before write, the exact caller strong ETag is sent in one `If-Match`, stale 412 returns conflict with a refreshed authorized snapshot when available, and there is no merge or unsafe bypass; other mutation families retain their existing ticket status.
-- Evidence status: `CalendarEntityPatchServiceTests`, `CalendarEntityPatchMatrixTests`, `CalendarResourceUpdateProtocolTests`, and `CalendarOccurrenceMutationServiceTests.CompleteTodoAsync_StaleStrongRevisionReturnsConflictWithoutWrite` cover exact preconditions, stale conflict refresh, status mapping, and zero blind retries and pass locally.
+- Implementation status: implemented for Semantic Patch, Semantic Move, and To-do Completion: origin and Calendar discovery precede revision validation; missing or weak revisions fail before write. Move rejects wildcard, malformed, or weak revisions before dispatch, sends the exact caller strong ETag in one `If-Match`, and reconciles stale/collision conflicts without an unsafe bypass or merge.
+- Evidence status: `CalendarResourceMoveServiceTests`, `CalendarResourceMoveProtocolTests`, and the existing patch/completion revision suites cover exact preconditions, stale refresh, collision classification, and zero blind retries.
 
 ## CAL-RESOURCE-010
 
@@ -249,8 +249,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/resource/cal-resource-010`.
 - Objective oracle: Given a dispatch timeout with subsequent GET states committed, unchanged, and differing, when reconciliation runs, then no retry PUT occurs and results report respectively committed, not_committed, and unknown mutationState.
-- Implementation status: implemented for Semantic Patch and To-do Completion: a possibly dispatched PUT is never retried, bounded refetch reconciliation classifies committed, unchanged/not-committed, or indeterminate/unknown, and every result carries the truthful frozen Mutation State.
-- Evidence status: issue #43 reconciliation targets and `CalendarOccurrenceMutationServiceTests.CompleteTodoAsync_PossiblyDispatchedWriteReconcilesWithoutBlindRetry` cover committed, unchanged, differing, unavailable, and caller-cancelled post-dispatch observations with exactly one PUT and pass locally.
+- Implementation status: implemented for Semantic Patch, Semantic Move, and To-do Completion. A possibly dispatched MOVE is never retried; independent bounded destination/source observations classify committed, unchanged/not-committed, fidelity failure, or indeterminate/unknown, and every result carries the truthful frozen Mutation State.
+- Evidence status: `CalendarResourceMoveServiceTests.MoveResourceAsync_ReconcilesPossiblyDispatchedMoveWithoutRetry`, the protocol one-attempt cases, and the existing patch/completion reconciliation suites cover the full state matrix.
 
 ## CAL-RESOURCE-011
 
@@ -261,8 +261,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/resource/cal-resource-011`.
 - Objective oracle: Given post-write GET fixtures with matching semantics, missing GET, changed unknown slice, missing strong tag, and delete absence, when verification runs, then outputs are success, committed_but_unverified, fidelity_failure, committed_but_concurrency_unavailable, and deletion receipt only after 404 absence.
-- Implementation status: implemented for Semantic Patch and To-do Completion: success requires a server-refetched snapshot with the addressed semantics, equivalent unaddressed occurrences/multiplicity/order/parameters, and a usable strong tag; missing verification, missing tag, and genuine drift map to the frozen committed outcomes. Other write families remain scoped to their owning tickets.
-- Evidence status: `CalendarEntityPatchMatrixTests` covers server normalization versus semantic/lossless drift and the committed-but-unverified/concurrency-unavailable outcomes; `CalendarMcpStdioIntegrationTests.TodoCompletion_CompletesOneRecurringOccurrenceOverNativeStdioAndRadicale` and the pinned-profile completion target prove authoritative readback with a rotated strong ETag.
+- Implementation status: implemented for Semantic Patch, Semantic Move, and To-do Completion. Move succeeds only after destination GET proves byte-exact complete payload, same UID/kind, and a usable strong ETag while source GET proves absence; missing verification, missing tag, and drift map to the frozen committed outcomes.
+- Evidence status: `CalendarResourceMoveServiceTests` covers exact fidelity, destination/source observations, committed-but-unverified, committed-but-concurrency-unavailable, and fidelity failure; the native-stdio Radicale move target proves authoritative destination readback and source absence.
 
 ## CAL-RESOURCE-012
 
@@ -273,8 +273,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/resource/cal-resource-012`.
 - Objective oracle: Given source `s.ics`, destination `d.ics`, collision and successful MOVE responses, when move runs, then collision never overwrites; success preserves UID/bytes, verifies destination GET and source 404, and request trace contains MOVE rather than copy PUT plus DELETE.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented for Event and To-do Semantic Move. The service selects only a different compatible authorized Calendar, preflights both generated href and destination UID collisions, dispatches exactly one same-origin `MOVE` with `If-Match`, `Destination`, and `Overwrite: F`, never emits PUT/DELETE fallback traffic, then verifies destination bytes/UID/kind and source absence.
+- Evidence status: `CalendarResourceMoveServiceTests` covers source/destination selection, capability, UID/href collisions, concurrency, fidelity, and mutation truth; `CalendarResourceMoveProtocolTests` covers exact HTTP wire behavior, status mapping, redirects, and one attempt; `CalendarResourceMoveToolsTests`, raw duplicate-input stdio, and `CalendarMcpStdioIntegrationTests.CalendarResourceMove_AtomicallyMovesReviewedTodoAcrossRadicaleCalendars` cover the frozen MCP and digest-pinned Radicale path.
 
 ## CAL-RESOURCE-013
 
@@ -429,8 +429,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/dav/cal-dav-006`.
 - Objective oracle: Given same-origin 301/302/307/308, same-origin mutation 307/308, a 303, and cross-origin redirects, when requests run, then reads preserve method/body only on same-origin 301/302/307/308; mutations follow only 307/308; 303 is rejected; cross-origin sends no implicit credentials unless authorized.
-- Implementation status: the mutation half is implemented for conditional patch PUT: only canonical same-origin 307/308 redirects are followed, method/body/If-Match are preserved for at most three hops, and 301/302/303/cross-origin/invalid locations fail closed. Remaining read behavior keeps its existing status.
-- Evidence status: `CalendarResourceUpdateProtocolTests` covers each allowed and forbidden redirect class, the exact ceiling, preserved request bytes/precondition, and zero cross-origin credential forwarding and passes locally.
+- Implementation status: the mutation half is implemented for conditional patch PUT and atomic MOVE: only canonical same-origin 307/308 redirects are followed, method/body/preconditions plus MOVE Destination/Overwrite are preserved for at most three hops, and 301/302/303/cross-origin/invalid or destination-aliasing locations fail closed. Remaining read behavior keeps its existing status.
+- Evidence status: `CalendarResourceUpdateProtocolTests` and `CalendarResourceMoveProtocolTests` cover each allowed and forbidden redirect class, preserved request metadata, and zero cross-origin forwarding.
 
 ## CAL-EVENT-001
 
@@ -669,8 +669,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-002`; committed issue #40 targets: `CalDavHostBuilderTests.CreateBuilder_DefaultMode_RegistersCalendarDiscoveryAlongsideChatSafeLegacyTools` and `BuildHost_DefaultMode_ListsToolsInCanonicalWireOrder`.
 - Objective oracle: Given tools/list, when catalog is emitted, then the 16 default names exactly equal the committed discovery order and no exact tool appears without opt-in.
-- Implementation status: the `calendar_occurrences.query`, `events.patch`, `todos.patch`, and `todos.complete` catalog positions and default exposure are implemented; remaining semantic tools retain their owning-ticket status.
-- Evidence status: focused host discovery/order, completion, and strict patch-schema targets pass locally and are included in the CI test run.
+- Implementation status: the catalog position and default exposure are implemented through `calendar_resources.move`; remaining semantic tools retain their owning-ticket status.
+- Evidence status: `CalDavHostBuilderTests` and native stdio discovery assert the canonical order with move immediately before delete.
 
 ## CAL-MCP-003
 
@@ -693,8 +693,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-004`; committed issue #40 targets: `CalendarOccurrenceToolsTests.QueryRawAsync_AcceptsExactFrozenShapeWithoutEntityKindsAndDefaultsAbsentPageSize`, `QueryRawAsync_RejectsMissingNullAndUnknownFrozenShape`, `QueryAsync_EmitsExactOccurrenceShapeAndPaginatesByFrozenContinuationTuple`, and `CalendarMcpRawStdioTests.CalendarOccurrenceQuery_RootDuplicateArgumentsReturnTypedInvalidInputBeforeNetwork`.
 - Objective oracle: Given valid closed input, unknown sibling, duplicate JSON member, and typed failure, when tool validates, then valid authoritative structuredContent matches output schema with concise compatible text content, invalid values return schema-valid invalid_input, and parser rejects duplicate/unknown members.
-- Implementation status: implemented for `calendar_occurrences.query`, `events.patch`, `todos.patch`, and `todos.complete`, including closed discriminated inputs, duplicate/unknown rejection, exact field-specific typed unions, schema-valid structured results, and bounded compatible text. Completion accepts only the revision snapshot plus an optional original Recurrence Identity; caller timestamps and broad scopes are unknown properties and fail before service invocation. Later tools remain planned.
-- Evidence status: focused MCP parser/tools, catalog closure, `CalendarOccurrenceMutationToolsTests`, and `CalendarMcpRawStdioTests.TodoCompletion_RejectsCallerTimeAndBroadScopesOverRawStdio` pass locally and are included in the CI test run.
+- Implementation status: implemented through `calendar_resources.move`, whose closed input accepts one revision plus only default or selected Calendar destination, rejects explicit destination href and unknown/duplicate members, and emits the frozen snapshot-mutation outcome with bounded compatible text.
+- Evidence status: `CalendarResourceMoveToolsTests`, `CalDavHostBuilderTests.BuildHost_AdvertisesFrozenRevisionBoundSemanticMoveContract`, and `CalendarMcpRawStdioTests.CalendarResourceMove_RootDuplicateDestinationReturnsTypedInvalidInputBeforeNetwork` cover the move contract.
 
 ## CAL-MCP-005
 
@@ -705,8 +705,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-005`; committed issue #40 target: `CalendarOccurrenceToolsTests.QueryAsync_CursorIsNonceRandomTamperEvidentBoundToQueryCredentialsExpiryAndProcessKey` exercises default, selected, and all scope binding through the occurrence query cursor.
 - Objective oracle: Given by-name, by-href, default, selected, all scope, and a stale revision, when resolution/mutation runs, then exactly one selector branch is accepted, all is explicit, and mutation refetches expected href/UID/kind/ETag before write.
-- Implementation status: the read-only Calendar Scope path is implemented for occurrence queries; Event patch, To-do patch, and To-do Completion additionally require the complete direct revision reference and refetch href/UID/kind/ETag before write.
-- Evidence status: focused occurrence-query scope plus issue #43 and #48 direct-revision, mismatch, and conflict targets pass locally and are included in the CI test run.
+- Implementation status: the read-only Calendar Scope path is implemented for occurrence queries; Event patch, To-do patch, To-do Completion, and Semantic Move require the complete direct revision reference and refetch href/UID/kind/ETag before write. Move accepts default or exactly one by-name/by-href destination Calendar and never falls back after explicit selection failure.
+- Evidence status: move selector, scope, ambiguity, capability, and revision cases are covered by `CalendarResourceMoveServiceTests` and `CalendarResourceMoveToolsTests` alongside the existing query/patch/completion suites.
 
 ## CAL-MCP-006
 
@@ -741,8 +741,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-008`; committed issue #40 targets: `CalendarOccurrenceToolsTests.QueryAsync_MapsEveryDomainFailure`, `QueryAsync_PreservesDiscoveryPhaseForDiscovery404`, `QueryAsync_MalformedDiscoveryRetainsSelectionDiscoveryPhase`, and `CalendarMcpRawStdioTests.CalendarOccurrenceQuery_NormalRawCallReachesServiceAndReturnsTypedExecutionFailure`.
 - Objective oracle: Given invalid input, conflict, limit, upstream, unexpected exception, no_change, declined confirmation, invalid JSON, unknown method/tool, incompatible version and transport auth failure, when requests run, then tool failures use isError/schema-valid safe fields, protocol cases use their protocol/HTTP channel, and no_change/decline use isError false.
-- Implementation status: implemented for occurrence query, Event and To-do patch, and To-do Completion failures: invalid input, conflict, concurrency/fidelity/limit/upstream outcomes remain schema-valid and redacted; unexpected failures are sanitized; `no_change` and confirmation decline remain successful MCP results. Other mutation tools retain their owning-ticket status.
-- Evidence status: focused MCP unit and native raw-stdio targets cover the patch and completion status/reconciliation matrices, unexpected exceptions, no-change, decline, legacy caller timestamps, and invalid broad scopes and pass locally.
+- Implementation status: implemented for occurrence query, Event and To-do patch, To-do Completion, and Semantic Move failures. Move maps selection, capability, collision, concurrency, fidelity, committed-but-unverified, and indeterminate states to schema-valid redacted outcomes; unexpected failures conservatively report unknown Mutation State.
+- Evidence status: `CalendarResourceMoveToolsTests.MoveRawAsync_MapsTruthfulFrozenErrorOutcome` and `MoveRawAsync_UnexpectedServiceFailureIsIndeterminateAndRedacted` cover the move mapping alongside native stdio success/error paths.
 
 ## CAL-MCP-009
 
@@ -765,8 +765,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-010`.
 - Objective oracle: Given declined, expired, mismatched arguments, changed ETag, invalid owner, direct semantic create, scalar single-resource patch, one-occurrence mutation and todo completion, when called, then first five have no write and typed confirmation failure; the four direct operations execute without MRTR.
-- Implementation status: implemented for Event and To-do patch, including one-occurrence, and To-do Completion: decline, expiry, ownership/argument/revision mismatch write nothing; scalar and unambiguous addRemove edits execute directly for master or one existing occurrence, destructive replaceAll alone requires MRTR, and explicit non-recurring or one-occurrence completion executes directly. Other direct operations retain their owning-ticket status.
-- Evidence status: focused MRTR continuation tests prove exact zero-write rejection and direct-versus-review routing; `CalendarEntityPatchToolsTests.PatchEventRawAsync_ParsesOneOccurrenceIdentityAndExecutesDirectly`, `CalendarOccurrenceMutationToolsTests.CompleteTodoRawAsync_UsesFrozenRevisionWithoutCallerCompletionTime`, and the native-stdio Radicale occurrence and completion targets prove the direct paths.
+- Implementation status: implemented for Event and To-do patch, including one-occurrence, To-do Completion, and Semantic Move. Move is a direct single-resource operation without MRTR and remains revision-bound, collision-safe, and no-overwrite.
+- Evidence status: `CalendarResourceMoveToolsTests` proves direct invocation, while service/protocol tests prove all pre-dispatch failures write nothing and one MOVE is the only mutation attempt.
 
 ## CAL-MCP-011
 
@@ -777,8 +777,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-011`.
 - Objective oracle: Given a request attempting two hrefs or a search-then-delete payload, when schema/service validates, then it returns invalid_input before network and trace has at most one resource mutation.
-- Implementation status: implemented for `events.patch` and `todos.patch`: the closed request contains one canonical resource revision and the shared one-mutation admission coordinator permits at most one resource PUT per call; no bulk/search-then-mutate form is exposed.
-- Evidence status: issue #43 strict schema, admission, and atomic multi-operation tests pass locally; the global four-operation/progress policy remains explicitly assigned to issue #53.
+- Implementation status: implemented for `events.patch`, `todos.patch`, and `calendar_resources.move`: the closed move request contains one canonical resource revision and one destination Calendar, the shared mutation admission coordinator applies, and the service can dispatch at most one MOVE with no copy/delete sequence.
+- Evidence status: strict move schema, mutation admission, one-attempt protocol, and no-PUT/no-DELETE service assertions cover the single-resource guarantee; the global four-operation/progress policy remains explicitly assigned to issue #53.
 
 ## CAL-MCP-012
 
@@ -789,8 +789,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-012`; committed issue #40 target: `CalDavHostBuilderTests.BuildHost_AdvertisesFrozenOccurrenceQuerySchemasAndPrivateCacheHint`.
 - Objective oracle: Given list/query/snapshot/mutation calls, when annotations/cache inspected, then ttlMs are 30000/5000/0, cacheScope private, no list-change notification is advertised, and all annotation booleans match external CalDAV behavior.
-- Implementation status: the private five-second cache hint and frozen annotations are implemented for `calendar_occurrences.query`; later catalog entries remain planned by their owning tickets.
-- Evidence status: focused host metadata target passes locally and is included in the CI test run.
+- Implementation status: the private cache hints and frozen annotations are implemented through `calendar_resources.move`; move advertises zero-second private caching and mutating/destructive/non-idempotent/open-world behavior.
+- Evidence status: `CalDavHostBuilderTests.BuildHost_AdvertisesFrozenRevisionBoundSemanticMoveContract` covers the move schema, cache, and annotations.
 
 ## CAL-MCP-013
 
@@ -849,8 +849,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/bound/cal-bound-004`; committed issue #40 targets: `CalendarOccurrenceToolsTests.QueryRawAsync_EnforcesExactArgumentByteBoundary`, `QueryAsync_RejectsSingleOccurrenceThatCannotFitStructuredBudget`, and `QueryAsync_RejectsHumanAndDiagnosticContentBeyondShared64KiBBudget`.
 - Objective oracle: Given UTF-8 JSON at 256KiB±1, resource/exact payload/page at 4MiB±1, text/diagnostics at 64KiB±1, and compressed body expanding over limit, when streamed, then limit-plus-one rejects with payload_too_large and no partial serialization.
-- Implementation status: occurrence query and Event/To-do patch implement the 256 KiB argument and 4 MiB structured-result budgets; patch MRTR additionally applies the exact 64 KiB final UTF-8 human-readable preview boundary before review/elicitation, with no partial result.
-- Evidence status: focused MCP exact and plus-one boundary targets, including patch preview at 64 KiB and 64 KiB plus one, pass locally and are included in the CI test run.
+- Implementation status: occurrence query, Event/To-do patch, and Semantic Move implement the 256 KiB argument and 4 MiB resource/result budgets; patch MRTR additionally applies the exact 64 KiB final UTF-8 human-readable preview boundary before review/elicitation, with no partial result.
+- Evidence status: focused MCP exact and plus-one boundary targets include `CalendarMcpRawStdioTests.CalendarResourceMove_EnforcesExact256KiBArgumentBoundary`; patch preview retains its 64 KiB and plus-one evidence.
 
 ## CAL-BOUND-005
 
@@ -861,8 +861,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/bound/cal-bound-005`; committed issue #40 target: `CalendarOccurrenceToolsTests.QueryAsync_FinalDeadlineReturnsLimitErrorWithoutSuccessItems`.
 - Objective oracle: Given reads with transient failures, mutations before/after dispatch, and fake clock at 10/30/60 seconds, when retries execute, then reads make at most three attempts, mutations no blind retries, and timeout code/phase reflects attempt, operation, or reconciliation bound.
-- Implementation status: the occurrence-query read deadline and Event/To-do patch bounds are implemented: patch validation/refetch must dispatch within 30 seconds, PUT is attempted once without retry, and possible dispatch receives bounded reconciliation within the mutation total; generated-UID create remains outside this slice.
-- Evidence status: focused fake-time patch pre-dispatch, MRTR preview, direct-call, HTTP no-retry, and reconciliation targets pass locally and are included in the CI test run.
+- Implementation status: the occurrence-query read deadline plus Event/To-do patch and Semantic Move bounds are implemented: move validation/refetch/UID preflight must dispatch within 30 seconds, MOVE is attempted once without retry, and possible dispatch receives an independent bounded reconciliation within the 60-second tool total; generated-UID create remains outside this slice.
+- Evidence status: `MoveResourceAsync_PreDispatchWorkStopsAtThirtySecondsWithoutDispatch`, protocol one-attempt cases, and possibly-dispatched reconciliation tests join the existing fake-time patch targets.
 
 ## CAL-BOUND-006
 
@@ -873,8 +873,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/bound/cal-bound-006`.
 - Objective oracle: Given five concurrent origin operations, two mutations, queue positions 1..17, and progress clock 499/500ms, when admitted, then max four/one run, seventeenth is busy after two seconds, and progress is <=4/s aggregate with no href/name/content.
-- Implementation status: implemented only for the #43 mutation portion by reusing the shared per-origin one-mutation FIFO coordinator, including bounded queue admission; the global maximum four operations and progress notification policy remain assigned to issue #53 and are not claimed here.
-- Evidence status: focused patch admission tests prove one active mutation, FIFO handoff, busy rejection, and waiter cancellation without a write and pass locally.
+- Implementation status: implemented for patch and Semantic Move by reusing the shared per-origin one-mutation FIFO coordinator, including bounded queue admission; the global maximum four operations and progress notification policy remain assigned to issue #53 and are not claimed here.
+- Evidence status: focused shared admission tests plus `StrictToolInputGuardTests` prove move admission routing, argument precedence, FIFO/busy behavior, and no write on rejection.
 
 ## CAL-BOUND-007
 
@@ -885,8 +885,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/bound/cal-bound-007`; committed issue #40 target: `CalendarOccurrenceToolsTests.QueryAsync_CallerCancellationPropagatesWithoutReturningAResult`.
 - Objective oracle: Given cancelled read, cancelled pre-dispatch mutation, and cancelled post-dispatch mutation, when tokens fire, then first two stop promptly with zero/one dispatch respectively and post-dispatch continues bounded reconciliation to truthful mutationState.
-- Implementation status: prompt caller cancellation is implemented for occurrence reads and pre-dispatch Event/To-do patch; once PUT may have dispatched, patch ignores caller cancellation only for bounded authoritative reconciliation and returns truthful Mutation State.
-- Evidence status: focused patch targets cover cancellation before service execution, before PUT, and after possible dispatch with one PUT/no blind retry and pass locally.
+- Implementation status: prompt caller cancellation is implemented for occurrence reads and pre-dispatch Event/To-do patch and Semantic Move; once MOVE may have dispatched, move ignores caller cancellation only for bounded destination/source reconciliation and returns truthful Mutation State.
+- Evidence status: move protocol and service tests cover cancellation/transport ambiguity with one MOVE, independent bounded reconciliation, and no blind retry alongside the existing patch targets.
 
 ## CAL-BOUND-008
 
@@ -909,8 +909,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/error/cal-error-001`.
 - Objective oracle: Given each typed failure plus 33 violations, retry delay, candidates and conflict snapshot, when serialized, then required code/category/message/retryable/phase exist, optional fields cap at 32, and raw values/content/credentials/cursors/stack traces are absent.
-- Implementation status: implemented for Event and To-do patch outcomes and MRTR: typed results contain only frozen safe fields; parser, preview, service, transport, and unexpected-exception paths redact arguments, content, credentials, ETags/requestState, bodies, and stack traces.
-- Evidence status: focused patch error/preview tests inject sensitive markers into rejected input and exceptions and assert they are absent from structured and human-readable output; native stdio evidence is included in the integration run.
+- Implementation status: implemented for Event and To-do patch, MRTR, and Semantic Move: typed results contain only frozen safe fields; move parser/service/transport and unexpected-exception paths redact arguments, content, credentials, HTTP bodies, and stack traces.
+- Evidence status: `CalendarResourceMoveToolsTests.MoveRawAsync_UnexpectedServiceFailureIsIndeterminateAndRedacted`, raw duplicate input, and native stdio assert safe structured/text/stderr behavior alongside patch evidence.
 
 ## CAL-ERROR-002
 
@@ -921,8 +921,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/error/cal-error-002`.
 - Objective oracle: Given one fixture per closed error code plus no_change, confirmation_declined and input_required, when emitted, then code enum is exact, the first two are non-error mutation results, and input_required is outer protocol result not error code.
-- Implementation status: implemented for the patch-reachable closed outcomes, including invalid input/calendar data, scope/kind/opaque/concurrency/conflict/limits/upstream/fidelity/verification/indeterminate, plus non-error `no_change`, confirmation decline, and outer MRTR `input_required`; catalog-wide codes for other tools retain their ticket status.
-- Evidence status: `CalendarEntityPatchMatrixTests`, `CalendarResourceUpdateProtocolTests`, and `CalendarEntityPatchToolsTests` cover the reachable patch status and protocol-result matrix and pass locally.
+- Implementation status: implemented for patch- and move-reachable closed outcomes, including move ambiguity, destination conflict, scope/kind/opaque/concurrency/conflict/limits/upstream/fidelity/verification/indeterminate, plus existing non-error and MRTR outcomes; catalog-wide codes for other tools retain their ticket status.
+- Evidence status: `CalendarResourceMoveServiceTests`, `CalendarResourceMoveProtocolTests`, and `CalendarResourceMoveToolsTests.MoveRawAsync_MapsTruthfulFrozenErrorOutcome` join the existing patch status matrix.
 
 ## CAL-ERROR-003
 
@@ -933,8 +933,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/error/cal-error-003`.
 - Objective oracle: Given statuses 401,403,404 direct/discovery,409,412,413,429,405,501,507, malformed success and exhausted 5xx/timeout, when mapped, then each exact code/retryable value follows table and no response body appears in diagnostics.
-- Implementation status: deterministic HTTP mapping is implemented for patch PUT and refetch, including 401/403/404/409/412/413/429/405/501/507, malformed success, 5xx, timeout, and transport ambiguity, without exposing response bodies.
-- Evidence status: `CalendarResourceUpdateProtocolTests` and Core reconciliation targets cover the patch HTTP/status matrix, retryability/mutation-state truth, and exactly one PUT and pass locally.
+- Implementation status: deterministic HTTP mapping is implemented for patch PUT and atomic MOVE/refetch, including 401/403/404, generic 409/412 conflict reconciliation, bounded CalDAV `no-uid-conflict` destination-collision recognition, 413/429/405/501/507, invalid success, 5xx, timeout, and transport ambiguity, without exposing response bodies.
+- Evidence status: `CalendarResourceMoveProtocolTests.MoveAsync_MapsHttpOutcome` and Core move reconciliation cover retryability, exact Mutation State, and exactly one MOVE alongside the patch matrix.
 
 ## CAL-SEC-001
 
@@ -945,8 +945,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/sec/cal-sec-001`.
 - Objective oracle: Given absolute hrefs with userinfo, fragment, foreign origin, configured origin and authorized redirect origin, when validated, then invalid inputs make zero DNS/HTTP calls and valid origin request never derives a host from href text.
-- Implementation status: implemented for Event and To-do patch: canonical absolute same-origin href validation occurs before network; fragments, userinfo, foreign origins, and unsafe redirect locations are rejected, and requests use the configured client origin.
-- Evidence status: strict parser/Core preflight and update-protocol redirect targets assert zero network on invalid hrefs and pass locally.
+- Implementation status: implemented for Event and To-do patch and Semantic Move: canonical absolute same-origin source/destination validation and exact configured Calendar Scope occur before resource access; fragments, userinfo, encoded traversal/separators, foreign origins, unsafe discovery hrefs, and unsafe redirects are rejected, and requests use the configured client origin.
+- Evidence status: move Core preflight and protocol redirect targets assert zero resource access on invalid/out-of-scope hrefs, no cross-origin dispatch, and preserved configured-origin authority alongside patch evidence.
 
 ## CAL-SEC-002
 

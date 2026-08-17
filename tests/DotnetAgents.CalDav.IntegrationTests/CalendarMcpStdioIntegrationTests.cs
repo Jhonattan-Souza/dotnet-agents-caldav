@@ -65,6 +65,7 @@ public sealed class CalendarMcpStdioIntegrationTests
             "calendar_occurrences.restore_exclusion",
             "calendar_occurrences.cancel",
             "calendar_occurrences.restore_cancellation",
+            "calendar_resources.move",
             "calendar_resources.delete",
             "list_task_lists",
             "show_tasks",
@@ -818,6 +819,63 @@ public sealed class CalendarMcpStdioIntegrationTests
     }
 
     [Fact]
+    public async Task CalendarResourceMove_AtomicallyMovesReviewedTodoAcrossRadicaleCalendars()
+    {
+        const string uid = "stdio-move-1";
+        const string content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Integration//EN\r\n"
+            + "BEGIN:VTODO\r\nUID:stdio-move-1\r\nDTSTAMP:20260815T120000Z\r\n"
+            + "SUMMARY:Reviewed move\r\nX-KEEP;P=One,one:opaque\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+        var sourceHref = await PutResourceAsync("stdio-move-1.ics", content);
+        var source = await GetResourceAsync(sourceHref);
+        var stderr = new ConcurrentQueue<string>();
+        var authorizedCalendars = string.Join(',',
+            $"{_fixture.BaseUrl}{_fixture.TaskListHref}",
+            $"{_fixture.BaseUrl}{_fixture.ShoppingListHref}");
+        await using var client = await CreateClientAsync(
+            stderr,
+            exposeExact: false,
+            calendarHrefs: authorizedCalendars);
+
+        var result = await client.CallToolAsync(
+            "calendar_resources.move",
+            new Dictionary<string, object?>
+            {
+                ["revision"] = new Dictionary<string, object?>
+                {
+                    ["href"] = sourceHref,
+                    ["entityUid"] = uid,
+                    ["entityKind"] = "todo",
+                    ["entityTag"] = source.EntityTag
+                },
+                ["destination"] = new Dictionary<string, object?>
+                {
+                    ["mode"] = "selected",
+                    ["calendar"] = new Dictionary<string, object?>
+                    {
+                        ["by"] = "href",
+                        ["href"] = $"{_fixture.BaseUrl}{_fixture.ShoppingListHref}"
+                    }
+                }
+            },
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        result.IsError.ShouldBe(false, result.StructuredContent?.ToString());
+        var structured = result.StructuredContent!.Value;
+        structured.GetProperty("outcome").GetString().ShouldBe("success");
+        structured.GetProperty("mutationState").GetString().ShouldBe("committed");
+        var revision = structured.GetProperty("snapshot").GetProperty("resourceRevision");
+        var destinationHref = revision.GetProperty("href").GetString().ShouldNotBeNull();
+        destinationHref.ShouldStartWith($"{_fixture.BaseUrl}{_fixture.ShoppingListHref}");
+        var projection = structured.GetProperty("snapshot").GetProperty("projection");
+        projection.GetProperty("uid").GetString().ShouldBe(uid);
+        projection.GetProperty("kind").GetString().ShouldBe("todo");
+        (await GetStatusAsync(sourceHref)).ShouldBe(HttpStatusCode.NotFound);
+        (await GetResourceAsync(destinationHref)).Utf8.ShouldBe(source.Utf8);
+        stderr.ShouldBeEmpty();
+        await DeleteResourceAsync(destinationHref);
+    }
+
+    [Fact]
     public async Task CalendarResourceDelete_ConfirmedMrtrDeletesOneReviewedResourceOverStdio()
     {
         const string content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Integration//EN\r\nBEGIN:VTODO\r\nUID:stdio-delete-1\r\nDTSTAMP:20260815T120000Z\r\nSUMMARY:Reviewed delete\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
@@ -961,6 +1019,7 @@ public sealed class CalendarMcpStdioIntegrationTests
             "calendar_occurrences.restore_exclusion",
             "calendar_occurrences.cancel",
             "calendar_occurrences.restore_cancellation",
+            "calendar_resources.move",
             "calendar_resources.delete",
             "calendar_resources.exact_get",
             "list_task_lists",

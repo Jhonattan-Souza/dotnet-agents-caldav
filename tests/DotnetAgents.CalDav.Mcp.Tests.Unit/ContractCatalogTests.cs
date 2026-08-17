@@ -285,7 +285,10 @@ public sealed class ContractCatalogTests
         completionEvidence.ShouldNotContain("Implementation status: planned");
         var moveEvidence = catalog.Split("## CAL-RESOURCE-012", StringSplitOptions.None)[1]
             .Split("## CAL-RESOURCE-013", StringSplitOptions.None)[0];
-        moveEvidence.ShouldContain("Implementation status: planned");
+        moveEvidence.ShouldContain("Implementation status: implemented for Event and To-do Semantic Move");
+        moveEvidence.ShouldContain("CalendarResourceMoveProtocolTests");
+        moveEvidence.ShouldContain("CalendarResourceMoveToolsTests");
+        moveEvidence.ShouldContain("CalendarMcpStdioIntegrationTests.CalendarResourceMove_AtomicallyMovesReviewedTodoAcrossRadicaleCalendars");
         moveEvidence.ShouldNotContain("CompleteTodoAsync");
         catalog.ShouldContain(
             "CalendarMcpRawStdioTests.TodoCompletion_RejectsCallerTimeAndBroadScopesOverRawStdio");
