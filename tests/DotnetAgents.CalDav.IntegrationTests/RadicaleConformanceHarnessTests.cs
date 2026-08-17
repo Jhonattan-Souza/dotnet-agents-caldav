@@ -216,6 +216,230 @@ public sealed class RadicaleConformanceHarnessTests(RadicaleConformanceFixture f
     }
 
     [Fact]
+    public async Task Pinned_profile_creates_recurring_event_and_todo_with_dst_exclusions_and_complete_overrides()
+    {
+        var calendarHref = $"{fixture.BaseUrl}/conformance/conformance/";
+        var requestTrace = new ConcurrentQueue<string>();
+        await using var provider = CreateProvider(fixture.BaseUrl, calendarHref, requestTrace);
+        var service = provider.GetRequiredService<ICalendarService>();
+        var destination = CalendarCreateDestination.Selected(new CalendarReference(Href: calendarHref));
+        var eventStart = Zoned("2026-03-07T09:00:00", "America/New_York");
+        var eventOverrideIdentity = Zoned("2026-03-08T09:00:00", "America/New_York");
+        var eventRequest = new CalendarEventCreateRequest(
+            destination,
+            "pinned-recurring-event",
+            new CalendarEventCreateFields(
+                Summary: "Pinned DST series",
+                Start: eventStart,
+                End: Zoned("2026-03-07T10:00:00", "America/New_York"),
+                RecurrenceSet: new CalendarEventRecurrenceSetCreate(
+                    Rule: "FREQ=DAILY;COUNT=4",
+                    RecurrenceDates:
+                    [
+                        new CalendarRecurrenceDateCreate(Value: Zoned(
+                            "2026-03-11T09:00:00",
+                            "America/New_York"))
+                    ],
+                    ExceptionDates: [Zoned("2026-03-09T09:00:00", "America/New_York")],
+                    Overrides:
+                    [
+                        new CalendarEventRecurrenceOverrideCreate(
+                            eventOverrideIdentity,
+                            CalendarRecurrenceOverrideStatus.Active,
+                            new CalendarEventCreateFields(
+                                Summary: "Paris override",
+                                Start: Zoned("2026-03-08T15:00:00", "Europe/Paris"),
+                                End: Zoned("2026-03-08T16:00:00", "Europe/Paris")))
+                    ])));
+        var todoRequest = new CalendarTodoCreateRequest(
+            destination,
+            "pinned-recurring-todo",
+            new CalendarTodoCreateFields(
+                Summary: "Pinned RDATE-only todo",
+                Start: new CalendarTemporalValue(CalendarTemporalKind.Date, "2026-08-17"),
+                Due: new CalendarTemporalValue(CalendarTemporalKind.Date, "2026-08-18"),
+                RecurrenceSet: new CalendarTodoRecurrenceSetCreate(
+                    RecurrenceDates:
+                    [
+                        new CalendarRecurrenceDateCreate(Value: new CalendarTemporalValue(
+                            CalendarTemporalKind.Date,
+                            "2026-08-24"))
+                    ],
+                    ExceptionDates: [new CalendarTemporalValue(CalendarTemporalKind.Date, "2026-08-31")],
+                    Overrides:
+                    [
+                        new CalendarTodoRecurrenceOverrideCreate(
+                            new CalendarTemporalValue(CalendarTemporalKind.Date, "2026-08-24"),
+                            CalendarRecurrenceOverrideStatus.Cancelled,
+                            new CalendarTodoCreateFields(
+                                Summary: "Cancelled review",
+                                Start: new CalendarTemporalValue(CalendarTemporalKind.Date, "2026-08-24"),
+                                Due: new CalendarTemporalValue(CalendarTemporalKind.Date, "2026-08-25")))
+                    ])));
+
+        var createdEvent = await service.CreateEventAsync(eventRequest, TestContext.Current.CancellationToken);
+        var createdTodo = await service.CreateTodoAsync(todoRequest, TestContext.Current.CancellationToken);
+
+        createdEvent.Code.ShouldBe(CalendarEntityCreateCode.Success, DescribeCreateResult(createdEvent, requestTrace));
+        createdTodo.Code.ShouldBe(CalendarEntityCreateCode.Success, DescribeCreateResult(createdTodo, requestTrace));
+        var eventHref = AssertAuthoritativeCreate(
+            createdEvent.Snapshot!,
+            calendarHref,
+            "pinned-recurring-event",
+            "VEVENT");
+        var todoHref = AssertAuthoritativeCreate(
+            createdTodo.Snapshot!,
+            calendarHref,
+            "pinned-recurring-todo",
+            "VTODO");
+        var eventContent = System.Text.Encoding.UTF8.GetString(createdEvent.Snapshot!.AuthoritativeUtf8.Span);
+        eventContent.ShouldContain("RRULE:FREQ=DAILY;COUNT=4");
+        eventContent.ShouldContain("RDATE;TZID=America/New_York:20260311T090000");
+        eventContent.ShouldContain("EXDATE;TZID=America/New_York:20260309T090000");
+        eventContent.ShouldContain("RECURRENCE-ID;TZID=America/New_York:20260308T090000");
+        eventContent.Split("BEGIN:VTIMEZONE", StringSplitOptions.None).Length.ShouldBe(3);
+        eventContent.Split("UID:pinned-recurring-event", StringSplitOptions.None).Length.ShouldBe(3);
+        var todoContent = System.Text.Encoding.UTF8.GetString(createdTodo.Snapshot!.AuthoritativeUtf8.Span);
+        todoContent.ShouldNotContain("RRULE:");
+        todoContent.ShouldContain("RDATE;VALUE=DATE:20260824");
+        todoContent.ShouldContain("EXDATE;VALUE=DATE:20260831");
+        todoContent.ShouldContain("RECURRENCE-ID;VALUE=DATE:20260824");
+        todoContent.ShouldContain("STATUS:CANCELLED");
+        todoContent.Split("UID:pinned-recurring-todo", StringSplitOptions.None).Length.ShouldBe(3);
+
+        var putsBeforePeriod = requestTrace.Count(entry => entry.StartsWith("PUT:", StringComparison.Ordinal));
+        var periodResult = await service.CreateEventAsync(
+            new CalendarEventCreateRequest(
+                destination,
+                "pinned-period-event",
+                new CalendarEventCreateFields(
+                    Start: new CalendarTemporalValue(
+                        CalendarTemporalKind.UtcDateTime,
+                        "2026-08-17T13:00:00Z"),
+                    RecurrenceSet: new CalendarEventRecurrenceSetCreate(
+                        RecurrenceDates:
+                        [
+                            new CalendarRecurrenceDateCreate(Period: new CalendarRecurrencePeriodCreate(
+                                new CalendarTemporalValue(
+                                    CalendarTemporalKind.UtcDateTime,
+                                    "2026-08-18T13:00:00Z"),
+                                Duration: "PT1H"))
+                        ]))),
+            TestContext.Current.CancellationToken);
+
+        periodResult.Code.ShouldBe(CalendarEntityCreateCode.UnsupportedCapability);
+        periodResult.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        requestTrace.Count(entry => entry.StartsWith("PUT:", StringComparison.Ordinal)).ShouldBe(putsBeforePeriod);
+
+        var exactBoundary = await service.CreateEventAsync(
+            new CalendarEventCreateRequest(
+                destination,
+                "pinned-rrule-10000",
+                new CalendarEventCreateFields(
+                    Start: new CalendarTemporalValue(
+                        CalendarTemporalKind.UtcDateTime,
+                        "2026-08-17T13:00:00Z"),
+                    RecurrenceSet: new CalendarEventRecurrenceSetCreate(
+                        Rule: "FREQ=DAILY;COUNT=10000"))),
+            TestContext.Current.CancellationToken);
+        exactBoundary.Code.ShouldBe(
+            CalendarEntityCreateCode.Success,
+            DescribeCreateResult(exactBoundary, requestTrace));
+        var exactBoundaryHref = AssertAuthoritativeCreate(
+            exactBoundary.Snapshot!,
+            calendarHref,
+            "pinned-rrule-10000",
+            "VEVENT");
+
+        var putsBeforeOverflow = requestTrace.Count(entry => entry.StartsWith("PUT:", StringComparison.Ordinal));
+        var overflowBoundary = await service.CreateEventAsync(
+            new CalendarEventCreateRequest(
+                destination,
+                "pinned-rrule-10001",
+                new CalendarEventCreateFields(
+                    Start: new CalendarTemporalValue(
+                        CalendarTemporalKind.UtcDateTime,
+                        "2026-08-17T13:00:00Z"),
+                    RecurrenceSet: new CalendarEventRecurrenceSetCreate(
+                        Rule: "FREQ=DAILY;COUNT=10001"))),
+            TestContext.Current.CancellationToken);
+        overflowBoundary.Code.ShouldBe(CalendarEntityCreateCode.RecurrenceUnevaluable);
+        overflowBoundary.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        requestTrace.Count(entry => entry.StartsWith("PUT:", StringComparison.Ordinal)).ShouldBe(putsBeforeOverflow);
+
+        var unboundedZone = await service.CreateEventAsync(
+            new CalendarEventCreateRequest(
+                destination,
+                "pinned-unbounded-zone",
+                new CalendarEventCreateFields(
+                    Start: Zoned("1990-01-15T09:00:00", "America/New_York"),
+                    End: Zoned("1990-01-15T10:00:00", "America/New_York"),
+                    RecurrenceSet: new CalendarEventRecurrenceSetCreate(
+                        Rule: "FREQ=YEARLY",
+                        RecurrenceDates:
+                        [
+                            new CalendarRecurrenceDateCreate(Value: Zoned(
+                                "2090-07-15T09:00:00",
+                                "America/New_York"))
+                        ]))),
+            TestContext.Current.CancellationToken);
+        unboundedZone.Code.ShouldBe(
+            CalendarEntityCreateCode.Success,
+            DescribeCreateResult(unboundedZone, requestTrace));
+        var unboundedZoneHref = AssertAuthoritativeCreate(
+            unboundedZone.Snapshot!,
+            calendarHref,
+            "pinned-unbounded-zone",
+            "VEVENT");
+        var unboundedContent = System.Text.Encoding.UTF8.GetString(unboundedZone.Snapshot!.AuthoritativeUtf8.Span);
+        unboundedContent.ShouldContain("RRULE:FREQ=YEARLY");
+        unboundedContent.ShouldContain("RDATE:9998");
+
+        var durationZone = await service.CreateEventAsync(
+            new CalendarEventCreateRequest(
+                destination,
+                "pinned-duration-zone",
+                new CalendarEventCreateFields(
+                    Start: Zoned("2040-03-10T12:00:00", "America/New_York"),
+                    Duration: "P1D",
+                    RecurrenceSet: new CalendarEventRecurrenceSetCreate(
+                        Rule: "FREQ=DAILY;COUNT=1"))),
+            TestContext.Current.CancellationToken);
+        durationZone.Code.ShouldBe(
+            CalendarEntityCreateCode.Success,
+            DescribeCreateResult(durationZone, requestTrace));
+        var durationZoneHref = AssertAuthoritativeCreate(
+            durationZone.Snapshot!,
+            calendarHref,
+            "pinned-duration-zone",
+            "VEVENT");
+        var durationContent = System.Text.Encoding.UTF8.GetString(durationZone.Snapshot!.AuthoritativeUtf8.Span);
+        durationContent.ShouldContain("DURATION:P1D");
+        durationContent.ShouldContain("20400311T020000");
+
+        await fixture.DeleteResourceHrefAsync(
+            eventHref,
+            createdEvent.Snapshot.EntityTag,
+            TestContext.Current.CancellationToken);
+        await fixture.DeleteResourceHrefAsync(
+            todoHref,
+            createdTodo.Snapshot.EntityTag,
+            TestContext.Current.CancellationToken);
+        await fixture.DeleteResourceHrefAsync(
+            exactBoundaryHref,
+            exactBoundary.Snapshot!.EntityTag,
+            TestContext.Current.CancellationToken);
+        await fixture.DeleteResourceHrefAsync(
+            unboundedZoneHref,
+            unboundedZone.Snapshot.EntityTag,
+            TestContext.Current.CancellationToken);
+        await fixture.DeleteResourceHrefAsync(
+            durationZoneHref,
+            durationZone.Snapshot!.EntityTag,
+            TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
     public async Task Pinned_profile_losslessly_patches_nonrecurring_event_with_exact_strong_revision()
     {
         var calendarHref = $"{fixture.BaseUrl}/conformance/conformance/";
@@ -309,6 +533,9 @@ public sealed class RadicaleConformanceHarnessTests(RadicaleConformanceFixture f
         + "BEGIN:VEVENT\r\nUID:range\r\nDTSTAMP:20260815T120000Z\r\n"
         + "RECURRENCE-ID;RANGE=THISANDFUTURE:20260817T090000Z\r\n"
         + "DTSTART:20260817T130000Z\r\nDURATION:PT2H\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+    private static CalendarTemporalValue Zoned(string value, string timeZoneId) =>
+        new(CalendarTemporalKind.ZonedDateTime, value, timeZoneId);
 
     private static string AssertAuthoritativeCreate(
         CalendarResourceSnapshot snapshot,

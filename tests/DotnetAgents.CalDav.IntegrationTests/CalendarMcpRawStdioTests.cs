@@ -274,6 +274,33 @@ public sealed class CalendarMcpRawStdioTests
     }
 
     [Fact]
+    public async Task EventCreate_DuplicateRruleReturnsTypedInvalidInputBeforeNetwork()
+    {
+        const string request = """
+            {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"events.create","arguments":{"destination":{"mode":"default"},"entity":{"kind":"event","fields":{"start":{"kind":"utcDateTime","value":"2026-08-17T13:00:00Z"},"recurrenceSet":{"rrule":"FREQ=DAILY","rrule":"FREQ=WEEKLY"}}}}}}
+            """;
+
+        var result = await InvokeRawAsync(request);
+
+        AssertTypedError(result, "invalid_input", "schemaLexicalDiscriminator");
+    }
+
+    [Theory]
+    [InlineData("{\"kind\":\"period\",\"start\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-18T13:00:00Z\"}}")]
+    [InlineData("{\"kind\":\"period\",\"start\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-18T13:00:00Z\"},\"end\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-18T14:00:00Z\"},\"duration\":\"PT1H\"}")]
+    public async Task EventCreate_MalformedRdatePeriodReturnsTypedInvalidInputBeforeNetwork(string period)
+    {
+        var request = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{" +
+            "\"name\":\"events.create\",\"arguments\":{\"destination\":{\"mode\":\"default\"}," +
+            "\"entity\":{\"kind\":\"event\",\"fields\":{\"start\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-17T13:00:00Z\"}," +
+            "\"recurrenceSet\":{\"rdates\":[" + period + "]}}}}}}";
+
+        var result = await InvokeRawAsync(request);
+
+        AssertTypedError(result, "invalid_input", "schemaLexicalDiscriminator");
+    }
+
+    [Fact]
     public async Task CalendarOccurrenceQuery_NormalRawCallReachesServiceAndReturnsTypedExecutionFailure()
     {
         const string request = """

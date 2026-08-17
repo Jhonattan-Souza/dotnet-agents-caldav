@@ -285,6 +285,22 @@ public sealed class CalendarMcpStdioIntegrationTests
             stderr,
             exposeExact: false,
             calendarHrefs: $"{eventCalendarHref},{todoCalendarHref}");
+        var tools = await client.ListToolsAsync(new ListToolsRequestParams(), TestContext.Current.CancellationToken);
+        var eventSchema = tools.Tools.Single(tool => tool.Name == "events.create").InputSchema;
+        var todoSchema = tools.Tools.Single(tool => tool.Name == "todos.create").InputSchema;
+        eventSchema.GetProperty("$defs").GetProperty("eventInputFields").GetProperty("properties")
+            .GetProperty("recurrenceSet").GetProperty("$ref").GetString()
+            .ShouldBe("#/$defs/eventRecurrenceSetInput");
+        todoSchema.GetProperty("$defs").GetProperty("todoInputFields").GetProperty("properties")
+            .GetProperty("recurrenceSet").GetProperty("$ref").GetString()
+            .ShouldBe("#/$defs/todoRecurrenceSetInput");
+        var eventOverrideSchema = eventSchema.GetProperty("$defs").GetProperty("eventRecurrenceOverrideInput");
+        eventOverrideSchema.GetProperty("properties").TryGetProperty("entityKind", out _).ShouldBeFalse();
+        eventOverrideSchema.GetProperty("properties").TryGetProperty("uid", out _).ShouldBeFalse();
+        eventOverrideSchema.GetProperty("required").EnumerateArray().Select(item => item.GetString())
+            .ShouldBe(["recurrenceIdentity", "status", "fields"]);
+        eventSchema.GetProperty("$defs").GetProperty("recurrenceDateInput").GetProperty("oneOf")
+            .GetArrayLength().ShouldBe(2);
         var eventDestination = new Dictionary<string, object?>
         {
             ["mode"] = "selected",
@@ -319,6 +335,51 @@ public sealed class CalendarMcpStdioIntegrationTests
                         ["value"] = "2026-08-18T13:00:00Z"
                     },
                     ["duration"] = "PT1H",
+                    ["recurrenceSet"] = new Dictionary<string, object?>
+                    {
+                        ["rrule"] = "FREQ=DAILY;COUNT=2",
+                        ["rdates"] = new object[]
+                        {
+                            new Dictionary<string, object?>
+                            {
+                                ["kind"] = "utcDateTime",
+                                ["value"] = "2026-08-20T13:00:00Z"
+                            }
+                        },
+                        ["exdates"] = new object[]
+                        {
+                            new Dictionary<string, object?>
+                            {
+                                ["kind"] = "utcDateTime",
+                                ["value"] = "2026-08-19T13:00:00Z"
+                            }
+                        },
+                        ["overrides"] = new object[]
+                        {
+                            new Dictionary<string, object?>
+                            {
+                                ["recurrenceIdentity"] = new Dictionary<string, object?>
+                                {
+                                    ["value"] = new Dictionary<string, object?>
+                                    {
+                                        ["kind"] = "utcDateTime",
+                                        ["value"] = "2026-08-20T13:00:00Z"
+                                    }
+                                },
+                                ["status"] = "active",
+                                ["fields"] = new Dictionary<string, object?>
+                                {
+                                    ["summary"] = "Moved stdio event",
+                                    ["start"] = new Dictionary<string, object?>
+                                    {
+                                        ["kind"] = "utcDateTime",
+                                        ["value"] = "2026-08-20T15:00:00Z"
+                                    },
+                                    ["duration"] = "PT1H"
+                                }
+                            }
+                        }
+                    },
                     ["structuredData"] = new Dictionary<string, object?>
                     {
                         ["attachments"] = new[]
@@ -344,10 +405,63 @@ public sealed class CalendarMcpStdioIntegrationTests
                 ["fields"] = new Dictionary<string, object?>
                 {
                     ["summary"] = "Stdio create todo",
+                    ["start"] = new Dictionary<string, object?>
+                    {
+                        ["kind"] = "date",
+                        ["value"] = "2026-08-18"
+                    },
                     ["due"] = new Dictionary<string, object?>
                     {
                         ["kind"] = "date",
                         ["value"] = "2026-08-19"
+                    },
+                    ["recurrenceSet"] = new Dictionary<string, object?>
+                    {
+                        ["rdates"] = new object[]
+                        {
+                            new Dictionary<string, object?>
+                            {
+                                ["kind"] = "date",
+                                ["value"] = "2026-08-25"
+                            }
+                        },
+                        ["exdates"] = new object[]
+                        {
+                            new Dictionary<string, object?>
+                            {
+                                ["kind"] = "date",
+                                ["value"] = "2026-09-01"
+                            }
+                        },
+                        ["overrides"] = new object[]
+                        {
+                            new Dictionary<string, object?>
+                            {
+                                ["recurrenceIdentity"] = new Dictionary<string, object?>
+                                {
+                                    ["value"] = new Dictionary<string, object?>
+                                    {
+                                        ["kind"] = "date",
+                                        ["value"] = "2026-08-25"
+                                    }
+                                },
+                                ["status"] = "cancelled",
+                                ["fields"] = new Dictionary<string, object?>
+                                {
+                                    ["summary"] = "Cancelled stdio todo",
+                                    ["start"] = new Dictionary<string, object?>
+                                    {
+                                        ["kind"] = "date",
+                                        ["value"] = "2026-08-25"
+                                    },
+                                    ["due"] = new Dictionary<string, object?>
+                                    {
+                                        ["kind"] = "date",
+                                        ["value"] = "2026-08-26"
+                                    }
+                                }
+                            }
+                        }
                     },
                     ["structuredData"] = new Dictionary<string, object?>
                     {
@@ -394,8 +508,20 @@ public sealed class CalendarMcpStdioIntegrationTests
         storedEvent.ShouldContain("SUMMARY:Stdio create event");
         storedEvent.ShouldNotContain("Must not overwrite");
         storedEvent.ShouldContain("ATTACH;LABEL=Agenda:https://storage.example.test/stdio-event");
+        storedEvent.ShouldContain("RRULE:FREQ=DAILY;COUNT=2");
+        storedEvent.ShouldContain("RDATE:20260820T130000Z");
+        storedEvent.ShouldContain("EXDATE:20260819T130000Z");
+        storedEvent.ShouldContain("RECURRENCE-ID:20260820T130000Z");
+        storedEvent.ShouldContain("SUMMARY:Moved stdio event");
+        storedEvent.Split("UID:stdio-create-event", StringSplitOptions.None).Length.ShouldBe(3);
         storedTodo.ShouldContain("SUMMARY:Stdio create todo");
         storedTodo.ShouldContain("COMMENT:Stored through stdio");
+        storedTodo.ShouldNotContain("RRULE:");
+        storedTodo.ShouldContain("RDATE;VALUE=DATE:20260825");
+        storedTodo.ShouldContain("EXDATE;VALUE=DATE:20260901");
+        storedTodo.ShouldContain("RECURRENCE-ID;VALUE=DATE:20260825");
+        storedTodo.ShouldContain("STATUS:CANCELLED");
+        storedTodo.Split("UID:stdio-create-todo", StringSplitOptions.None).Length.ShouldBe(3);
         stderr.ShouldBeEmpty();
 
         await DeleteResourceAsync(eventRevision.Href, observedEvent.EntityTag);

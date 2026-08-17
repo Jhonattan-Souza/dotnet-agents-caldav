@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using DotnetAgents.CalDav.Core.Models;
+using Ical.Net.DataTypes;
 
 namespace DotnetAgents.CalDav.Core.Internal.Ical;
 
@@ -18,17 +19,28 @@ internal static class CalendarEntityCreateSerializer
         var content = new StringBuilder()
             .Append("BEGIN:VCALENDAR\r\n")
             .Append("VERSION:2.0\r\n")
-            .Append("PRODID:-//dotnet-agents-caldav//EN\r\n")
-            .Append("BEGIN:VEVENT\r\n")
+            .Append("PRODID:-//dotnet-agents-caldav//EN\r\n");
+        CalendarCreateTimeZoneSerializer.AppendForEvent(content, fields);
+        content.Append("BEGIN:VEVENT\r\n")
             .Append("UID:").Append(EscapeText(uid)).Append("\r\n")
             .Append("DTSTAMP:").Append(timestamp).Append("\r\n")
             .Append("CREATED:").Append(timestamp).Append("\r\n")
             .Append("LAST-MODIFIED:").Append(timestamp).Append("\r\n");
+        AppendEventFields(content, fields);
+        content.Append("END:VEVENT\r\n");
+        AppendEventOverrides(content, uid, fields.RecurrenceSet?.Overrides, timestamp);
+        content.Append("END:VCALENDAR\r\n");
+        return Utf8.GetBytes(content.ToString());
+    }
+
+    private static void AppendEventFields(StringBuilder content, CalendarEventCreateFields fields)
+    {
         AppendText(content, "SUMMARY", fields.Summary);
         AppendText(content, "DESCRIPTION", fields.Description);
         AppendTemporal(content, "DTSTART", fields.Start);
         AppendTemporal(content, "DTEND", fields.End);
         AppendDuration(content, fields.Duration);
+        AppendRecurrence(content, fields.RecurrenceSet);
         AppendText(content, "LOCATION", fields.Location);
         if (fields.Geo is not null)
             content.Append("GEO:").Append(fields.Geo.Latitude.ToString(CultureInfo.InvariantCulture)).Append(';')
@@ -41,9 +53,6 @@ internal static class CalendarEntityCreateSerializer
         AppendUri(content, "URL", fields.Url);
         AppendStructuredData(content, fields.StructuredData);
         AppendCalendarComponents(content, fields.StructuredData);
-        content.Append("END:VEVENT\r\n")
-            .Append("END:VCALENDAR\r\n");
-        return Utf8.GetBytes(content.ToString());
     }
 
     public static byte[] SerializeTodo(
@@ -56,25 +65,94 @@ internal static class CalendarEntityCreateSerializer
         var content = new StringBuilder()
             .Append("BEGIN:VCALENDAR\r\n")
             .Append("VERSION:2.0\r\n")
-            .Append("PRODID:-//dotnet-agents-caldav//EN\r\n")
-            .Append("BEGIN:VTODO\r\n")
+            .Append("PRODID:-//dotnet-agents-caldav//EN\r\n");
+        CalendarCreateTimeZoneSerializer.AppendForTodo(content, fields);
+        content.Append("BEGIN:VTODO\r\n")
             .Append("UID:").Append(EscapeText(uid)).Append("\r\n")
             .Append("DTSTAMP:").Append(timestamp).Append("\r\n")
             .Append("CREATED:").Append(timestamp).Append("\r\n")
             .Append("LAST-MODIFIED:").Append(timestamp).Append("\r\n");
+        AppendTodoFields(content, fields);
+        content.Append("END:VTODO\r\n");
+        AppendTodoOverrides(content, uid, fields.RecurrenceSet?.Overrides, timestamp);
+        content.Append("END:VCALENDAR\r\n");
+        return Utf8.GetBytes(content.ToString());
+    }
+
+    private static void AppendTodoFields(StringBuilder content, CalendarTodoCreateFields fields)
+    {
         AppendText(content, "SUMMARY", fields.Summary);
         AppendText(content, "DESCRIPTION", fields.Description);
         AppendTemporal(content, "DTSTART", fields.Start);
         AppendTemporal(content, "DUE", fields.Due);
         AppendDuration(content, fields.Duration);
+        AppendRecurrence(content, fields.RecurrenceSet);
         AppendToken(content, "STATUS", fields.Status);
         AppendPriority(content, fields.Priority);
         AppendCategories(content, fields.Categories);
         AppendStructuredData(content, fields.StructuredData);
         AppendCalendarComponents(content, fields.StructuredData);
-        content.Append("END:VTODO\r\n")
-            .Append("END:VCALENDAR\r\n");
-        return Utf8.GetBytes(content.ToString());
+    }
+
+    private static void AppendEventOverrides(
+        StringBuilder content,
+        string uid,
+        IReadOnlyList<CalendarEventRecurrenceOverrideCreate>? overrides,
+        string timestamp)
+    {
+        foreach (var recurrenceOverride in overrides ?? [])
+        {
+            content.Append("BEGIN:VEVENT\r\nUID:").Append(EscapeText(uid)).Append("\r\n")
+                .Append("DTSTAMP:").Append(timestamp).Append("\r\n")
+                .Append("CREATED:").Append(timestamp).Append("\r\n")
+                .Append("LAST-MODIFIED:").Append(timestamp).Append("\r\n");
+            AppendRecurrenceIdentity(content, recurrenceOverride.RecurrenceIdentity, recurrenceOverride.Range);
+            AppendEventFields(content, recurrenceOverride.Fields);
+            if (recurrenceOverride.Status == CalendarRecurrenceOverrideStatus.Cancelled
+                && recurrenceOverride.Fields.Status is null)
+            {
+                content.Append("STATUS:CANCELLED\r\n");
+            }
+            content.Append("END:VEVENT\r\n");
+        }
+    }
+
+    private static void AppendTodoOverrides(
+        StringBuilder content,
+        string uid,
+        IReadOnlyList<CalendarTodoRecurrenceOverrideCreate>? overrides,
+        string timestamp)
+    {
+        foreach (var recurrenceOverride in overrides ?? [])
+        {
+            content.Append("BEGIN:VTODO\r\nUID:").Append(EscapeText(uid)).Append("\r\n")
+                .Append("DTSTAMP:").Append(timestamp).Append("\r\n")
+                .Append("CREATED:").Append(timestamp).Append("\r\n")
+                .Append("LAST-MODIFIED:").Append(timestamp).Append("\r\n");
+            AppendRecurrenceIdentity(content, recurrenceOverride.RecurrenceIdentity, recurrenceOverride.Range);
+            AppendTodoFields(content, recurrenceOverride.Fields);
+            if (recurrenceOverride.Status == CalendarRecurrenceOverrideStatus.Cancelled
+                && recurrenceOverride.Fields.Status is null)
+            {
+                content.Append("STATUS:CANCELLED\r\n");
+            }
+            content.Append("END:VTODO\r\n");
+        }
+    }
+
+    private static void AppendRecurrenceIdentity(
+        StringBuilder content,
+        CalendarTemporalValue identity,
+        CalendarRecurrenceOverrideRange? range)
+    {
+        IReadOnlyList<CalendarParameter> parameters = range switch
+        {
+            CalendarRecurrenceOverrideRange.ThisAndPrior => [new CalendarParameter("RANGE", ["THISANDPRIOR"])],
+            CalendarRecurrenceOverrideRange.ThisAndFuture => [new CalendarParameter("RANGE", ["THISANDFUTURE"])],
+            null => [],
+            _ => throw new InvalidOperationException("Unsupported recurrence override range.")
+        };
+        AppendTemporal(content, "RECURRENCE-ID", identity, parameters);
     }
 
     private static void AppendStructuredData(StringBuilder content, CalendarStructuredData? data)
@@ -484,6 +562,52 @@ internal static class CalendarEntityCreateSerializer
         content.Append("DURATION:").Append(duration).Append("\r\n");
     }
 
+    private static void AppendRecurrence(StringBuilder content, CalendarEventRecurrenceSetCreate? recurrence)
+    {
+        if (recurrence is null)
+            return;
+        AppendRecurrenceCore(content, recurrence.Rule, recurrence.RecurrenceDates, recurrence.ExceptionDates);
+    }
+
+    private static void AppendRecurrence(StringBuilder content, CalendarTodoRecurrenceSetCreate? recurrence)
+    {
+        if (recurrence is null)
+            return;
+        AppendRecurrenceCore(content, recurrence.Rule, recurrence.RecurrenceDates, recurrence.ExceptionDates);
+    }
+
+    private static void AppendRecurrenceCore(
+        StringBuilder content,
+        string? rule,
+        IReadOnlyList<CalendarRecurrenceDateCreate>? recurrenceDates,
+        IReadOnlyList<CalendarTemporalValue>? exceptionDates)
+    {
+        if (rule is not null)
+            content.Append("RRULE:").Append(new RecurrencePattern(rule)).Append("\r\n");
+        foreach (var recurrenceDate in recurrenceDates ?? [])
+        {
+            if (recurrenceDate.Value is not null)
+                AppendTemporal(content, "RDATE", recurrenceDate.Value);
+            else
+                AppendRecurrencePeriod(content, recurrenceDate.Period!);
+        }
+        foreach (var exceptionDate in exceptionDates ?? [])
+            AppendTemporal(content, "EXDATE", exceptionDate);
+    }
+
+    private static void AppendRecurrencePeriod(StringBuilder content, CalendarRecurrencePeriodCreate period)
+    {
+        content.Append("RDATE;VALUE=PERIOD");
+        if (period.Start.Kind == CalendarTemporalKind.ZonedDateTime)
+            AppendParameter(content, "TZID", period.Start.TimeZoneId);
+        content.Append(':').Append(EncodeTemporalValue(period.Start)).Append('/');
+        if (period.End is not null)
+            content.Append(EncodeTemporalValue(period.End));
+        else
+            content.Append(period.Duration);
+        content.Append("\r\n");
+    }
+
     private static void AppendText(StringBuilder content, string name, string? value)
     {
         if (value is not null)
@@ -498,14 +622,7 @@ internal static class CalendarEntityCreateSerializer
     {
         if (value is null)
             return;
-        var encoded = value.Kind switch
-        {
-            CalendarTemporalKind.Date => value.Value.Replace("-", string.Empty, StringComparison.Ordinal),
-            CalendarTemporalKind.UtcDateTime => CompactDateTime(value.Value[..^1]) + "Z",
-            CalendarTemporalKind.FloatingDateTime => CompactDateTime(value.Value),
-            CalendarTemporalKind.ZonedDateTime => CompactDateTime(value.Value),
-            _ => throw new InvalidOperationException("Unsupported temporal value.")
-        };
+        var encoded = EncodeTemporalValue(value);
         content.Append(name);
         if (value.Kind == CalendarTemporalKind.Date && !HasParameter(parameters, "VALUE"))
             content.Append(";VALUE=DATE");
@@ -514,6 +631,15 @@ internal static class CalendarEntityCreateSerializer
         AppendParameters(content, parameters ?? []);
         content.Append(':').Append(encoded).Append("\r\n");
     }
+
+    private static string EncodeTemporalValue(CalendarTemporalValue value) => value.Kind switch
+        {
+            CalendarTemporalKind.Date => value.Value.Replace("-", string.Empty, StringComparison.Ordinal),
+            CalendarTemporalKind.UtcDateTime => CompactDateTime(value.Value[..^1]) + "Z",
+            CalendarTemporalKind.FloatingDateTime => CompactDateTime(value.Value),
+            CalendarTemporalKind.ZonedDateTime => CompactDateTime(value.Value),
+            _ => throw new InvalidOperationException("Unsupported temporal value.")
+        };
 
     private static bool HasParameter(IReadOnlyList<CalendarParameter>? parameters, string name) =>
         parameters?.Any(parameter => parameter.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) == true;

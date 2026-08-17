@@ -11,7 +11,7 @@ public sealed record CalendarCreateDestination(
         new(CalendarEntityScopeMode.Selected, calendar);
 }
 
-/// <summary>Typed fields for one complete non-recurring Event.</summary>
+/// <summary>Typed fields for one complete Event master or recurrence override.</summary>
 public sealed record CalendarEventCreateFields(
     string? Summary = null,
     string? Description = null,
@@ -27,7 +27,7 @@ public sealed record CalendarEventCreateFields(
     IReadOnlyList<string>? Categories = null,
     string? Url = null,
     CalendarStructuredData? StructuredData = null,
-    bool RecurrenceSetPresent = false);
+    CalendarEventRecurrenceSetCreate? RecurrenceSet = null);
 
 /// <summary>Semantic creation request for one Event.</summary>
 public sealed record CalendarEventCreateRequest(
@@ -35,7 +35,7 @@ public sealed record CalendarEventCreateRequest(
     string? Uid,
     CalendarEventCreateFields Fields);
 
-/// <summary>Typed fields for one complete non-recurring To-do.</summary>
+/// <summary>Typed fields for one complete To-do master or recurrence override.</summary>
 public sealed record CalendarTodoCreateFields(
     string? Summary = null,
     string? Description = null,
@@ -46,7 +46,60 @@ public sealed record CalendarTodoCreateFields(
     int? Priority = null,
     IReadOnlyList<string>? Categories = null,
     CalendarStructuredData? StructuredData = null,
-    bool RecurrenceSetPresent = false);
+    CalendarTodoRecurrenceSetCreate? RecurrenceSet = null);
+
+/// <summary>One typed recurrence date, including the RFC 5545 PERIOD form.</summary>
+public sealed record CalendarRecurrenceDateCreate(
+    CalendarTemporalValue? Value = null,
+    CalendarRecurrencePeriodCreate? Period = null);
+
+/// <summary>One positive recurrence period with either an explicit end or nominal duration.</summary>
+public sealed record CalendarRecurrencePeriodCreate(
+    CalendarTemporalValue Start,
+    CalendarTemporalValue? End = null,
+    string? Duration = null);
+
+/// <summary>Range carried by one complete recurrence override.</summary>
+public enum CalendarRecurrenceOverrideRange
+{
+    ThisAndPrior,
+    ThisAndFuture
+}
+
+/// <summary>Explicit active or cancelled state for one complete recurrence override.</summary>
+public enum CalendarRecurrenceOverrideStatus
+{
+    Active,
+    Cancelled
+}
+
+/// <summary>One complete Event override. Kind and UID are inherited from the master.</summary>
+public sealed record CalendarEventRecurrenceOverrideCreate(
+    CalendarTemporalValue RecurrenceIdentity,
+    CalendarRecurrenceOverrideStatus Status,
+    CalendarEventCreateFields Fields,
+    CalendarRecurrenceOverrideRange? Range = null);
+
+/// <summary>One complete To-do override. Kind and UID are inherited from the master.</summary>
+public sealed record CalendarTodoRecurrenceOverrideCreate(
+    CalendarTemporalValue RecurrenceIdentity,
+    CalendarRecurrenceOverrideStatus Status,
+    CalendarTodoCreateFields Fields,
+    CalendarRecurrenceOverrideRange? Range = null);
+
+/// <summary>Typed recurrence input for Event creation.</summary>
+public sealed record CalendarEventRecurrenceSetCreate(
+    string? Rule = null,
+    IReadOnlyList<CalendarRecurrenceDateCreate>? RecurrenceDates = null,
+    IReadOnlyList<CalendarTemporalValue>? ExceptionDates = null,
+    IReadOnlyList<CalendarEventRecurrenceOverrideCreate>? Overrides = null);
+
+/// <summary>Typed recurrence input for To-do creation.</summary>
+public sealed record CalendarTodoRecurrenceSetCreate(
+    string? Rule = null,
+    IReadOnlyList<CalendarRecurrenceDateCreate>? RecurrenceDates = null,
+    IReadOnlyList<CalendarTemporalValue>? ExceptionDates = null,
+    IReadOnlyList<CalendarTodoRecurrenceOverrideCreate>? Overrides = null);
 
 /// <summary>Geographic coordinates stored by an iCalendar GEO property.</summary>
 public sealed record CalendarGeo(double Latitude, double Longitude);
@@ -211,6 +264,7 @@ public enum CalendarEntityCreateCode
     Ambiguous,
     OutsideScope,
     UnsupportedCapability,
+    RecurrenceUnevaluable,
     OpaqueResource,
     ConcurrencyUnavailable,
     Conflict,

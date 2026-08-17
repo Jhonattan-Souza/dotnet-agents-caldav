@@ -103,10 +103,10 @@ Every requirement row contains the normative statement, source, interoperability
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
-- Named scenario or fixture: `0.2.0/model/cal-model-005`; committed issue #40 targets: `CalendarServiceTests.QueryOccurrencesAsync_MultipleRrulesAreTypedRecurrenceUnevaluableWithNoPartialItems` and `RadicaleConformanceHarnessTests.Pinned_profile_preserves_occurrence_boundary_dst_leap_range_and_typed_failures`.
+- Named scenario or fixture: `0.2.0/model/cal-model-005`; issue #40 targets `CalendarServiceTests.QueryOccurrencesAsync_MultipleRrulesAreTypedRecurrenceUnevaluableWithNoPartialItems` and `RadicaleConformanceHarnessTests.Pinned_profile_preserves_occurrence_boundary_dst_leap_range_and_typed_failures`; issue #44 targets `CalendarEntityCreateServiceTests.CreateEventAsync_InvalidCompleteCalendarDataFailsBeforeDiscoveryOrPut` and `CalendarMcpRawStdioTests.EventCreate_DuplicateRruleReturnsTypedInvalidInputBeforeNetwork`.
 - Objective oracle: Given DTSTART, two RRULE lines, two RDATEs, one EXDATE, and two overrides, when read, then `rrules` has count 2, `evaluationState=unevaluable`, every RDATE/EXDATE/override remains ordered, and recurrence expansion returns `recurrence_unevaluable`.
-- Implementation status: the occurrence-query slice is implemented: multiple RRULE resources remain projectable but recurrence evaluation fails closed with `recurrence_unevaluable` and zero partial items; semantic creation and mutation remain planned.
-- Evidence status: focused Core evidence passes locally; the digest-pinned Radicale target is committed and remains pending pull-request CI because this machine's Docker path could not complete fixture startup (Resource Reaper timeout, then fixture HTTP timeout when bypassed).
+- Implementation status: multiple RRULE resources remain projectable but recurrence evaluation fails closed with `recurrence_unevaluable` and zero partial items; semantic create admits at most one typed RRULE and rejects duplicate raw properties or injected additional content before PUT. Recurrence mutation remains planned.
+- Evidence status: focused Core and raw-stdio semantic-create evidence passes locally; digest-pinned Radicale recurrence evidence remains part of the integration matrix.
 
 ## CAL-MODEL-006
 
@@ -177,8 +177,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/resource/cal-resource-004`.
 - Objective oracle: Given semantic create payloads for UID `u1`, VTODO, and VEVENT plus exact UTF-8 resource UID `u2`, when destination capability lacks the requested kind or contains multiple masters, then creation returns `unsupported_capability` or `invalid_calendar_data` with zero PUT; valid create sends `If-None-Match: *`.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented for Semantic Create: complete Event and To-do masters plus complete same-kind and same-UID recurrence overrides are validated before any Calendar discovery, omitted UID is generated once per attempt and inherited by every override, destination component support is required after content preflight, and every exact replayable UTF-8 write uses `If-None-Match: *`. Exact Create remains planned.
+- Evidence status: issue #44 targets `CalendarEntityCreateServiceTests.CreateTodoAsync_CreatesRdateOnlySeriesWithExclusionAndCancelledOverride`, `CreateEventAsync_GeneratedUidCollisionUsesOneFreshIdentityWithinTheThreeAttemptBound`, and the pinned-profile recurring-create target; Exact Create evidence remains planned.
 
 ## CAL-RESOURCE-005
 
@@ -189,8 +189,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/resource/cal-resource-005`.
 - Objective oracle: Given generated UID `g1` colliding once and caller UID `u1` colliding once, when create runs, then generated create retries once with a new UID and `If-None-Match:*`; caller create returns `conflict` with UID `u1`, zero identity changes, and verified GET snapshot on success.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented for Semantic Create: generated UID collisions retry within the three-attempt bound, caller UID collisions do not change identity, every attempt uses `If-None-Match: *`, and success is based on authoritative GET readback with fidelity comparison. Exact Create remains planned.
+- Evidence status: issue #44 targets `CalendarEntityCreateServiceTests.CreateEventAsync_GeneratedUidCollisionUsesOneFreshIdentityWithinTheThreeAttemptBound`, existing Event/To-do collision tests, and the pinned-profile recurring-create target.
 
 ## CAL-RESOURCE-006
 
@@ -525,8 +525,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/time/cal-time-001`.
 - Objective oracle: Given date `2026-02-03`, floating `2026-02-03T09:10:11`, UTC `2026-02-03T09:10:11Z`, and zoned `America/New_York`, when serialize/parse runs, then each kind/value/timeZoneId round-trips exactly with no offset normalization.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented for Semantic Create: every closed temporal family is preserved, including complete overrides, and zoned values retain their recognized IANA TZID. Exact Create and the remaining read/mutation surfaces retain their owning-ticket status.
+- Evidence status: issue #44 targets `CalendarEntityCreateServiceTests.CreateEventAsync_EmitsOneSupportingVtimezonePerDistinctIanaZone`, `CalendarCreateTimeZoneSerializerTests.SerializeEvent_EmitsDeterministicZoneThatResolvesPastAndFarFutureDst`, and the pinned-profile bounded/unbounded DST recurring-create target.
 
 ## CAL-TIME-002
 
@@ -549,8 +549,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/time/cal-time-003`; committed issue #40 targets: `CalendarServiceTests.QueryOccurrencesAsync_UnambiguousResourceLocalTimeZonePrecedesIanaDefinition`, `QueryOccurrencesAsync_ResourceLocalRecurringZoneIsEvaluatedWithoutIanaFallback`, `QueryOccurrencesAsync_ExplicitIanaGapUsesPriorOffsetAndOverlapUsesFirstOccurrence`, `QueryOccurrencesAsync_IanaRruleSkipsGapWithoutConsumingCount`, `QueryOccurrencesAsync_ExplicitResourceLocalGapAndOverlapFollowRfc5545`, `QueryOccurrencesAsync_ResourceLocalRruleSkipsGapWithoutConsumingCount`, `QueryOccurrencesAsync_RruleOverlapUsesFirstOccurrenceExactlyOnce`, `QueryOccurrencesAsync_ExdateSuppressedUnknownZoneOverrideDoesNotRequireResolution`, `QueryOccurrencesAsync_CancelledUnknownZoneOverrideDoesNotRequireResolution`, `QueryOccurrencesAsync_ActiveUnknownZoneOverrideRemainsTypedTemporalUnresolved`, `QueryOccurrencesAsync_UnknownNamedZoneIsTypedTemporalUnresolved`, and `QueryOccurrencesAsync_ConflictingResourceLocalZonesAreTypedTemporalUnresolved`.
 - Objective oracle: Given unambiguous resource VTIMEZONE, recognized IANA, explicit and RRULE-generated local values in gaps/overlaps, unknown `Mars/Base`, and conflicting VTIMEZONE, when evaluated, then the resource zone wins before IANA; explicit gap uses the pre-gap offset, overlap uses the first occurrence, generated gap instances are skipped without consuming COUNT, and unknown/conflicting values return temporal_unresolved.
-- Implementation status: the occurrence-query evaluation slice is implemented: one resource-local definition takes precedence, recognized IANA is the fallback, RFC gap/overlap semantics distinguish explicit from generated values, and unknown/conflicting definitions return `temporal_unresolved`; unrelated mutation behavior remains planned.
-- Evidence status: focused Core evidence passes locally; the typed unresolved path is also committed to the real-stdio and digest-pinned Radicale targets.
+- Implementation status: occurrence queries resolve one resource-local definition before recognized IANA and fail unknown/conflicting definitions as `temporal_unresolved`. Semantic Create accepts only unambiguous recognized IANA local values, rejects unknown/gap/overlap input before Calendar discovery, and emits one deterministic supporting VTIMEZONE per distinct TZID. The serializer uses exact NodaTime TZDB intervals: a baseline at the earliest referenced local plus stable STANDARD/DAYLIGHT offset-signature groups with ordered RDATE transitions through the latest bounded effective end, including nominal and accurate DURATION-derived ends and accurately shifted explicit DTEND/DUE for the last generated occurrence, plus complete-override ends, or through 9999-12-31 for an unbounded rule. It does not consult the wall clock; custom/resource-local definitions remain Exact Create territory. Other mutation behavior remains planned.
+- Evidence status: focused Core occurrence evidence and issue #44 `CalendarEntityCreateServiceTests.CreateEventAsync_EmitsOneSupportingVtimezonePerDistinctIanaZone` pass locally; DST create/readback is covered by the pinned-profile target.
 
 ## CAL-TIME-004
 
@@ -578,15 +578,15 @@ Every requirement row contains the normative statement, source, interoperability
 
 ## CAL-RECUR-002
 
-- Normative statement: Build recurrence from DTSTART, one typed RRULE at most, every RDATE, every EXDATE, and overrides; collapse duplicate identities and apply EXDATE precedence. Standards-valid RDATE PERIOD is preserved, but Radicale 3.7.8 writes reject it before PUT.
+- Normative statement: Build recurrence from DTSTART, one typed RRULE at most, every RDATE, every EXDATE, and overrides; collapse duplicate identities and apply EXDATE precedence. The RRULE must generate DTSTART as its first occurrence. Radicale 3.7.8 accepts an exact 10,000-occurrence RRULE but rejects a proven 10,001; unbounded RRULE create remains admitted. Standards-valid RDATE PERIOD is preserved, but Radicale 3.7.8 writes reject it before PUT.
 - Source and owning decision: Owner: issue #27, Define temporal and recurrence semantics; normative source: RFC 5545.
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
-- Named scenario or fixture: `0.2.0/recur/cal-recur-002`; committed issue #40 targets: `CalendarServiceTests.QueryOccurrencesAsync_RdatePeriodSuppliesOccurrenceSpecificSpan`, `QueryOccurrencesAsync_RdatePeriodDeduplicatesAndOverrideUsesOccurrenceSpecificSourceSpan`, `QueryOccurrencesAsync_RdatePeriodUsesNominalThenAccurateDurationArithmetic`, `QueryOccurrencesAsync_ExdateSuppressesDuplicateRdatePeriodAndItsOverride`, `QueryOccurrencesAsync_DetachedEventOverridesAreEnumeratedWithCancellationAndExdatePrecedence`, `QueryOccurrencesAsync_DetachedTodoOverridesWithoutDtstartRemainObservable`, and `QueryOccurrencesAsync_DueOnlyRecurringTodoIsTypedRecurrenceUnevaluable`.
+- Named scenario or fixture: `0.2.0/recur/cal-recur-002`; issue #40 targets: `CalendarServiceTests.QueryOccurrencesAsync_RdatePeriodSuppliesOccurrenceSpecificSpan`, `QueryOccurrencesAsync_RdatePeriodDeduplicatesAndOverrideUsesOccurrenceSpecificSourceSpan`, `QueryOccurrencesAsync_RdatePeriodUsesNominalThenAccurateDurationArithmetic`, `QueryOccurrencesAsync_ExdateSuppressesDuplicateRdatePeriodAndItsOverride`, `QueryOccurrencesAsync_DetachedEventOverridesAreEnumeratedWithCancellationAndExdatePrecedence`, `QueryOccurrencesAsync_DetachedTodoOverridesWithoutDtstartRemainObservable`, and `QueryOccurrencesAsync_DueOnlyRecurringTodoIsTypedRecurrenceUnevaluable`; issue #44 targets `CalendarEntityCreateToolsTests.CreateEventRawAsync_CreatesTypedRecurrenceAndReturnsVerifiedSnapshot`, `CreateEventRawAsync_RdatePeriodReturnsUnsupportedBeforeUidLookupOrPut`, and `CalendarEntityCreateServiceTests.CreateTodoAsync_CreatesRdateOnlySeriesWithExclusionAndCancelledOverride`.
 - Objective oracle: Given DTSTART, one RRULE, all RDATE/EXDATE/overrides including duplicate and detached identities, VTODO overrides without DTSTART, and RDATE PERIOD, when expansion runs, then duplicates collapse, EXDATE wins even over preserved overrides, detached moved overrides remain observable, cancellations are omitted, PERIOD supplies its own span, and VTODO RRULE without DTSTART is recurrence_unevaluable.
-- Implementation status: the occurrence-query slice is implemented for RRULE/RDATE/EXDATE/override identity collapse, detached override enumeration, EXDATE precedence, VTODO recurrence validity, and occurrence-specific RDATE PERIOD spans; semantic create and Radicale write rejection remain planned.
-- Evidence status: focused Core occurrence-query targets pass locally and are included in the CI test run.
+- Implementation status: occurrence query implements RRULE/RDATE/EXDATE/override identity collapse, detached override enumeration, EXDATE precedence, VTODO recurrence validity, and occurrence-specific RDATE PERIOD spans. Semantic Create writes at most one RRULE, every temporal RDATE/EXDATE and complete same-kind override, validates identity families/status consistency/DTSTART inclusion and the pinned 10,000 boundary before discovery, maps nonpositive-count and evaluator-limit failures to `recurrence_unevaluable`, excludes create `THISANDPRIOR`, and returns `unsupported_capability` for a valid PERIOD before discovery or PUT. The strict MCP PERIOD parser reuses the RFC duration grammar, including positive week and explicitly positive day forms; semantically malformed or nonpositive PERIOD input returns `invalid_input` before service invocation.
+- Evidence status: focused Core, MCP, contract-schema, raw/native stdio, deterministic WebDAV replay, and digest-pinned Radicale targets cover Event/To-do DTSTART mismatch, COUNT/UNTIL exact and plus-one boundaries, admitted unbounded recurrence, nonpositive and evaluator-limit failures, strict RFC PERIOD input, exclusions, overrides, clock-independent VTIMEZONE readback, and duration-derived DST horizons.
 
 ## CAL-RECUR-003
 
@@ -806,7 +806,7 @@ Every requirement row contains the normative statement, source, interoperability
 
 ## CAL-BOUND-001
 
-- Normative statement: Validate in this order: transport authorization; admission and payload size; schema/lexical/discriminator; origin/scope/caller authorization; selection/discovery/capability; target revision; complete resource semantics; MRTR; execution; post-write verification or reconciliation. Return the earliest failing phase and at most 32 safe violations ordered by JSON Pointer. Owner: [Choose validation errors and execution bounds](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/issues/23).
+- Normative statement: Validate in this order: transport authorization; admission and payload size; schema/lexical/discriminator; origin/scope/caller authorization; selection/discovery/capability; target revision; complete resource semantics; MRTR; execution; post-write verification or reconciliation. Semantic Create is the frozen exception: because its complete proposed resource is caller-local, recurrence/temporal/override/zone semantics and profile preflight run after local destination validation but before Calendar discovery; normal selection/capability ordering resumes only after that zero-network preflight. Return the earliest failing phase and at most 32 safe violations ordered by JSON Pointer. Owner: [Choose validation errors and execution bounds](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/issues/23).
 - Source and owning decision: Owner: issue #23, Choose validation errors and execution bounds; normative source: issue #35 safety decision.
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
@@ -1051,10 +1051,10 @@ Every requirement row contains the normative statement, source, interoperability
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: catalog verifier.
-- Named scenario or fixture: `0.2.0/evidence/cal-evidence-002`; committed issue #40 semantic targets are the `CalendarServiceTests.QueryOccurrencesAsync_*` corpus covering half-open boundaries, Event/To-do temporal partitions, DST/leap, RRULE/RDATE PERIOD/EXDATE, individual and RANGE overrides, moved identity, cancellation, unresolved zones, unevaluable recurrence, exact ordering, and limit partitions.
+- Named scenario or fixture: `0.2.0/evidence/cal-evidence-002`; issue #40 semantic targets are the `CalendarServiceTests.QueryOccurrencesAsync_*` corpus; issue #44 adds `CalendarEntityCreateServiceTests` recurrence creation partitions and strict `CalendarEntityCreateToolsTests`/`CalendarMcpRawStdioTests` inputs for kind-specific recurrence, PERIOD, exclusions, overrides, zones, collisions, and fidelity.
 - Objective oracle: Given semantic fixture inventory, when manifest is counted, then it contains named cases for discovery, snapshots, strict schemas, patch, temporal, recurrence, structured/inert/opaque content, concurrency, truth, limits, errors and MRTR plus listed pairwise cross-products.
-- Implementation status: the occurrence-query equivalence partitions and recurrence-by-temporal, override-precedence, pagination-order, and limit cross-products are implemented; the remaining catalog-wide fixture inventory stays planned for downstream tickets.
-- Evidence status: the committed issue #40 semantic-corpus targets pass locally and are included in the CI test run; this partial slice does not claim completion of the broader inventory.
+- Implementation status: occurrence-query equivalence partitions and recurrence-by-temporal, override-precedence, pagination-order, and limit cross-products are implemented; semantic-create partitions now cover Event/To-do RRULE and RDATE-only series, DTSTART inclusion, COUNT/UNTIL 10,000/10,001 and unbounded rules, EXDATE, complete overrides, DST/IANA zones across past/far-future clocks, collision retry, fidelity drift, malformed/valid PERIOD, duplicate RRULE, and pre-discovery validation. The remaining catalog-wide fixture inventory stays planned.
+- Evidence status: focused issue #40 and #44 corpus/schema/raw-stdio targets pass locally and are included in the CI test run; this partial slice does not claim completion of the broader inventory.
 
 ## CAL-EVIDENCE-003
 
@@ -1063,10 +1063,10 @@ Every requirement row contains the normative statement, source, interoperability
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: catalog verifier.
-- Named scenario or fixture: `0.2.0/evidence/cal-evidence-003`.
+- Named scenario or fixture: `0.2.0/evidence/cal-evidence-003`; issue #44 targets `CalendarEntityCreateServiceTests.CreateEventAsync_RefetchedRecurrenceMismatchPreservesDispatchTruth`, generated-UID collision and complete-override create cases, and strict MCP/raw-stdio recurrence inputs.
 - Objective oracle: Given corpus with lossless lines, invalid aggregates, recurrence/time, patch atomicity, error ordering, limits and reconciliation, when tests run, then byte/semantic assertions use source slices rather than regenerated Ical.Net output or snapshot approval.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented for the Semantic Create slice: recurrence/domain validation, error ordering, collision bounds, reconciliation, and authoritative recurrence-fidelity comparison use semantic corpus assertions; losslessness remains sourced from the authoritative content document rather than regenerated Ical.Net output. Remaining catalog-wide corpus work stays planned.
+- Evidence status: focused issue #44 Core/MCP/raw-stdio targets pass locally and are included in the CI test run.
 
 ## CAL-EVIDENCE-004
 
@@ -1076,7 +1076,7 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: catalog verifier.
 - Named scenario or fixture: `0.2.0/evidence/cal-evidence-004`.
-- Objective oracle: Given deterministic WebDAV request scripts covering discovery, REPORT, GET, conditionals, redirects, statuses, XML, origin, limits and redaction, when executed, then exact method/header/body/status assertions pass without live server dependency.
+- Objective oracle: Given deterministic WebDAV request scripts covering discovery, REPORT, GET, conditionals, redirects, statuses, XML, origin, limits and redaction, plus a recurring create body with ordered RDATE/EXDATE, override, non-ASCII text, and an unknown X property, when executed, then exact method/header/body/status assertions pass without live server dependency; create replays identical UTF-8 through one safe method-preserving redirect with `If-None-Match: *`, no normalization, and no retry beyond the redirect dispatch.
 - Implementation status: planned.
 - Evidence status: planned until its named scenario is green in pull-request and release CI.
 
@@ -1087,10 +1087,10 @@ Every requirement row contains the normative statement, source, interoperability
 - Normative strength: MUST; this is a versioned 0.2.0 contract requirement.
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: catalog verifier.
-- Named scenario or fixture: `0.2.0/evidence/cal-evidence-005`; committed issue #40 target: `RadicaleConformanceHarnessTests.Pinned_profile_preserves_occurrence_boundary_dst_leap_range_and_typed_failures`, executed by the existing baseline/strict/New_York CI matrix after PUT followed by authoritative GET.
+- Named scenario or fixture: `0.2.0/evidence/cal-evidence-005`; issue #40 target: `RadicaleConformanceHarnessTests.Pinned_profile_preserves_occurrence_boundary_dst_leap_range_and_typed_failures`; issue #44 target: the pinned-profile recurring Event/To-do semantic-create scenario, both executed by the baseline/strict/New_York matrix after PUT followed by authoritative GET.
 - Objective oracle: Given `RadicaleConformanceFixture` in baseline/strict/New_York variants, when the runtime and occurrence targets run, then TRX records index/platform/runtime/TZ/strict facts and authoritative post-PUT GET bytes prove half-open boundary behavior, DST, leap recurrence, RANGE precedence with moved original identity, and typed unresolved/unevaluable failures.
-- Implementation status: runtime evidence plus the issue #40 recurrence/time-zone fidelity slice are implemented; the remaining live-server behaviors in this broad row stay planned for downstream tickets.
-- Evidence status: the runtime harness previously passes locally in all three variants and runs in the CI matrix; the new occurrence target is committed to that matrix and awaits CI because this machine's Docker path could not complete fixture startup (Resource Reaper timeout, then fixture HTTP timeout when bypassed).
+- Implementation status: runtime evidence and recurrence/time-zone query fidelity are implemented; issue #44 adds recurring Event/To-do create with RDATE-only, exclusions, complete overrides, deterministic bounded/unbounded supporting VTIMEZONE, authoritative past/far-future readback, exact accepted 10,000 and rejected 10,001 RRULE write boundaries, and pre-discovery PERIOD rejection. Remaining live-server behaviors in this broad row stay planned.
+- Evidence status: focused issue #44 evidence passes locally; the recurring-create target runs against the digest-pinned fixture in the baseline/strict/New_York matrix.
 
 ## CAL-EVIDENCE-006
 

@@ -26,12 +26,12 @@ public interface ICalendarService
     /// <summary>Reads one authoritative Calendar Object Resource snapshot.</summary>
     Task<CalendarResourceRead> GetResourceAsync(string href, CancellationToken cancellationToken);
 
-    /// <summary>Creates one complete non-recurring Event and returns the observed server revision.</summary>
+    /// <summary>Creates one complete Event, including typed recurrence, and returns the observed server revision.</summary>
     Task<CalendarEntityCreateResult> CreateEventAsync(
         CalendarEventCreateRequest request,
         CancellationToken cancellationToken);
 
-    /// <summary>Creates one complete non-recurring To-do and returns the observed server revision.</summary>
+    /// <summary>Creates one complete To-do, including typed recurrence, and returns the observed server revision.</summary>
     Task<CalendarEntityCreateResult> CreateTodoAsync(
         CalendarTodoCreateRequest request,
         CancellationToken cancellationToken);

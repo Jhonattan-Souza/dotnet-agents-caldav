@@ -1,6 +1,7 @@
 using System.Collections.Frozen;
 using System.Globalization;
 using DotnetAgents.CalDav.Core.Models;
+using Ical.Net.DataTypes;
 using NodaTime;
 using NodaTime.TimeZones;
 
@@ -39,7 +40,6 @@ internal static class CalendarEntityCreateValidator
     public static void ValidateEvent(string uid, CalendarEventCreateFields fields)
     {
         ValidateSafeValue(uid, allowNewLines: false);
-        RejectRecurring(fields.RecurrenceSetPresent, "Event");
         var start = ValidateTemporal(fields.Start ?? throw new ArgumentException("An Event start is required."));
         if (fields.End is not null && fields.Duration is not null)
             throw new ArgumentException("Event end and duration are mutually exclusive.");
@@ -59,12 +59,12 @@ internal static class CalendarEntityCreateValidator
         ValidateOpenEnum(fields.Transparency, EventTransparencies);
         ValidateOpenEnum(fields.Classification, Classifications);
         ValidateUri(fields.Url);
+        ValidateEventRecurrence(fields.RecurrenceSet, fields.Start);
     }
 
     public static void ValidateTodo(string uid, CalendarTodoCreateFields fields)
     {
         ValidateSafeValue(uid, allowNewLines: false);
-        RejectRecurring(fields.RecurrenceSetPresent, "To-do");
         if (fields.Due is not null && fields.Duration is not null)
             throw new ArgumentException("To-do due and duration are mutually exclusive.");
         if (fields.Duration is not null && fields.Start is null)
@@ -82,6 +82,7 @@ internal static class CalendarEntityCreateValidator
             fields.StructuredData,
             CalendarEntityKind.Todo);
         ValidateOpenEnum(fields.Status, TodoStatuses);
+        ValidateTodoRecurrence(fields.RecurrenceSet, fields.Start);
     }
 
     internal static void ValidatePatchScalars(CalendarEventPatch patch, CalendarEntityKind entityKind)
@@ -209,10 +210,167 @@ internal static class CalendarEntityCreateValidator
             throw new ArgumentException("To-do completion is reserved for the coordinated completion operation.");
     }
 
-    private static void RejectRecurring(bool recurrenceSetPresent, string entityKind)
+    private static void ValidateEventRecurrence(
+        CalendarEventRecurrenceSetCreate? recurrence,
+        CalendarTemporalValue? masterStart)
     {
-        if (recurrenceSetPresent)
-            throw new ArgumentException($"Recurring {entityKind} creation is not supported by this operation.");
+        if (recurrence is null)
+            return;
+        ValidateRecurrenceCore(
+            recurrence.Rule,
+            recurrence.RecurrenceDates,
+            recurrence.ExceptionDates,
+            recurrence.Overrides is { Count: > 0 },
+            masterStart);
+        var identities = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var recurrenceOverride in recurrence.Overrides ?? [])
+        {
+            ValidateRecurrenceOverrideIdentity(recurrenceOverride.RecurrenceIdentity, masterStart!, identities);
+            ValidateOverrideRange(recurrenceOverride.Range);
+            if (recurrenceOverride.Fields.RecurrenceSet is not null)
+                throw new ArgumentException("A recurrence override cannot contain a nested recurrence set.");
+            ValidateEvent("override", recurrenceOverride.Fields);
+            ValidateOverrideStatus(recurrenceOverride.Status, recurrenceOverride.Fields.Status);
+        }
+    }
+
+    private static void ValidateTodoRecurrence(
+        CalendarTodoRecurrenceSetCreate? recurrence,
+        CalendarTemporalValue? masterStart)
+    {
+        if (recurrence is null)
+            return;
+        ValidateRecurrenceCore(
+            recurrence.Rule,
+            recurrence.RecurrenceDates,
+            recurrence.ExceptionDates,
+            recurrence.Overrides is { Count: > 0 },
+            masterStart);
+        var identities = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var recurrenceOverride in recurrence.Overrides ?? [])
+        {
+            ValidateRecurrenceOverrideIdentity(recurrenceOverride.RecurrenceIdentity, masterStart!, identities);
+            ValidateOverrideRange(recurrenceOverride.Range);
+            if (recurrenceOverride.Fields.RecurrenceSet is not null)
+                throw new ArgumentException("A recurrence override cannot contain a nested recurrence set.");
+            ValidateTodo("override", recurrenceOverride.Fields);
+            ValidateOverrideStatus(recurrenceOverride.Status, recurrenceOverride.Fields.Status);
+        }
+    }
+
+    private static void ValidateRecurrenceCore(
+        string? rule,
+        IReadOnlyList<CalendarRecurrenceDateCreate>? recurrenceDates,
+        IReadOnlyList<CalendarTemporalValue>? exceptionDates,
+        bool hasOverrides,
+        CalendarTemporalValue? masterStart)
+    {
+        if (masterStart is null)
+            throw new ArgumentException("A recurring Calendar Entity requires a start.");
+        if (!HasRecurrenceData(rule, recurrenceDates, exceptionDates, hasOverrides))
+        {
+            throw new ArgumentException("A recurrence set requires recurrence data.");
+        }
+        if (rule is not null)
+            _ = CalendarCreateRecurrenceAnalyzer.Analyze(rule, masterStart);
+        ValidateRecurrenceRule(rule);
+        foreach (var recurrenceDate in recurrenceDates ?? [])
+            ValidateRecurrenceDate(recurrenceDate, masterStart);
+        foreach (var exceptionDate in exceptionDates ?? [])
+            ValidateRecurrenceFamily(exceptionDate, masterStart);
+    }
+
+    private static bool HasRecurrenceData(
+        string? rule,
+        IReadOnlyList<CalendarRecurrenceDateCreate>? recurrenceDates,
+        IReadOnlyList<CalendarTemporalValue>? exceptionDates,
+        bool hasOverrides) => rule is not null
+        || recurrenceDates is { Count: > 0 }
+        || exceptionDates is { Count: > 0 }
+        || hasOverrides;
+
+    private static void ValidateRecurrenceRule(string? rule)
+    {
+        if (rule is null)
+            return;
+        ValidateSafeValue(rule, allowNewLines: false);
+        if (string.IsNullOrWhiteSpace(rule) || rule.Contains(':', StringComparison.Ordinal))
+            throw new ArgumentException("The recurrence rule is invalid.");
+        try
+        {
+            _ = new RecurrencePattern(rule);
+        }
+        catch (Exception exception) when (exception is ArgumentException or FormatException)
+        {
+            throw new ArgumentException("The recurrence rule is invalid.", exception);
+        }
+    }
+
+    private static void ValidateRecurrenceDate(
+        CalendarRecurrenceDateCreate recurrenceDate,
+        CalendarTemporalValue masterStart)
+    {
+        if ((recurrenceDate.Value is null) == (recurrenceDate.Period is null))
+            throw new ArgumentException("A recurrence date must contain one temporal value or one period.");
+        if (recurrenceDate.Value is not null)
+        {
+            ValidateRecurrenceFamily(recurrenceDate.Value, masterStart);
+            return;
+        }
+        var period = recurrenceDate.Period!;
+        if (period.Start.Kind == CalendarTemporalKind.Date)
+            throw new ArgumentException("A recurrence period must use a date-time temporal family.");
+        ValidateRecurrenceFamily(period.Start, masterStart);
+        if ((period.End is null) == (period.Duration is null))
+            throw new ArgumentException("A recurrence period requires exactly one end or duration.");
+        if (period.End is not null)
+            ValidateOrderedTemporal(ValidateTemporal(period.Start), ValidateTemporal(period.End));
+        ValidateDuration(period.Duration, period.Start.Kind == CalendarTemporalKind.Date);
+    }
+
+    private static void ValidateRecurrenceFamily(
+        CalendarTemporalValue value,
+        CalendarTemporalValue masterStart)
+    {
+        _ = ValidateTemporal(value);
+        if (value.Kind != masterStart.Kind
+            || !string.Equals(value.TimeZoneId, masterStart.TimeZoneId, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("A recurrence identity must match the master start temporal family.");
+        }
+    }
+
+    private static void ValidateRecurrenceOverrideIdentity(
+        CalendarTemporalValue identity,
+        CalendarTemporalValue masterStart,
+        ISet<string> identities)
+    {
+        ValidateRecurrenceFamily(identity, masterStart);
+        var key = $"{identity.Kind:D}|{identity.TimeZoneId}|{identity.Value}";
+        if (!identities.Add(key))
+            throw new ArgumentException("A recurrence override identity must be unique.");
+    }
+
+    private static void ValidateOverrideRange(CalendarRecurrenceOverrideRange? range)
+    {
+        if (range == CalendarRecurrenceOverrideRange.ThisAndPrior)
+            throw new CalendarRecurrenceUnevaluableException();
+        if (range is not null && !Enum.IsDefined(range.Value))
+            throw new ArgumentException("The recurrence override range is invalid.");
+    }
+
+    private static void ValidateOverrideStatus(
+        CalendarRecurrenceOverrideStatus status,
+        string? fieldsStatus)
+    {
+        if (!Enum.IsDefined(status))
+            throw new ArgumentException("The recurrence override status is invalid.");
+        var fieldsCancelled = fieldsStatus?.Equals("CANCELLED", StringComparison.OrdinalIgnoreCase) == true;
+        if (fieldsStatus is not null
+            && (status == CalendarRecurrenceOverrideStatus.Cancelled) != fieldsCancelled)
+        {
+            throw new ArgumentException("The recurrence override status contradicts its complete fields.");
+        }
     }
 
     private static void ValidateCommonFields(

@@ -23,6 +23,26 @@ internal static class CalendarDurationArithmetic
         }
     }
 
+    internal static CalendarTemporalValue? ResolveCreateEnd(
+        CalendarTemporalValue start,
+        string rawDuration)
+    {
+        var resolver = new CalendarTemporalResolver([], ReadOnlySpan<byte>.Empty);
+        var resolvedStart = resolver.Resolve(ToCalDateTime(start));
+        return resolvedStart.Value is null
+            ? null
+            : Resolve(start, resolvedStart.Value.Value, rawDuration, resolver).Value;
+    }
+
+    internal static CalendarTemporalValue? ShiftCreateExplicitEnd(
+        CalendarTemporalValue oldStart,
+        CalendarTemporalValue oldEnd,
+        CalendarTemporalValue newStart) => ShiftExplicitEnd(
+            oldStart,
+            oldEnd,
+            newStart,
+            new CalendarTemporalResolver([], ReadOnlySpan<byte>.Empty));
+
     private static CalendarDurationResolution ResolveCore(
         CalendarTemporalValue start,
         DateTimeOffset resolvedStart,

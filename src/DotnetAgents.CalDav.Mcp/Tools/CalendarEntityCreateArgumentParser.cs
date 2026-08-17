@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Text.Json;
+using DotnetAgents.CalDav.Core.Internal.Ical;
 using DotnetAgents.CalDav.Core.Models;
 
 namespace DotnetAgents.CalDav.Mcp.Tools;
@@ -23,6 +25,10 @@ internal static class CalendarEntityCreateArgumentParser
     ];
     private static readonly string[] TodoFieldProperties =
     ["summary", "description", "start", "due", "duration", "status", "priority", "categories", "recurrenceSet", "structuredData"];
+    private static readonly string[] EventOverrideFieldProperties =
+        EventFieldProperties.Where(name => name != "recurrenceSet").ToArray();
+    private static readonly string[] TodoOverrideFieldProperties =
+        TodoFieldProperties.Where(name => name != "recurrenceSet").ToArray();
     private static readonly string[] StructuredProperties =
     [
         "organizer", "attendees", "participants", "contacts", "resources", "relatedTo", "requestStatuses", "alarms",
@@ -200,10 +206,16 @@ internal static class CalendarEntityCreateArgumentParser
         return false;
     }
 
-    private static bool TryParseEventFields(JsonElement value, out CalendarEventCreateFields fields)
+    private static bool TryParseEventFields(JsonElement value, out CalendarEventCreateFields fields) =>
+        TryParseEventFields(value, allowRecurrence: true, out fields);
+
+    private static bool TryParseEventFields(
+        JsonElement value,
+        bool allowRecurrence,
+        out CalendarEventCreateFields fields)
     {
         fields = null!;
-        var valid = HasShape(value, EventFieldProperties, []);
+        var valid = HasShape(value, allowRecurrence ? EventFieldProperties : EventOverrideFieldProperties, []);
         valid &= TryOptionalString(value, "summary", out var summary);
         valid &= TryOptionalString(value, "description", out var description);
         valid &= TryOptionalTemporal(value, "start", out var start);
@@ -217,7 +229,10 @@ internal static class CalendarEntityCreateArgumentParser
         valid &= TryOptionalInteger(value, "priority", out var priority);
         valid &= TryOptionalStringArray(value, "categories", out var categories);
         valid &= TryOptionalString(value, "url", out var url);
-        valid &= TryOptionalRecurrenceSet(value, out var recurrenceSetPresent);
+        CalendarEventRecurrenceSetCreate? recurrenceSet = null;
+        valid &= allowRecurrence
+            ? TryOptionalEventRecurrenceSet(value, out recurrenceSet)
+            : !value.TryGetProperty("recurrenceSet", out _);
         valid &= TryOptionalStructuredData(value, out var structuredData);
         if (!valid)
             return false;
@@ -236,14 +251,20 @@ internal static class CalendarEntityCreateArgumentParser
             categories,
             url,
             structuredData,
-            recurrenceSetPresent);
+            recurrenceSet);
         return true;
     }
 
-    private static bool TryParseTodoFields(JsonElement value, out CalendarTodoCreateFields fields)
+    private static bool TryParseTodoFields(JsonElement value, out CalendarTodoCreateFields fields) =>
+        TryParseTodoFields(value, allowRecurrence: true, out fields);
+
+    private static bool TryParseTodoFields(
+        JsonElement value,
+        bool allowRecurrence,
+        out CalendarTodoCreateFields fields)
     {
         fields = null!;
-        var valid = HasShape(value, TodoFieldProperties, []);
+        var valid = HasShape(value, allowRecurrence ? TodoFieldProperties : TodoOverrideFieldProperties, []);
         valid &= TryOptionalString(value, "summary", out var summary);
         valid &= TryOptionalString(value, "description", out var description);
         valid &= TryOptionalTemporal(value, "start", out var start);
@@ -252,7 +273,10 @@ internal static class CalendarEntityCreateArgumentParser
         valid &= TryOptionalString(value, "status", out var status);
         valid &= TryOptionalInteger(value, "priority", out var priority);
         valid &= TryOptionalStringArray(value, "categories", out var categories);
-        valid &= TryOptionalRecurrenceSet(value, out var recurrenceSetPresent);
+        CalendarTodoRecurrenceSetCreate? recurrenceSet = null;
+        valid &= allowRecurrence
+            ? TryOptionalTodoRecurrenceSet(value, out recurrenceSet)
+            : !value.TryGetProperty("recurrenceSet", out _);
         valid &= TryOptionalStructuredData(value, out var structuredData);
         if (!valid)
             return false;
@@ -266,62 +290,214 @@ internal static class CalendarEntityCreateArgumentParser
             priority,
             categories,
             structuredData,
-            recurrenceSetPresent);
+            recurrenceSet);
         return true;
     }
 
-    private static bool TryOptionalRecurrenceSet(JsonElement owner, out bool present)
+    private static bool TryOptionalEventRecurrenceSet(
+        JsonElement owner,
+        out CalendarEventRecurrenceSetCreate? parsed)
     {
-        present = owner.TryGetProperty("recurrenceSet", out var recurrenceSet);
-        if (!present)
+        parsed = null;
+        if (!owner.TryGetProperty("recurrenceSet", out var recurrenceSet))
             return true;
         if (!HasShape(recurrenceSet, ["rrule", "rdates", "exdates", "overrides"], []))
             return false;
-        var valid = TryOptionalString(recurrenceSet, "rrule", out _);
-        valid &= TryOptionalTemporalArray(recurrenceSet, "rdates");
-        valid &= TryOptionalTemporalArray(recurrenceSet, "exdates");
-        valid &= TryOptionalArray<JsonElement>(recurrenceSet, "overrides", TryParseRecurrenceOverride, out _);
+        var valid = TryOptionalString(recurrenceSet, "rrule", out var rule);
+        valid &= TryOptionalArray<CalendarRecurrenceDateCreate>(
+            recurrenceSet, "rdates", TryParseRecurrenceDate, out var recurrenceDates);
+        valid &= TryOptionalArray<CalendarTemporalValue>(
+            recurrenceSet, "exdates", TryParseRequiredTemporal, out var exceptionDates);
+        valid &= TryOptionalArray<CalendarEventRecurrenceOverrideCreate>(
+            recurrenceSet, "overrides", TryParseEventRecurrenceOverride, out var overrides);
+        if (valid)
+            parsed = new CalendarEventRecurrenceSetCreate(rule, recurrenceDates, exceptionDates, overrides);
         return valid;
     }
 
-    private static bool TryOptionalTemporalArray(JsonElement owner, string name)
+    private static bool TryOptionalTodoRecurrenceSet(
+        JsonElement owner,
+        out CalendarTodoRecurrenceSetCreate? parsed)
     {
-        if (!owner.TryGetProperty(name, out var values))
+        parsed = null;
+        if (!owner.TryGetProperty("recurrenceSet", out var recurrenceSet))
             return true;
-        if (values.ValueKind != JsonValueKind.Array)
+        if (!HasShape(recurrenceSet, ["rrule", "rdates", "exdates", "overrides"], []))
             return false;
-        foreach (var value in values.EnumerateArray())
-        {
-            if (!TryParseTemporal(value, out _))
-                return false;
-        }
-        return true;
+        var valid = TryOptionalString(recurrenceSet, "rrule", out var rule);
+        valid &= TryOptionalArray<CalendarRecurrenceDateCreate>(
+            recurrenceSet, "rdates", TryParseRecurrenceDate, out var recurrenceDates);
+        valid &= TryOptionalArray<CalendarTemporalValue>(
+            recurrenceSet, "exdates", TryParseRequiredTemporal, out var exceptionDates);
+        valid &= TryOptionalArray<CalendarTodoRecurrenceOverrideCreate>(
+            recurrenceSet, "overrides", TryParseTodoRecurrenceOverride, out var overrides);
+        if (valid)
+            parsed = new CalendarTodoRecurrenceSetCreate(rule, recurrenceDates, exceptionDates, overrides);
+        return valid;
     }
 
-    private static bool TryParseRecurrenceOverride(JsonElement value, out JsonElement parsed)
+    private static bool TryParseRecurrenceDate(JsonElement value, out CalendarRecurrenceDateCreate parsed)
     {
-        parsed = value;
-        if (!HasShape(
-                value,
-                ["recurrenceIdentity", "entityKind", "range", "status", "movedStart", "movedEnd"],
-                ["recurrenceIdentity", "entityKind", "status"])
-            || !value.TryGetProperty("recurrenceIdentity", out var identity)
-            || !TryParseRecurrenceIdentity(identity)
-            || !TryRequiredEnum(value, "entityKind", ["event", "todo"])
-            || !TryRequiredEnum(value, "status", ["active", "cancelled"])
-            || !TryOptionalEnum(value, "range", ["this-and-prior", "this-and-future"])
-            || !TryOptionalTemporal(value, "movedStart", out _)
-            || !TryOptionalTemporal(value, "movedEnd", out _))
+        parsed = null!;
+        if (!TryRequiredString(value, "kind", out var kind))
+            return false;
+        if (kind != "period")
+        {
+            if (!TryParseTemporal(value, out var temporal) || temporal is null)
+                return false;
+            parsed = new CalendarRecurrenceDateCreate(Value: temporal);
+            return true;
+        }
+        return TryParseRecurrencePeriod(value, out parsed);
+    }
+
+    private static bool TryParseRecurrencePeriod(JsonElement value, out CalendarRecurrenceDateCreate parsed)
+    {
+        parsed = null!;
+        if (!HasShape(value, ["kind", "start", "end", "duration"], ["kind", "start"])
+            || !value.TryGetProperty("start", out var startElement)
+            || !TryParseTemporal(startElement, out var start)
+            || start is null
+            || !TryOptionalTemporal(value, "end", out var end)
+            || !TryOptionalString(value, "duration", out var duration)
+            || (end is null) == (duration is null))
         {
             return false;
         }
+        if (!IsValidRecurrencePeriod(start, end, duration))
+            return false;
+        parsed = new CalendarRecurrenceDateCreate(Period: new CalendarRecurrencePeriodCreate(start, end, duration));
         return true;
     }
 
-    private static bool TryParseRecurrenceIdentity(JsonElement value) =>
-        HasShape(value, ["value"], ["value"])
-        && value.TryGetProperty("value", out var identityValue)
-        && TryParseTemporal(identityValue, out _);
+    private static bool IsValidRecurrencePeriod(
+        CalendarTemporalValue start,
+        CalendarTemporalValue? end,
+        string? duration)
+    {
+        if (start.Kind == CalendarTemporalKind.Date || !TryParseTemporalValue(start, out var parsedStart))
+            return false;
+        if (end is not null)
+        {
+            return end.Kind == start.Kind
+                && string.Equals(end.TimeZoneId, start.TimeZoneId, StringComparison.Ordinal)
+                && TryParseTemporalValue(end, out var parsedEnd)
+                && parsedEnd > parsedStart;
+        }
+        return IsPositiveDateTimeDuration(duration!);
+    }
+
+    private static bool TryParseTemporalValue(CalendarTemporalValue value, out DateTime parsed)
+    {
+        var utc = value.Kind == CalendarTemporalKind.UtcDateTime;
+        var raw = utc && value.Value.EndsWith('Z') ? value.Value[..^1] : value.Value;
+        return DateTime.TryParseExact(
+            raw,
+            "yyyy-MM-dd'T'HH:mm:ss",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.None,
+            out parsed);
+    }
+
+    private static bool IsPositiveDateTimeDuration(string duration)
+        => CalendarDurationArithmetic.TryParse(duration, out var parsed)
+            && parsed.IsStrictlyPositive;
+
+    private static bool TryParseEventRecurrenceOverride(
+        JsonElement value,
+        out CalendarEventRecurrenceOverrideCreate parsed)
+    {
+        parsed = null!;
+        if (!TryParseRecurrenceOverrideHeader(value, out var identity, out var status, out var range)
+            || !value.TryGetProperty("fields", out var fieldsElement)
+            || !TryParseEventFields(fieldsElement, allowRecurrence: false, out var fields))
+        {
+            return false;
+        }
+        parsed = new CalendarEventRecurrenceOverrideCreate(identity, status, fields, range);
+        return true;
+    }
+
+    private static bool TryParseTodoRecurrenceOverride(
+        JsonElement value,
+        out CalendarTodoRecurrenceOverrideCreate parsed)
+    {
+        parsed = null!;
+        if (!TryParseRecurrenceOverrideHeader(value, out var identity, out var status, out var range)
+            || !value.TryGetProperty("fields", out var fieldsElement)
+            || !TryParseTodoFields(fieldsElement, allowRecurrence: false, out var fields))
+        {
+            return false;
+        }
+        parsed = new CalendarTodoRecurrenceOverrideCreate(identity, status, fields, range);
+        return true;
+    }
+
+    private static bool TryParseRecurrenceOverrideHeader(
+        JsonElement value,
+        out CalendarTemporalValue identity,
+        out CalendarRecurrenceOverrideStatus status,
+        out CalendarRecurrenceOverrideRange? range)
+    {
+        identity = null!;
+        status = default;
+        range = null;
+        if (!HasShape(value, ["recurrenceIdentity", "range", "status", "fields"], ["recurrenceIdentity", "status", "fields"])
+            || !TryParseRecurrenceIdentity(value, out var parsedIdentity)
+            || !TryParseOverrideStatus(value, out status)
+            || !TryParseOverrideRange(value, out range))
+        {
+            return false;
+        }
+        identity = parsedIdentity;
+        return true;
+    }
+
+    private static bool TryParseRecurrenceIdentity(JsonElement value, out CalendarTemporalValue identity)
+    {
+        identity = null!;
+        return value.TryGetProperty("recurrenceIdentity", out var recurrenceIdentity)
+            && HasShape(recurrenceIdentity, ["value"], ["value"])
+            && recurrenceIdentity.TryGetProperty("value", out var identityValue)
+            && TryParseRequiredTemporal(identityValue, out identity);
+    }
+
+    private static bool TryParseOverrideStatus(JsonElement value, out CalendarRecurrenceOverrideStatus status)
+    {
+        status = default;
+        if (!TryRequiredString(value, "status", out var rawStatus))
+            return false;
+        status = rawStatus switch
+        {
+            "active" => CalendarRecurrenceOverrideStatus.Active,
+            "cancelled" => CalendarRecurrenceOverrideStatus.Cancelled,
+            _ => (CalendarRecurrenceOverrideStatus)(-1)
+        };
+        return (int)status >= 0;
+    }
+
+    private static bool TryParseOverrideRange(JsonElement value, out CalendarRecurrenceOverrideRange? range)
+    {
+        range = null;
+        if (!TryOptionalString(value, "range", out var rawRange))
+            return false;
+        range = rawRange switch
+        {
+            "this-and-future" => CalendarRecurrenceOverrideRange.ThisAndFuture,
+            null => null,
+            _ => (CalendarRecurrenceOverrideRange)(-1)
+        };
+        return range is null || (int)range.Value >= 0;
+    }
+
+    private static bool TryParseRequiredTemporal(JsonElement value, out CalendarTemporalValue parsed)
+    {
+        parsed = null!;
+        if (!TryParseTemporal(value, out var temporal) || temporal is null)
+            return false;
+        parsed = temporal;
+        return true;
+    }
 
     private static bool TryRequiredEnum(JsonElement owner, string name, IReadOnlyList<string> allowed) =>
         TryRequiredString(owner, name, out var value) && allowed.Contains(value);
