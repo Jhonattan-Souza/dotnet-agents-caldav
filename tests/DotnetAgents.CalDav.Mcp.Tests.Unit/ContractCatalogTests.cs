@@ -419,11 +419,35 @@ public sealed class ContractCatalogTests
 
     private static void AssertPatchRecurrenceSchema(JsonObject catalog, string kind)
     {
-        var recurrenceSet = catalog["$defs"]![$"{kind}ScalarPatch"]!["oneOf"]!.AsArray()
+        var recurrenceBranches = catalog["$defs"]![$"{kind}ScalarPatch"]!["oneOf"]!.AsArray()
             .Where(node => node!["properties"]?["field"]?["const"]?.GetValue<string>() == "recurrenceSet")
-            .Single(node => node!["properties"]?["operation"]?["const"]?.GetValue<string>() == "set");
-        recurrenceSet!["properties"]!["value"]!["$ref"]!.GetValue<string>()
+            .ToArray();
+        var set = recurrenceBranches.Single(node =>
+            node!["properties"]?["operation"]?["const"]?.GetValue<string>() == "set")!;
+        set["properties"]!["value"]!["$ref"]!.GetValue<string>()
             .ShouldBe("#/$defs/recurrenceSetInput");
+        foreach (var branch in recurrenceBranches)
+        {
+            branch!["additionalProperties"]!.GetValue<bool>().ShouldBeFalse();
+            branch["properties"]!.AsObject().ShouldContainKey("orphanReconciliations");
+            branch["properties"]!["orphanReconciliations"]!["items"]!["$ref"]!.GetValue<string>()
+                .ShouldBe("#/$defs/orphanReconciliation");
+        }
+
+        var reconciliations = catalog["$defs"]!["orphanReconciliation"]!["oneOf"]!.AsArray();
+        reconciliations.Count.ShouldBe(2);
+        var exdate = reconciliations.Single(node =>
+            node!["properties"]!["kind"]!["const"]!.GetValue<string>() == "exdate")!;
+        exdate["required"]!.AsArray().Select(node => node!.GetValue<string>())
+            .ShouldBe(["kind", "recurrenceIdentity", "disposition"]);
+        exdate["properties"]!["disposition"]!["const"]!.GetValue<string>().ShouldBe("remove");
+        var occurrenceOverride = reconciliations.Single(node =>
+            node!["properties"]!["kind"]!["const"]!.GetValue<string>() == "override")!;
+        occurrenceOverride["required"]!.AsArray().Select(node => node!.GetValue<string>())
+            .ShouldBe(["kind", "recurrenceIdentity", "overrideKind", "disposition"]);
+        occurrenceOverride["properties"]!["overrideKind"]!["enum"]!.AsArray()
+            .Select(node => node!.GetValue<string>()).ShouldBe(["individual", "this-and-future"]);
+        occurrenceOverride["properties"]!["disposition"]!["const"]!.GetValue<string>().ShouldBe("remove");
     }
 
     private static string[] ScalarFields(JsonNode scalarPatch) => scalarPatch["oneOf"]!.AsArray()

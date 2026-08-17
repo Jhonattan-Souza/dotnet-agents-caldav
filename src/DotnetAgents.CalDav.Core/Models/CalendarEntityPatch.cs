@@ -40,6 +40,48 @@ public enum CalendarCollectionField
     ResourceUris
 }
 
+/// <summary>Closed orphan kind that a recurrence-definition patch may explicitly remove.</summary>
+public enum CalendarOrphanKind
+{
+    ExceptionDate,
+    Override
+}
+
+/// <summary>Disambiguates individual and RANGE overrides sharing one Recurrence Identity.</summary>
+public enum CalendarOrphanOverrideKind
+{
+    Individual,
+    ThisAndFuture
+}
+
+/// <summary>One exact deletion-only reconciliation for an orphaned recurrence member.</summary>
+public sealed record CalendarOrphanReconciliation(
+    CalendarOrphanKind Kind,
+    CalendarTemporalValue RecurrenceIdentity,
+    CalendarOrphanOverrideKind? OverrideKind = null);
+
+/// <summary>One typed recurrence override supplied by a recurrence-set replacement.</summary>
+public sealed record CalendarRecurrenceOverridePatchValue(
+    CalendarTemporalValue RecurrenceIdentity,
+    CalendarEntityKind EntityKind,
+    CalendarRecurrenceOverrideStatus Status,
+    CalendarRecurrenceOverrideRange? Range = null,
+    CalendarTemporalValue? MovedStart = null,
+    CalendarTemporalValue? MovedEnd = null);
+
+/// <summary>Closed recurrence-set replacement value used by Semantic Patch.</summary>
+public sealed record CalendarRecurrenceSetPatchValue(
+    string? Rule = null,
+    IReadOnlyList<CalendarTemporalValue>? RecurrenceDates = null,
+    IReadOnlyList<CalendarTemporalValue>? ExceptionDates = null,
+    IReadOnlyList<CalendarRecurrenceOverridePatchValue>? Overrides = null);
+
+/// <summary>Explicit recurrence-set set/clear plus exact deletion-only orphan reconciliation.</summary>
+public sealed record CalendarRecurrenceSetPatch(
+    CalendarScalarPatchOperation Operation,
+    CalendarRecurrenceSetPatchValue? Value,
+    IReadOnlyList<CalendarOrphanReconciliation> OrphanReconciliations);
+
 /// <summary>Non-generic view used by the lossless occurrence editor.</summary>
 public interface ICalendarCollectionPatch
 {
@@ -88,6 +130,7 @@ public sealed record CalendarEventPatch(
     CalendarScalarPatch<CalendarNamedUri>? Organizer = null,
     CalendarCollectionPatch<string>? Categories = null,
     IReadOnlyList<ICalendarCollectionPatch>? Collections = null,
+    CalendarRecurrenceSetPatch? RecurrenceSet = null,
     bool RecurrenceSetAddressed = false,
     bool RequiresConfirmation = false);
 
@@ -104,6 +147,7 @@ public sealed record CalendarTodoPatch(
     CalendarScalarPatch<CalendarNamedUri>? Organizer = null,
     CalendarCollectionPatch<string>? Categories = null,
     IReadOnlyList<ICalendarCollectionPatch>? Collections = null,
+    CalendarRecurrenceSetPatch? RecurrenceSet = null,
     bool RecurrenceSetAddressed = false,
     bool RequiresConfirmation = false);
 

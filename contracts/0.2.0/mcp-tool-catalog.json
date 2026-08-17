@@ -4122,6 +4122,57 @@
         }
       ]
     },
+    "orphanReconciliation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "recurrenceIdentity",
+            "disposition"
+          ],
+          "properties": {
+            "kind": {
+              "const": "exdate"
+            },
+            "recurrenceIdentity": {
+              "$ref": "#/$defs/recurrenceIdentity"
+            },
+            "disposition": {
+              "const": "remove"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "recurrenceIdentity",
+            "overrideKind",
+            "disposition"
+          ],
+          "properties": {
+            "kind": {
+              "const": "override"
+            },
+            "recurrenceIdentity": {
+              "$ref": "#/$defs/recurrenceIdentity"
+            },
+            "overrideKind": {
+              "enum": [
+                "individual",
+                "this-and-future"
+              ]
+            },
+            "disposition": {
+              "const": "remove"
+            }
+          }
+        }
+      ]
+    },
     "recurrenceSetInput": {
       "type": "object",
       "additionalProperties": false,
@@ -6538,6 +6589,12 @@
             },
             "value": {
               "$ref": "#/$defs/recurrenceSetInput"
+            },
+            "orphanReconciliations": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/orphanReconciliation"
+              }
             }
           }
         },
@@ -6554,6 +6611,12 @@
             },
             "operation": {
               "const": "clear"
+            },
+            "orphanReconciliations": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/orphanReconciliation"
+              }
             }
           }
         },
@@ -6906,6 +6969,12 @@
             },
             "value": {
               "$ref": "#/$defs/recurrenceSetInput"
+            },
+            "orphanReconciliations": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/orphanReconciliation"
+              }
             }
           }
         },
@@ -6922,6 +6991,12 @@
             },
             "operation": {
               "const": "clear"
+            },
+            "orphanReconciliations": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/orphanReconciliation"
+              }
             }
           }
         },

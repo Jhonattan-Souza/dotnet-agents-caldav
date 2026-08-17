@@ -20,6 +20,8 @@ internal static class CalendarEntityPatchEditor
         try
         {
             var document = CalendarContentDocument.Parse(snapshot.AuthoritativeUtf8.Span);
+            if (target.Scope is "this-and-future" or "entire-set")
+                return TryEditScoped(snapshot, document, target, patch, expectedKind, now, cancellationToken);
             var selected = CalendarOccurrencePatchBuilder.SelectTarget(
                 snapshot,
                 document,
@@ -75,6 +77,358 @@ internal static class CalendarEntityPatchEditor
         {
             return (null, Failure(CalendarEntityPatchCode.InvalidCalendarData, snapshot));
         }
+    }
+
+    private static (byte[]? AuthoritativeUtf8, CalendarEntityPatchResult? Failure) TryEditScoped(
+        CalendarResourceSnapshot snapshot,
+        CalendarContentDocument document,
+        CalendarMutationTarget target,
+        CalendarEventPatch patch,
+        CalendarEntityKind kind,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        CalendarContentComponent primary;
+        if (target.Scope == "this-and-future")
+        {
+            var selected = CalendarOccurrencePatchBuilder.SelectRangeTarget(
+                snapshot,
+                document,
+                target.RecurrenceIdentity!,
+                kind,
+                cancellationToken);
+            if (selected.Failure is not null)
+                return (null, selected.Failure);
+            document = selected.Document!;
+            primary = selected.Component!;
+        }
+        else
+        {
+            primary = document.GetMasterComponent(kind);
+        }
+
+        var recurrenceChanged = false;
+        if (patch.RecurrenceSet is not null)
+        {
+            if (target.Scope != "entire-set")
+                return (null, Failure(CalendarEntityPatchCode.InvalidInput, snapshot));
+            var recurrence = CalendarRecurrenceSetPatchEditor.TryEdit(
+                snapshot,
+                document,
+                primary,
+                patch.RecurrenceSet,
+                kind,
+                cancellationToken);
+            if (recurrence.Failure is not null)
+                return (null, recurrence.Failure);
+            document = recurrence.Document;
+            primary = document.GetComponent(primary.Path);
+            recurrenceChanged = recurrence.Changed;
+        }
+        var paths = ScopedPaths(document, primary, target, kind);
+        var shifts = GetScopedTemporalShifts(document, primary, patch, kind);
+        if (shifts.Failure)
+            return (null, Failure(CalendarEntityPatchCode.InvalidInput, snapshot));
+        var changed = recurrenceChanged;
+        var changedPaths = new List<IReadOnlyList<CalendarComponentPathSegment>>();
+        RecordChangedPath(changedPaths, primary.Path, recurrenceChanged);
+        var temporalBasis = document;
+        foreach (var path in paths)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var componentPatch = ScopedComponentPatch(
+                snapshot,
+                temporalBasis,
+                path,
+                primary.Path,
+                patch,
+                shifts,
+                kind,
+                cancellationToken);
+            var edit = ApplyScopedComponent(snapshot, document, path, componentPatch, kind);
+            if (edit.Failure is not null)
+                return (null, edit.Failure);
+            document = edit.Document;
+            changed |= edit.Changed;
+            RecordChangedPath(changedPaths, path, edit.Changed);
+        }
+        primary = document.GetComponent(primary.Path);
+        return FinishScopedEdit(snapshot, document, primary, changed, changedPaths, kind, now);
+    }
+
+    private static (byte[]? AuthoritativeUtf8, CalendarEntityPatchResult? Failure) FinishScopedEdit(
+        CalendarResourceSnapshot snapshot,
+        CalendarContentDocument document,
+        CalendarContentComponent primary,
+        bool changed,
+        IReadOnlyList<IReadOnlyList<CalendarComponentPathSegment>> changedPaths,
+        CalendarEntityKind kind,
+        DateTimeOffset now)
+    {
+        if (!changed)
+            return (null, null);
+        var lastModified = now.UtcDateTime.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture);
+        foreach (var path in changedPaths.DistinctBy(PathKey))
+        {
+            var existing = FindProperty(document, path, "LAST-MODIFIED");
+            if (existing is null || !IsDerivedProperty(existing))
+            {
+                document = CalendarContentDocument.Parse(
+                    document.SetOrClearSingleProperty(path, "LAST-MODIFIED", lastModified));
+            }
+        }
+        return FinishEdit(snapshot, document, document.GetComponent(primary.Path), true, kind, now);
+    }
+
+    private static string PathKey(IReadOnlyList<CalendarComponentPathSegment> path) =>
+        string.Join('/', path.Select(segment => $"{segment.Name}#{segment.Occurrence}"));
+
+    private static void RecordChangedPath(
+        ICollection<IReadOnlyList<CalendarComponentPathSegment>> paths,
+        IReadOnlyList<CalendarComponentPathSegment> path,
+        bool changed)
+    {
+        if (changed)
+            paths.Add(path);
+    }
+
+    private static ScopedTemporalShifts GetScopedTemporalShifts(
+        CalendarContentDocument document,
+        CalendarContentComponent primary,
+        CalendarEventPatch patch,
+        CalendarEntityKind kind)
+    {
+        var start = GetTemporalDelta(document, primary, "DTSTART", patch.Start);
+        var end = GetTemporalDelta(document, primary, "DTEND", patch.End);
+        var due = GetTemporalDelta(document, primary, "DUE", patch.Due);
+        return new(start.Delta, end.Delta, due.Delta, start.Failure || end.Failure || due.Failure
+            || kind == CalendarEntityKind.Event && patch.Due is not null
+            || kind == CalendarEntityKind.Todo && patch.End is not null);
+    }
+
+    private static (TimeSpan? Delta, bool Failure) GetTemporalDelta(
+        CalendarContentDocument document,
+        CalendarContentComponent primary,
+        string name,
+        CalendarScalarPatch<CalendarTemporalValue>? patch)
+    {
+        if (patch is null || patch.Operation == CalendarScalarPatchOperation.Clear)
+            return (null, false);
+        if (patch.Value is null)
+            return (null, true);
+        var current = FindProperty(document, primary.Path, name);
+        if (current is null)
+            return (null, false);
+        var existing = CalendarPatchValueSerializer.ParseTemporal(current);
+        return existing.Kind != patch.Value.Kind
+            || !string.Equals(existing.TimeZoneId, patch.Value.TimeZoneId, StringComparison.Ordinal)
+            ? (null, true)
+            : (ParseLocal(patch.Value) - ParseLocal(existing), false);
+    }
+
+    private static CalendarEventPatch ScopedComponentPatch(
+        CalendarResourceSnapshot snapshot,
+        CalendarContentDocument document,
+        IReadOnlyList<CalendarComponentPathSegment> path,
+        IReadOnlyList<CalendarComponentPathSegment> primaryPath,
+        CalendarEventPatch patch,
+        ScopedTemporalShifts shifts,
+        CalendarEntityKind kind,
+        CancellationToken cancellationToken)
+    {
+        if (path.SequenceEqual(primaryPath))
+            return patch;
+        var sparseStart = FindProperty(document, path, "DTSTART") is null;
+        var shiftedStart = ShiftTemporalPatch(
+            snapshot,
+            document,
+            path,
+            "DTSTART",
+            patch.Start,
+            shifts.Start,
+            kind,
+            cancellationToken);
+        var shiftedEnd = ShiftScopedEndpoint(
+            snapshot,
+            document,
+            path,
+            "DTEND",
+            patch.End,
+            shifts.End,
+            patch.Start,
+            shifts.Start,
+            sparseStart,
+            kind == CalendarEntityKind.Event,
+            kind,
+            cancellationToken);
+        var shiftedDue = ShiftScopedEndpoint(
+            snapshot,
+            document,
+            path,
+            "DUE",
+            patch.Due,
+            shifts.Due,
+            patch.Start,
+            shifts.Start,
+            sparseStart,
+            kind == CalendarEntityKind.Todo,
+            kind,
+            cancellationToken);
+        return patch with
+        {
+            Start = shiftedStart,
+            End = shiftedEnd,
+            Due = shiftedDue
+        };
+    }
+
+    private static CalendarScalarPatch<CalendarTemporalValue>? ShiftScopedEndpoint(
+        CalendarResourceSnapshot snapshot,
+        CalendarContentDocument document,
+        IReadOnlyList<CalendarComponentPathSegment> path,
+        string name,
+        CalendarScalarPatch<CalendarTemporalValue>? endpointPatch,
+        TimeSpan? endpointDelta,
+        CalendarScalarPatch<CalendarTemporalValue>? startPatch,
+        TimeSpan? startDelta,
+        bool sparseStart,
+        bool applies,
+        CalendarEntityKind kind,
+        CancellationToken cancellationToken)
+    {
+        if (!applies)
+            return endpointPatch;
+        var inferredFromStart = endpointPatch is null && sparseStart;
+        return ShiftTemporalPatch(
+            snapshot,
+            document,
+            path,
+            name,
+            inferredFromStart ? startPatch : endpointPatch,
+            inferredFromStart ? startDelta : endpointDelta,
+            kind,
+            cancellationToken);
+    }
+
+    private static CalendarScalarPatch<CalendarTemporalValue>? ShiftTemporalPatch(
+        CalendarResourceSnapshot snapshot,
+        CalendarContentDocument document,
+        IReadOnlyList<CalendarComponentPathSegment> path,
+        string name,
+        CalendarScalarPatch<CalendarTemporalValue>? patch,
+        TimeSpan? delta,
+        CalendarEntityKind kind,
+        CancellationToken cancellationToken)
+    {
+        if (patch is null || patch.Operation == CalendarScalarPatchOperation.Clear || delta is null)
+            return patch;
+        var temporal = GetEffectiveTemporal(snapshot, document, path, name, kind, cancellationToken);
+        if (temporal is null)
+            return null;
+        return new(
+            CalendarScalarPatchOperation.Set,
+            temporal with { Value = FormatLocal(ParseLocal(temporal).Add(delta.Value), temporal.Kind) });
+    }
+
+    private static CalendarTemporalValue? GetEffectiveTemporal(
+        CalendarResourceSnapshot snapshot,
+        CalendarContentDocument document,
+        IReadOnlyList<CalendarComponentPathSegment> path,
+        string name,
+        CalendarEntityKind kind,
+        CancellationToken cancellationToken)
+    {
+        var current = FindProperty(document, path, name);
+        if (current is not null)
+            return CalendarPatchValueSerializer.ParseTemporal(current);
+        var identityProperty = FindProperty(document, path, "RECURRENCE-ID");
+        if (identityProperty is null)
+            return null;
+        var identity = CalendarPatchValueSerializer.ParseTemporal(identityProperty);
+        var inspection = CalendarOccurrencePatchBuilder.InspectMembership(
+            snapshot,
+            document,
+            identity,
+            kind,
+            cancellationToken);
+        var materialized = CalendarOccurrencePatchBuilder.MaterializeIndividual(
+            snapshot,
+            document,
+            inspection,
+            identity,
+            kind);
+        if (materialized.Failure is not null || materialized.Document is null || materialized.Component is null)
+            throw new InvalidOperationException("The effective override timing could not be materialized.");
+        var effective = FindProperty(materialized.Document, materialized.Component.Path, name);
+        return effective is null ? null : CalendarPatchValueSerializer.ParseTemporal(effective);
+    }
+
+    private static DateTime ParseLocal(CalendarTemporalValue value)
+    {
+        var format = value.Kind == CalendarTemporalKind.Date ? "yyyy-MM-dd" : "yyyy-MM-dd'T'HH:mm:ss";
+        return DateTime.ParseExact(value.Value.TrimEnd('Z'), format, CultureInfo.InvariantCulture);
+    }
+
+    private static string FormatLocal(DateTime value, CalendarTemporalKind kind)
+    {
+        var format = kind == CalendarTemporalKind.Date ? "yyyy-MM-dd" : "yyyy-MM-dd'T'HH:mm:ss";
+        var lexical = value.ToString(format, CultureInfo.InvariantCulture);
+        return kind == CalendarTemporalKind.UtcDateTime ? lexical + "Z" : lexical;
+    }
+
+    private static IReadOnlyList<IReadOnlyList<CalendarComponentPathSegment>> ScopedPaths(
+        CalendarContentDocument document,
+        CalendarContentComponent primary,
+        CalendarMutationTarget target,
+        CalendarEntityKind kind)
+    {
+        var componentName = kind == CalendarEntityKind.Event ? "VEVENT" : "VTODO";
+        var components = document.Components.Where(component => component.Path.Count == 2
+                && component.Path[^1].Name.Equals(componentName, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (target.Scope == "entire-set")
+            return components.Select(component => component.Path).ToArray();
+        var anchor = target.RecurrenceIdentity!.GetCanonicalSortKey();
+        return components.Where(component => component.Path.SequenceEqual(primary.Path)
+                || FindProperty(document, component.Path, "RECURRENCE-ID") is { } recurrenceId
+                && string.CompareOrdinal(
+                    CalendarPatchValueSerializer.ParseTemporal(recurrenceId).GetCanonicalSortKey(),
+                    anchor) >= 0)
+            .Select(component => component.Path)
+            .ToArray();
+    }
+
+    private static (
+        CalendarContentDocument Document,
+        bool Changed,
+        CalendarEntityPatchResult? Failure) ApplyScopedComponent(
+        CalendarResourceSnapshot snapshot,
+        CalendarContentDocument document,
+        IReadOnlyList<CalendarComponentPathSegment> path,
+        CalendarEventPatch patch,
+        CalendarEntityKind kind)
+    {
+        var component = document.GetComponent(path);
+        var effectivePatch = PrepareScalarPatch(snapshot, document, component, patch, kind, targetsMaster: false);
+        if (effectivePatch is null)
+            return (document, false, Failure(CalendarEntityPatchCode.InvalidInput, snapshot));
+        var scalar = ApplyScalars(document, component, effectivePatch);
+        document = scalar.Document;
+        component = document.GetComponent(path);
+        if (!HasValidAddressedFinalShape(document, component, effectivePatch, kind))
+            return (document, false, Failure(CalendarEntityPatchCode.InvalidInput, snapshot));
+        var changed = scalar.Changed;
+        var categories = ApplyCategories(document, component, patch.Categories);
+        if (categories.Failure is not null)
+            return (document, false, categories.Failure);
+        if (categories.AuthoritativeUtf8 is not null)
+        {
+            document = CalendarContentDocument.Parse(categories.AuthoritativeUtf8);
+            component = document.GetComponent(path);
+            changed = true;
+        }
+        var structured = ApplyStructuredCollections(document, component, patch.Collections, kind);
+        return (structured.Document, changed || structured.Changed, structured.Failure);
     }
 
     private static bool HasReservedCancellationTransition(
@@ -623,4 +977,10 @@ internal static class CalendarEntityPatchEditor
         Temporal,
         Replace
     }
+
+    private sealed record ScopedTemporalShifts(
+        TimeSpan? Start,
+        TimeSpan? End,
+        TimeSpan? Due,
+        bool Failure);
 }

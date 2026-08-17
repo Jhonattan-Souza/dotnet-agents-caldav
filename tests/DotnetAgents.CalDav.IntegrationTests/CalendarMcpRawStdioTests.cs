@@ -170,6 +170,19 @@ public sealed class CalendarMcpRawStdioTests
         result.ToString().ShouldNotContain("private-2");
     }
 
+    [Fact]
+    public async Task CalendarEntityPatch_RawStdioRejectsOverrideReconciliationWithoutRequiredKindBeforeNetwork()
+    {
+        const string request = """
+            {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"events.patch","arguments":{"snapshot":{"href":"https://cal.example/events/event-1.ics","entityUid":"event-1","entityKind":"event","entityTag":"\"r1\""},"target":{"scope":"entire-set"},"patch":{"scalars":[{"field":"recurrenceSet","operation":"set","value":{"rrule":"FREQ=DAILY;COUNT=2"},"orphanReconciliations":[{"kind":"override","recurrenceIdentity":{"value":{"kind":"utcDateTime","value":"2026-08-22T10:00:00Z"}},"disposition":"remove"}]}]}}}}
+            """;
+
+        var result = await InvokeRawAsync(request);
+
+        AssertTypedError(result, "invalid_input", "schemaLexicalDiscriminator");
+        result.GetProperty("structuredContent").GetProperty("mutationState").GetString().ShouldBe("not_attempted");
+    }
+
     [Theory]
     [InlineData(262_144, "invalid_input", "schemaLexicalDiscriminator")]
     [InlineData(262_145, "payload_too_large", "admissionAndPayload")]

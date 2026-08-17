@@ -258,6 +258,95 @@ internal static class CalendarEntityCreateValidator
         }
     }
 
+    internal static void ValidateRecurrencePatch(
+        CalendarRecurrenceSetPatch patch,
+        CalendarTemporalValue? masterStart,
+        CalendarEntityKind expectedKind)
+    {
+        if (!Enum.IsDefined(patch.Operation) || patch.OrphanReconciliations is null)
+            throw new ArgumentException("The recurrence-set patch shape is invalid.");
+        if (patch.Operation == CalendarScalarPatchOperation.Clear)
+        {
+            if (patch.Value is not null)
+                throw new ArgumentException("A cleared recurrence set cannot carry a value.");
+            ValidateReconciliations(patch.OrphanReconciliations, masterStart);
+            return;
+        }
+        if (patch.Value is null)
+            throw new ArgumentException("A set recurrence operation requires a value.");
+        var recurrenceDates = patch.Value.RecurrenceDates?
+            .Select(value => new CalendarRecurrenceDateCreate(Value: value))
+            .ToArray();
+        ValidateRecurrenceCore(
+            patch.Value.Rule,
+            recurrenceDates,
+            patch.Value.ExceptionDates,
+            patch.Value.Overrides is { Count: > 0 },
+            masterStart);
+        ValidatePatchOverrides(patch.Value.Overrides, masterStart!, expectedKind);
+        ValidateReconciliations(patch.OrphanReconciliations, masterStart);
+    }
+
+    private static void ValidatePatchOverrides(
+        IReadOnlyList<CalendarRecurrenceOverridePatchValue>? overrides,
+        CalendarTemporalValue masterStart,
+        CalendarEntityKind expectedKind)
+    {
+        var identities = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var recurrenceOverride in overrides ?? [])
+        {
+            if (recurrenceOverride.EntityKind != expectedKind)
+                throw new ArgumentException("A recurrence override must match the master Entity Kind.");
+            ValidatePatchOverrideIdentity(recurrenceOverride, masterStart, identities);
+            ValidateOverrideRange(recurrenceOverride.Range);
+            if (!Enum.IsDefined(recurrenceOverride.Status))
+                throw new ArgumentException("The recurrence override status is invalid.");
+            if (recurrenceOverride.MovedStart is not null)
+                ValidateRecurrenceFamily(recurrenceOverride.MovedStart, masterStart);
+            if (recurrenceOverride.MovedEnd is not null)
+                ValidateRecurrenceFamily(recurrenceOverride.MovedEnd, masterStart);
+            if (recurrenceOverride.MovedStart is not null && recurrenceOverride.MovedEnd is not null)
+            {
+                ValidateOrderedTemporal(
+                    ValidateTemporal(recurrenceOverride.MovedStart),
+                    ValidateTemporal(recurrenceOverride.MovedEnd));
+            }
+        }
+    }
+
+    private static void ValidatePatchOverrideIdentity(
+        CalendarRecurrenceOverridePatchValue recurrenceOverride,
+        CalendarTemporalValue masterStart,
+        ISet<string> identities)
+    {
+        ValidateRecurrenceFamily(recurrenceOverride.RecurrenceIdentity, masterStart);
+        var identity = recurrenceOverride.RecurrenceIdentity;
+        var key = $"{identity.Kind:D}|{identity.TimeZoneId}|{identity.Value}|{recurrenceOverride.Range:D}";
+        if (!identities.Add(key))
+            throw new ArgumentException("A recurrence override identity and range discriminator must be unique.");
+    }
+
+    private static void ValidateReconciliations(
+        IReadOnlyList<CalendarOrphanReconciliation> reconciliations,
+        CalendarTemporalValue? masterStart)
+    {
+        foreach (var reconciliation in reconciliations)
+        {
+            if (!Enum.IsDefined(reconciliation.Kind)
+                || reconciliation.Kind == CalendarOrphanKind.ExceptionDate
+                    && reconciliation.OverrideKind is not null
+                || reconciliation.Kind == CalendarOrphanKind.Override
+                    && (reconciliation.OverrideKind is null
+                        || !Enum.IsDefined(reconciliation.OverrideKind.Value)))
+            {
+                throw new ArgumentException("The orphan reconciliation shape is invalid.");
+            }
+            if (masterStart is null)
+                throw new ArgumentException("A recurring Calendar Entity requires a start.");
+            ValidateRecurrenceFamily(reconciliation.RecurrenceIdentity, masterStart);
+        }
+    }
+
     private static void ValidateRecurrenceCore(
         string? rule,
         IReadOnlyList<CalendarRecurrenceDateCreate>? recurrenceDates,

@@ -523,6 +523,87 @@ public sealed class RadicaleConformanceHarnessTests(RadicaleConformanceFixture f
         await fixture.DeleteResourceHrefAsync(href, result.Snapshot.EntityTag, TestContext.Current.CancellationToken);
     }
 
+    [Fact]
+    public async Task Pinned_profile_applies_entire_event_and_range_todo_with_one_put_each()
+    {
+        var calendarHref = $"{fixture.BaseUrl}/conformance/conformance/";
+        const string eventName = "pinned-patch-entire-event.ics";
+        const string eventContent = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Conformance//EN\r\nBEGIN:VEVENT\r\nUID:pinned-entire-event\r\nDTSTAMP:20260815T120000Z\r\nDTSTART:20260818T130000Z\r\nRRULE:FREQ=DAILY;COUNT=2\r\nSUMMARY:Master\r\nX-MASTER:keep\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nUID:pinned-entire-event\r\nDTSTAMP:20260815T120000Z\r\nRECURRENCE-ID:20260819T130000Z\r\nDTSTART:20260819T150000Z\r\nSUMMARY:Override\r\nX-OVERRIDE:keep\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var eventSeed = await fixture.SeedResourceAsync(
+            eventName,
+            eventContent,
+            TestContext.Current.CancellationToken);
+        var eventHref = calendarHref + eventName;
+        var eventTrace = new ConcurrentQueue<string>();
+        await using var eventProvider = CreateProvider(fixture.BaseUrl, calendarHref, eventTrace);
+        var eventService = eventProvider.GetRequiredService<ICalendarService>();
+
+        var eventResult = await eventService.PatchEventAsync(
+            new CalendarEventPatchRequest(
+                new CalendarResourceRevisionReference(
+                    eventHref,
+                    "pinned-entire-event",
+                    CalendarEntityKind.Event,
+                    eventSeed.EntityTag),
+                new CalendarMutationTarget("entire-set"),
+                new CalendarEventPatch(Summary: new(CalendarScalarPatchOperation.Set, "Entire"))),
+            TestContext.Current.CancellationToken);
+
+        eventResult.Code.ShouldBe(CalendarEntityPatchCode.Success);
+        eventResult.Snapshot!.CalendarProperties.Count(property =>
+            property.Name == "SUMMARY" && property.RawEncodedValue == "Entire").ShouldBe(2);
+        eventResult.Snapshot.CalendarProperties.Single(property => property.Name == "X-MASTER")
+            .RawEncodedValue.ShouldBe("keep");
+        eventResult.Snapshot.CalendarProperties.Single(property => property.Name == "X-OVERRIDE")
+            .RawEncodedValue.ShouldBe("keep");
+        eventTrace.Count(entry => entry.StartsWith("PUT:", StringComparison.Ordinal)).ShouldBe(1);
+
+        const string todoName = "pinned-patch-range-todo.ics";
+        const string todoContent = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Conformance//EN\r\nBEGIN:VTODO\r\nUID:pinned-range-todo\r\nDTSTAMP:20260815T120000Z\r\nDTSTART:20260818T090000Z\r\nDUE:20260818T100000Z\r\nRRULE:FREQ=DAILY;COUNT=3\r\nSUMMARY:Master\r\nEND:VTODO\r\nBEGIN:VTODO\r\nUID:pinned-range-todo\r\nDTSTAMP:20260815T120000Z\r\nRECURRENCE-ID:20260820T090000Z\r\nDTSTART:20260820T110000Z\r\nDUE:20260820T120000Z\r\nSUMMARY:Individual\r\nX-TODO:keep\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+        var todoSeed = await fixture.SeedResourceAsync(
+            todoName,
+            todoContent,
+            TestContext.Current.CancellationToken);
+        var todoHref = calendarHref + todoName;
+        var todoTrace = new ConcurrentQueue<string>();
+        await using var todoProvider = CreateProvider(fixture.BaseUrl, calendarHref, todoTrace);
+        var todoService = todoProvider.GetRequiredService<ICalendarService>();
+
+        var todoResult = await todoService.PatchTodoAsync(
+            new CalendarTodoPatchRequest(
+                new CalendarResourceRevisionReference(
+                    todoHref,
+                    "pinned-range-todo",
+                    CalendarEntityKind.Todo,
+                    todoSeed.EntityTag),
+                new CalendarMutationTarget(
+                    "this-and-future",
+                    new CalendarTemporalValue(
+                        CalendarTemporalKind.UtcDateTime,
+                        "2026-08-19T09:00:00Z")),
+                new CalendarTodoPatch(Summary: new(CalendarScalarPatchOperation.Set, "Future"))),
+            TestContext.Current.CancellationToken);
+
+        todoResult.Code.ShouldBe(CalendarEntityPatchCode.Success);
+        todoResult.Snapshot!.CalendarProperties.Count(property =>
+            property.Name == "SUMMARY" && property.RawEncodedValue == "Future").ShouldBe(2);
+        todoResult.Snapshot.CalendarProperties.Single(property => property.Name == "RECURRENCE-ID"
+                && property.Parameters.Any(parameter => parameter.Name == "RANGE"))
+            .RawEncodedValue.ShouldBe("20260819T090000Z");
+        todoResult.Snapshot.CalendarProperties.Single(property => property.Name == "X-TODO")
+            .RawEncodedValue.ShouldBe("keep");
+        todoTrace.Count(entry => entry.StartsWith("PUT:", StringComparison.Ordinal)).ShouldBe(1);
+
+        await fixture.DeleteResourceHrefAsync(
+            eventHref,
+            eventResult.Snapshot.EntityTag,
+            TestContext.Current.CancellationToken);
+        await fixture.DeleteResourceHrefAsync(
+            todoHref,
+            todoResult.Snapshot.EntityTag,
+            TestContext.Current.CancellationToken);
+    }
+
     internal static ServiceProvider CreateProvider(
         string baseUrl,
         string calendarHref,
