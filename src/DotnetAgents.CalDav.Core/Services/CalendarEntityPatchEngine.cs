@@ -42,6 +42,41 @@ internal sealed class CalendarEntityPatchEngine(
             ReviewDeadlineFailure,
             cancellationToken);
 
+    public Task<CalendarEntityPatchResult> AddOccurrenceAsync(
+        CalendarOccurrenceMutationRequest request,
+        CancellationToken cancellationToken) => ExecuteWithinPreDispatchDeadlineAsync(
+            token => MutateOccurrenceWithinDeadlineAsync(request, OccurrenceMutation.Add, token),
+            DeadlineFailure,
+            cancellationToken);
+
+    public Task<CalendarEntityPatchResult> ExcludeOccurrenceAsync(
+        CalendarOccurrenceMutationRequest request,
+        CancellationToken cancellationToken) => ExecuteWithinPreDispatchDeadlineAsync(
+            token => MutateOccurrenceWithinDeadlineAsync(request, OccurrenceMutation.Exclude, token),
+            DeadlineFailure,
+            cancellationToken);
+
+    public Task<CalendarEntityPatchResult> RestoreOccurrenceExclusionAsync(
+        CalendarOccurrenceMutationRequest request,
+        CancellationToken cancellationToken) => ExecuteWithinPreDispatchDeadlineAsync(
+            token => MutateOccurrenceWithinDeadlineAsync(request, OccurrenceMutation.RestoreExclusion, token),
+            DeadlineFailure,
+            cancellationToken);
+
+    public Task<CalendarEntityPatchResult> CancelOccurrenceAsync(
+        CalendarOccurrenceMutationRequest request,
+        CancellationToken cancellationToken) => ExecuteWithinPreDispatchDeadlineAsync(
+            token => MutateOccurrenceWithinDeadlineAsync(request, OccurrenceMutation.Cancel, token),
+            DeadlineFailure,
+            cancellationToken);
+
+    public Task<CalendarEntityPatchResult> RestoreOccurrenceCancellationAsync(
+        CalendarOccurrenceMutationRequest request,
+        CancellationToken cancellationToken) => ExecuteWithinPreDispatchDeadlineAsync(
+            token => MutateOccurrenceWithinDeadlineAsync(request, OccurrenceMutation.RestoreCancellation, token),
+            DeadlineFailure,
+            cancellationToken);
+
     private async Task<T> ExecuteWithinPreDispatchDeadlineAsync<T>(
         Func<CancellationToken, Task<T>> execute,
         Func<T> deadlineFailure,
@@ -84,6 +119,98 @@ internal sealed class CalendarEntityPatchEngine(
         return prepared.Outcome is not null
             ? new(prepared.Outcome)
             : new(null, CalendarEntityCreateFidelity.PatchIntentDigest(prepared.AuthoritativeUtf8!, target));
+    }
+
+    private async Task<CalendarEntityPatchResult> MutateOccurrenceWithinDeadlineAsync(
+        CalendarOccurrenceMutationRequest request,
+        OccurrenceMutation operation,
+        CancellationToken cancellationToken)
+    {
+        var prepared = await PrepareOccurrenceMutationAsync(request, operation, cancellationToken);
+        if (prepared.Outcome is not null)
+            return prepared.Outcome;
+        return await DispatchAsync(
+            request.Snapshot,
+            prepared.AuthoritativeUtf8!,
+            request.Snapshot.EntityKind,
+            cancellationToken);
+    }
+
+    private async Task<PreparedPatch> PrepareOccurrenceMutationAsync(
+        CalendarOccurrenceMutationRequest request,
+        OccurrenceMutation operation,
+        CancellationToken cancellationToken)
+    {
+        var revision = request.Snapshot;
+        var currentRead = await ReadAsync(revision.Href, revision.EntityKind, cancellationToken);
+        if (currentRead.Failure is not null)
+            return new(null, currentRead.Failure);
+        var current = currentRead.Read!;
+        if (current.Snapshot is null)
+            return new(null, FromReadFailure(current.Code));
+        if (current.Snapshot.AuthoritativeUtf8.Length > MaximumAuthoritativeBytes)
+        {
+            return new(null, Failure(
+                CalendarEntityPatchCode.PayloadTooLarge,
+                current.Snapshot,
+                phase: CalendarEntityPatchPhase.AdmissionAndPayload));
+        }
+
+        var validationFailure = ValidatePreparedOccurrence(revision, current.Snapshot);
+        if (validationFailure is not null)
+            return new(null, validationFailure);
+        var edit = operation switch
+        {
+            OccurrenceMutation.Add => CalendarOccurrenceMembershipEditor.TryAdd(
+                current.Snapshot,
+                request.RecurrenceIdentity,
+                revision.EntityKind,
+                timeProvider.GetUtcNow(),
+                cancellationToken),
+            OccurrenceMutation.Exclude => CalendarOccurrenceMembershipEditor.TryExclude(
+                current.Snapshot,
+                request.RecurrenceIdentity,
+                revision.EntityKind,
+                timeProvider.GetUtcNow(),
+                cancellationToken),
+            OccurrenceMutation.RestoreExclusion => CalendarOccurrenceMembershipEditor.TryRestoreExclusion(
+                current.Snapshot,
+                request.RecurrenceIdentity,
+                revision.EntityKind,
+                timeProvider.GetUtcNow(),
+                cancellationToken),
+            OccurrenceMutation.Cancel => CalendarOccurrenceMembershipEditor.TryCancel(
+                current.Snapshot,
+                request.RecurrenceIdentity,
+                revision.EntityKind,
+                timeProvider.GetUtcNow(),
+                cancellationToken),
+            OccurrenceMutation.RestoreCancellation => CalendarOccurrenceMembershipEditor.TryRestoreCancellation(
+                current.Snapshot,
+                request.RecurrenceIdentity,
+                revision.EntityKind,
+                timeProvider.GetUtcNow(),
+                cancellationToken),
+            _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null)
+        };
+        if (edit.Failure is not null)
+            return new(null, edit.Failure);
+        if (edit.AuthoritativeUtf8 is null)
+        {
+            return new(null, new CalendarEntityPatchResult(
+                CalendarEntityPatchCode.NoChange,
+                CalendarMutationState.NotAttempted,
+                current.Snapshot,
+                Phase: CalendarEntityPatchPhase.CompleteResourceSemantics));
+        }
+        if (edit.AuthoritativeUtf8.Length > MaximumAuthoritativeBytes)
+        {
+            return new(null, Failure(
+                CalendarEntityPatchCode.PayloadTooLarge,
+                current.Snapshot,
+                phase: CalendarEntityPatchPhase.AdmissionAndPayload));
+        }
+        return new(edit.AuthoritativeUtf8, null);
     }
 
     private async Task<PreparedPatch> PrepareAsync(
@@ -181,6 +308,15 @@ internal sealed class CalendarEntityPatchEngine(
     }
 
     private sealed record PreparedPatch(byte[]? AuthoritativeUtf8, CalendarEntityPatchResult? Outcome);
+
+    private enum OccurrenceMutation
+    {
+        Add,
+        Exclude,
+        RestoreExclusion,
+        Cancel,
+        RestoreCancellation
+    }
 
     private async Task<(CalendarResourceRead? Read, CalendarEntityPatchResult? Failure)> ReadAsync(
         string href,
@@ -397,6 +533,17 @@ internal sealed class CalendarEntityPatchEngine(
             ?? (!HasValidPatchShape(target, patch, expectedKind)
                 ? Failure(CalendarEntityPatchCode.InvalidInput)
                 : null);
+    }
+
+    private static CalendarEntityPatchResult? ValidatePreparedOccurrence(
+        CalendarResourceRevisionReference revision,
+        CalendarResourceSnapshot snapshot)
+    {
+        var revisionShapeFailure = ValidateRevisionShape(revision, revision.EntityKind);
+        return revisionShapeFailure is not null
+            ? Failure(revisionShapeFailure.Value, phase: CalendarEntityPatchPhase.TargetRevision)
+            : ValidateAuthoritativeRevision(revision, snapshot)
+                ?? ValidateProjection(snapshot, revision.EntityKind);
     }
 
     private static bool HasValidRevisionShape(

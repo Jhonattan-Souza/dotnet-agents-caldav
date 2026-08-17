@@ -197,6 +197,7 @@ public class CalDavHostBuilderTests
             typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarTools),
             typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarEntityTools),
             typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarOccurrenceTools),
+            typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarOccurrenceMutationTools),
             typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarResourceTools),
             typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarEntityCreateTools),
             typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarEntityPatchTools),
@@ -205,6 +206,35 @@ public class CalDavHostBuilderTests
             typeof(DotnetAgents.CalDav.Mcp.Tools.ChatTaskTools)
         ]);
 
+    }
+
+    [Theory]
+    [InlineData("calendar_occurrences.add", false)]
+    [InlineData("calendar_occurrences.exclude", true)]
+    [InlineData("calendar_occurrences.restore_exclusion", false)]
+    [InlineData("calendar_occurrences.cancel", true)]
+    [InlineData("calendar_occurrences.restore_cancellation", false)]
+    public void BuildHost_AdvertisesFrozenOccurrenceMutationContract(string toolName, bool destructive)
+    {
+        var builder = CalDavHostBuilder.CreateBuilder();
+        builder.Services.ConfigureCalDav(ValidOptions);
+        using var host = builder.Build();
+
+        var options = host.Services.GetRequiredService<IOptions<ModelContextProtocol.Server.McpServerOptions>>().Value;
+        options.ToolCollection!.TryGetPrimitive(toolName, out var tool).ShouldBeTrue();
+        var inputSchema = JsonNode.Parse(tool!.ProtocolTool.InputSchema.GetRawText())!.AsObject();
+        var outputSchema = JsonNode.Parse(tool.ProtocolTool.OutputSchema!.Value.GetRawText())!.AsObject();
+
+        inputSchema["additionalProperties"]!.GetValue<bool>().ShouldBeFalse();
+        inputSchema["required"]!.AsArray().Select(item => item!.GetValue<string>())
+            .ShouldBe(["snapshot", "recurrenceIdentity"]);
+        outputSchema["oneOf"]!.AsArray().Count.ShouldBe(3);
+        tool.ProtocolTool.Annotations!.ReadOnlyHint.ShouldBe(false);
+        tool.ProtocolTool.Annotations.DestructiveHint.ShouldBe(destructive);
+        tool.ProtocolTool.Annotations.IdempotentHint.ShouldBe(false);
+        tool.ProtocolTool.Annotations.OpenWorldHint.ShouldBe(true);
+        tool.ProtocolTool.Meta!["cache"]!["ttlMs"]!.GetValue<int>().ShouldBe(0);
+        tool.ProtocolTool.Meta["cache"]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
     }
 
     [Fact]
@@ -394,6 +424,11 @@ public class CalDavHostBuilderTests
             "events.patch",
             "todos.create",
             "todos.patch",
+            "calendar_occurrences.add",
+            "calendar_occurrences.exclude",
+            "calendar_occurrences.restore_exclusion",
+            "calendar_occurrences.cancel",
+            "calendar_occurrences.restore_cancellation",
             "calendar_resources.delete",
             "list_task_lists",
             "show_tasks",
@@ -438,6 +473,11 @@ public class CalDavHostBuilderTests
             "events.patch",
             "todos.create",
             "todos.patch",
+            "calendar_occurrences.add",
+            "calendar_occurrences.exclude",
+            "calendar_occurrences.restore_exclusion",
+            "calendar_occurrences.cancel",
+            "calendar_occurrences.restore_cancellation",
             "calendar_resources.delete",
             "list_task_lists",
             "show_tasks",

@@ -633,8 +633,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/recur/cal-recur-006`.
 - Objective oracle: Given series with EXDATE, cancelled override, and missing identity, when exclude/cancel/restore/add run, then exclude adds EXDATE without deletion, cancellation creates cancelled override, restorations remove only named construct, and add creates explicit RDATE.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented for Event and To-do: add writes one exact RDATE only for a missing identity; exclude writes one exact EXDATE without deleting an override; cancellation materializes or updates the complete effective individual override; each restoration removes only the addressed EXDATE or cancelled status while preserving the override and other recurrence state.
+- Evidence status: `CalendarOccurrenceMutationServiceTests` covers every operation, master/range/individual precedence, both exclusion/cancellation restoration orders, deterministic duplicate/missing/unresolved/unevaluable/PERIOD outcomes, successful DATE/floating/resolved-TZID adds for Event and To-do, exact strong revision handling, one-PUT reconciliation, and verified readback. Native stdio against digest-pinned Radicale covers the complementary full five-operation To-do round trip; raw stdio covers duplicate and oversized input rejection with bounded redacted results.
 
 ## CAL-RECUR-007
 

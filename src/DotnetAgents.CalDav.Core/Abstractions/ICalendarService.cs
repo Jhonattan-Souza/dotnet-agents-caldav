@@ -56,6 +56,31 @@ public interface ICalendarService
         CalendarTodoPatchRequest request,
         CancellationToken cancellationToken);
 
+    /// <summary>Adds one explicit RDATE identity to one revision-bound Recurrence Set.</summary>
+    Task<CalendarEntityPatchResult> AddOccurrenceAsync(
+        CalendarOccurrenceMutationRequest request,
+        CancellationToken cancellationToken);
+
+    /// <summary>Adds one exact EXDATE without removing a preserved Recurrence Override.</summary>
+    Task<CalendarEntityPatchResult> ExcludeOccurrenceAsync(
+        CalendarOccurrenceMutationRequest request,
+        CancellationToken cancellationToken);
+
+    /// <summary>Removes only the exact EXDATE addressed by one original Recurrence Identity.</summary>
+    Task<CalendarEntityPatchResult> RestoreOccurrenceExclusionAsync(
+        CalendarOccurrenceMutationRequest request,
+        CancellationToken cancellationToken);
+
+    /// <summary>Creates or updates one complete cancelled individual Recurrence Override.</summary>
+    Task<CalendarEntityPatchResult> CancelOccurrenceAsync(
+        CalendarOccurrenceMutationRequest request,
+        CancellationToken cancellationToken);
+
+    /// <summary>Clears only cancelled status while preserving the addressed individual override.</summary>
+    Task<CalendarEntityPatchResult> RestoreOccurrenceCancellationAsync(
+        CalendarOccurrenceMutationRequest request,
+        CancellationToken cancellationToken);
+
     /// <summary>Deletes one reviewed resource and succeeds only after verified absence.</summary>
     Task<CalendarResourceDeleteResult> DeleteResourceAsync(
         CalendarResourceRevisionReference revision,

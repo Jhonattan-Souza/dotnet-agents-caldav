@@ -299,6 +299,7 @@ public sealed class CalendarEntityPatchToolsTests
             (CalendarEntityPatchCode.OutsideScope, "selection", CalendarEntityPatchPhase.OriginScopeAuthorization, "originScopeAuthorization"),
             (CalendarEntityPatchCode.EntityKindMismatch, "selection", CalendarEntityPatchPhase.CompleteResourceSemantics, "completeResourceSemantics"),
             (CalendarEntityPatchCode.OpaqueResource, "capabilityAndProjection", CalendarEntityPatchPhase.CompleteResourceSemantics, "completeResourceSemantics"),
+            (CalendarEntityPatchCode.TemporalUnresolved, "capabilityAndProjection", CalendarEntityPatchPhase.CompleteResourceSemantics, "completeResourceSemantics"),
             (CalendarEntityPatchCode.Conflict, "state", CalendarEntityPatchPhase.TargetRevision, "targetRevision"),
             (CalendarEntityPatchCode.ConcurrencyUnavailable, "state", CalendarEntityPatchPhase.TargetRevision, "targetRevision"),
             (CalendarEntityPatchCode.UnsupportedCapability, "capabilityAndProjection", CalendarEntityPatchPhase.SelectionDiscoveryCapability, "selectionDiscoveryCapability"),

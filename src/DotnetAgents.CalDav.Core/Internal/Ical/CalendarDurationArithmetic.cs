@@ -87,17 +87,40 @@ internal static class CalendarDurationArithmetic
         CalendarTemporalValue oldStart,
         CalendarTemporalValue oldEnd,
         CalendarTemporalValue newStart,
+        CalendarTemporalResolver resolver) => ShiftExplicitEndResolution(
+            oldStart,
+            oldEnd,
+            newStart,
+            resolver).Value;
+
+    public static CalendarDurationResolution ShiftExplicitEndResolution(
+        CalendarTemporalValue oldStart,
+        CalendarTemporalValue oldEnd,
+        CalendarTemporalValue newStart,
         CalendarTemporalResolver resolver)
     {
         if (oldStart.Kind is CalendarTemporalKind.Date or CalendarTemporalKind.FloatingDateTime)
-            return ShiftByLocalClock(oldStart, oldEnd, newStart);
+        {
+            var shifted = ShiftByLocalClock(oldStart, oldEnd, newStart);
+            return shifted is null
+                ? CalendarDurationResolution.Invalid
+                : new(shifted, new ResolvedCalendarInstant(null, false));
+        }
         var resolvedOldStart = resolver.Resolve(ToCalDateTime(oldStart));
         var resolvedOldEnd = resolver.Resolve(ToCalDateTime(oldEnd));
         var resolvedNewStart = resolver.Resolve(ToCalDateTime(newStart), generated: true);
         if (resolvedOldStart.Value is null || resolvedOldEnd.Value is null || resolvedNewStart.Value is null)
-            return null;
+        {
+            var unresolved = resolvedOldStart.Unresolved
+                || resolvedOldEnd.Unresolved
+                || resolvedNewStart.Unresolved;
+            var skipped = resolvedOldStart.Skipped
+                || resolvedOldEnd.Skipped
+                || resolvedNewStart.Skipped;
+            return new(null, new ResolvedCalendarInstant(null, unresolved, skipped));
+        }
         var duration = resolvedOldEnd.Value.Value - resolvedOldStart.Value.Value;
-        return ResolveAccurate(newStart, resolvedNewStart.Value.Value, duration, resolver).Value;
+        return ResolveAccurate(newStart, resolvedNewStart.Value.Value, duration, resolver);
     }
 
     private static CalendarTemporalValue? ShiftByLocalClock(

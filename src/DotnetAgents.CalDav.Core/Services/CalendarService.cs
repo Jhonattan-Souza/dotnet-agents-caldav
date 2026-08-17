@@ -163,6 +163,31 @@ internal sealed class CalendarService : ICalendarService
         CancellationToken cancellationToken) => await PatchEntityEngine().ReviewTodoPatchAsync(request, cancellationToken);
 
     /// <inheritdoc />
+    public async Task<CalendarEntityPatchResult> AddOccurrenceAsync(
+        CalendarOccurrenceMutationRequest request,
+        CancellationToken cancellationToken) => await PatchEntityEngine().AddOccurrenceAsync(request, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<CalendarEntityPatchResult> ExcludeOccurrenceAsync(
+        CalendarOccurrenceMutationRequest request,
+        CancellationToken cancellationToken) => await PatchEntityEngine().ExcludeOccurrenceAsync(request, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<CalendarEntityPatchResult> RestoreOccurrenceExclusionAsync(
+        CalendarOccurrenceMutationRequest request,
+        CancellationToken cancellationToken) => await PatchEntityEngine().RestoreOccurrenceExclusionAsync(request, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<CalendarEntityPatchResult> CancelOccurrenceAsync(
+        CalendarOccurrenceMutationRequest request,
+        CancellationToken cancellationToken) => await PatchEntityEngine().CancelOccurrenceAsync(request, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<CalendarEntityPatchResult> RestoreOccurrenceCancellationAsync(
+        CalendarOccurrenceMutationRequest request,
+        CancellationToken cancellationToken) => await PatchEntityEngine().RestoreOccurrenceCancellationAsync(request, cancellationToken);
+
+    /// <inheritdoc />
     public async Task<CalendarResourceDeleteResult> DeleteResourceAsync(
         CalendarResourceRevisionReference revision,
         CancellationToken cancellationToken) => await new CalendarResourceDeleteEngine(

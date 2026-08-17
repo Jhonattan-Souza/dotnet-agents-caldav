@@ -571,7 +571,8 @@ public sealed class CalendarEntityPatchTools
         CalendarEntityPatchCode.NotFound or CalendarEntityPatchCode.RemovalNotFound
             or CalendarEntityPatchCode.RemovalAmbiguous or CalendarEntityPatchCode.OutsideScope
             or CalendarEntityPatchCode.EntityKindMismatch => "selection",
-        CalendarEntityPatchCode.OpaqueResource or CalendarEntityPatchCode.RecurrenceUnevaluable
+        CalendarEntityPatchCode.OpaqueResource or CalendarEntityPatchCode.TemporalUnresolved
+            or CalendarEntityPatchCode.RecurrenceUnevaluable
             or CalendarEntityPatchCode.UnsupportedCapability => "capabilityAndProjection",
         CalendarEntityPatchCode.Conflict or CalendarEntityPatchCode.ConcurrencyUnavailable => "state",
         CalendarEntityPatchCode.PayloadTooLarge or CalendarEntityPatchCode.LimitExhausted => "limitsAndAdmission",
