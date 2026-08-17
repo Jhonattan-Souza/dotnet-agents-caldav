@@ -44,12 +44,26 @@ internal sealed class CalendarMutationRequestStateProtector
     }
 
     public string Protect(CalendarResourceRevisionReference revision)
+        => Protect(DeleteOperation, revision, []);
+
+    public string Protect(
+        string operation,
+        CalendarResourceRevisionReference revision,
+        ReadOnlySpan<byte> requestBinding) => Protect(operation, revision, requestBinding, []);
+
+    public string Protect(
+        string operation,
+        CalendarResourceRevisionReference revision,
+        ReadOnlySpan<byte> requestBinding,
+        ReadOnlySpan<byte> intentDigest)
     {
         var payload = JsonSerializer.SerializeToUtf8Bytes(new MutationPayload(
-            1,
+            2,
             _timeProvider.GetUtcNow().Add(Lifetime).ToUnixTimeSeconds(),
-            DeleteOperation,
+            operation,
             BindRevision(revision),
+            Bind(requestBinding),
+            Bind(intentDigest),
             _credentialContext));
         var nonce = RandomNumberGenerator.GetBytes(12);
         var cipherText = new byte[payload.Length];
@@ -67,7 +81,35 @@ internal sealed class CalendarMutationRequestStateProtector
         string state,
         CalendarResourceRevisionReference revision,
         out bool expired)
+        => TryUnprotect(state, DeleteOperation, revision, [], out expired);
+
+    public bool TryUnprotect(
+        string state,
+        string operation,
+        CalendarResourceRevisionReference revision,
+        ReadOnlySpan<byte> requestBinding,
+        out bool expired)
     {
+        if (!TryUnprotect(
+                state,
+                operation,
+                revision,
+                requestBinding,
+                out var intentBinding,
+                out expired))
+            return false;
+        return HasFixedTimeMatch(intentBinding, Bind([]));
+    }
+
+    public bool TryUnprotect(
+        string state,
+        string operation,
+        CalendarResourceRevisionReference revision,
+        ReadOnlySpan<byte> requestBinding,
+        out string intentBinding,
+        out bool expired)
+    {
+        intentBinding = string.Empty;
         expired = false;
         if (!TryDecode(state, out var protectedBytes))
             return false;
@@ -82,15 +124,18 @@ internal sealed class CalendarMutationRequestStateProtector
             cipher.Decrypt(nonce, cipherText, tag, payload);
             var decoded = JsonSerializer.Deserialize<MutationPayload>(payload);
             if (decoded is null
-                || decoded.Version != 1
-                || !string.Equals(decoded.Operation, DeleteOperation, StringComparison.Ordinal)
+                || decoded.Version != 2
+                || !string.Equals(decoded.Operation, operation, StringComparison.Ordinal)
                 || !HasFixedTimeMatch(decoded.RevisionBinding, BindRevision(revision))
+                || !HasFixedTimeMatch(decoded.RequestBinding, Bind(requestBinding))
+                || string.IsNullOrEmpty(decoded.IntentBinding)
                 || !HasFixedTimeMatch(decoded.CredentialContext, _credentialContext))
             {
                 return false;
             }
 
             expired = _timeProvider.GetUtcNow().ToUnixTimeSeconds() >= decoded.ExpiresAtUnixSeconds;
+            intentBinding = decoded.IntentBinding;
             return !expired;
         }
         catch (Exception exception) when (exception is CryptographicException or JsonException)
@@ -107,6 +152,9 @@ internal sealed class CalendarMutationRequestStateProtector
             revision.EntityTag)));
 
     private string Bind(ReadOnlySpan<byte> value) => Convert.ToHexStringLower(HMACSHA256.HashData(_bindingKey, value));
+
+    public bool MatchesIntent(string intentBinding, ReadOnlySpan<byte> intentDigest) =>
+        HasFixedTimeMatch(intentBinding, Bind(intentDigest));
 
     private static bool HasFixedTimeMatch(string left, string right) => CryptographicOperations.FixedTimeEquals(
         Encoding.UTF8.GetBytes(left),
@@ -144,6 +192,8 @@ internal sealed class CalendarMutationRequestStateProtector
         long ExpiresAtUnixSeconds,
         string Operation,
         string RevisionBinding,
+        string RequestBinding,
+        string IntentBinding,
         string CredentialContext);
 
     private sealed record CredentialBinding(string BaseUrl, string Username, string Password);

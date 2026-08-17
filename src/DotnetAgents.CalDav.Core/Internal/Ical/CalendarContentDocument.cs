@@ -22,6 +22,8 @@ internal sealed record CalendarContentComponent(
     int Start,
     int Length);
 
+internal sealed record CalendarContentOccurrence(int Start, int Length, string OriginalSlice);
+
 internal sealed partial class CalendarContentDocument
 {
     private static readonly FrozenDictionary<string, CalendarPropertyValueType> DefaultValueTypes = CreateDefaultValueTypes();
@@ -188,6 +190,228 @@ internal sealed partial class CalendarContentDocument
         edited.Append(rawEncodedValue);
         edited.Append(ending);
         edited.Append(_content, property.Start + property.Length, _content.Length - property.Start - property.Length);
+        return StrictUtf8.GetBytes(edited.ToString());
+    }
+
+    public byte[] SetOrClearSingleProperty(
+        IReadOnlyList<CalendarComponentPathSegment> componentPath,
+        string propertyName,
+        string? rawEncodedValue)
+    {
+        ValidateReplacement(rawEncodedValue);
+        var matches = Properties.Where(property => property.Name.Equals(propertyName, StringComparison.OrdinalIgnoreCase)
+            && PathsEqual(property.ComponentPath, componentPath)).ToArray();
+        if (matches.Length > 1)
+            throw new InvalidOperationException("The addressed singleton property is ambiguous.");
+
+        if (matches.Length == 1)
+            return rawEncodedValue is null
+                ? ReplaceRange(matches[0].Start, matches[0].Length, string.Empty)
+                : ReplaceSinglePropertyValue(componentPath, propertyName, rawEncodedValue);
+        if (rawEncodedValue is null)
+            return Replay();
+
+        var component = Components.Single(candidate => PathsEqual(candidate.Path, componentPath));
+        var insertion = component.Start + component.Length - component.EndSlice.Length;
+        var lineEnding = component.EndSlice.EndsWith("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+        return ReplaceRange(insertion, 0, propertyName + ":" + rawEncodedValue + lineEnding);
+    }
+
+    public byte[] EditProperties(
+        IReadOnlyList<CalendarComponentPathSegment> componentPath,
+        IReadOnlyDictionary<CalendarContentProperty, string?> replacements,
+        IReadOnlyList<string> appendedSlices)
+    {
+        var component = Components.Single(candidate => PathsEqual(candidate.Path, componentPath));
+        var edits = replacements.Select(pair => new ContentEdit(pair.Key.Start, pair.Key.Length, pair.Value ?? string.Empty))
+            .Append(new ContentEdit(
+                component.Start + component.Length - component.EndSlice.Length,
+                0,
+                string.Concat(appendedSlices)))
+            .OrderByDescending(edit => edit.Start)
+            .ThenByDescending(edit => edit.Length)
+            .ToArray();
+        var edited = new StringBuilder(_content);
+        foreach (var edit in edits)
+            edited.Remove(edit.Start, edit.Length).Insert(edit.Start, edit.Replacement);
+        return StrictUtf8.GetBytes(edited.ToString());
+    }
+
+    public byte[] SetOrClearSinglePropertySlice(
+        IReadOnlyList<CalendarComponentPathSegment> componentPath,
+        string propertyName,
+        string? propertySlice)
+    {
+        var matches = Properties.Where(property => property.Name.Equals(propertyName, StringComparison.OrdinalIgnoreCase)
+            && PathsEqual(property.ComponentPath, componentPath)).ToArray();
+        if (matches.Length > 1)
+            throw new InvalidOperationException("The addressed singleton property is ambiguous.");
+        var replacements = matches.Length == 0
+            ? new Dictionary<CalendarContentProperty, string?>()
+            : new Dictionary<CalendarContentProperty, string?> { [matches[0]] = propertySlice };
+        var additions = matches.Length == 0 && propertySlice is not null ? new[] { propertySlice } : [];
+        return EditProperties(componentPath, replacements, additions);
+    }
+
+    public byte[] SetSinglePropertySlicePreservingParameters(
+        IReadOnlyList<CalendarComponentPathSegment> componentPath,
+        string propertyName,
+        string propertySlice,
+        IReadOnlySet<string> replacedParameterNames)
+    {
+        var existing = Properties.Single(property => property.Name.Equals(propertyName, StringComparison.OrdinalIgnoreCase)
+            && PathsEqual(property.ComponentPath, componentPath));
+        var desired = ParsePropertySlice(propertySlice);
+        if (!desired.Name.Equals(propertyName, StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("The replacement property name does not match.", nameof(propertySlice));
+        var parameters = MergeParameters(existing.Parameters, desired.Parameters, replacedParameterNames);
+        var ending = existing.OriginalSlice.EndsWith("\r\n", StringComparison.Ordinal) ? "\r\n"
+            : existing.OriginalSlice.EndsWith('\n') ? "\n" : string.Empty;
+        var replacement = existing.Name
+            + string.Concat(parameters.Select(CalendarPatchValueSerializer.Parameter))
+            + ":" + desired.RawEncodedValue + ending;
+        return EditProperties(
+            componentPath,
+            new Dictionary<CalendarContentProperty, string?> { [existing] = replacement },
+            []);
+    }
+
+    public static string RawValueFromPropertySlice(string propertySlice) => ParsePropertySlice(propertySlice).RawEncodedValue;
+
+    private static IReadOnlyList<CalendarParameter> MergeParameters(
+        IReadOnlyList<CalendarParameter> existing,
+        IReadOnlyList<CalendarParameter> desired,
+        IReadOnlySet<string> replacedNames)
+    {
+        var replacements = desired.Where(parameter => replacedNames.Contains(parameter.Name)).ToArray();
+        var merged = new List<CalendarParameter>();
+        var inserted = false;
+        foreach (var parameter in existing)
+        {
+            if (!replacedNames.Contains(parameter.Name))
+            {
+                merged.Add(parameter);
+                continue;
+            }
+            if (inserted)
+                continue;
+            merged.AddRange(replacements);
+            inserted = true;
+        }
+        if (!inserted)
+            merged.AddRange(replacements);
+        return merged;
+    }
+
+    private static CalendarContentProperty ParsePropertySlice(string propertySlice)
+    {
+        var logicalLines = Unfold(ReadPhysicalLines(propertySlice));
+        if (logicalLines.Count != 1)
+            throw new ArgumentException("A replacement property must contain one content line.", nameof(propertySlice));
+        var line = logicalLines[0];
+        var colon = FindUnquoted(line.Unfolded, ':');
+        if (colon <= 0)
+            throw new ArgumentException("A replacement property is malformed.", nameof(propertySlice));
+        var headerParts = SplitUnquoted(line.Unfolded[..colon], ';');
+        var name = GetPropertyName(headerParts[0]);
+        var parameters = headerParts.Skip(1).Select(ParseParameter).ToArray();
+        return new CalendarContentProperty(
+            [],
+            name,
+            parameters,
+            GetValueType(name, parameters),
+            line.Unfolded[(colon + 1)..],
+            line.OriginalSlice,
+            0,
+            line.OriginalSlice.Length);
+    }
+
+    private static void ValidateReplacement(string? rawEncodedValue)
+    {
+        if (rawEncodedValue?.IndexOfAny(['\r', '\n']) >= 0)
+            throw new ArgumentException("A replacement value cannot contain a physical line break.", nameof(rawEncodedValue));
+    }
+
+    public CalendarContentComponent GetMasterComponent(CalendarEntityKind kind)
+    {
+        var name = kind == CalendarEntityKind.Event ? "VEVENT" : "VTODO";
+        return Components.Single(component => component.Path.Count == 2
+            && component.Path[^1].Name.Equals(name, StringComparison.OrdinalIgnoreCase)
+            && !Properties.Any(property => PathsEqual(property.ComponentPath, component.Path)
+                && property.Name.Equals("RECURRENCE-ID", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    public IReadOnlyList<CalendarContentOccurrence> GetDirectPropertyOccurrences(
+        IReadOnlyList<CalendarComponentPathSegment> componentPath,
+        string propertyName) => Properties.Where(property =>
+            PathsEqual(property.ComponentPath, componentPath)
+            && property.Name.Equals(propertyName, StringComparison.OrdinalIgnoreCase))
+        .Select(property => new CalendarContentOccurrence(property.Start, property.Length, property.OriginalSlice))
+        .ToArray();
+
+    public IReadOnlyList<CalendarContentOccurrence> GetDirectComponentOccurrences(
+        IReadOnlyList<CalendarComponentPathSegment> componentPath,
+        string componentName) => Components.Where(component =>
+            component.Path.Count == componentPath.Count + 1
+            && component.Path.Take(componentPath.Count).SequenceEqual(componentPath)
+            && component.Path[^1].Name.Equals(componentName, StringComparison.OrdinalIgnoreCase))
+        .Select(component => new CalendarContentOccurrence(
+            component.Start,
+            component.Length,
+            _content.Substring(component.Start, component.Length)))
+        .ToArray();
+
+    public byte[] EditOccurrences(
+        IReadOnlyList<CalendarComponentPathSegment> componentPath,
+        IReadOnlyList<CalendarContentOccurrence> removals,
+        IReadOnlyList<string> appendedSlices)
+    {
+        var component = Components.Single(candidate => PathsEqual(candidate.Path, componentPath));
+        var edits = removals.Select(removal => new ContentEdit(removal.Start, removal.Length, string.Empty))
+            .Append(new ContentEdit(
+                component.Start + component.Length - component.EndSlice.Length,
+                0,
+                string.Concat(appendedSlices)))
+            .OrderByDescending(edit => edit.Start)
+            .ThenByDescending(edit => edit.Length);
+        var edited = new StringBuilder(_content);
+        foreach (var edit in edits)
+            edited.Remove(edit.Start, edit.Length).Insert(edit.Start, edit.Replacement);
+        return StrictUtf8.GetBytes(edited.ToString());
+    }
+
+    public static string EncodeText(string value) => value
+        .Replace("\\", "\\\\", StringComparison.Ordinal)
+        .Replace("\r\n", "\\n", StringComparison.Ordinal)
+        .Replace("\n", "\\n", StringComparison.Ordinal)
+        .Replace(",", "\\,", StringComparison.Ordinal)
+        .Replace(";", "\\;", StringComparison.Ordinal);
+
+    public static string DecodeText(string value)
+    {
+        var decoded = new StringBuilder(value.Length);
+        for (var index = 0; index < value.Length; index++)
+        {
+            if (value[index] != '\\' || index + 1 >= value.Length)
+            {
+                decoded.Append(value[index]);
+                continue;
+            }
+            decoded.Append(value[++index] switch
+            {
+                'n' or 'N' => '\n',
+                var escaped => escaped
+            });
+        }
+        return decoded.ToString();
+    }
+
+    private byte[] ReplaceRange(int start, int length, string replacement)
+    {
+        var edited = new StringBuilder(_content.Length - length + replacement.Length);
+        edited.Append(_content, 0, start);
+        edited.Append(replacement);
+        edited.Append(_content, start + length, _content.Length - start - length);
         return StrictUtf8.GetBytes(edited.ToString());
     }
 
@@ -507,4 +731,6 @@ internal sealed partial class CalendarContentDocument
     private sealed record LogicalLine(string Unfolded, string OriginalSlice, int Start);
 
     private sealed record ContentRange(int Start, int Length);
+
+    private sealed record ContentEdit(int Start, int Length, string Replacement);
 }

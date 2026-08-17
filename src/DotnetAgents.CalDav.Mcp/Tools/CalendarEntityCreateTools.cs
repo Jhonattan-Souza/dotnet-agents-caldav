@@ -373,7 +373,9 @@ public sealed record CalendarEntityCreateLimits(
     [property: JsonPropertyName("calendarCount"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         int? CalendarCount = null,
     [property: JsonPropertyName("byteCount"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        int? ByteCount = null)
+        int? ByteCount = null,
+    [property: JsonPropertyName("dimension"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Dimension = null)
 {
     internal static CalendarEntityCreateLimits FromLimits(CalendarEntityCreateExecutionLimits limits) =>
         new(limits.ResourcesInspected, limits.CalendarCount, limits.ByteCount);

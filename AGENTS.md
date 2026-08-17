@@ -35,7 +35,7 @@ dotnet tool run slopwatch analyze --config .slopwatch/slopwatch.json --fail-on w
 
 - Runtime is transitional: unified Calendar tools use `ICalendarService`, while legacy task tools retain `ITaskService` until the 0.2 cleanup. Both services stay thin; WebDAV request/response logic belongs under `Core/Internal/Xml`, and iCalendar mapping belongs under `Core/Internal/Ical`.
 - `Program.cs` maps `CALDAV_*` environment variables, then delegates startup to `CalDavMcpRunner` and `CalDavHostBuilder`; keep startup testable through those types rather than adding logic to top-level statements.
-- The default host exposes `calendars.list`, `calendar_entities.query`, `calendar_occurrences.query`, `calendar_resources.get`, `events.create`, `todos.create`, `calendar_resources.delete`, and the staged legacy chat-safe tools. `CALDAV_EXPOSE_EXACT_TOOLS=true` enables exact Calendar resource access; the legacy `CALDAV_EXPOSE_ADVANCED_TOOLS=true` gate remains until its tools are removed.
+- The default host exposes `calendars.list`, `calendar_entities.query`, `calendar_occurrences.query`, `calendar_resources.get`, `events.create`, `events.patch`, `todos.create`, `todos.patch`, `calendar_resources.delete`, and the staged legacy chat-safe tools. `CALDAV_EXPOSE_EXACT_TOOLS=true` enables exact Calendar resource access; the legacy `CALDAV_EXPOSE_ADVANCED_TOOLS=true` gate remains until its tools are removed.
 - `.opencode/opencode.jsonc` launches the published NuGet tool through `dnx`; it does not run the current checkout. Do not treat that configuration as source-level end-to-end validation.
 
 ## Invariants
@@ -43,7 +43,7 @@ dotnet tool run slopwatch analyze --config .slopwatch/slopwatch.json --fail-on w
 - Keep console providers disabled. Stdout is the JSON-RPC transport, and integration tests require a valid server run to leave both stdout and stderr clean; only startup validation failures write human-readable stderr.
 - `TaskItem` and `TaskList` are immutable records. Modify them with `with`, preserve fetched ETags on updates/deletes, and use injected `TimeProvider` for completion timestamps.
 - Chat tools resolve explicit display names first, then `CALDAV_DEFAULT_TASK_LIST`; they never infer a list from task content. Summary-based mutations must return `not_found` or `ambiguous` unless exactly one task matches.
-- Legacy and exact href tools are the advanced/raw surface. Keep their descriptions requiring an explicitly provided or confirmed absolute href; semantic revision-bound mutations follow the frozen catalog, require an explicitly supplied revision href, and protect writes with MRTR confirmation. Normal chat flows use list-name tools.
+- Legacy and exact href tools are the advanced/raw surface. Keep their descriptions requiring an explicitly provided or confirmed absolute href; semantic revision-bound mutations follow the frozen catalog, require an explicitly supplied absolute revision href, and use MRTR confirmation for the frozen destructive variants. Normal chat flows use list-name tools.
 - Package versions are centralized in `Directory.Packages.props`; project files keep versionless `PackageReference` entries.
 - For Ical.Net, `.ics`, VTODO, or recurrence changes, load the repo-local `ical-net` skill before editing.
 

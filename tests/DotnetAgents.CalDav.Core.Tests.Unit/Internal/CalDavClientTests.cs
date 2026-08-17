@@ -744,7 +744,9 @@ public class CalDavClientTests
 
         result.Code.ShouldBe(CalendarResourceReadCode.ConcurrencyUnavailable);
         result.EntityTag.ShouldBeNull();
-        result.AuthoritativeUtf8.IsEmpty.ShouldBeTrue();
+        Encoding.UTF8.GetString(result.AuthoritativeUtf8.Span).ShouldBe(
+            "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n");
+        result.Snapshot.ShouldBeNull();
     }
 
     [Theory]

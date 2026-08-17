@@ -28,4 +28,10 @@ public interface ICalendarClient
     Task<CalendarResourceDeleteDispatchResult> DeleteCalendarResourceAsync(
         CalendarResourceDeleteRequest request,
         CancellationToken cancellationToken);
+
+    /// <summary>Conditionally replaces one complete Calendar Object Resource without retrying.</summary>
+    Task<CalendarResourceUpdateDispatchResult> UpdateCalendarResourceAsync(
+        CalendarResourceUpdateRequest request,
+        CancellationToken cancellationToken) => Task.FromResult(
+            new CalendarResourceUpdateDispatchResult(CalendarResourceUpdateDispatchCode.UnsupportedCapability));
 }

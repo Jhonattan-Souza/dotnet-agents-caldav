@@ -153,8 +153,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/resource/cal-resource-002`.
 - Objective oracle: Given nested VCALENDAR/VTIMEZONE/STANDARD/VEVENT properties with repeated parameters and an unknown component, when SUMMARY changes, then component path, parameter occurrence order, raw encoded values, and untouched original slices are byte-equal.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented for Semantic Patch: addressed scalar and structured occurrences are edited as lossless source slices, and all unaddressed unknown, unsupported, repeated, ordered, and parameterized content is preserved byte-exact in the outbound body; post-write authority is compared semantically so harmless server normalization is accepted.
+- Evidence status: issue #43 targets `CalendarEntityPatchServiceTests.PatchEventAsync_ChangesOnlySummaryAndLastModifiedWithExactReviewedRevision` and `CalendarEntityPatchMatrixTests.Post_write_property_reordering_is_success_but_unknown_drift_is_fidelity_failure` pass locally; the digest-pinned Radicale lossless target is included in the integration run.
 
 ## CAL-RESOURCE-003
 
@@ -165,8 +165,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/resource/cal-resource-003`.
 - Objective oracle: Given a query snapshot with href `https://cal.example/a.ics`, UID `u1`, kind event, ETag `"r1"`, when patch/exact-replace/move/delete are invoked, then patch rejects anything but the complete snapshot and each existing-resource operation sends exactly one `If-Match: "r1"`.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented for Event and To-do Semantic Patch: a coherent direct snapshot and strong resource revision are required; ordinary master fields remain patchable on recurring masters, while recurrence-anchor/membership changes, overrides, and occurrence projections are rejected before write. Exact replacement, move, and downstream occurrence mutation remain planned.
+- Evidence status: issue #43 Core and MCP targets `CalendarEntityPatchServiceTests`, `CalendarEntityPatchMatrixTests`, and `CalendarEntityPatchToolsTests` pass locally and are included in the CI test run.
 
 ## CAL-RESOURCE-004
 
@@ -200,9 +200,9 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/resource/cal-resource-006`.
-- Objective oracle: Given SUMMARY and `CATEGORIES:A,B`, when preserve/set/clear/add-remove/replaceAll variants run, then each expected field count matches; an invalid removal aborts the whole intent with zero PUT; unchanged intent returns `no_change` and replaceAll yields MRTR.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Objective oracle: Given SUMMARY, ORGANIZER, `CATEGORIES:A,B`, and every repeatable structured field, when preserve/set/clear/addRemove/replaceAll variants run, then each exact typed field count and source order matches; a missing or ambiguous lossless occurrence aborts the whole intent with zero PUT; unchanged intent returns `no_change`, and every replaceAll yields MRTR.
+- Implementation status: implemented for Event and To-do Semantic Patch: every patch-owned scalar uses explicit set/clear, every repeatable typed field uses addRemove/replaceAll, removals must identify exactly one lossless occurrence, the entire intent validates atomically, and semantic equality returns `no_change` with zero PUT; To-do `COMPLETED` and `STATUS:COMPLETED` are reserved for `todos.complete`, and every replaceAll is routed through MRTR.
+- Evidence status: issue #43 matrix targets cover every scalar family and all 18 field-specific structured collections, unambiguous and ambiguous removals, atomic multi-operation rollback, replaceAll, and zero-write no-change; focused Core and MCP suites pass locally.
 
 ## CAL-RESOURCE-007
 
@@ -213,8 +213,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/resource/cal-resource-007`.
 - Objective oracle: Given modeled SUMMARY plus unmodeled `X-KEEP:1` and unsupported `VLOCATION`, when semantic patch changes SUMMARY, then only SUMMARY bytes differ; X/VLOCATION slices are byte-equal; attempting either unmodeled change is rejected before PUT.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented for Semantic Patch: only frozen typed fields are addressable, arbitrary property bags are absent from the closed schema, and unaddressed original slices remain lossless; complete-payload Exact Replacement remains planned.
+- Evidence status: `ContractCatalogTests`, `CalendarEntityPatchMatrixTests`, and the outbound-byte oracle in `CalendarEntityPatchServiceTests` pass locally and are included in the CI test run.
 
 ## CAL-RESOURCE-008
 
@@ -237,8 +237,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/resource/cal-resource-009`.
 - Objective oracle: Given missing, weak, current, and stale ETags, when update runs, then missing/weak return `concurrency_unavailable`; stale 412 returns `conflict` plus authorized current snapshot and zero writes; current sends one exact strong If-Match without merge.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented for Semantic Patch: origin and Calendar discovery precede revision validation; missing or weak revisions fail before write, the exact caller strong ETag is sent in one `If-Match`, stale 412 returns conflict with a refreshed authorized snapshot when available, and there is no merge or unsafe bypass; other mutation families retain their existing ticket status.
+- Evidence status: `CalendarEntityPatchServiceTests`, `CalendarEntityPatchMatrixTests`, and `CalendarResourceUpdateProtocolTests` cover exact preconditions, stale conflict refresh, status mapping, and zero blind retries and pass locally.
 
 ## CAL-RESOURCE-010
 
@@ -249,8 +249,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/resource/cal-resource-010`.
 - Objective oracle: Given a dispatch timeout with subsequent GET states committed, unchanged, and differing, when reconciliation runs, then no retry PUT occurs and results report respectively committed, not_committed, and unknown mutationState.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented for Semantic Patch: a possibly dispatched PUT is never retried, bounded refetch reconciliation classifies committed, unchanged/not-committed, or indeterminate/unknown, and every patch result carries the truthful frozen Mutation State.
+- Evidence status: issue #43 reconciliation targets cover committed, unchanged, differing, unavailable, and caller-cancelled post-dispatch observations with exactly one PUT and pass locally.
 
 ## CAL-RESOURCE-011
 
@@ -261,8 +261,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/resource/cal-resource-011`.
 - Objective oracle: Given post-write GET fixtures with matching semantics, missing GET, changed unknown slice, missing strong tag, and delete absence, when verification runs, then outputs are success, committed_but_unverified, fidelity_failure, committed_but_concurrency_unavailable, and deletion receipt only after 404 absence.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented for Semantic Patch: success requires a server-refetched snapshot with the addressed semantics, equivalent unaddressed occurrences/multiplicity/order/parameters, and a usable strong tag; missing verification, missing tag, and genuine drift map to the frozen committed outcomes. Other write families remain scoped to their owning tickets.
+- Evidence status: `CalendarEntityPatchMatrixTests` covers server normalization versus semantic/lossless drift and the committed-but-unverified/concurrency-unavailable outcomes; the native stdio and pinned-Radicale patch targets are included in the integration run.
 
 ## CAL-RESOURCE-012
 
@@ -429,8 +429,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/dav/cal-dav-006`.
 - Objective oracle: Given same-origin 301/302/307/308, same-origin mutation 307/308, a 303, and cross-origin redirects, when requests run, then reads preserve method/body only on same-origin 301/302/307/308; mutations follow only 307/308; 303 is rejected; cross-origin sends no implicit credentials unless authorized.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: the mutation half is implemented for conditional patch PUT: only canonical same-origin 307/308 redirects are followed, method/body/If-Match are preserved for at most three hops, and 301/302/303/cross-origin/invalid locations fail closed. Remaining read behavior keeps its existing status.
+- Evidence status: `CalendarResourceUpdateProtocolTests` covers each allowed and forbidden redirect class, the exact ceiling, preserved request bytes/precondition, and zero cross-origin credential forwarding and passes locally.
 
 ## CAL-EVENT-001
 
@@ -440,9 +440,9 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/event/cal-event-001`.
-- Objective oracle: Given VEVENT fields split into first-class SUMMARY/DTSTART, structured ATTENDEE, and unknown `X-KEEP`, when SUMMARY patches, then first-class JSON changes once, attendee parameter/order stays equal, and X-KEEP original slice is byte-equal.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Objective oracle: Given VEVENT fields split into first-class SUMMARY/DTSTART, singleton ORGANIZER, repeatable ATTENDEE, and unknown `X-KEEP`, when scalar and collection patches run, then only the addressed typed occurrence changes, attendee parameter/order stays equal unless addressed, and every unaddressed or unknown original slice is byte-equal.
+- Implementation status: implemented for Event Semantic Patch: first-class scalars, singleton Organizer, exact typed structured collections, and preserved source slices remain separate layers throughout validation and editing; create and downstream recurrence mutation keep their owning-ticket status.
+- Evidence status: issue #43 Core matrix and strict catalog-schema targets pass locally, including addressed ATTENDEE edits beside byte-exact unknown and unaddressed slices.
 
 ## CAL-EVENT-002
 
@@ -453,8 +453,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/event/cal-event-002`.
 - Objective oracle: Given DTSTART/DTEND/DURATION, SUMMARY, DESCRIPTION, LOCATION, GEO, STATUS, TRANSP, CLASS, PRIORITY, CATEGORIES and URL with empty, clear, omitted, and padded values, when create/patch validates, then empty/clear/omit produce distinct fields, padded input is not trimmed, and invalid end/duration combinations make zero PUT.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented for Event patch scalars and categories, including recurring-master fields that do not change recurrence membership, distinct omission/set-empty/clear intent, and atomic temporal-combination validation; recurrence-anchor and recurrence-definition changes are rejected before write for downstream issues #46/#47.
+- Evidence status: `CalendarEntityPatchMatrixTests` exercises set and clear for every Event scalar family, preserves untrimmed text, and proves invalid DTSTART/DTEND/DURATION combinations produce zero PUT.
 
 ## CAL-EVENT-003
 
@@ -465,8 +465,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/event/cal-event-003`.
 - Objective oracle: Given create without UID/DTSTAMP/CREATED/LAST-MODIFIED and a patch changing SUMMARY, when persisted, then create generates the four missing values; patch preserves UID, DTSTAMP, CREATED and SEQUENCE byte-for-byte and updates LAST-MODIFIED only.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: the Semantic Patch half is implemented: a real change updates LAST-MODIFIED while UID, DTSTAMP, CREATED, and SEQUENCE remain byte-preserved; no-change writes nothing. Semantic Create generation retains its existing ticket status.
+- Evidence status: issue #43 lossless editor targets verify the patch timestamp and immutable identity/scheduling slices and pass locally.
 
 ## CAL-EVENT-004
 
@@ -476,9 +476,9 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/event/cal-event-004`.
-- Objective oracle: Given distinct ATTENDEE and PARTICIPANT values, URI STRUCTURED-DATA, action-valid DISPLAY/AUDIO/EMAIL alarms, and the remaining named structured collections, when create runs, then every named collection preserves multiplicity/order/parameters, no ATTENDEE/PARTICIPANT value is synthesized, and every URI remains inert. Given a stored X property, when an unrelated patch runs, then its original slice is byte-equal; semantic create exposes no arbitrary property bag for unmodeled content.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Objective oracle: Given distinct ATTENDEE and PARTICIPANT values, URI STRUCTURED-DATA, action-valid DISPLAY/AUDIO/EMAIL alarms, and the remaining named structured collections, when create and field-specific patch run, then every named collection preserves multiplicity/order/parameters, addRemove resolves exactly one lossless occurrence per removal, replaceAll requires MRTR, no ATTENDEE/PARTICIPANT value is synthesized, and every URI remains inert. Given a stored X property, when an unrelated patch runs, then its original slice is byte-equal; semantic create and patch expose no arbitrary property bag for unmodeled content.
+- Implementation status: implemented for field-specific Semantic Patch across every named repeatable structured collection: addRemove preserves order/multiplicity and requires exactly one lossless removal match, replaceAll is explicitly destructive and MRTR-gated, and ATTENDEE/PARTICIPANT remain independent. Arbitrary unmodeled mutation remains unavailable.
+- Evidence status: `CalendarEntityPatchMatrixTests.Every_structured_collection_maps_to_its_exact_property_or_component` and strict catalog/parser coverage pass locally for all 17 structured fields plus categories.
 
 ## CAL-EVENT-005
 
@@ -489,8 +489,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/event/cal-event-005`.
 - Objective oracle: Given ORGANIZER/ATTENDEE `mailto:` and non-mailto CAL-ADDRESS values, when stored or edited, then URI values and parameters round-trip unchanged, mail send/iTIP/network dispatch count is zero, and no mailto-only validation rejects the non-mailto address.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented for Semantic Patch storage: Organizer, Attendee, Participant, and related address values retain explicit URI/parameter data, accept non-mailto CAL-ADDRESS forms through the frozen typed model, and cause no scheduling dispatch.
+- Evidence status: issue #43 structured-value serializer/editor targets pass locally; the runtime path contains only CalDAV GET/PUT/refetch operations and no mail or iTIP transport.
 
 ## CAL-EVENT-006
 
@@ -501,8 +501,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: semantic corpus.
 - Named scenario or fixture: `0.2.0/event/cal-event-006`.
 - Objective oracle: Given DISPLAY with DESCRIPTION, AUDIO with at most one ATTACH, EMAIL with DESCRIPTION/SUMMARY/one-or-more ATTENDEE plus optional ATTACH, and other URI values, when semantic create validates them, then each action-specific shape is stored inertly with zero dereference/execution; missing required or forbidden fields cause invalid_calendar_data and zero PUT.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented for Semantic Patch: supported typed alarms and URI-bearing values validate through the shared create serializer, remain inert, and unaddressed forms are preserved losslessly; unsupported typed mutation is rejected before PUT.
+- Evidence status: the all-structured-field patch matrix includes alarms, attachments, images, conferences, links, structured-data/location/resource URIs and validates zero dereference/execution behavior through the isolated CalDAV client boundary.
 
 ## CAL-EVENT-007
 
@@ -669,8 +669,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-002`; committed issue #40 targets: `CalDavHostBuilderTests.CreateBuilder_DefaultMode_RegistersCalendarDiscoveryAlongsideChatSafeLegacyTools` and `BuildHost_DefaultMode_ListsToolsInCanonicalWireOrder`.
 - Objective oracle: Given tools/list, when catalog is emitted, then the 16 default names exactly equal the committed discovery order and no exact tool appears without opt-in.
-- Implementation status: the `calendar_occurrences.query` catalog position and default exposure are implemented; later semantic tools in the frozen 16-tool catalog remain planned by their owning tickets.
-- Evidence status: focused host discovery/order targets pass locally and are included in the CI test run.
+- Implementation status: the `calendar_occurrences.query`, `events.patch`, and `todos.patch` catalog positions and default exposure are implemented; remaining semantic tools retain their owning-ticket status.
+- Evidence status: focused host discovery/order and strict patch-schema targets pass locally and are included in the CI test run.
 
 ## CAL-MCP-003
 
@@ -693,8 +693,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-004`; committed issue #40 targets: `CalendarOccurrenceToolsTests.QueryRawAsync_AcceptsExactFrozenShapeWithoutEntityKindsAndDefaultsAbsentPageSize`, `QueryRawAsync_RejectsMissingNullAndUnknownFrozenShape`, `QueryAsync_EmitsExactOccurrenceShapeAndPaginatesByFrozenContinuationTuple`, and `CalendarMcpRawStdioTests.CalendarOccurrenceQuery_RootDuplicateArgumentsReturnTypedInvalidInputBeforeNetwork`.
 - Objective oracle: Given valid closed input, unknown sibling, duplicate JSON member, and typed failure, when tool validates, then valid authoritative structuredContent matches output schema with concise compatible text content, invalid values return schema-valid invalid_input, and parser rejects duplicate/unknown members.
-- Implementation status: implemented for `calendar_occurrences.query`, including the frozen closed input without `entityKinds`, duplicate/unknown rejection, exact output union, authoritative structured content, and bounded compatible text; later tools remain planned.
-- Evidence status: focused MCP unit and raw-stdio targets pass locally and are included in the CI test run.
+- Implementation status: implemented for `calendar_occurrences.query`, `events.patch`, and `todos.patch`, including closed discriminated inputs, duplicate/unknown rejection, exact field-specific typed unions, schema-valid structured results, and bounded compatible text; later tools remain planned.
+- Evidence status: focused MCP parser/tools, catalog closure, and native raw-stdio targets pass locally and are included in the CI test run.
 
 ## CAL-MCP-005
 
@@ -705,8 +705,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-005`; committed issue #40 target: `CalendarOccurrenceToolsTests.QueryAsync_CursorIsNonceRandomTamperEvidentBoundToQueryCredentialsExpiryAndProcessKey` exercises default, selected, and all scope binding through the occurrence query cursor.
 - Objective oracle: Given by-name, by-href, default, selected, all scope, and a stale revision, when resolution/mutation runs, then exactly one selector branch is accepted, all is explicit, and mutation refetches expected href/UID/kind/ETag before write.
-- Implementation status: the read-only Calendar Scope path is implemented for occurrence queries through the shared discovery/selection engine; mutation revision behavior remains planned.
-- Evidence status: focused occurrence-query scope and cursor-binding targets pass locally and are included in the CI test run.
+- Implementation status: the read-only Calendar Scope path is implemented for occurrence queries; Event and To-do patch additionally require the complete direct revision reference and refetch href/UID/kind/ETag before write.
+- Evidence status: focused occurrence-query scope plus issue #43 direct-revision, mismatch, and conflict targets pass locally and are included in the CI test run.
 
 ## CAL-MCP-006
 
@@ -716,9 +716,9 @@ Every requirement row contains the normative statement, source, interoperability
 - Interoperability profile and compatibility class: standards baseline; Radicale 3.7.8 where applicable; see [compatibility matrix](compatibility-matrix.md).
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-006`.
-- Objective oracle: Given scalar set/clear and categories addRemove/replaceAll with master/identity scopes, when patch runs, then modeled operation reaches only its target, replaceAll produces MRTR, and wrong scope/identity returns invalid_input with zero PUT.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Objective oracle: Given first-class and ORGANIZER scalar set/clear plus field-specific categories and structured collection addRemove/replaceAll with master/identity scopes, when patch runs, then exact typed closed schemas admit only the named value type, modeled operations reach only their target, every replaceAll produces MRTR, and wrong scope/identity returns invalid_input with zero PUT.
+- Implementation status: implemented for master-scoped Event and To-do patch, including recurring-master fields that do not change recurrence membership: exact frozen scalar and field-specific collection unions are parsed strictly, scalar/addRemove edits execute directly, replaceAll always enters MRTR, and recurrence-definition/membership and occurrence scopes fail before write for downstream tickets.
+- Evidence status: `ContractCatalogTests` and `CalendarEntityPatchToolsTests` cover exact schema closure, every typed field mapping, direct versus MRTR routing, and wrong-scope zero-write rejection and pass locally.
 
 ## CAL-MCP-007
 
@@ -741,8 +741,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-008`; committed issue #40 targets: `CalendarOccurrenceToolsTests.QueryAsync_MapsEveryDomainFailure`, `QueryAsync_PreservesDiscoveryPhaseForDiscovery404`, `QueryAsync_MalformedDiscoveryRetainsSelectionDiscoveryPhase`, and `CalendarMcpRawStdioTests.CalendarOccurrenceQuery_NormalRawCallReachesServiceAndReturnsTypedExecutionFailure`.
 - Objective oracle: Given invalid input, conflict, limit, upstream, unexpected exception, no_change, declined confirmation, invalid JSON, unknown method/tool, incompatible version and transport auth failure, when requests run, then tool failures use isError/schema-valid safe fields, protocol cases use their protocol/HTTP channel, and no_change/decline use isError false.
-- Implementation status: implemented for expected occurrence-query failures, including schema-valid `isError`, sanitized unexpected failures, earliest discovery phase retention, execution-phase failures, and typed real-stdio results; non-query mutation outcomes remain planned.
-- Evidence status: focused MCP unit and raw-stdio targets pass locally and are included in the CI test run.
+- Implementation status: implemented for occurrence query plus Event and To-do patch failures: invalid input, conflict, concurrency/fidelity/limit/upstream outcomes remain schema-valid and redacted; unexpected failures are sanitized; `no_change` and confirmation decline remain successful MCP results. Other mutation tools retain their owning-ticket status.
+- Evidence status: focused MCP unit and native raw-stdio targets cover the patch status/reconciliation matrix, unexpected exceptions, no-change, and decline and pass locally.
 
 ## CAL-MCP-009
 
@@ -753,8 +753,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-009`.
 - Objective oracle: Given delete, exact write, replaceAll, recurrence change and future scope previews, when confirmation is requested/retried, then outer input_required has requestState/inputRequests, retry binds normalized args/principal/identity/ETag for ten minutes and revalidates before one write.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented for patch replaceAll only: preview is read-only and names the exact tool operation, canonical href, UID/kind, ETag, and replaced field counts without values; opaque ten-minute requestState binds normalized arguments, credentials, identity, and revision, then the accepted retry revalidates before one conditional write. Other listed high-impact operations remain planned.
+- Evidence status: `CalendarEntityPatchToolsTests` covers accept, decline, mismatch, expiry, credential/argument/revision binding, malformed continuations, re-review, preview redaction, and zero-write failures and passes locally.
 
 ## CAL-MCP-010
 
@@ -765,8 +765,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-010`.
 - Objective oracle: Given declined, expired, mismatched arguments, changed ETag, invalid owner, direct semantic create, scalar single-resource patch, one-occurrence mutation and todo completion, when called, then first five have no write and typed confirmation failure; the four direct operations execute without MRTR.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented for Event and To-do patch: decline, expiry, ownership/argument/revision mismatch write nothing; scalar and unambiguous addRemove edits execute directly, while destructive replaceAll alone requires MRTR in this slice. Other direct operations retain their owning-ticket status.
+- Evidence status: focused MRTR continuation tests prove exact zero-write rejection and direct-versus-review routing and pass locally.
 
 ## CAL-MCP-011
 
@@ -777,8 +777,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: real MCP client over stdio.
 - Named scenario or fixture: `0.2.0/mcp/cal-mcp-011`.
 - Objective oracle: Given a request attempting two hrefs or a search-then-delete payload, when schema/service validates, then it returns invalid_input before network and trace has at most one resource mutation.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented for `events.patch` and `todos.patch`: the closed request contains one canonical resource revision and the shared one-mutation admission coordinator permits at most one resource PUT per call; no bulk/search-then-mutate form is exposed.
+- Evidence status: issue #43 strict schema, admission, and atomic multi-operation tests pass locally; the global four-operation/progress policy remains explicitly assigned to issue #53.
 
 ## CAL-MCP-012
 
@@ -849,8 +849,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/bound/cal-bound-004`; committed issue #40 targets: `CalendarOccurrenceToolsTests.QueryRawAsync_EnforcesExactArgumentByteBoundary`, `QueryAsync_RejectsSingleOccurrenceThatCannotFitStructuredBudget`, and `QueryAsync_RejectsHumanAndDiagnosticContentBeyondShared64KiBBudget`.
 - Objective oracle: Given UTF-8 JSON at 256KiB±1, resource/exact payload/page at 4MiB±1, text/diagnostics at 64KiB±1, and compressed body expanding over limit, when streamed, then limit-plus-one rejects with payload_too_large and no partial serialization.
-- Implementation status: the occurrence-query slice is implemented for 256 KiB arguments, 4 MiB structured page/single-item handling, and 64 KiB text plus diagnostics with zero partial serialization; mutation payload paths remain planned.
-- Evidence status: focused MCP exact and plus-one boundary targets pass locally and are included in the CI test run.
+- Implementation status: occurrence query and Event/To-do patch implement the 256 KiB argument and 4 MiB structured-result budgets; patch MRTR additionally applies the exact 64 KiB final UTF-8 human-readable preview boundary before review/elicitation, with no partial result.
+- Evidence status: focused MCP exact and plus-one boundary targets, including patch preview at 64 KiB and 64 KiB plus one, pass locally and are included in the CI test run.
 
 ## CAL-BOUND-005
 
@@ -861,8 +861,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/bound/cal-bound-005`; committed issue #40 target: `CalendarOccurrenceToolsTests.QueryAsync_FinalDeadlineReturnsLimitErrorWithoutSuccessItems`.
 - Objective oracle: Given reads with transient failures, mutations before/after dispatch, and fake clock at 10/30/60 seconds, when retries execute, then reads make at most three attempts, mutations no blind retries, and timeout code/phase reflects attempt, operation, or reconciliation bound.
-- Implementation status: the occurrence-query 30-second read deadline is implemented over the existing bounded HTTP read path; mutation, reconciliation, and generated-UID limits remain planned.
-- Evidence status: focused fake-time occurrence deadline target passes locally and is included in the CI test run.
+- Implementation status: the occurrence-query read deadline and Event/To-do patch bounds are implemented: patch validation/refetch must dispatch within 30 seconds, PUT is attempted once without retry, and possible dispatch receives bounded reconciliation within the mutation total; generated-UID create remains outside this slice.
+- Evidence status: focused fake-time patch pre-dispatch, MRTR preview, direct-call, HTTP no-retry, and reconciliation targets pass locally and are included in the CI test run.
 
 ## CAL-BOUND-006
 
@@ -873,8 +873,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/bound/cal-bound-006`.
 - Objective oracle: Given five concurrent origin operations, two mutations, queue positions 1..17, and progress clock 499/500ms, when admitted, then max four/one run, seventeenth is busy after two seconds, and progress is <=4/s aggregate with no href/name/content.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented only for the #43 mutation portion by reusing the shared per-origin one-mutation FIFO coordinator, including bounded queue admission; the global maximum four operations and progress notification policy remain assigned to issue #53 and are not claimed here.
+- Evidence status: focused patch admission tests prove one active mutation, FIFO handoff, busy rejection, and waiter cancellation without a write and pass locally.
 
 ## CAL-BOUND-007
 
@@ -885,8 +885,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/bound/cal-bound-007`; committed issue #40 target: `CalendarOccurrenceToolsTests.QueryAsync_CallerCancellationPropagatesWithoutReturningAResult`.
 - Objective oracle: Given cancelled read, cancelled pre-dispatch mutation, and cancelled post-dispatch mutation, when tokens fire, then first two stop promptly with zero/one dispatch respectively and post-dispatch continues bounded reconciliation to truthful mutationState.
-- Implementation status: prompt caller cancellation is implemented for occurrence reads; post-dispatch mutation reconciliation remains planned.
-- Evidence status: focused occurrence cancellation target passes locally and is included in the CI test run.
+- Implementation status: prompt caller cancellation is implemented for occurrence reads and pre-dispatch Event/To-do patch; once PUT may have dispatched, patch ignores caller cancellation only for bounded authoritative reconciliation and returns truthful Mutation State.
+- Evidence status: focused patch targets cover cancellation before service execution, before PUT, and after possible dispatch with one PUT/no blind retry and pass locally.
 
 ## CAL-BOUND-008
 
@@ -897,8 +897,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/bound/cal-bound-008`; committed issue #40 targets: `CalendarOccurrenceToolsTests.QueryAsync_CursorIsNonceRandomTamperEvidentBoundToQueryCredentialsExpiryAndProcessKey` and `QueryAsync_CursorCredentialBindingRejectsSameKeyUnderDifferentCredentials`.
 - Objective oracle: Given cursor/requestState exceeding 2KiB, expired at ten minutes, rotated key, changed arguments/principal/ETag, one-bit tamper, and replay, when consumed, then each invalid handle fails closed; serialized bytes reveal none of normalized args/principal/identity/ETag and valid replay remains nonduplicating through conditional write.
-- Implementation status: the occurrence cursor is implemented with authenticated encryption, random nonce, canonical base64url, ten-minute expiry, process-key rotation invalidation, credential and normalized-query binding, continuation tuple binding, and a 2 KiB cap; MRTR requestState and mutation replay remain planned.
-- Evidence status: focused tamper/expiry/restart/credential/query-binding targets pass locally and are included in the CI test run.
+- Implementation status: occurrence cursors and patch replaceAll requestState are implemented with authenticated encryption, random nonce, canonical base64url, ten-minute expiry, process-key rotation invalidation, credential/normalized-input/operation/revision binding, and a 2 KiB cap; accepted replay remains non-duplicating through refetch plus exact If-Match.
+- Evidence status: focused cursor and patch requestState tamper/expiry/restart/credential/argument/revision/replay targets pass locally and are included in the CI test run.
 
 ## CAL-ERROR-001
 
@@ -909,8 +909,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/error/cal-error-001`.
 - Objective oracle: Given each typed failure plus 33 violations, retry delay, candidates and conflict snapshot, when serialized, then required code/category/message/retryable/phase exist, optional fields cap at 32, and raw values/content/credentials/cursors/stack traces are absent.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented for Event and To-do patch outcomes and MRTR: typed results contain only frozen safe fields; parser, preview, service, transport, and unexpected-exception paths redact arguments, content, credentials, ETags/requestState, bodies, and stack traces.
+- Evidence status: focused patch error/preview tests inject sensitive markers into rejected input and exceptions and assert they are absent from structured and human-readable output; native stdio evidence is included in the integration run.
 
 ## CAL-ERROR-002
 
@@ -921,8 +921,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/error/cal-error-002`.
 - Objective oracle: Given one fixture per closed error code plus no_change, confirmation_declined and input_required, when emitted, then code enum is exact, the first two are non-error mutation results, and input_required is outer protocol result not error code.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented for the patch-reachable closed outcomes, including invalid input/calendar data, scope/kind/opaque/concurrency/conflict/limits/upstream/fidelity/verification/indeterminate, plus non-error `no_change`, confirmation decline, and outer MRTR `input_required`; catalog-wide codes for other tools retain their ticket status.
+- Evidence status: `CalendarEntityPatchMatrixTests`, `CalendarResourceUpdateProtocolTests`, and `CalendarEntityPatchToolsTests` cover the reachable patch status and protocol-result matrix and pass locally.
 
 ## CAL-ERROR-003
 
@@ -933,8 +933,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/error/cal-error-003`.
 - Objective oracle: Given statuses 401,403,404 direct/discovery,409,412,413,429,405,501,507, malformed success and exhausted 5xx/timeout, when mapped, then each exact code/retryable value follows table and no response body appears in diagnostics.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: deterministic HTTP mapping is implemented for patch PUT and refetch, including 401/403/404/409/412/413/429/405/501/507, malformed success, 5xx, timeout, and transport ambiguity, without exposing response bodies.
+- Evidence status: `CalendarResourceUpdateProtocolTests` and Core reconciliation targets cover the patch HTTP/status matrix, retryability/mutation-state truth, and exactly one PUT and pass locally.
 
 ## CAL-SEC-001
 
@@ -945,8 +945,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/sec/cal-sec-001`.
 - Objective oracle: Given absolute hrefs with userinfo, fragment, foreign origin, configured origin and authorized redirect origin, when validated, then invalid inputs make zero DNS/HTTP calls and valid origin request never derives a host from href text.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented for Event and To-do patch: canonical absolute same-origin href validation occurs before network; fragments, userinfo, foreign origins, and unsafe redirect locations are rejected, and requests use the configured client origin.
+- Evidence status: strict parser/Core preflight and update-protocol redirect targets assert zero network on invalid hrefs and pass locally.
 
 ## CAL-SEC-002
 
@@ -969,8 +969,8 @@ Every requirement row contains the normative statement, source, interoperability
 - Primary evidence layer: deterministic WebDAV contract.
 - Named scenario or fixture: `0.2.0/sec/cal-sec-003`.
 - Objective oracle: Given successful stdio run and failures containing credentials, raw request/body, cursor and requestState markers, when logs/streams inspected, then stdout is JSON-RPC only, stderr is clean, and logs retain only code/phase/duration/correlation fields.
-- Implementation status: planned.
-- Evidence status: planned until its named scenario is green in pull-request and release CI.
+- Implementation status: implemented for the native stdio patch slice: results and diagnostics are redacted, stdout remains JSON-RPC transport, and the valid Event/To-do patch run leaves stderr clean; broader logging evidence remains owned by the release-wide scenario.
+- Evidence status: `CalendarMcpStdioIntegrationTests.CalendarEntityPatch_PatchesOneEventOverRealStdioAndRadicale` and `CalendarEntityPatch_PatchesOneReviewedTodoOverRealStdioAndRadicale` execute both patch tools and inspect transport cleanliness and schema-valid output; focused redaction targets pass locally.
 
 ## CAL-RELEASE-001
 

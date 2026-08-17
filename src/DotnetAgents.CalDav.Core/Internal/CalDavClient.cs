@@ -174,10 +174,6 @@ internal sealed class CalDavClient : ICalDavClient, ICalendarClient
 
         response.EnsureSuccessStatusCode();
         var responseEntityTag = response.Headers.ETag;
-        if (responseEntityTag is null || responseEntityTag.IsWeak)
-            return new CalendarResourceRead(CalendarResourceReadCode.ConcurrencyUnavailable);
-
-        var entityTag = responseEntityTag.ToString();
         var bounded = await ReadBoundedContentAsync(response.Content, cancellationToken);
         if (bounded.Content is null)
             return new CalendarResourceRead(CalendarResourceReadCode.PayloadTooLarge, ObservedByteCount: bounded.ObservedByteCount);
@@ -191,6 +187,15 @@ internal sealed class CalDavClient : ICalDavClient, ICalendarClient
             return new CalendarResourceRead(CalendarResourceReadCode.UpstreamProtocolError);
         }
 
+        if (responseEntityTag is null || responseEntityTag.IsWeak)
+        {
+            return new CalendarResourceRead(
+                CalendarResourceReadCode.ConcurrencyUnavailable,
+                resourceUri.AbsoluteUri,
+                AuthoritativeUtf8: content);
+        }
+
+        var entityTag = responseEntityTag.ToString();
         return CalendarResourceRead.Success(resourceUri.AbsoluteUri, entityTag, content);
     }
 
@@ -207,6 +212,13 @@ internal sealed class CalDavClient : ICalDavClient, ICalendarClient
         CancellationToken cancellationToken) => await new CalendarResourceDeleteProtocol(
             _httpClient,
             new Uri(_options.Value.BaseUrl, UriKind.Absolute)).DeleteAsync(request, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<CalendarResourceUpdateDispatchResult> UpdateCalendarResourceAsync(
+        CalendarResourceUpdateRequest request,
+        CancellationToken cancellationToken) => await new CalendarResourceUpdateProtocol(
+            _httpClient,
+            new Uri(_options.Value.BaseUrl, UriKind.Absolute)).UpdateAsync(request, cancellationToken);
 
     private async Task<HttpResponseMessage> SendGetWithRedirectHandlingAsync(
         Uri initialUri,

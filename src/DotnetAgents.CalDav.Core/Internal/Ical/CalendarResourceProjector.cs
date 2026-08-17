@@ -269,7 +269,7 @@ internal static class CalendarResourceProjector
         var component = property.ComponentPath[^1].Name;
         var directEntity = property.ComponentPath.Count == 2 && component is "VEVENT" or "VTODO";
         var directParticipant = property.ComponentPath.Count == 3 && component == "PARTICIPANT";
-        return property.Name switch
+        return property.Name.ToUpperInvariant() switch
         {
             "CALENDAR-ADDRESS" or "PARTICIPANT-TYPE" => directParticipant,
             "STRUCTURED-DATA" or "STYLED-DESCRIPTION" => directEntity || directParticipant,

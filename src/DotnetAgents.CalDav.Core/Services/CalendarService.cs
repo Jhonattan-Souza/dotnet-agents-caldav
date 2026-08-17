@@ -104,7 +104,13 @@ internal sealed class CalendarService : ICalendarService
             ResolveDefaultCalendar).QueryAsync(query, cancellationToken);
 
     /// <inheritdoc />
-    public async Task<CalendarResourceRead> GetResourceAsync(string href, CancellationToken cancellationToken)
+    public Task<CalendarResourceRead> GetResourceAsync(string href, CancellationToken cancellationToken) =>
+        GetResourceAsync(href, expectedKind: null, cancellationToken);
+
+    private async Task<CalendarResourceRead> GetResourceAsync(
+        string href,
+        CalendarEntityKind? expectedKind,
+        CancellationToken cancellationToken)
     {
         if (!TryGetCanonicalResourceUri(href, out var resourceUri))
             return new CalendarResourceRead(CalendarResourceReadCode.InvalidInput);
@@ -120,6 +126,8 @@ internal sealed class CalendarService : ICalendarService
             .FirstOrDefault();
         if (calendar is null)
             return new CalendarResourceRead(CalendarResourceReadCode.OutsideScope);
+        if (expectedKind is not null && !SupportsEntityKind(calendar, expectedKind.Value))
+            return new CalendarResourceRead(CalendarResourceReadCode.UnsupportedCapability);
 
         return await CreateSnapshotAsync(calendar, href, cancellationToken);
     }
@@ -133,6 +141,26 @@ internal sealed class CalendarService : ICalendarService
     public async Task<CalendarEntityCreateResult> CreateTodoAsync(
         CalendarTodoCreateRequest request,
         CancellationToken cancellationToken) => await CreateEntityEngine().CreateTodoAsync(request, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<CalendarEntityPatchResult> PatchEventAsync(
+        CalendarEventPatchRequest request,
+        CancellationToken cancellationToken) => await PatchEntityEngine().PatchEventAsync(request, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<CalendarEntityPatchResult> PatchTodoAsync(
+        CalendarTodoPatchRequest request,
+        CancellationToken cancellationToken) => await PatchEntityEngine().PatchTodoAsync(request, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<CalendarEntityPatchReviewResult> ReviewEventPatchAsync(
+        CalendarEventPatchRequest request,
+        CancellationToken cancellationToken) => await PatchEntityEngine().ReviewEventPatchAsync(request, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<CalendarEntityPatchReviewResult> ReviewTodoPatchAsync(
+        CalendarTodoPatchRequest request,
+        CancellationToken cancellationToken) => await PatchEntityEngine().ReviewTodoPatchAsync(request, cancellationToken);
 
     /// <inheritdoc />
     public async Task<CalendarResourceDeleteResult> DeleteResourceAsync(
@@ -149,6 +177,11 @@ internal sealed class CalendarService : ICalendarService
         _identityGenerator,
         ApplyScope,
         ResolveDefaultCalendar);
+
+    private CalendarEntityPatchEngine PatchEntityEngine() => new(
+        _calendarClient,
+        (href, kind, cancellationToken) => GetResourceAsync(href, kind, cancellationToken),
+        _timeProvider);
 
     private async Task<CalendarResourceRead> CreateSnapshotAsync(
         CalendarDescriptor calendar,

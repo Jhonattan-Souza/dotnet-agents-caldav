@@ -2463,7 +2463,7 @@
         "idempotentHint": false,
         "openWorldHint": true
       },
-      "description": "Apply a revision-bound semantic patch to one Event resource."
+      "description": "Apply a revision-bound semantic patch to one Event resource at an explicitly supplied absolute snapshot href."
     },
     {
       "name": "todos.create",
@@ -2503,7 +2503,7 @@
         "idempotentHint": false,
         "openWorldHint": true
       },
-      "description": "Apply a revision-bound semantic patch to one To-do resource."
+      "description": "Apply a revision-bound semantic patch to one To-do resource at an explicitly supplied absolute snapshot href; completion is reserved for todos.complete."
     },
     {
       "name": "todos.complete",
@@ -4592,9 +4592,7 @@
           ],
           "properties": {
             "field": {
-              "enum": [
-                "categories"
-              ]
+              "const": "categories"
             },
             "operation": {
               "const": "addRemove"
@@ -4611,7 +4609,29 @@
                 "type": "string"
               }
             }
-          }
+          },
+          "anyOf": [
+            {
+              "required": [
+                "add"
+              ],
+              "properties": {
+                "add": {
+                  "minItems": 1
+                }
+              }
+            },
+            {
+              "required": [
+                "remove"
+              ],
+              "properties": {
+                "remove": {
+                  "minItems": 1
+                }
+              }
+            }
+          ]
         },
         {
           "type": "object",
@@ -4623,9 +4643,7 @@
           ],
           "properties": {
             "field": {
-              "enum": [
-                "categories"
-              ]
+              "const": "categories"
             },
             "operation": {
               "const": "replaceAll"
@@ -4634,6 +4652,1247 @@
               "type": "array",
               "items": {
                 "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "attendees"
+            },
+            "operation": {
+              "const": "addRemove"
+            },
+            "add": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/attendee"
+              }
+            },
+            "remove": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/attendee"
+              }
+            }
+          },
+          "anyOf": [
+            {
+              "required": [
+                "add"
+              ],
+              "properties": {
+                "add": {
+                  "minItems": 1
+                }
+              }
+            },
+            {
+              "required": [
+                "remove"
+              ],
+              "properties": {
+                "remove": {
+                  "minItems": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "values"
+          ],
+          "properties": {
+            "field": {
+              "const": "attendees"
+            },
+            "operation": {
+              "const": "replaceAll"
+            },
+            "values": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/attendee"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "participants"
+            },
+            "operation": {
+              "const": "addRemove"
+            },
+            "add": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/participant"
+              }
+            },
+            "remove": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/participant"
+              }
+            }
+          },
+          "anyOf": [
+            {
+              "required": [
+                "add"
+              ],
+              "properties": {
+                "add": {
+                  "minItems": 1
+                }
+              }
+            },
+            {
+              "required": [
+                "remove"
+              ],
+              "properties": {
+                "remove": {
+                  "minItems": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "values"
+          ],
+          "properties": {
+            "field": {
+              "const": "participants"
+            },
+            "operation": {
+              "const": "replaceAll"
+            },
+            "values": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/participant"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "contacts"
+            },
+            "operation": {
+              "const": "addRemove"
+            },
+            "add": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/textProperty"
+              }
+            },
+            "remove": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/textProperty"
+              }
+            }
+          },
+          "anyOf": [
+            {
+              "required": [
+                "add"
+              ],
+              "properties": {
+                "add": {
+                  "minItems": 1
+                }
+              }
+            },
+            {
+              "required": [
+                "remove"
+              ],
+              "properties": {
+                "remove": {
+                  "minItems": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "values"
+          ],
+          "properties": {
+            "field": {
+              "const": "contacts"
+            },
+            "operation": {
+              "const": "replaceAll"
+            },
+            "values": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/textProperty"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "resources"
+            },
+            "operation": {
+              "const": "addRemove"
+            },
+            "add": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/textProperty"
+              }
+            },
+            "remove": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/textProperty"
+              }
+            }
+          },
+          "anyOf": [
+            {
+              "required": [
+                "add"
+              ],
+              "properties": {
+                "add": {
+                  "minItems": 1
+                }
+              }
+            },
+            {
+              "required": [
+                "remove"
+              ],
+              "properties": {
+                "remove": {
+                  "minItems": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "values"
+          ],
+          "properties": {
+            "field": {
+              "const": "resources"
+            },
+            "operation": {
+              "const": "replaceAll"
+            },
+            "values": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/textProperty"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "relatedTo"
+            },
+            "operation": {
+              "const": "addRemove"
+            },
+            "add": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/relation"
+              }
+            },
+            "remove": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/relation"
+              }
+            }
+          },
+          "anyOf": [
+            {
+              "required": [
+                "add"
+              ],
+              "properties": {
+                "add": {
+                  "minItems": 1
+                }
+              }
+            },
+            {
+              "required": [
+                "remove"
+              ],
+              "properties": {
+                "remove": {
+                  "minItems": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "values"
+          ],
+          "properties": {
+            "field": {
+              "const": "relatedTo"
+            },
+            "operation": {
+              "const": "replaceAll"
+            },
+            "values": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/relation"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "requestStatuses"
+            },
+            "operation": {
+              "const": "addRemove"
+            },
+            "add": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/requestStatus"
+              }
+            },
+            "remove": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/requestStatus"
+              }
+            }
+          },
+          "anyOf": [
+            {
+              "required": [
+                "add"
+              ],
+              "properties": {
+                "add": {
+                  "minItems": 1
+                }
+              }
+            },
+            {
+              "required": [
+                "remove"
+              ],
+              "properties": {
+                "remove": {
+                  "minItems": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "values"
+          ],
+          "properties": {
+            "field": {
+              "const": "requestStatuses"
+            },
+            "operation": {
+              "const": "replaceAll"
+            },
+            "values": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/requestStatus"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "alarms"
+            },
+            "operation": {
+              "const": "addRemove"
+            },
+            "add": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/alarm"
+              }
+            },
+            "remove": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/alarm"
+              }
+            }
+          },
+          "anyOf": [
+            {
+              "required": [
+                "add"
+              ],
+              "properties": {
+                "add": {
+                  "minItems": 1
+                }
+              }
+            },
+            {
+              "required": [
+                "remove"
+              ],
+              "properties": {
+                "remove": {
+                  "minItems": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "values"
+          ],
+          "properties": {
+            "field": {
+              "const": "alarms"
+            },
+            "operation": {
+              "const": "replaceAll"
+            },
+            "values": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/alarm"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "attachments"
+            },
+            "operation": {
+              "const": "addRemove"
+            },
+            "add": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/namedUri"
+              }
+            },
+            "remove": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/namedUri"
+              }
+            }
+          },
+          "anyOf": [
+            {
+              "required": [
+                "add"
+              ],
+              "properties": {
+                "add": {
+                  "minItems": 1
+                }
+              }
+            },
+            {
+              "required": [
+                "remove"
+              ],
+              "properties": {
+                "remove": {
+                  "minItems": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "values"
+          ],
+          "properties": {
+            "field": {
+              "const": "attachments"
+            },
+            "operation": {
+              "const": "replaceAll"
+            },
+            "values": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/namedUri"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "comments"
+            },
+            "operation": {
+              "const": "addRemove"
+            },
+            "add": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/textProperty"
+              }
+            },
+            "remove": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/textProperty"
+              }
+            }
+          },
+          "anyOf": [
+            {
+              "required": [
+                "add"
+              ],
+              "properties": {
+                "add": {
+                  "minItems": 1
+                }
+              }
+            },
+            {
+              "required": [
+                "remove"
+              ],
+              "properties": {
+                "remove": {
+                  "minItems": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "values"
+          ],
+          "properties": {
+            "field": {
+              "const": "comments"
+            },
+            "operation": {
+              "const": "replaceAll"
+            },
+            "values": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/textProperty"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "styledDescriptions"
+            },
+            "operation": {
+              "const": "addRemove"
+            },
+            "add": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/textProperty"
+              }
+            },
+            "remove": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/textProperty"
+              }
+            }
+          },
+          "anyOf": [
+            {
+              "required": [
+                "add"
+              ],
+              "properties": {
+                "add": {
+                  "minItems": 1
+                }
+              }
+            },
+            {
+              "required": [
+                "remove"
+              ],
+              "properties": {
+                "remove": {
+                  "minItems": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "values"
+          ],
+          "properties": {
+            "field": {
+              "const": "styledDescriptions"
+            },
+            "operation": {
+              "const": "replaceAll"
+            },
+            "values": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/textProperty"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "images"
+            },
+            "operation": {
+              "const": "addRemove"
+            },
+            "add": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/namedUri"
+              }
+            },
+            "remove": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/namedUri"
+              }
+            }
+          },
+          "anyOf": [
+            {
+              "required": [
+                "add"
+              ],
+              "properties": {
+                "add": {
+                  "minItems": 1
+                }
+              }
+            },
+            {
+              "required": [
+                "remove"
+              ],
+              "properties": {
+                "remove": {
+                  "minItems": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "values"
+          ],
+          "properties": {
+            "field": {
+              "const": "images"
+            },
+            "operation": {
+              "const": "replaceAll"
+            },
+            "values": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/namedUri"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "conferences"
+            },
+            "operation": {
+              "const": "addRemove"
+            },
+            "add": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/namedUri"
+              }
+            },
+            "remove": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/namedUri"
+              }
+            }
+          },
+          "anyOf": [
+            {
+              "required": [
+                "add"
+              ],
+              "properties": {
+                "add": {
+                  "minItems": 1
+                }
+              }
+            },
+            {
+              "required": [
+                "remove"
+              ],
+              "properties": {
+                "remove": {
+                  "minItems": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "values"
+          ],
+          "properties": {
+            "field": {
+              "const": "conferences"
+            },
+            "operation": {
+              "const": "replaceAll"
+            },
+            "values": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/namedUri"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "links"
+            },
+            "operation": {
+              "const": "addRemove"
+            },
+            "add": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/namedUri"
+              }
+            },
+            "remove": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/namedUri"
+              }
+            }
+          },
+          "anyOf": [
+            {
+              "required": [
+                "add"
+              ],
+              "properties": {
+                "add": {
+                  "minItems": 1
+                }
+              }
+            },
+            {
+              "required": [
+                "remove"
+              ],
+              "properties": {
+                "remove": {
+                  "minItems": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "values"
+          ],
+          "properties": {
+            "field": {
+              "const": "links"
+            },
+            "operation": {
+              "const": "replaceAll"
+            },
+            "values": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/namedUri"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "concepts"
+            },
+            "operation": {
+              "const": "addRemove"
+            },
+            "add": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/uriProperty"
+              }
+            },
+            "remove": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/uriProperty"
+              }
+            }
+          },
+          "anyOf": [
+            {
+              "required": [
+                "add"
+              ],
+              "properties": {
+                "add": {
+                  "minItems": 1
+                }
+              }
+            },
+            {
+              "required": [
+                "remove"
+              ],
+              "properties": {
+                "remove": {
+                  "minItems": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "values"
+          ],
+          "properties": {
+            "field": {
+              "const": "concepts"
+            },
+            "operation": {
+              "const": "replaceAll"
+            },
+            "values": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/uriProperty"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "structuredDataUris"
+            },
+            "operation": {
+              "const": "addRemove"
+            },
+            "add": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/uriProperty"
+              }
+            },
+            "remove": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/uriProperty"
+              }
+            }
+          },
+          "anyOf": [
+            {
+              "required": [
+                "add"
+              ],
+              "properties": {
+                "add": {
+                  "minItems": 1
+                }
+              }
+            },
+            {
+              "required": [
+                "remove"
+              ],
+              "properties": {
+                "remove": {
+                  "minItems": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "values"
+          ],
+          "properties": {
+            "field": {
+              "const": "structuredDataUris"
+            },
+            "operation": {
+              "const": "replaceAll"
+            },
+            "values": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/uriProperty"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "locationUris"
+            },
+            "operation": {
+              "const": "addRemove"
+            },
+            "add": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/namedUri"
+              }
+            },
+            "remove": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/namedUri"
+              }
+            }
+          },
+          "anyOf": [
+            {
+              "required": [
+                "add"
+              ],
+              "properties": {
+                "add": {
+                  "minItems": 1
+                }
+              }
+            },
+            {
+              "required": [
+                "remove"
+              ],
+              "properties": {
+                "remove": {
+                  "minItems": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "values"
+          ],
+          "properties": {
+            "field": {
+              "const": "locationUris"
+            },
+            "operation": {
+              "const": "replaceAll"
+            },
+            "values": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/namedUri"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "resourceUris"
+            },
+            "operation": {
+              "const": "addRemove"
+            },
+            "add": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/namedUri"
+              }
+            },
+            "remove": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/namedUri"
+              }
+            }
+          },
+          "anyOf": [
+            {
+              "required": [
+                "add"
+              ],
+              "properties": {
+                "add": {
+                  "minItems": 1
+                }
+              }
+            },
+            {
+              "required": [
+                "remove"
+              ],
+              "properties": {
+                "remove": {
+                  "minItems": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "values"
+          ],
+          "properties": {
+            "field": {
+              "const": "resourceUris"
+            },
+            "operation": {
+              "const": "replaceAll"
+            },
+            "values": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/namedUri"
               }
             }
           }
@@ -5123,13 +6382,13 @@
           ],
           "properties": {
             "field": {
-              "const": "structuredData"
+              "const": "organizer"
             },
             "operation": {
               "const": "set"
             },
             "value": {
-              "$ref": "#/$defs/structuredData"
+              "$ref": "#/$defs/namedUri"
             }
           }
         },
@@ -5142,7 +6401,7 @@
           ],
           "properties": {
             "field": {
-              "const": "structuredData"
+              "const": "organizer"
             },
             "operation": {
               "const": "clear"
@@ -5153,6 +6412,44 @@
     },
     "todoScalarPatch": {
       "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation",
+            "value"
+          ],
+          "properties": {
+            "field": {
+              "const": "percentComplete"
+            },
+            "operation": {
+              "const": "set"
+            },
+            "value": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "operation"
+          ],
+          "properties": {
+            "field": {
+              "const": "percentComplete"
+            },
+            "operation": {
+              "const": "clear"
+            }
+          }
+        },
         {
           "type": "object",
           "additionalProperties": false,
@@ -5453,13 +6750,13 @@
           ],
           "properties": {
             "field": {
-              "const": "structuredData"
+              "const": "organizer"
             },
             "operation": {
               "const": "set"
             },
             "value": {
-              "$ref": "#/$defs/structuredData"
+              "$ref": "#/$defs/namedUri"
             }
           }
         },
@@ -5472,7 +6769,7 @@
           ],
           "properties": {
             "field": {
-              "const": "structuredData"
+              "const": "organizer"
             },
             "operation": {
               "const": "clear"
@@ -6179,6 +7476,11 @@
         "byteCount": {
           "type": "integer",
           "minimum": 0
+        },
+        "dimension": {
+          "enum": [
+            "elapsed_time"
+          ]
         }
       }
     },

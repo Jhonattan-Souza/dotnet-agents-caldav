@@ -9,6 +9,7 @@ public enum CalendarResourceReadCode
     OutsideScope,
     ConcurrencyUnavailable,
     PayloadTooLarge,
+    UnsupportedCapability,
     UpstreamProtocolError
 }
 
