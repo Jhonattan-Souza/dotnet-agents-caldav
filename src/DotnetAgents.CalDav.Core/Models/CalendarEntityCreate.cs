@@ -110,6 +110,20 @@ public sealed record CalendarNamedUri(
     string? Label,
     IReadOnlyList<CalendarParameter> Parameters);
 
+/// <summary>One complete RFC 9073 VLOCATION or VRESOURCE component.</summary>
+public sealed record CalendarNamedComponent(
+    string Uid,
+    CalendarTextValue? Name,
+    IReadOnlyList<CalendarParameter> Parameters,
+    CalendarTextValue? Description = null,
+    CalendarGeoProperty? Geo = null,
+    CalendarTextListProperty? ComponentTypes = null,
+    CalendarUriValue? Url = null,
+    IReadOnlyList<CalendarRelation>? RelatedTo = null,
+    IReadOnlyList<CalendarUriValue>? Concepts = null,
+    IReadOnlyList<CalendarNamedUri>? Links = null,
+    IReadOnlyList<CalendarUriValue>? StructuredDataUris = null);
+
 /// <summary>One URI-valued property without label semantics.</summary>
 public sealed record CalendarUriValue(
     string Uri,
@@ -191,8 +205,8 @@ public sealed record CalendarParticipant(
     IReadOnlyList<CalendarTextValue>? Resources = null,
     IReadOnlyList<CalendarTextValue>? StyledDescriptions = null,
     IReadOnlyList<CalendarUriValue>? StructuredDataUris = null,
-    IReadOnlyList<CalendarNamedUri>? LocationUris = null,
-    IReadOnlyList<CalendarNamedUri>? ResourceUris = null);
+    IReadOnlyList<CalendarNamedComponent>? LocationUris = null,
+    IReadOnlyList<CalendarNamedComponent>? ResourceUris = null);
 
 /// <summary>One RELATED-TO relationship.</summary>
 public sealed record CalendarRelation(
@@ -216,7 +230,12 @@ public sealed record CalendarAlarm(
     CalendarDurationProperty? Duration = null,
     CalendarTextValue? Summary = null,
     IReadOnlyList<CalendarAttendee>? Attendees = null,
-    IReadOnlyList<CalendarNamedUri>? Attachments = null);
+    IReadOnlyList<CalendarNamedUri>? Attachments = null,
+    CalendarTextValue? Uid = null,
+    CalendarTemporalProperty? Acknowledged = null,
+    CalendarTextValue? Proximity = null,
+    IReadOnlyList<CalendarRelation>? RelatedTo = null,
+    IReadOnlyList<CalendarNamedComponent>? ProximityLocations = null);
 
 /// <summary>Complete storage-only structured data supported by create operations.</summary>
 public sealed record CalendarStructuredData(
@@ -236,8 +255,8 @@ public sealed record CalendarStructuredData(
     IReadOnlyList<CalendarNamedUri>? Links = null,
     IReadOnlyList<CalendarUriValue>? Concepts = null,
     IReadOnlyList<CalendarUriValue>? StructuredDataUris = null,
-    IReadOnlyList<CalendarNamedUri>? LocationUris = null,
-    IReadOnlyList<CalendarNamedUri>? ResourceUris = null);
+    IReadOnlyList<CalendarNamedComponent>? LocationUris = null,
+    IReadOnlyList<CalendarNamedComponent>? ResourceUris = null);
 
 /// <summary>Semantic creation request for one To-do.</summary>
 public sealed record CalendarTodoCreateRequest(

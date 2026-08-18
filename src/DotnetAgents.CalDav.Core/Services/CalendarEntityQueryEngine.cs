@@ -1,6 +1,7 @@
 using System.Xml;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Configuration;
+using DotnetAgents.CalDav.Core.Internal;
 using DotnetAgents.CalDav.Core.Internal.Ical;
 using DotnetAgents.CalDav.Core.Models;
 
@@ -63,6 +64,7 @@ internal sealed class CalendarEntityQueryEngine
         if (fetched.Code != CalendarEntityQueryCode.Success)
             return CalendarEntityQueryResult.Failure(fetched.Code, limits: fetched.Limits);
 
+        CalendarOperationProgress.SetPhase(CalendarOperationPhase.Filter);
         var filtered = ApplyFilters(fetched.Snapshots, query, fetched.Diagnostics, cancellationToken);
         return filtered.Code == CalendarEntityQueryCode.Success
             ? CalendarEntityQueryResult.Success(filtered.Snapshots, fetched.Diagnostics)
@@ -148,7 +150,9 @@ internal sealed class CalendarEntityQueryEngine
         string href,
         CancellationToken cancellationToken)
     {
-        var read = await _calendarClient.GetCalendarResourceAsync(href, cancellationToken);
+        var read = await _calendarClient.GetCalendarResourceForQueryAsync(calendar.Href, href, cancellationToken);
+        if (read is null)
+            read = await _calendarClient.GetCalendarResourceAsync(href, cancellationToken);
         if (read.Code != CalendarResourceReadCode.Success)
             return read;
         return CalendarResourceProjector.AttachSnapshot(calendar.Href, read);

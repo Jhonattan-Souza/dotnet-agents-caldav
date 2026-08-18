@@ -9,9 +9,6 @@ namespace DotnetAgents.CalDav.Core.Internal.Xml;
 internal sealed class CalendarResourceCreateProtocol(HttpClient httpClient, Uri configuredBaseUri)
 {
     private const int MaximumRedirects = 3;
-    private const int MaximumErrorBodyBytes = 64 * 1024;
-    private static readonly UTF8Encoding StrictUtf8 = new(false, true);
-
     internal static string BuildResourceHref(string calendarHref, string uid)
     {
         var opaqueName = Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(uid)))
@@ -173,48 +170,18 @@ internal sealed class CalendarResourceCreateProtocol(HttpClient httpClient, Uri 
         string resourceHref,
         CancellationToken cancellationToken)
     {
+        var davError = response.StatusCode >= HttpStatusCode.BadRequest
+            ? await DavMutationErrorReader.ReadAsync(response.Content, cancellationToken)
+            : DavMutationErrorKind.None;
         if (response.StatusCode == HttpStatusCode.Forbidden
-            && await HasNoUidConflictPreconditionAsync(response.Content, cancellationToken))
+            && davError.HasFlag(DavMutationErrorKind.NoUidConflict))
         {
             return new CalendarResourceCreateResult(CalendarResourceCreateCode.Conflict, resourceHref);
         }
+        if (davError.HasFlag(DavMutationErrorKind.UnsupportedCapability))
+            return new CalendarResourceCreateResult(CalendarResourceCreateCode.UnsupportedCapability, resourceHref);
 
         return MapResponse(response.StatusCode, resourceHref);
-    }
-
-    private static async Task<bool> HasNoUidConflictPreconditionAsync(
-        HttpContent content,
-        CancellationToken cancellationToken)
-    {
-        if (content.Headers.ContentLength > MaximumErrorBodyBytes)
-            return false;
-        try
-        {
-            await using var source = await content.ReadAsStreamAsync(cancellationToken);
-            using var destination = new MemoryStream();
-            var buffer = new byte[8192];
-            while (destination.Length <= MaximumErrorBodyBytes)
-            {
-                var remainingPlusOne = (MaximumErrorBodyBytes - (int)destination.Length) + 1;
-                var read = await source.ReadAsync(
-                    buffer.AsMemory(0, Math.Min(buffer.Length, remainingPlusOne)),
-                    cancellationToken);
-                if (read == 0)
-                    return DavResponseParser.IsNoUidConflictError(StrictUtf8.GetString(destination.GetBuffer(), 0, (int)destination.Length));
-                if (destination.Length + read > MaximumErrorBodyBytes)
-                    return false;
-                await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
-            }
-        }
-        catch (Exception exception) when (exception is DecoderFallbackException
-            or HttpRequestException
-            or IOException
-            or OperationCanceledException)
-        {
-            return false;
-        }
-
-        return false;
     }
 
     private static CalendarResourceCreateResult MapResponse(HttpStatusCode statusCode, string resourceHref) =>
@@ -234,6 +201,7 @@ internal sealed class CalendarResourceCreateProtocol(HttpClient httpClient, Uri 
                 new(CalendarResourceCreateCode.UpstreamUnavailable, resourceHref),
             >= HttpStatusCode.InternalServerError =>
                 new(CalendarResourceCreateCode.PossiblyDispatched, resourceHref),
+            HttpStatusCode.Accepted => new(CalendarResourceCreateCode.PossiblyDispatched, resourceHref),
             >= HttpStatusCode.OK and < HttpStatusCode.MultipleChoices =>
                 CalendarResourceCreateResult.Dispatched(resourceHref),
             _ => new(CalendarResourceCreateCode.UpstreamProtocolError, resourceHref)

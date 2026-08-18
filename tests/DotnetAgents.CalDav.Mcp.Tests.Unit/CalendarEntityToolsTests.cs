@@ -37,6 +37,7 @@ public sealed class CalendarEntityToolsTests
     }
 
     [Theory]
+    [InlineData(-1, false)]
     [InlineData(0, false)]
     [InlineData(1, true)]
     public void EnsureBoundedResult_EnforcesExactHumanReadableByteBoundary(int extraByte, bool rejected)
@@ -53,6 +54,7 @@ public sealed class CalendarEntityToolsTests
     }
 
     [Theory]
+    [InlineData(-1, false)]
     [InlineData(0, false)]
     [InlineData(1, true)]
     public void EnsureBoundedResult_EnforcesExactStructuredByteBoundary(int extraByte, bool rejected)
@@ -808,14 +810,28 @@ public sealed class CalendarEntityToolsTests
         byte[]? bytes = null)
     {
         bytes ??= Encoding.UTF8.GetBytes("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n");
+        var properties = bytes.Length >= 3_000_000
+            ? LargeCalendarProperties(bytes.Length)
+            : [];
         return new CalendarResourceSnapshot(
             calendarHref,
             resourceHref,
             "\"r1\"",
             bytes,
-            [],
+            properties,
             new CalendarResourceProjection(CalendarResourceProjectionKind.Event, "u1", "summary"),
             []);
+    }
+
+    private static IReadOnlyList<CalendarProperty> LargeCalendarProperties(int length)
+    {
+        var value = new string('x', checked(length * 2));
+        return
+        [
+            new CalendarProperty(
+                [new CalendarComponentPathSegment("VCALENDAR", 0), new CalendarComponentPathSegment("VEVENT", 0)],
+                "X-LARGE", [], CalendarPropertyValueType.Unknown, value, $"X-LARGE:{value}\r\n")
+        ];
     }
 
     private static void AssertInvalidCursor(ModelContextProtocol.Protocol.CallToolResult result)

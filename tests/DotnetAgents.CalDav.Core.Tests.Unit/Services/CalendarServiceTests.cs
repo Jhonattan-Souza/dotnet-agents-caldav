@@ -17,6 +17,30 @@ namespace DotnetAgents.CalDav.Core.Tests.Unit.Services;
 
 public sealed class CalendarServiceTests
 {
+    [Theory]
+    [InlineData(0, CalendarOccurrenceQueryCode.InvalidInput)]
+    [InlineData(366, CalendarOccurrenceQueryCode.Success)]
+    [InlineData(367, CalendarOccurrenceQueryCode.InvalidInput)]
+    public async Task QueryOccurrencesAsync_EnforcesExactTemporalWindowBoundary(
+        int days,
+        CalendarOccurrenceQueryCode expectedCode)
+    {
+        var client = Substitute.For<ICalendarClient>();
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([]);
+        var sut = new CalendarService(
+            client,
+            Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
+            Substitute.For<ILogger<CalendarService>>());
+        var from = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+
+        var result = await sut.QueryOccurrencesAsync(
+            new CalendarOccurrenceQuery(CalendarEntityScope.All, from, from.AddDays(days)),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(expectedCode);
+        result.Items.ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task QueryOccurrencesAsync_ExpandsBoundedUtcEventRecurrenceLocally()
     {
@@ -46,14 +70,21 @@ public sealed class CalendarServiceTests
         client.GetCalendarResourceAsync(resourceHref, Arg.Any<CancellationToken>()).Returns(
             CalendarResourceRead.Success(resourceHref, "\"r1\"", RecurringEvent("recurring", null)));
 
-        var result = await sut.QueryOccurrencesAsync(
-            new CalendarOccurrenceQuery(
-                CalendarEntityScope.Selected(new CalendarReference(Href: calendarHref)),
-                DateTimeOffset.Parse("2026-08-15T00:00:00Z"),
-                DateTimeOffset.Parse("2026-08-17T00:00:00Z")),
-            CancellationToken.None);
+        var phases = new List<CalendarOperationPhase>();
+        var progressState = CalendarOperationProgress.CreateState(phases.Add);
+        CalendarOccurrenceQueryResult result;
+        using (CalendarOperationProgress.Attach(progressState))
+        {
+            result = await sut.QueryOccurrencesAsync(
+                new CalendarOccurrenceQuery(
+                    CalendarEntityScope.Selected(new CalendarReference(Href: calendarHref)),
+                    DateTimeOffset.Parse("2026-08-15T00:00:00Z"),
+                    DateTimeOffset.Parse("2026-08-17T00:00:00Z")),
+                CancellationToken.None);
+        }
 
         result.Code.ShouldBe(CalendarOccurrenceQueryCode.Success);
+        phases.ShouldBe([CalendarOperationPhase.Filter, CalendarOperationPhase.Expand]);
         result.Items.Select(item => item.RecurrenceIdentity.Value)
             .ShouldBe(["2026-08-15T10:00:00Z", "2026-08-16T10:00:00Z"]);
         result.Items.Select(item => item.Timing.EffectiveStart.Value)
@@ -1071,14 +1102,14 @@ public sealed class CalendarServiceTests
         client.GetCalendarResourceAsync(resourceHref, Arg.Any<CancellationToken>()).Returns(
             CalendarResourceRead.Success(resourceHref, "\"r1\"", EventWithRawStart("floating", string.Empty, "20260816T100000")));
         var scope = CalendarEntityScope.Selected(new CalendarReference(Href: calendarHref));
-        var from = DateTimeOffset.Parse("2026-08-16T13:30:00Z");
-        var to = DateTimeOffset.Parse("2026-08-16T14:30:00Z");
+        var from = DateTimeOffset.Parse("2026-08-16T12:30:00Z");
+        var to = DateTimeOffset.Parse("2026-08-16T13:30:00Z");
 
         var unresolved = await sut.QueryOccurrencesAsync(
             new CalendarOccurrenceQuery(scope, from, to),
             CancellationToken.None);
         var evaluated = await sut.QueryOccurrencesAsync(
-            new CalendarOccurrenceQuery(scope, from, to, "America/New_York"),
+            new CalendarOccurrenceQuery(scope, from, to, "America/Sao_Paulo"),
             CancellationToken.None);
 
         unresolved.Code.ShouldBe(CalendarOccurrenceQueryCode.TemporalUnresolved);
@@ -1086,8 +1117,8 @@ public sealed class CalendarServiceTests
         var occurrence = evaluated.Items.ShouldHaveSingleItem();
         occurrence.Timing.EffectiveStart.Kind.ShouldBe(CalendarTemporalKind.FloatingDateTime);
         occurrence.Timing.EffectiveStart.Value.ShouldBe("2026-08-16T10:00:00");
-        occurrence.Timing.EvaluatedStartUtc!.Value.ShouldBe("2026-08-16T14:00:00Z");
-        occurrence.Timing.EvaluationTimeZone.ShouldBe("America/New_York");
+        occurrence.Timing.EvaluatedStartUtc!.Value.ShouldBe("2026-08-16T13:00:00Z");
+        occurrence.Timing.EvaluationTimeZone.ShouldBe("America/Sao_Paulo");
     }
 
     [Fact]
@@ -1511,6 +1542,7 @@ public sealed class CalendarServiceTests
     }
 
     [Theory]
+    [InlineData(1999, CalendarOccurrenceQueryCode.Success, 1999, null)]
     [InlineData(2000, CalendarOccurrenceQueryCode.Success, 2000, null)]
     [InlineData(2001, CalendarOccurrenceQueryCode.LimitExhausted, 0, 2001)]
     public async Task QueryOccurrencesAsync_EnforcesExactPerEntityOccurrenceBoundaryWithZeroPartial(
@@ -1623,6 +1655,7 @@ public sealed class CalendarServiceTests
     }
 
     [Theory]
+    [InlineData(4999, CalendarOccurrenceQueryCode.Success, 4999, null)]
     [InlineData(5000, CalendarOccurrenceQueryCode.Success, 5000, null)]
     [InlineData(5001, CalendarOccurrenceQueryCode.LimitExhausted, 0, 5001)]
     public async Task QueryOccurrencesAsync_EnforcesExactTotalOccurrenceBoundaryWithZeroPartial(
@@ -1639,6 +1672,7 @@ public sealed class CalendarServiceTests
     }
 
     [Theory]
+    [InlineData("20531230T100000Z", CalendarOccurrenceQueryCode.Success)]
     [InlineData("20531231T100000Z", CalendarOccurrenceQueryCode.Success)]
     [InlineData("20540101T100000Z", CalendarOccurrenceQueryCode.LimitExhausted)]
     public async Task QueryOccurrencesAsync_EnforcesExactUnmatchedIncrementBoundaryWithoutPartialOrInventedOccurrenceCount(
@@ -3037,7 +3071,7 @@ public sealed class CalendarServiceTests
     {
         const string calendarHref = "https://cal.example/events/";
         const string resourceHref = "https://cal.example/events/standup.ics";
-        const string content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260815T120000Z\r\nDTSTART:20260816T090000Z\r\nSUMMARY:Standup\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        const string content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260815T120000Z\r\nDTSTART:20260816T090000Z\r\nSUMMARY:Standup\r\nDESCRIPTION:Folded\r\n exactly\r\n\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
         var client = Substitute.For<ICalendarClient>();
         var options = Options.Create(new CalDavOptions
         {
@@ -3060,6 +3094,11 @@ public sealed class CalendarServiceTests
         result.Snapshot.Projection.Kind.ShouldBe(CalendarResourceProjectionKind.Event);
         result.Snapshot.Projection.EntityUid.ShouldBe("event-1");
         result.Snapshot.Projection.Summary.ShouldBe("Standup");
+        result.Snapshot.Diagnostics.ShouldBeEmpty();
+        var description = result.Snapshot.CalendarProperties.Single(property => property.Name == "DESCRIPTION");
+        description.RawEncodedValue.ShouldBe("Foldedexactly");
+        description.OriginalSlice.ShouldBe("DESCRIPTION:Folded\r\n exactly\r\n");
+        description.ComponentPath.Select(component => component.Name).ShouldBe(["VCALENDAR", "VEVENT"]);
     }
 
     [Fact]
@@ -3245,13 +3284,45 @@ public sealed class CalendarServiceTests
     }
 
     [Fact]
+    public async Task ResolveDefaultCalendarAsync_AmbiguousCaseInsensitiveNameReturnsCompleteAuthorizedCalendarEvidence()
+    {
+        var client = Substitute.For<ICalendarClient>();
+        var sut = new CalendarService(
+            client,
+            Options.Create(new CalDavOptions
+            {
+                BaseUrl = "https://cal.example",
+                CalendarHrefs = "https://cal.example/work/,https://cal.example/archive/",
+                DefaultTodoCalendarName = "WORK"
+            }),
+            Substitute.For<ILogger<CalendarService>>());
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(
+        [
+            EntityCalendar("https://cal.example/work/", " Work ", EntityKindSupport.Advertised, EntityKindSupport.Unknown),
+            EntityCalendar("https://cal.example/archive/", "work", EntityKindSupport.NotAdvertised, EntityKindSupport.Advertised)
+        ]);
+
+        var result = await sut.ResolveDefaultCalendarAsync(CalendarEntityKind.Todo, CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarSelectionCode.Ambiguous);
+        result.Candidates.Select(candidate => (
+            candidate.DisplayName,
+            candidate.Href,
+            candidate.EventSupport,
+            candidate.TodoSupport)).ShouldBe([
+                ("work", "https://cal.example/archive/", EntityKindSupport.NotAdvertised, EntityKindSupport.Advertised),
+                (" Work ", "https://cal.example/work/", EntityKindSupport.Advertised, EntityKindSupport.Unknown)
+            ]);
+    }
+
+    [Fact]
     public async Task GetCalendarsAsync_AppliesExactScopeAndPreservesDiscoveryEvidence()
     {
         var client = Substitute.For<ICalendarClient>();
         var options = Options.Create(new CalDavOptions
         {
             BaseUrl = "https://cal.example",
-            CalendarHrefs = "https://cal.example/a/,https://cal.example/missing/,https://cal.example/a/,https://cal.example/missing/"
+            CalendarHrefs = "https://cal.example/a/,https://cal.example/missing/,https://cal.example/a/"
         });
         var sut = new CalendarService(client, options, Substitute.For<ILogger<CalendarService>>());
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(
@@ -3284,7 +3355,7 @@ public sealed class CalendarServiceTests
         result.Items[0].EventSupport.ShouldBe(EntityKindSupport.Advertised);
         result.Items[0].TodoSupport.ShouldBe(EntityKindSupport.Advertised);
         result.Diagnostics.Select(diagnostic => diagnostic.Code)
-            .ShouldBe(["duplicate_calendar_href", "duplicate_calendar_href", "calendar_href_not_found"]);
+            .ShouldBe(["duplicate_calendar_href", "calendar_href_not_found"]);
     }
 
     [Fact]
@@ -3330,8 +3401,10 @@ public sealed class CalendarServiceTests
             .ShouldBe(["calendar_href_not_found", "calendar_href_not_found"]);
     }
 
-    [Fact]
-    public async Task GetCalendarsAsync_DeduplicatesAndBoundsDiscoveredCalendars()
+    [Theory]
+    [InlineData(256, false)]
+    [InlineData(257, true)]
+    public async Task GetCalendarsAsync_DeduplicatesAndBoundsDiscoveredCalendars(int calendarCount, bool rejected)
     {
         var client = Substitute.For<ICalendarClient>();
         var options = Options.Create(new CalDavOptions
@@ -3340,16 +3413,23 @@ public sealed class CalendarServiceTests
             CalendarHrefs = "https://cal.example/000/"
         });
         var sut = new CalendarService(client, options, Substitute.For<ILogger<CalendarService>>());
-        var calendars = Enumerable.Range(0, 257)
+        var calendars = Enumerable.Range(0, calendarCount)
             .Select(index => Calendar($"https://cal.example/{index:D3}/", $"Calendar {index:D3}", EntityKindSupport.Advertised))
             .Append(Calendar("https://cal.example/000/", "Duplicate", EntityKindSupport.Advertised))
             .ToArray();
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(calendars);
 
-        var exception = await Should.ThrowAsync<CalendarDiscoveryLimitException>(() =>
-            sut.GetCalendarsAsync(CancellationToken.None));
-
-        exception.CalendarCount.ShouldBe(257);
+        if (rejected)
+        {
+            var exception = await Should.ThrowAsync<CalendarDiscoveryLimitException>(() =>
+                sut.GetCalendarsAsync(CancellationToken.None));
+            exception.CalendarCount.ShouldBe(257);
+        }
+        else
+        {
+            var result = await sut.GetCalendarsAsync(CancellationToken.None);
+            result.Items.ShouldHaveSingleItem().Href.ShouldBe("https://cal.example/000/");
+        }
     }
 
     private static CalendarDescriptor Calendar(string href, string displayName, EntityKindSupport todoSupport) =>

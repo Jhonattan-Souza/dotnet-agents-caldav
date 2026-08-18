@@ -101,7 +101,23 @@ internal static class StrictToolInputGuard
     {
         if (evidence.ArgumentBytes > maximumArgumentBytes)
             return createError(true);
-        return evidence.HasDuplicateProperty || evidence.HasInvalidString ? createError(false) : null;
+        if (!evidence.HasDuplicateProperty && !evidence.HasInvalidString && evidence.Violations.Count == 0)
+            return null;
+
+        var violations = evidence.Violations.Count > 0
+            ? evidence.Violations
+            : DefaultViolations(evidence);
+        return CalendarErrorViolations.Attach(createError(false), violations);
+    }
+
+    private static IReadOnlyList<CalendarInputViolation> DefaultViolations(StrictToolInputEvidence evidence)
+    {
+        var violations = new List<CalendarInputViolation>(2);
+        if (evidence.HasDuplicateProperty)
+            violations.Add(new("/", "duplicate_member", "An object contains a duplicate member."));
+        if (evidence.HasInvalidString)
+            violations.Add(new("/", "invalid_unicode", "An object member contains invalid Unicode."));
+        return violations;
     }
 
     internal static StrictToolInputEvidence InspectArguments(JsonNode? arguments)
@@ -199,4 +215,8 @@ internal static class StrictToolInputGuard
 internal readonly record struct StrictToolInputEvidence(
     int? ArgumentBytes,
     bool HasDuplicateProperty,
-    bool HasInvalidString = false);
+    bool HasInvalidString = false,
+    IReadOnlyList<CalendarInputViolation>? CollectedViolations = null)
+{
+    internal IReadOnlyList<CalendarInputViolation> Violations => CollectedViolations ?? [];
+}

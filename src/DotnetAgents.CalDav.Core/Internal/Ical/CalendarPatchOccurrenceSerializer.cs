@@ -56,8 +56,8 @@ internal static class CalendarPatchOccurrenceSerializer
         CalendarCollectionField.Links => new(Links: [(CalendarNamedUri)value]),
         CalendarCollectionField.Concepts => new(Concepts: [(CalendarUriValue)value]),
         CalendarCollectionField.StructuredDataUris => new(StructuredDataUris: [(CalendarUriValue)value]),
-        CalendarCollectionField.LocationUris => new(LocationUris: [(CalendarNamedUri)value]),
-        CalendarCollectionField.ResourceUris => new(ResourceUris: [(CalendarNamedUri)value]),
+        CalendarCollectionField.LocationUris => new(LocationUris: [(CalendarNamedComponent)value]),
+        CalendarCollectionField.ResourceUris => new(ResourceUris: [(CalendarNamedComponent)value]),
         _ => throw new ArgumentException("Categories use the text-list editor.", nameof(field))
     };
 

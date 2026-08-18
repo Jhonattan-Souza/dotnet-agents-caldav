@@ -11,9 +11,9 @@ Add this MCP server to VS Code, Claude Desktop, Cursor, or any MCP client:
 ```json
 {
   "mcpServers": {
-    "caldav-tasks": {
+    "caldav-calendars": {
       "command": "dnx",
-      "args": ["--yes", "dotnet-agents-caldav"],
+      "args": ["--yes", "dotnet-agents-caldav@0.2.0"],
       "env": {
         "CALDAV_URL": "https://caldav.example.com",
         "CALDAV_USERNAME": "user",
@@ -30,7 +30,7 @@ Add this MCP server to VS Code, Claude Desktop, Cursor, or any MCP client:
 
 | Variable | Required | Description |
 | --- | --- | --- |
-| `CALDAV_URL` | Yes | Base URL of the CalDAV server |
+| `CALDAV_URL` | Yes | Absolute CalDAV server endpoint or Calendar Home URL |
 | `CALDAV_USERNAME` | Yes | Username for Basic auth |
 | `CALDAV_PASSWORD` | Yes | Password for Basic auth |
 | `CALDAV_CALENDAR_HREFS` | No | Comma-separated exact canonical Calendar href allowlist; omit to discover every Calendar |
@@ -74,6 +74,10 @@ The four exact tools are enabled with `CALDAV_EXPOSE_EXACT_TOOLS=true`; this fla
 
 The verified interoperability profile is the official Radicale 3.7.8 image pinned in `contracts/0.2.0/radicale-3.7.8-profile.json`. Other CalDAV servers are unverified profiles even when capability negotiation allows them to operate.
 
+## Migrating from 0.1.x
+
+Version 0.2.0 deliberately replaces the task-specific 0.1.x contract. Read [Migrating from 0.1.x to 0.2.0](docs/migrating-0.1.x-to-0.2.0.md) for the complete tool and environment mapping, revision-bound write recipes, MRTR deployment checks, and rollback to pinned version 0.1.4. Upgrade and rollback do not migrate or rewrite CalDAV data.
+
 ## Architecture
 
 Layered design:
@@ -108,4 +112,4 @@ Slopwatch:
 slopwatch analyze --config .slopwatch/slopwatch.json --fail-on warning
 ```
 
-The 0.2.0 contract is deliberately incompatible with the removed 0.1.x task-specific tools and environment names. Operator migration and rollback documentation is tracked separately from this contract-removal stage.
+The 0.2.0 contract is deliberately incompatible with the removed 0.1.x task-specific tools and environment names.

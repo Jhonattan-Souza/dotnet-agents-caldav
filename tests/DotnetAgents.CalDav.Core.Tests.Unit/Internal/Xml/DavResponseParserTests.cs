@@ -75,7 +75,7 @@ public class DavResponseParserTests
         var xml = BuildMultistatusXml(doc =>
         {
             doc.Element(Dav + "multistatus")!.Add(
-                BuildResponseElement("/calendars/user/events/",
+                BuildResponseElement("/calendars/user/third/",
                     new XElement(Dav + "resourcetype", new XElement(CalDav + "calendar")),
                     new XElement(CalDav + "calendar-description", "Calendar description"),
                     new XElement(CalDav + "supported-calendar-component-set",
@@ -88,8 +88,8 @@ public class DavResponseParserTests
         var result = DavResponseParser.ParseCalendars(xml);
 
         result.Count.ShouldBe(2);
-        result[0].Href.ShouldBe("/calendars/user/events/");
-        result[0].DisplayName.ShouldBe("events");
+        result[0].Href.ShouldBe("/calendars/user/third/");
+        result[0].DisplayName.ShouldBe("third");
         result[0].DisplayNameProvenance.ShouldBe(DisplayNameProvenance.DerivedFromHref);
         result[0].Description.ShouldBe("Calendar description");
         result[0].EventSupport.ShouldBe(EntityKindSupport.Advertised);

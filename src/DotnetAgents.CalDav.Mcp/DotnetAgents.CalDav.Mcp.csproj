@@ -8,9 +8,12 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>dotnet-agents-caldav</ToolCommandName>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>CalDAV MCP server for Calendars, Events, and To-dos with revision-bound semantic and exact operations.</Description>
+    <McpServerMetadataPath Condition="'$(McpServerMetadataPath)' == ''">$(MSBuildThisFileDirectory).mcp/server.json</McpServerMetadataPath>
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="JsonSchema.Net" />
     <PackageReference Include="ModelContextProtocol" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="Microsoft.Extensions.Logging.Console" />
@@ -22,9 +25,18 @@
 
   <ItemGroup>
     <None Include="../../README.md" Pack="true" PackagePath="\" />
+    <None Include="../../CHANGELOG.md" Pack="true" PackagePath="\" />
+    <None Include="../../RELEASE_NOTES.md" Pack="true" PackagePath="\" />
+    <None Include="../../contracts/0.2.0/mcp-tool-catalog.json" Pack="true" PackagePath="contracts/0.2.0/mcp-tool-catalog.json" />
+    <None Include="../../contracts/0.2.0/mcp-server.schema.json" Pack="true" PackagePath="contracts/0.2.0/mcp-server.schema.json" />
+    <None Include="../../contracts/0.2.0/mcp-authority-manifest.json" Pack="true" PackagePath="contracts/0.2.0/mcp-authority-manifest.json" />
+    <None Include="../../contracts/0.2.0/release-evidence-map.json" Pack="true" PackagePath="contracts/0.2.0/release-evidence-map.json" />
+    <None Include="../../docs/migrating-0.1.x-to-0.2.0.md" Pack="true" PackagePath="docs/migrating-0.1.x-to-0.2.0.md" />
+    <None Include="../../skills/caldav-calendars/SKILL.md" Pack="true" PackagePath="skills/caldav-calendars/SKILL.md" />
     <EmbeddedResource Include="../../contracts/0.2.0/mcp-tool-catalog.json" LogicalName="DotnetAgents.CalDav.Mcp.CalendarToolCatalog.json" />
-    <None Include=".mcp/server.json" Pack="true" PackagePath=".mcp/server.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    <None Include="$(McpServerMetadataPath)" Link=".mcp/server.json" Pack="true" PackagePath=".mcp/server.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <TargetPath>.mcp/server.json</TargetPath>
     </None>
   </ItemGroup>
 

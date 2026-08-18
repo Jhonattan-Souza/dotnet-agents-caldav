@@ -547,6 +547,36 @@ public class CalDavHostBuilderTests
     }
 
     [Fact]
+    public void BuildHost_AllTwentyToolsMatchCatalogCacheAndAnnotationValues()
+    {
+        var builder = CalDavHostBuilder.CreateBuilder(exposeExactTools: true);
+        builder.Services.ConfigureCalDav(ValidOptions);
+        using var host = builder.Build();
+        var registered = host.Services
+            .GetRequiredService<IOptions<ModelContextProtocol.Server.McpServerOptions>>()
+            .Value.ToolCollection!.ToArray().ToDictionary(tool => tool.ProtocolTool.Name);
+        var catalog = JsonNode.Parse(File.ReadAllText(Path.Combine(
+            RepositoryRoot(), "contracts", "0.2.0", "mcp-tool-catalog.json")))!.AsObject();
+
+        registered.Count.ShouldBe(20);
+        foreach (var expected in catalog["tools"]!.AsArray())
+        {
+            var name = expected!["name"]!.GetValue<string>();
+            registered.ShouldContainKey(name);
+            var actual = registered[name].ProtocolTool;
+            actual.Description.ShouldBe(expected["description"]!.GetValue<string>());
+            actual.Meta!["cache"]!["ttlMs"]!.GetValue<int>()
+                .ShouldBe(expected["cache"]!["ttlMs"]!.GetValue<int>());
+            actual.Meta!["cache"]!["cacheScope"]!.GetValue<string>()
+                .ShouldBe(expected["cache"]!["cacheScope"]!.GetValue<string>());
+            actual.Annotations!.ReadOnlyHint.ShouldBe(expected["annotations"]!["readOnlyHint"]!.GetValue<bool>());
+            actual.Annotations.DestructiveHint.ShouldBe(expected["annotations"]!["destructiveHint"]!.GetValue<bool>());
+            actual.Annotations.IdempotentHint.ShouldBe(expected["annotations"]!["idempotentHint"]!.GetValue<bool>());
+            actual.Annotations.OpenWorldHint.ShouldBe(expected["annotations"]!["openWorldHint"]!.GetValue<bool>());
+        }
+    }
+
+    [Fact]
     public void BuildHost_ExactCatalogConstructionDoesNotContactConfiguredOrigin()
     {
         var builder = CalDavHostBuilder.CreateBuilder(exposeExactTools: true);
@@ -584,5 +614,13 @@ public class CalDavHostBuilderTests
             .Where(toolType => knownToolTypes.Contains(toolType))
             .Distinct()
             .ToArray();
+    }
+
+    private static string RepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "DotnetAgentsCalDav.slnx")))
+            directory = directory.Parent;
+        return directory?.FullName ?? throw new DirectoryNotFoundException("Repository root was not found.");
     }
 }

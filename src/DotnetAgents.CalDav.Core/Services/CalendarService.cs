@@ -43,6 +43,7 @@ internal sealed class CalendarService : ICalendarService
     /// <inheritdoc />
     public async Task<CalendarDiscoveryResult> GetCalendarsAsync(CancellationToken cancellationToken)
     {
+        _calendarClient.RediscoverCapabilities();
         var discovered = await _calendarClient.GetCalendarsAsync(cancellationToken);
         return ApplyScope(discovered);
     }
@@ -346,7 +347,10 @@ internal sealed class CalendarService : ICalendarService
         var diagnostics = BuildDiagnostics(scope, discovered, MaximumDiagnostics);
         var items = uniqueItems;
 
-        _logger.LogDebug("Discovered {DiscoveredCount} Calendar(s), {InScopeCount} in scope", discovered.Count, items.Length);
+        _logger.LogDebug(
+            "CalDAV operation {Code} completed at {Phase}",
+            "discovery_complete",
+            "selectionDiscoveryCapability");
         return new CalendarDiscoveryResult(items, diagnostics);
     }
 

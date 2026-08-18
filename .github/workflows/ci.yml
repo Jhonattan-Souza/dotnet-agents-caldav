@@ -1,14 +1,8 @@
 name: CI
 
 on:
-  # push:
-  #   branches: [main]
-  #   paths-ignore:
-  #     - '**.md'
   pull_request:
     branches: [main]
-    paths-ignore:
-      - "**.md"
 
 permissions:
   contents: read
@@ -37,14 +31,42 @@ jobs:
       - name: Build Release
         run: dotnet build -c Release --no-restore
 
-      - name: Run tests with coverage
-        run: dotnet test -c Release --settings coverage.runsettings --collect:"XPlat Code Coverage" --results-directory TestResults
+      - name: Run tests with coverage serially
+        run: |
+          dotnet test tests/DotnetAgents.CalDav.Core.Tests.Unit/DotnetAgents.CalDav.Core.Tests.Unit.csproj -c Release --no-build --settings coverage.runsettings --collect:"XPlat Code Coverage" --logger "trx;LogFilePrefix=pr-core" --results-directory TestResults
+          dotnet test tests/DotnetAgents.CalDav.Mcp.Tests.Unit/DotnetAgents.CalDav.Mcp.Tests.Unit.csproj -c Release --no-build --settings coverage.runsettings --collect:"XPlat Code Coverage" --logger "trx;LogFilePrefix=pr-mcp" --results-directory TestResults
+          dotnet test tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj -c Release --no-build --settings coverage.runsettings --collect:"XPlat Code Coverage" --logger "trx;LogFilePrefix=pr-integration" --results-directory TestResults
 
       - name: Generate coverage report
         run: dotnet reportgenerator -reports:"TestResults/**/coverage.cobertura.xml" -targetdir:"coverage-report" -reporttypes:Cobertura -assemblyfilters:"+DotnetAgents.CalDav.Core;+DotnetAgents.CalDav.Mcp;-*Tests*;-xunit*;-testhost*"
 
       - name: Verify coverage gate
         run: bash scripts/verify-coverage.sh coverage-report 0.90 0.85
+
+      - name: Run strict-preconditions Radicale conformance variant
+        run: >
+          RADICALE_CONFORMANCE_VARIANT=strict-preconditions
+          dotnet test tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj
+          -c Release
+          --no-build
+          --filter "FullyQualifiedName~RadicaleConformanceHarnessTests"
+          --logger "trx;LogFilePrefix=strict-preconditions"
+          --results-directory TestResults
+
+      - name: Run alternate-time-zone Radicale conformance variant
+        run: >
+          RADICALE_CONFORMANCE_VARIANT=alternate-time-zone
+          dotnet test tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj
+          -c Release
+          --no-build
+          --filter "FullyQualifiedName~RadicaleConformanceHarnessTests"
+          --logger "trx;LogFilePrefix=alternate-time-zone"
+          --results-directory TestResults
+
+      - name: Verify complete normative evidence
+        run: |
+          bash scripts/verify-test-results.sh TestResults
+          bash scripts/verify-release-evidence.sh contracts/0.2.0/requirement-evidence-catalog.md contracts/0.2.0/release-evidence-map.json TestResults
 
       - name: Run Slopwatch
         run: dotnet tool run slopwatch analyze --config .slopwatch/slopwatch.json --fail-on warning
@@ -68,31 +90,3 @@ jobs:
           echo "|--------|----------|" >> $GITHUB_STEP_SUMMARY
           echo "| Lines  | ${LINE_PCT_FMT}% |" >> $GITHUB_STEP_SUMMARY
           echo "| Branches | ${BRANCH_PCT}% |" >> $GITHUB_STEP_SUMMARY
-
-  radicale-conformance:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        variant: [baseline, strict-preconditions, alternate-time-zone]
-    env:
-      RADICALE_CONFORMANCE_VARIANT: ${{ matrix.variant }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v5
-        with:
-          global-json-file: global.json
-          cache: false
-
-      - name: Restore packages
-        run: dotnet restore
-
-      - name: Run pinned Radicale conformance harness
-        run: >
-          dotnet test tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj
-          -c Release
-          --filter "FullyQualifiedName~RadicaleConformanceHarnessTests"

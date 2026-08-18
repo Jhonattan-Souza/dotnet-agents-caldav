@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using DotnetAgents.CalDav.Core.Abstractions;
+using DotnetAgents.CalDav.Core.Internal;
 using DotnetAgents.CalDav.Core.Internal.Ical;
 using DotnetAgents.CalDav.Core.Models;
 
@@ -428,6 +429,7 @@ internal sealed class CalendarEntityPatchEngine(
         byte[] intended,
         CalendarEntityKind expectedKind)
     {
+        CalendarOperationProgress.SetPhase(CalendarOperationPhase.Reconcile);
         using var verification = new CancellationTokenSource(ReconciliationTimeout, timeProvider);
         try
         {
@@ -461,6 +463,7 @@ internal sealed class CalendarEntityPatchEngine(
         byte[] intended,
         CalendarEntityKind expectedKind)
     {
+        CalendarOperationProgress.SetPhase(CalendarOperationPhase.Reconcile);
         using var reconciliation = new CancellationTokenSource(ReconciliationTimeout, timeProvider);
         try
         {

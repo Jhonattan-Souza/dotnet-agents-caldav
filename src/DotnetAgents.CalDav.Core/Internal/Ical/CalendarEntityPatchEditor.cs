@@ -453,7 +453,8 @@ internal static class CalendarEntityPatchEditor
         CalendarEntityKind kind,
         bool targetsMaster)
     {
-        if (!targetsMaster && HasReservedCancellationTransition(document, master, patch.Status)
+        if (HasUnsupportedOpenEnumTransition(document, master, patch, kind)
+            || !targetsMaster && HasReservedCancellationTransition(document, master, patch.Status)
             || IntroducesDerivedOrganizer(patch)
             || targetsMaster && patch.Start is not null && HasRecurrenceMembership(document, master, kind))
             return null;
@@ -461,6 +462,33 @@ internal static class CalendarEntityPatchEditor
         return effectivePatch is not null && !HasAddressedDerivedScalar(document, master, effectivePatch)
             ? effectivePatch
             : null;
+    }
+
+    private static bool HasUnsupportedOpenEnumTransition(
+        CalendarContentDocument document,
+        CalendarContentComponent component,
+        CalendarEventPatch patch,
+        CalendarEntityKind kind) =>
+        HasUnsupportedOpenEnumTransition(document, component, "STATUS", patch.Status, kind)
+        || HasUnsupportedOpenEnumTransition(document, component, "TRANSP", patch.Transparency, kind)
+        || HasUnsupportedOpenEnumTransition(document, component, "CLASS", patch.Classification, kind);
+
+    private static bool HasUnsupportedOpenEnumTransition(
+        CalendarContentDocument document,
+        CalendarContentComponent component,
+        string propertyName,
+        CalendarScalarPatch<string>? patch,
+        CalendarEntityKind kind)
+    {
+        if (patch is null)
+            return false;
+        var current = FindProperty(document, component.Path, propertyName)?.RawEncodedValue;
+        if (current is null
+            || current.StartsWith("X-", StringComparison.OrdinalIgnoreCase)
+            || CalendarEntityCreateValidator.IsRecognizedOpenEnum(kind, propertyName, current))
+            return false;
+        return patch.Operation == CalendarScalarPatchOperation.Clear
+            || !string.Equals(current, patch.Value, StringComparison.Ordinal);
     }
 
     private static CalendarEventPatch? PreserveExplicitEffectiveSpan(

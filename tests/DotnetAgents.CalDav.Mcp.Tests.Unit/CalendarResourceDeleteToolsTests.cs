@@ -434,6 +434,8 @@ public sealed class CalendarResourceDeleteToolsTests
     [InlineData("{\"revision\":{\"href\":\"https://cal.example/tasks/a.ics\",\"entityUid\":\" todo-1\",\"entityKind\":\"todo\",\"entityTag\":\"\\\"r1\\\"\"}}")]
     [InlineData("{\"revision\":{\"href\":\"https://cal.example/tasks/a.ics\",\"entityUid\":\"todo-1\",\"entityKind\":\"task\",\"entityTag\":\"\\\"r1\\\"\"}}")]
     [InlineData("{\"revision\":{\"href\":\"https://cal.example/tasks/a.ics\",\"entityUid\":\"todo-1\",\"entityKind\":\"todo\",\"entityTag\":\"*\"}}")]
+    [InlineData("{\"hrefs\":[\"https://cal.example/tasks/a.ics\",\"https://cal.example/tasks/b.ics\"]}")]
+    [InlineData("{\"search\":{\"summary\":\"delete me\"}}")]
     public async Task DeleteRawAsync_RejectsNonFrozenOrLexicallyInvalidInputBeforeReading(string json)
     {
         var service = Substitute.For<ICalendarService>();
@@ -627,8 +629,20 @@ public sealed class CalendarResourceDeleteToolsTests
 
         var first = original.Protect(revision);
         var second = original.Protect(revision);
+        var padded = first.Replace('-', '+').Replace('_', '/');
+        padded += new string('=', (4 - (padded.Length % 4)) % 4);
+        var protectedBytes = Encoding.UTF8.GetString(Convert.FromBase64String(padded));
 
         first.ShouldNotBe(second);
+        foreach (var secret in new[]
+        {
+            revision.Href, revision.EntityUid, revision.EntityTag,
+            "https://cal.example", "user", "secret"
+        })
+        {
+            first.ShouldNotContain(secret);
+            protectedBytes.ShouldNotContain(secret);
+        }
         original.TryUnprotect(first, revision, out var expired).ShouldBeTrue();
         expired.ShouldBeFalse();
         redistributed.TryUnprotect(first, revision, out _).ShouldBeFalse();

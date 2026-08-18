@@ -166,20 +166,44 @@ public sealed class CalendarExactResourceServiceTests
     }
 
     [Theory]
-    [InlineData(0, CalendarExactResourceCode.InvalidInput)]
-    [InlineData((4 * 1024 * 1024) + 1, CalendarExactResourceCode.PayloadTooLarge)]
+    [InlineData(-1, CalendarExactResourceCode.UpstreamProtocolError)]
+    [InlineData(0, CalendarExactResourceCode.UpstreamProtocolError)]
+    [InlineData(1, CalendarExactResourceCode.PayloadTooLarge)]
     public async Task ExactCreateResourceAsync_EnforcesExactPayloadBounds(
-        int length,
+        int extraByte,
         CalendarExactResourceCode expectedCode)
     {
-        var client = Substitute.For<ICalendarClient>();
+        const string calendarHref = "https://cal.example/events/";
+        const string destinationHref = "https://cal.example/events/bounds.ics";
+        var client = PreparedCreateClient(calendarHref, destinationHref);
+        client.CreateCalendarResourceAsync(
+                Arg.Any<CalendarResourceCreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceCreateResult(CalendarResourceCreateCode.InvalidInput, destinationHref));
+        var content = ExactSizedEvent((4 * 1024 * 1024) + extraByte);
 
-        var result = await CreateService(client, "https://cal.example/events/").ExactCreateResourceAsync(
-            new CalendarExactCreateRequest("https://cal.example/events/bounds.ics", new byte[length]),
+        var result = await CreateService(client, calendarHref).ExactCreateResourceAsync(
+            new CalendarExactCreateRequest(destinationHref, content),
             CancellationToken.None);
 
+        content.Length.ShouldBe((4 * 1024 * 1024) + extraByte);
+        if (extraByte <= 0)
+            result.Phase.ShouldBe(CalendarExactResourcePhase.Execution);
         result.Code.ShouldBe(expectedCode);
-        await client.DidNotReceive().GetCalendarsAsync(Arg.Any<CancellationToken>());
+        if (extraByte <= 0)
+            await client.Received(1).CreateCalendarResourceAsync(
+                Arg.Any<CalendarResourceCreateRequest>(), Arg.Any<CancellationToken>());
+        else
+            await client.DidNotReceive().CreateCalendarResourceAsync(
+                Arg.Any<CalendarResourceCreateRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    private static byte[] ExactSizedEvent(int targetBytes)
+    {
+        const string prefix = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Exact Tests//EN\r\n"
+            + "BEGIN:VEVENT\r\nUID:bounds\r\nDTSTAMP:20260817T120000Z\r\n"
+            + "DTSTART:20260818T120000Z\r\nX-PAD:";
+        const string suffix = "\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        return Encoding.UTF8.GetBytes(prefix + new string('a', targetBytes - prefix.Length - suffix.Length) + suffix);
     }
 
     [Fact]

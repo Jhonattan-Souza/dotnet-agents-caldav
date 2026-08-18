@@ -3297,6 +3297,63 @@
         }
       }
     },
+    "openEnumValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "rawValue"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rawValue": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "openEnumProperty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "parameters"],
+      "properties": {
+        "value": { "$ref": "#/$defs/openEnumValue" },
+        "parameters": { "type": "array", "items": { "$ref": "#/$defs/icalParameter" } }
+      }
+    },
+    "effectiveOpenEnumValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "effectiveValue"
+      ],
+      "properties": {
+        "explicitValue": {
+          "$ref": "#/$defs/openEnumValue"
+        },
+        "effectiveValue": {
+          "$ref": "#/$defs/openEnumValue"
+        }
+      }
+    },
+    "effectiveBooleanValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "effectiveValue"
+      ],
+      "properties": {
+        "explicitValue": {
+          "type": "boolean"
+        },
+        "effectiveValue": {
+          "type": "boolean"
+        }
+      }
+    },
     "eventFields": {
       "type": "object",
       "additionalProperties": false,
@@ -3324,13 +3381,13 @@
           "$ref": "#/$defs/geo"
         },
         "status": {
-          "type": "string"
+          "$ref": "#/$defs/openEnumValue"
         },
         "transparency": {
-          "type": "string"
+          "$ref": "#/$defs/openEnumValue"
         },
         "classification": {
-          "type": "string"
+          "$ref": "#/$defs/openEnumValue"
         },
         "priority": {
           "type": "integer",
@@ -3376,12 +3433,20 @@
           "type": "string"
         },
         "status": {
-          "type": "string"
+          "$ref": "#/$defs/openEnumValue"
+        },
+        "classification": {
+          "$ref": "#/$defs/openEnumValue"
         },
         "priority": {
           "type": "integer",
           "minimum": 0,
           "maximum": 9
+        },
+        "percentComplete": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
         },
         "categories": {
           "type": "array",
@@ -3396,6 +3461,34 @@
           "$ref": "#/$defs/structuredData"
         }
       }
+    },
+    "eventOverrideFields": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/eventFields"
+        },
+        {
+          "not": {
+            "required": [
+              "recurrenceSet"
+            ]
+          }
+        }
+      ]
+    },
+    "todoOverrideFields": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/todoFields"
+        },
+        {
+          "not": {
+            "required": [
+              "recurrenceSet"
+            ]
+          }
+        }
+      ]
     },
     "eventInputFields": {
       "type": "object",
@@ -3450,7 +3543,7 @@
           "$ref": "#/$defs/eventRecurrenceSetInput"
         },
         "structuredData": {
-          "$ref": "#/$defs/structuredData"
+          "$ref": "#/$defs/structuredDataInput"
         }
       }
     },
@@ -3491,7 +3584,7 @@
           "$ref": "#/$defs/todoRecurrenceSetInput"
         },
         "structuredData": {
-          "$ref": "#/$defs/structuredData"
+          "$ref": "#/$defs/structuredDataInput"
         }
       }
     },
@@ -4212,7 +4305,7 @@
         "rdates": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/temporalValue"
+            "$ref": "#/$defs/recurrenceDateInput"
           }
         },
         "exdates": {
@@ -4311,7 +4404,7 @@
         "rdates": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/temporalValue"
+            "$ref": "#/$defs/recurrenceDateInput"
           }
         },
         "exdates": {
@@ -4351,7 +4444,8 @@
       "required": [
         "recurrenceIdentity",
         "entityKind",
-        "status"
+        "status",
+        "fields"
       ],
       "properties": {
         "recurrenceIdentity": {
@@ -4375,12 +4469,172 @@
             "cancelled"
           ]
         },
+        "fields": {},
         "movedStart": {
           "$ref": "#/$defs/temporalValue"
         },
         "movedEnd": {
           "$ref": "#/$defs/temporalValue"
         }
+      },
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "entityKind": { "const": "event" },
+                "fields": { "$ref": "#/$defs/eventOverrideFields" }
+              }
+            },
+            {
+              "properties": {
+                "entityKind": { "const": "todo" },
+                "fields": { "$ref": "#/$defs/todoOverrideFields" }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "namedComponentInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uid", "parameters"],
+      "properties": {
+        "uid": { "type": "string", "minLength": 1 },
+        "name": { "$ref": "#/$defs/textProperty" },
+        "parameters": { "type": "array", "items": { "$ref": "#/$defs/icalParameter" } },
+        "description": { "$ref": "#/$defs/textProperty" },
+        "geo": { "$ref": "#/$defs/geoProperty" },
+        "componentTypes": { "$ref": "#/$defs/textListProperty" },
+        "url": { "$ref": "#/$defs/uriProperty" },
+        "relatedTo": { "type": "array", "items": { "$ref": "#/$defs/relationInput" } },
+        "concepts": { "type": "array", "items": { "$ref": "#/$defs/uriProperty" } },
+        "links": { "type": "array", "items": { "$ref": "#/$defs/namedUri" } },
+        "structuredDataUris": { "type": "array", "items": { "$ref": "#/$defs/uriProperty" } }
+      }
+    },
+    "resourceComponentInput": {
+      "allOf": [
+        { "$ref": "#/$defs/namedComponentInput" },
+        { "not": { "required": ["url"] } },
+        {
+          "properties": {
+            "componentTypes": {
+              "properties": {
+                "value": {
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": { "type": "string", "enum": ["projector", "room", "remote-conference-audio", "remote-conference-video"] }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "attendeeInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uri", "parameters"],
+      "properties": {
+        "uri": { "type": "string", "format": "uri" },
+        "commonName": { "type": "string" },
+        "role": { "type": "string", "minLength": 1 },
+        "partStat": { "type": "string" },
+        "cutype": { "type": "string" },
+        "rsvp": { "type": "boolean" },
+        "delegatedTo": { "type": "array", "items": { "type": "string", "format": "uri" } },
+        "delegatedFrom": { "type": "array", "items": { "type": "string", "format": "uri" } },
+        "sentBy": { "type": "string", "format": "uri" },
+        "directory": { "type": "string", "format": "uri" },
+        "parameters": { "type": "array", "items": { "$ref": "#/$defs/icalParameter" } }
+      }
+    },
+    "relationInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "parameters"],
+      "properties": {
+        "value": { "type": "string", "minLength": 1 },
+        "relationType": { "type": "string" },
+        "parameters": { "type": "array", "items": { "$ref": "#/$defs/icalParameter" } }
+      }
+    },
+    "participantInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uid", "participantType"],
+      "properties": {
+        "uid": { "$ref": "#/$defs/textProperty" },
+        "participantType": { "$ref": "#/$defs/textProperty" },
+        "calendarAddress": { "$ref": "#/$defs/uriProperty" },
+        "created": { "$ref": "#/$defs/utcTemporalProperty" },
+        "description": { "$ref": "#/$defs/textProperty" },
+        "timestamp": { "$ref": "#/$defs/utcTemporalProperty" },
+        "geo": { "$ref": "#/$defs/geoProperty" },
+        "lastModified": { "$ref": "#/$defs/utcTemporalProperty" },
+        "priority": { "$ref": "#/$defs/priorityProperty" },
+        "sequence": { "$ref": "#/$defs/nonNegativeIntegerProperty" },
+        "status": { "$ref": "#/$defs/textProperty" },
+        "summary": { "$ref": "#/$defs/textProperty" },
+        "url": { "$ref": "#/$defs/uriProperty" },
+        "attachments": { "type": "array", "items": { "$ref": "#/$defs/namedUri" } },
+        "categories": { "$ref": "#/$defs/textListProperty" },
+        "comments": { "type": "array", "items": { "$ref": "#/$defs/textProperty" } },
+        "contacts": { "type": "array", "items": { "$ref": "#/$defs/textProperty" } },
+        "locations": { "type": "array", "items": { "$ref": "#/$defs/textProperty" } },
+        "requestStatuses": { "type": "array", "items": { "$ref": "#/$defs/requestStatus" } },
+        "relatedTo": { "type": "array", "items": { "$ref": "#/$defs/relationInput" } },
+        "resources": { "type": "array", "items": { "$ref": "#/$defs/textProperty" } },
+        "styledDescriptions": { "type": "array", "items": { "$ref": "#/$defs/textProperty" } },
+        "structuredDataUris": { "type": "array", "items": { "$ref": "#/$defs/uriProperty" } },
+        "locationUris": { "type": "array", "items": { "$ref": "#/$defs/namedComponentInput" } },
+        "resourceUris": { "type": "array", "items": { "$ref": "#/$defs/resourceComponentInput" } }
+      }
+    },
+    "alarmInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "trigger"],
+      "properties": {
+        "action": { "$ref": "#/$defs/alarmActionInputProperty" },
+        "trigger": { "$ref": "#/$defs/textProperty" },
+        "description": { "$ref": "#/$defs/textProperty" },
+        "repeat": { "$ref": "#/$defs/positiveIntegerProperty" },
+        "duration": { "$ref": "#/$defs/durationProperty" },
+        "summary": { "$ref": "#/$defs/textProperty" },
+        "attendees": { "type": "array", "items": { "$ref": "#/$defs/attendeeInput" } },
+        "attachments": { "type": "array", "items": { "$ref": "#/$defs/namedUri" } },
+        "uid": { "$ref": "#/$defs/textProperty" },
+        "acknowledged": { "$ref": "#/$defs/utcTemporalProperty" },
+        "proximity": { "$ref": "#/$defs/textProperty" },
+        "relatedTo": { "type": "array", "items": { "$ref": "#/$defs/relationInput" } },
+        "proximityLocations": { "type": "array", "items": { "$ref": "#/$defs/namedComponentInput" } }
+      }
+    },
+    "structuredDataInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "organizer": { "$ref": "#/$defs/namedUri" },
+        "attendees": { "type": "array", "items": { "$ref": "#/$defs/attendeeInput" } },
+        "participants": { "type": "array", "items": { "$ref": "#/$defs/participantInput" } },
+        "contacts": { "type": "array", "items": { "$ref": "#/$defs/textProperty" } },
+        "resources": { "type": "array", "items": { "$ref": "#/$defs/textProperty" } },
+        "relatedTo": { "type": "array", "items": { "$ref": "#/$defs/relationInput" } },
+        "requestStatuses": { "type": "array", "items": { "$ref": "#/$defs/requestStatus" } },
+        "alarms": { "type": "array", "items": { "$ref": "#/$defs/alarmInput" } },
+        "attachments": { "type": "array", "items": { "$ref": "#/$defs/namedUri" } },
+        "comments": { "type": "array", "items": { "$ref": "#/$defs/textProperty" } },
+        "styledDescriptions": { "type": "array", "items": { "$ref": "#/$defs/textProperty" } },
+        "images": { "type": "array", "items": { "$ref": "#/$defs/namedUri" } },
+        "conferences": { "type": "array", "items": { "$ref": "#/$defs/namedUri" } },
+        "links": { "type": "array", "items": { "$ref": "#/$defs/namedUri" } },
+        "concepts": { "type": "array", "items": { "$ref": "#/$defs/uriProperty" } },
+        "structuredDataUris": { "type": "array", "items": { "$ref": "#/$defs/uriProperty" } },
+        "locationUris": { "type": "array", "items": { "$ref": "#/$defs/namedComponentInput" } },
+        "resourceUris": { "type": "array", "items": { "$ref": "#/$defs/resourceComponentInput" } }
       }
     },
     "attendee": {
@@ -4399,17 +4653,16 @@
           "type": "string"
         },
         "role": {
-          "type": "string",
-          "minLength": 1
+          "$ref": "#/$defs/effectiveOpenEnumValue"
         },
         "partStat": {
-          "type": "string"
+          "$ref": "#/$defs/effectiveOpenEnumValue"
         },
         "cutype": {
-          "type": "string"
+          "$ref": "#/$defs/effectiveOpenEnumValue"
         },
         "rsvp": {
-          "type": "boolean"
+          "$ref": "#/$defs/effectiveBooleanValue"
         },
         "delegatedTo": {
           "type": "array",
@@ -4446,14 +4699,18 @@
       "additionalProperties": false,
       "required": [
         "uid",
-        "participantType"
+        "participantType",
+        "schedulable"
       ],
       "properties": {
         "uid": {
           "$ref": "#/$defs/textProperty"
         },
         "participantType": {
-          "$ref": "#/$defs/textProperty"
+          "$ref": "#/$defs/openEnumValue"
+        },
+        "schedulable": {
+          "type": "boolean"
         },
         "calendarAddress": {
           "$ref": "#/$defs/uriProperty"
@@ -4480,7 +4737,7 @@
           "$ref": "#/$defs/nonNegativeIntegerProperty"
         },
         "status": {
-          "$ref": "#/$defs/textProperty"
+          "$ref": "#/$defs/openEnumValue"
         },
         "summary": {
           "$ref": "#/$defs/textProperty"
@@ -4548,13 +4805,13 @@
         "locationUris": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/namedUri"
+            "$ref": "#/$defs/namedComponent"
           }
         },
         "resourceUris": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/namedUri"
+            "$ref": "#/$defs/resourceComponent"
           }
         }
       }
@@ -4572,7 +4829,7 @@
           "minLength": 1
         },
         "relationType": {
-          "type": "string"
+          "$ref": "#/$defs/effectiveOpenEnumValue"
         },
         "parameters": {
           "type": "array",
@@ -4631,6 +4888,40 @@
           }
         }
       }
+    },
+    "namedComponent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uid", "parameters"],
+      "properties": {
+        "uid": { "type": "string", "minLength": 1 },
+        "name": { "$ref": "#/$defs/textProperty" },
+        "parameters": { "type": "array", "items": { "$ref": "#/$defs/icalParameter" } },
+        "description": { "$ref": "#/$defs/textProperty" },
+        "geo": { "$ref": "#/$defs/geoProperty" },
+        "componentTypes": {
+          "oneOf": [
+            { "$ref": "#/$defs/textListProperty" },
+            { "$ref": "#/$defs/openEnumProperty" }
+          ]
+        },
+        "url": { "$ref": "#/$defs/uriProperty" },
+        "relatedTo": { "type": "array", "items": { "$ref": "#/$defs/relation" } },
+        "concepts": { "type": "array", "items": { "$ref": "#/$defs/uriProperty" } },
+        "links": { "type": "array", "items": { "$ref": "#/$defs/namedUri" } },
+        "structuredDataUris": { "type": "array", "items": { "$ref": "#/$defs/uriProperty" } }
+      }
+    },
+    "resourceComponent": {
+      "allOf": [
+        { "$ref": "#/$defs/namedComponent" },
+        { "not": { "required": ["url"] } },
+        {
+          "properties": {
+            "componentTypes": { "$ref": "#/$defs/openEnumProperty" }
+          }
+        }
+      ]
     },
     "uriProperty": {
       "type": "object",
@@ -4771,18 +5062,18 @@
         "locationUris": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/namedUri"
+            "$ref": "#/$defs/namedComponent"
           }
         },
         "resourceUris": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/namedUri"
+            "$ref": "#/$defs/resourceComponent"
           }
         }
       }
     },
-    "alarmActionProperty": {
+    "alarmActionInputProperty": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -4796,6 +5087,25 @@
             "audio",
             "email"
           ]
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/icalParameter"
+          }
+        }
+      }
+    },
+    "alarmActionProperty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "parameters"
+      ],
+      "properties": {
+        "value": {
+          "$ref": "#/$defs/openEnumValue"
         },
         "parameters": {
           "type": "array",
@@ -4841,6 +5151,27 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/namedUri"
+          }
+        },
+        "uid": {
+          "$ref": "#/$defs/textProperty"
+        },
+        "acknowledged": {
+          "$ref": "#/$defs/utcTemporalProperty"
+        },
+        "proximity": {
+          "$ref": "#/$defs/alarmActionProperty"
+        },
+        "relatedTo": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/relation"
+          }
+        },
+        "proximityLocations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/namedComponent"
           }
         }
       }
@@ -4937,13 +5268,13 @@
             "add": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/attendee"
+                "$ref": "#/$defs/attendeeInput"
               }
             },
             "remove": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/attendee"
+                "$ref": "#/$defs/attendeeInput"
               }
             }
           },
@@ -4988,7 +5319,7 @@
             "values": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/attendee"
+                "$ref": "#/$defs/attendeeInput"
               }
             }
           }
@@ -5010,13 +5341,13 @@
             "add": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/participant"
+                "$ref": "#/$defs/participantInput"
               }
             },
             "remove": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/participant"
+                "$ref": "#/$defs/participantInput"
               }
             }
           },
@@ -5061,7 +5392,7 @@
             "values": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/participant"
+                "$ref": "#/$defs/participantInput"
               }
             }
           }
@@ -5229,13 +5560,13 @@
             "add": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/relation"
+                "$ref": "#/$defs/relationInput"
               }
             },
             "remove": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/relation"
+                "$ref": "#/$defs/relationInput"
               }
             }
           },
@@ -5280,7 +5611,7 @@
             "values": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/relation"
+                "$ref": "#/$defs/relationInput"
               }
             }
           }
@@ -5375,13 +5706,13 @@
             "add": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/alarm"
+                "$ref": "#/$defs/alarmInput"
               }
             },
             "remove": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/alarm"
+                "$ref": "#/$defs/alarmInput"
               }
             }
           },
@@ -5426,7 +5757,7 @@
             "values": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/alarm"
+                "$ref": "#/$defs/alarmInput"
               }
             }
           }
@@ -6032,13 +6363,13 @@
             "add": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/namedUri"
+                "$ref": "#/$defs/namedComponentInput"
               }
             },
             "remove": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/namedUri"
+                "$ref": "#/$defs/namedComponentInput"
               }
             }
           },
@@ -6083,7 +6414,7 @@
             "values": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/namedUri"
+                "$ref": "#/$defs/namedComponentInput"
               }
             }
           }
@@ -6105,13 +6436,13 @@
             "add": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/namedUri"
+                "$ref": "#/$defs/resourceComponentInput"
               }
             },
             "remove": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/namedUri"
+                "$ref": "#/$defs/resourceComponentInput"
               }
             }
           },
@@ -6156,7 +6487,7 @@
             "values": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/namedUri"
+                "$ref": "#/$defs/resourceComponentInput"
               }
             }
           }
@@ -7371,9 +7702,10 @@
             "integer",
             "float",
             "period",
-            "recur",
-            "binary",
-            "unknown"
+          "recur",
+          "binary",
+          "uid",
+          "unknown"
           ]
         },
         "rawEncodedValue": {
@@ -7455,7 +7787,6 @@
       "required": [
         "calendar",
         "resourceRevision",
-        "authoritativePayload",
         "calendarProperties",
         "projection",
         "diagnostics"
@@ -7491,9 +7822,6 @@
         },
         "resourceRevision": {
           "$ref": "#/$defs/resourceRevision"
-        },
-        "authoritativePayload": {
-          "$ref": "#/$defs/authoritativePayload"
         },
         "entityRevision": {
           "$ref": "#/$defs/revisionReference"
@@ -8086,6 +8414,11 @@
             "postWriteVerificationOrReconciliation"
           ]
         },
+        "violations": {
+          "type": "array",
+          "maxItems": 32,
+          "items": { "$ref": "#/$defs/violation" }
+        },
         "mutationState": {
           "enum": [
             "not_attempted",
@@ -8244,23 +8577,6 @@
         "entityTag": {
           "type": "string",
           "minLength": 1
-        }
-      }
-    },
-    "authoritativePayload": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "encoding",
-        "base64Utf8"
-      ],
-      "properties": {
-        "encoding": {
-          "const": "base64"
-        },
-        "base64Utf8": {
-          "type": "string",
-          "contentEncoding": "base64"
         }
       }
     }

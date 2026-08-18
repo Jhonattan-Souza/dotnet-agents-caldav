@@ -10,7 +10,7 @@ public sealed class CalDavOptions
 {
     public const string SectionName = "CalDav";
 
-    /// <summary>Base URL of the CalDAV server (e.g. <c>https://caldav.example.com</c>).</summary>
+    /// <summary>Absolute CalDAV server endpoint or Calendar Home URL.</summary>
     public string BaseUrl { get; set; } = string.Empty;
 
     /// <summary>Username for Basic / Bearer authentication.</summary>
@@ -53,6 +53,10 @@ internal sealed class ValidateCalDavOptions : IValidateOptions<CalDavOptions>
         {
             failures.Add($"CalDav:BaseUrl must be a valid HTTP or HTTPS URL. Received: '{options.BaseUrl}'.");
         }
+        else if (!IsSafeCanonicalEndpoint(options.BaseUrl, uri))
+        {
+            failures.Add("CalDav:BaseUrl must be canonical and must not contain credentials, a query, a fragment, or encoded path traversal.");
+        }
 
         if (string.IsNullOrWhiteSpace(options.Username))
             failures.Add("CalDav:Username is required.");
@@ -67,4 +71,14 @@ internal sealed class ValidateCalDavOptions : IValidateOptions<CalDavOptions>
             ? ValidateOptionsResult.Fail(failures)
             : ValidateOptionsResult.Success;
     }
+
+    private static bool IsSafeCanonicalEndpoint(string original, Uri uri) =>
+        string.IsNullOrEmpty(uri.UserInfo)
+        && string.IsNullOrEmpty(uri.Query)
+        && string.IsNullOrEmpty(uri.Fragment)
+        && !original.Contains("%2e", StringComparison.OrdinalIgnoreCase)
+        && !original.Contains("%2f", StringComparison.OrdinalIgnoreCase)
+        && !original.Contains("%5c", StringComparison.OrdinalIgnoreCase)
+        && (string.Equals(original, uri.AbsoluteUri, StringComparison.Ordinal)
+            || string.Equals(original + '/', uri.AbsoluteUri, StringComparison.Ordinal));
 }

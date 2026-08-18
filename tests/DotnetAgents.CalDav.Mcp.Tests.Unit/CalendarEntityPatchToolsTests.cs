@@ -270,6 +270,7 @@ public sealed class CalendarEntityPatchToolsTests
         var text = JsonSerializer.SerializeToElement(new { value = "Value", parameters = Array.Empty<object>() });
         var named = JsonSerializer.SerializeToElement(new { uri = "https://example.test/value", parameters = Array.Empty<object>() });
         var uri = JsonSerializer.SerializeToElement(new { uri = "https://example.test/value", parameters = Array.Empty<object>() });
+        var component = JsonSerializer.SerializeToElement(new { uid = "component-1", parameters = Array.Empty<object>() });
         var cases = new (string Field, JsonElement Item)[]
         {
             ("attendees", JsonSerializer.SerializeToElement(new { uri = "mailto:person@example.test", parameters = Array.Empty<object>() })),
@@ -300,8 +301,8 @@ public sealed class CalendarEntityPatchToolsTests
             ("links", named),
             ("concepts", uri),
             ("structuredDataUris", uri),
-            ("locationUris", named),
-            ("resourceUris", named)
+            ("locationUris", component),
+            ("resourceUris", component)
         };
 
         foreach (var item in cases)
@@ -535,9 +536,15 @@ public sealed class CalendarEntityPatchToolsTests
         noChange.IsError.ShouldBe(false);
         noChange.StructuredContent!.Value.GetProperty("outcome").GetString().ShouldBe("no_change");
 
+        var largeValue = new string('x', CalendarQueryToolSupport.MaximumStructuredResultBytes + 1);
         var huge = EventSnapshot() with
         {
-            AuthoritativeUtf8 = new byte[CalendarQueryToolSupport.MaximumStructuredResultBytes + 1]
+            CalendarProperties =
+            [
+                new CalendarProperty(
+                    [new CalendarComponentPathSegment("VCALENDAR", 0), new CalendarComponentPathSegment("VEVENT", 0)],
+                    "X-LARGE", [], CalendarPropertyValueType.Unknown, largeValue, $"X-LARGE:{largeValue}\r\n")
+            ]
         };
         service.PatchEventAsync(Arg.Any<CalendarEventPatchRequest>(), Arg.Any<CancellationToken>()).Returns(
             CalendarEntityPatchResult.Success(huge));

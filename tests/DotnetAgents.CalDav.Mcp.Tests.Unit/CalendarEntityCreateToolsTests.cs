@@ -234,8 +234,8 @@ public sealed class CalendarEntityCreateToolsTests
                   "links":[{"uri":"https://example.test/link","parameters":[]}],
                   "concepts":[{"uri":"https://example.test/concepts/one","parameters":[]}],
                   "structuredDataUris":[{"uri":"https://example.test/event.json","parameters":[{"name":"SCHEMA","values":["https://schema.org/Event"]}]}],
-                  "locationUris":[{"uri":"geo:40.1,-8.2","parameters":[]}],
-                  "resourceUris":[{"uri":"urn:uuid:projector","parameters":[]}]
+                  "locationUris":[{"uid":"location-1","parameters":[]}],
+                  "resourceUris":[{"uid":"resource-1","parameters":[]}]
                 }
               }}
             }
@@ -276,8 +276,8 @@ public sealed class CalendarEntityCreateToolsTests
         structured.Links!.Single().Uri.ShouldBe("https://example.test/link");
         structured.Concepts!.Single().Uri.ShouldBe("https://example.test/concepts/one");
         structured.StructuredDataUris!.Single().Uri.ShouldBe("https://example.test/event.json");
-        structured.LocationUris!.Single().Uri.ShouldBe("geo:40.1,-8.2");
-        structured.ResourceUris!.Single().Uri.ShouldBe("urn:uuid:projector");
+        structured.LocationUris!.Single().Uid.ShouldBe("location-1");
+        structured.ResourceUris!.Single().Uid.ShouldBe("resource-1");
     }
 
     [Theory]
@@ -388,8 +388,14 @@ public sealed class CalendarEntityCreateToolsTests
                   "repeat":{"value":2,"parameters":[{"name":"X-REPEAT","values":["one"]}]},
                   "duration":{"value":"PT5M","parameters":[{"name":"X-DURATION","values":["one"]}]},
                   "summary":{"value":"Subject","parameters":[{"name":"LANGUAGE","values":["en"]}]},
-                  "attendees":[{"uri":"mailto:recipient@example.test","parameters":[]}]
-                }]
+                  "attendees":[{"uri":"mailto:recipient@example.test","parameters":[]}],
+                  "uid":{"value":"alarm-1","parameters":[]},
+                  "acknowledged":{"value":{"kind":"utcDateTime","value":"2026-08-16T10:03:00Z"},"parameters":[]},
+                  "proximity":{"value":"arrive","parameters":[]},
+                  "relatedTo":[{"value":"parent-alarm","relationType":"PARENT","parameters":[]}],
+                  "proximityLocations":[{"uid":"door-123","name":{"value":"Door","parameters":[]},"parameters":[],"description":{"value":"North entrance","parameters":[]},"geo":{"value":{"latitude":40.1,"longitude":-8.2},"parameters":[]},"componentTypes":{"value":["entrance","north"],"parameters":[]},"url":{"uri":"geo:40.1,-8.2","parameters":[]},"relatedTo":[],"concepts":[],"links":[],"structuredDataUris":[]}]
+                }],
+                "locationUris":[{"uid":"room-123","name":{"value":"Room","parameters":[{"name":"LANGUAGE","values":["en"]}]},"parameters":[],"description":{"value":"Conference room","parameters":[]},"geo":{"value":{"latitude":40.2,"longitude":-8.3},"parameters":[]},"componentTypes":{"value":["meeting-room","accessible"],"parameters":[]},"url":{"uri":"https://example.test/room","parameters":[]},"relatedTo":[],"concepts":[],"links":[],"structuredDataUris":[]}]
               }__TEMPORAL__
             }}}
             """
@@ -431,6 +437,14 @@ public sealed class CalendarEntityCreateToolsTests
         alarm.Repeat!.Parameters.Single().Name.ShouldBe("X-REPEAT");
         alarm.Duration!.Parameters.Single().Name.ShouldBe("X-DURATION");
         alarm.Summary!.Parameters.Single().Name.ShouldBe("LANGUAGE");
+        alarm.Uid!.Value.ShouldBe("alarm-1");
+        alarm.Acknowledged!.Value.Kind.ShouldBe(CalendarTemporalKind.UtcDateTime);
+        alarm.Acknowledged.Value.Value.ShouldBe("2026-08-16T10:03:00Z");
+        alarm.Proximity!.Value.ShouldBe("arrive");
+        alarm.RelatedTo!.Single().Value.ShouldBe("parent-alarm");
+        alarm.ProximityLocations!.Single().Description!.Value.ShouldBe("North entrance");
+        structured.LocationUris!.Single().Name!.Parameters.Single().Name.ShouldBe("LANGUAGE");
+        structured.LocationUris!.Single().ComponentTypes!.Value.ShouldBe(["meeting-room", "accessible"]);
     }
 
     [Fact]
@@ -739,10 +753,7 @@ public sealed class CalendarEntityCreateToolsTests
     public async Task CreateEventRawAsync_ReplacesOversizedCommittedResultWithBoundedCommittedError()
     {
         var service = Substitute.For<ICalendarService>();
-        var oversized = EventSnapshot() with
-        {
-            AuthoritativeUtf8 = new byte[(4 * 1024 * 1024) + 1]
-        };
+        var oversized = OversizedEventSnapshot();
         service.CreateEventAsync(Arg.Any<CalendarEventCreateRequest>(), Arg.Any<CancellationToken>())
             .Returns(CalendarEntityCreateResult.Success(oversized));
         var sut = new CalendarEntityCreateTools(service, TimeProvider.System);
@@ -760,10 +771,7 @@ public sealed class CalendarEntityCreateToolsTests
     public async Task CreateEventRawAsync_ReplacesOversizedIndeterminateResultWithoutChangingMutationTruth()
     {
         var service = Substitute.For<ICalendarService>();
-        var oversized = EventSnapshot() with
-        {
-            AuthoritativeUtf8 = new byte[(4 * 1024 * 1024) + 1]
-        };
+        var oversized = OversizedEventSnapshot();
         service.CreateEventAsync(Arg.Any<CalendarEventCreateRequest>(), Arg.Any<CancellationToken>())
             .Returns(new CalendarEntityCreateResult(
                 CalendarEntityCreateCode.Indeterminate,
@@ -1188,6 +1196,25 @@ public sealed class CalendarEntityCreateToolsTests
     }
 
     private static CalendarResourceSnapshot EventSnapshot() => Snapshot(CalendarResourceProjectionKind.Event, "event-1");
+
+    private static CalendarResourceSnapshot OversizedEventSnapshot()
+    {
+        var snapshot = EventSnapshot();
+        var value = new string('x', 3 * 1024 * 1024);
+        return snapshot with
+        {
+            CalendarProperties =
+            [
+                new CalendarProperty(
+                    [new CalendarComponentPathSegment("VCALENDAR", 0), new CalendarComponentPathSegment("VEVENT", 0)],
+                    "X-LARGE",
+                    [],
+                    CalendarPropertyValueType.Unknown,
+                    value,
+                    $"X-LARGE:{value}\r\n")
+            ]
+        };
+    }
 
     private static CalendarResourceSnapshot TodoSnapshot() => Snapshot(CalendarResourceProjectionKind.Todo, "todo-1");
 

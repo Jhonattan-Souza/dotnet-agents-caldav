@@ -1,4 +1,5 @@
 using DotnetAgents.CalDav.Core.Abstractions;
+using DotnetAgents.CalDav.Core.Internal;
 using DotnetAgents.CalDav.Core.Models;
 using System.Net.Http.Headers;
 
@@ -76,6 +77,7 @@ internal sealed class CalendarResourceDeleteEngine(
     private async Task<CalendarResourceDeleteResult> VerifyDispatchedAsync(
         CalendarResourceRevisionReference revision)
     {
+        CalendarOperationProgress.SetPhase(CalendarOperationPhase.Reconcile);
         using var verification = new CancellationTokenSource(ReconciliationTimeout, timeProvider);
         try
         {
@@ -92,6 +94,7 @@ internal sealed class CalendarResourceDeleteEngine(
 
     private async Task<CalendarResourceDeleteResult> ReconcileAsync(CalendarResourceRevisionReference revision)
     {
+        CalendarOperationProgress.SetPhase(CalendarOperationPhase.Reconcile);
         using var reconciliation = new CancellationTokenSource(ReconciliationTimeout, timeProvider);
         CalendarResourceRead observed;
         try

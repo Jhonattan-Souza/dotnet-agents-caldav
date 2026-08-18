@@ -17,6 +17,145 @@ namespace DotnetAgents.CalDav.IntegrationTests;
 public sealed class CalendarMcpRawStdioTests
 {
     [Fact]
+    public async Task LegacyInitializeToolNameIsUnknownWhileTheProtocolHandshakeRemainsSupported()
+    {
+        const string request = """
+            {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"initialize","arguments":{}}}
+            """;
+
+        var response = await InvokeRawToolProtocolAsync(request);
+
+        response.GetProperty("error").GetProperty("code").GetInt32().ShouldBe(-32602);
+        response.GetProperty("error").GetProperty("message").GetString().ShouldNotBeNull()
+            .ShouldContain("Unknown tool", Case.Insensitive);
+    }
+
+    [Fact]
+    public async Task TasksExtensionMethodIsUnknownWithoutApplicationSpecificAsyncState()
+    {
+        const string request = """
+            {"jsonrpc":"2.0","id":2,"method":"tasks/get","params":{"taskId":"not-a-task"}}
+            """;
+
+        var response = await InvokeRawProtocolAsync(request);
+
+        response.GetProperty("error").GetProperty("code").GetInt32().ShouldBe(-32601);
+        response.ToString().ShouldNotContain("requestState");
+    }
+
+    [Fact]
+    public async Task MalformedJsonUsesTheJsonRpcParseErrorChannel()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var process = StartServer("http://127.0.0.1:1", "http://127.0.0.1:1/calendars/test/");
+        try
+        {
+            await process.StandardInput.WriteLineAsync("{\"jsonrpc\":\"2.0\",\"id\":2,");
+            await process.StandardInput.FlushAsync(timeout.Token);
+            var line = await process.StandardOutput.ReadLineAsync(timeout.Token);
+            line.ShouldNotBeNull();
+            using var document = JsonDocument.Parse(line);
+
+            document.RootElement.GetProperty("jsonrpc").GetString().ShouldBe("2.0");
+            document.RootElement.GetProperty("id").GetInt32().ShouldBe(2);
+            document.RootElement.GetProperty("error").GetProperty("code").GetInt32().ShouldBe(-32700);
+
+            process.StandardInput.Close();
+            await process.WaitForExitAsync(timeout.Token);
+            (await process.StandardError.ReadToEndAsync(timeout.Token)).ShouldBeEmpty();
+        }
+        finally
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("calendar_availability.query")]
+    [InlineData("vpolls.create")]
+    public async Task UnadvertisedExtensionToolNamesUseTheProtocolUnknownToolChannel(string toolName)
+    {
+        var request = JsonSerializer.Serialize(new
+        {
+            jsonrpc = "2.0",
+            id = 2,
+            method = "tools/call",
+            @params = new { name = toolName, arguments = new { } }
+        });
+
+        var response = await InvokeRawToolProtocolAsync(request);
+
+        response.GetProperty("error").GetProperty("code").GetInt32().ShouldBe(-32602);
+        response.GetProperty("error").GetProperty("message").GetString().ShouldNotBeNull()
+            .ShouldContain("Unknown tool", Case.Insensitive);
+    }
+
+    [Fact]
+    public async Task RequestedProgress_UsesOnlyBoundedAggregateNotificationsAfterFiveHundredMilliseconds()
+    {
+        await using var server = new SlowDiscoveryServer();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var process = StartServer(server.BaseUrl, server.CalendarHref);
+        try
+        {
+            await process.StandardInput.WriteLineAsync(
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2026-07-28\",\"capabilities\":{},\"clientInfo\":{\"name\":\"raw-test\",\"version\":\"1\"}}}");
+            await process.StandardInput.FlushAsync(timeout.Token);
+            _ = await ReadResponseAsync(process, 1, timeout.Token);
+            await process.StandardInput.WriteLineAsync(
+                "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}");
+            await process.StandardInput.WriteLineAsync(
+                "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"_meta\":{\"progressToken\":\"progress-1\"},\"name\":\"calendars.list\",\"arguments\":{}}}");
+            await process.StandardInput.FlushAsync(timeout.Token);
+
+            var notifications = new List<JsonElement>();
+            JsonElement response = default;
+            while (await process.StandardOutput.ReadLineAsync(timeout.Token) is { } line)
+            {
+                using var document = JsonDocument.Parse(line);
+                var message = document.RootElement;
+                if (message.TryGetProperty("method", out var method)
+                    && method.GetString() == "notifications/progress")
+                {
+                    notifications.Add(message.Clone());
+                    server.ReleaseResponse();
+                }
+                if (message.TryGetProperty("id", out var id) && id.GetInt32() == 2)
+                {
+                    response = message.Clone();
+                    break;
+                }
+            }
+
+            response.GetProperty("result").GetProperty("isError").GetBoolean().ShouldBeFalse();
+            notifications.Count.ShouldBeInRange(1, 12);
+            var progressValues = notifications
+                .Select(item => item.GetProperty("params").GetProperty("progress").GetDouble())
+                .ToArray();
+            progressValues.Zip(progressValues.Skip(1), (left, right) => right > left)
+                .ShouldAllBe(increases => increases);
+            notifications.ShouldAllBe(item =>
+                item.GetProperty("params").GetProperty("progressToken").GetString() == "progress-1");
+            var allowedPhases = new[] { "admission", "discovery", "fetch", "filter", "expand", "reconcile" };
+            notifications.Select(item => item.GetProperty("params").GetProperty("message").GetString())
+                .ShouldAllBe(phase => allowedPhases.Contains(phase));
+            var serialized = JsonSerializer.Serialize(notifications);
+            serialized.ShouldNotContain(server.BaseUrl);
+            serialized.ShouldNotContain("Entities");
+
+            process.StandardInput.Close();
+            await process.WaitForExitAsync(timeout.Token);
+            (await process.StandardError.ReadToEndAsync(timeout.Token)).ShouldBeEmpty();
+        }
+        finally
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
+        }
+    }
+
+    [Fact]
     public async Task CalendarResourceDelete_NativeSdkCompletesMrtrOverStdioWithoutDocker()
     {
         await using var server = new DeleteServer();
@@ -527,6 +666,17 @@ public sealed class CalendarMcpRawStdioTests
         string calendarHref = "http://127.0.0.1:1/calendars/test/",
         bool exposeExact = false)
     {
+        var response = await InvokeRawToolProtocolAsync(toolRequest, baseUrl, calendarHref, exposeExact);
+        response.TryGetProperty("result", out var result).ShouldBeTrue(response.ToString());
+        return result.Clone();
+    }
+
+    private static async Task<JsonElement> InvokeRawToolProtocolAsync(
+        string toolRequest,
+        string baseUrl = "http://127.0.0.1:1",
+        string calendarHref = "http://127.0.0.1:1/calendars/test/",
+        bool exposeExact = false)
+    {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         using var process = StartServer(baseUrl, calendarHref, exposeExact);
         try
@@ -543,8 +693,28 @@ public sealed class CalendarMcpRawStdioTests
             process.StandardInput.Close();
             await process.WaitForExitAsync(timeout.Token);
             (await process.StandardError.ReadToEndAsync(timeout.Token)).ShouldBeEmpty();
-            response.TryGetProperty("result", out var result).ShouldBeTrue(response.ToString());
-            return result.Clone();
+            return response.Clone();
+        }
+        finally
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
+        }
+    }
+
+    private static async Task<JsonElement> InvokeRawProtocolAsync(string request)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var process = StartServer("http://127.0.0.1:1", "http://127.0.0.1:1/calendars/test/");
+        try
+        {
+            await process.StandardInput.WriteLineAsync(request);
+            await process.StandardInput.FlushAsync(timeout.Token);
+            var response = await ReadResponseAsync(process, 2, timeout.Token);
+            process.StandardInput.Close();
+            await process.WaitForExitAsync(timeout.Token);
+            (await process.StandardError.ReadToEndAsync(timeout.Token)).ShouldBeEmpty();
+            return response.Clone();
         }
         finally
         {
@@ -880,6 +1050,87 @@ public sealed class CalendarMcpRawStdioTests
             }
             context.Response.StatusCode = (int)HttpStatusCode.MethodNotAllowed;
             context.Response.Close();
+        }
+
+        private static async Task WriteXmlAsync(HttpListenerResponse response, string body)
+        {
+            var xml = "<?xml version=\"1.0\" encoding=\"utf-8\"?><d:multistatus xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\">"
+                + body
+                + "</d:multistatus>";
+            var bytes = Encoding.UTF8.GetBytes(xml);
+            response.StatusCode = (int)HttpStatusCode.MultiStatus;
+            response.ContentType = "application/xml; charset=utf-8";
+            response.ContentLength64 = bytes.Length;
+            await response.OutputStream.WriteAsync(bytes, TestContext.Current.CancellationToken);
+            response.Close();
+        }
+
+        private static int ReservePort()
+        {
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            listener.Stop();
+            return port;
+        }
+    }
+
+    private sealed class SlowDiscoveryServer : IAsyncDisposable
+    {
+        private readonly HttpListener _listener = new();
+        private readonly CancellationTokenSource _stopping = new();
+        private readonly TaskCompletionSource _releaseResponse = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly Task _serve;
+
+        public SlowDiscoveryServer()
+        {
+            var port = ReservePort();
+            BaseUrl = $"http://127.0.0.1:{port}/";
+            CalendarHref = BaseUrl + "calendars/test/entities/";
+            _listener.Prefixes.Add(BaseUrl);
+            _listener.Start();
+            _serve = ServeAsync();
+        }
+
+        public string BaseUrl { get; }
+        public string CalendarHref { get; }
+
+        public void ReleaseResponse() => _releaseResponse.TrySetResult();
+
+        public async ValueTask DisposeAsync()
+        {
+            await _stopping.CancelAsync();
+            _listener.Stop();
+            try
+            {
+                await _serve;
+            }
+            finally
+            {
+                _listener.Close();
+                _stopping.Dispose();
+            }
+        }
+
+        private async Task ServeAsync()
+        {
+            try
+            {
+                while (!_stopping.IsCancellationRequested)
+                {
+                    var context = await _listener.GetContextAsync();
+                    await _releaseResponse.Task.WaitAsync(_stopping.Token);
+                    var body = context.Request.Url!.AbsolutePath == "/"
+                        ? "<d:response><d:href>/</d:href><d:propstat><d:prop><c:calendar-home-set><d:href>/calendars/test/</d:href></c:calendar-home-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>"
+                        : "<d:response><d:href>/calendars/test/entities/</d:href><d:propstat><d:prop><d:resourcetype><c:calendar/></d:resourcetype><d:displayname>Entities</d:displayname><c:supported-calendar-component-set><c:comp name=\"VEVENT\"/><c:comp name=\"VTODO\"/></c:supported-calendar-component-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>";
+                    await WriteXmlAsync(context.Response, body);
+                }
+            }
+            catch (Exception exception) when (_stopping.IsCancellationRequested
+                && exception is HttpListenerException or ObjectDisposedException or OperationCanceledException)
+            {
+                System.Diagnostics.Debug.Assert(_stopping.IsCancellationRequested);
+            }
         }
 
         private static async Task WriteXmlAsync(HttpListenerResponse response, string body)

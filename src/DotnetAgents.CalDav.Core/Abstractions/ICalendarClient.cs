@@ -5,6 +5,11 @@ namespace DotnetAgents.CalDav.Core.Abstractions;
 /// <summary>Low-level CalDAV discovery client for Calendar collections.</summary>
 public interface ICalendarClient
 {
+    /// <summary>Invalidates process-lifetime capability observations before an explicit rediscovery.</summary>
+    void RediscoverCapabilities()
+    {
+    }
+
     /// <summary>Discovers every Calendar collection visible to the configured account.</summary>
     Task<IReadOnlyList<CalendarDescriptor>> GetCalendarsAsync(CancellationToken cancellationToken);
 
@@ -18,6 +23,12 @@ public interface ICalendarClient
 
     /// <summary>Reads one complete Calendar Object Resource revision by canonical absolute href.</summary>
     Task<CalendarResourceRead> GetCalendarResourceAsync(string href, CancellationToken cancellationToken);
+
+    /// <summary>Verifies Calendar multiget support, then reads authoritative bytes with GET.</summary>
+    async Task<CalendarResourceRead> GetCalendarResourceForQueryAsync(
+        string calendarHref,
+        string href,
+        CancellationToken cancellationToken) => await GetCalendarResourceAsync(href, cancellationToken);
 
     /// <summary>Conditionally creates one complete Calendar Object Resource without overwriting.</summary>
     Task<CalendarResourceCreateResult> CreateCalendarResourceAsync(

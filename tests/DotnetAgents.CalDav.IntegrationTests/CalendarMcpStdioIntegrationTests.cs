@@ -257,8 +257,8 @@ public sealed class CalendarMcpStdioIntegrationTests
             .ShouldBe("2026-08-17T09:00:00Z");
         movedOccurrence.GetProperty("timing").GetProperty("effectiveStart").GetProperty("value").GetString()
             .ShouldBe("2026-08-17T13:00:00Z");
-        Convert.FromBase64String(movedOccurrence.GetProperty("snapshot").GetProperty("authoritativePayload")
-            .GetProperty("base64Utf8").GetString()!).ShouldBe(rangeObserved.Utf8);
+        movedOccurrence.GetProperty("snapshot").TryGetProperty("authoritativePayload", out _).ShouldBeFalse();
+        movedOccurrence.ToString().ShouldNotContain(Convert.ToBase64String(rangeObserved.Utf8));
 
         var unresolvedHref = await PutResourceAsync("occurrence-unresolved.ics", Todo(
             "occurrence-unresolved", "DTSTART;TZID=Private/Unknown:20260816T100000\r\nDURATION:PT1H\r\n"));
@@ -956,7 +956,7 @@ public sealed class CalendarMcpStdioIntegrationTests
     }
 
     [Fact]
-    public async Task CalendarResourceGet_ReturnsTheSameStrongRevisionAndExactUtf8Payload()
+    public async Task CalendarResourceGet_ReturnsStrongRevisionAndLosslessPropertiesWithoutRawPayload()
     {
         const string content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Integration//EN\r\nBEGIN:VTODO\r\nUID:resource-read-1\r\nDTSTAMP:20260815T120000Z\r\nSUMMARY:Lossless integration\r\nX-UNKNOWN;X-P=one,two:kept\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
         var href = await PutResourceAsync("resource-read-1.ics", content);
@@ -972,8 +972,11 @@ public sealed class CalendarMcpStdioIntegrationTests
         var snapshot = result.StructuredContent!.Value.GetProperty("snapshot");
         snapshot.GetProperty("resourceRevision").GetProperty("href").GetString().ShouldBe(href);
         snapshot.GetProperty("resourceRevision").GetProperty("entityTag").GetString().ShouldBe(observed.EntityTag);
-        Convert.FromBase64String(snapshot.GetProperty("authoritativePayload").GetProperty("base64Utf8").GetString()!)
-            .ShouldBe(observed.Utf8);
+        snapshot.TryGetProperty("authoritativePayload", out _).ShouldBeFalse();
+        snapshot.ToString().ShouldNotContain(Convert.ToBase64String(observed.Utf8));
+        snapshot.GetProperty("calendarProperties").EnumerateArray()
+            .Single(property => property.GetProperty("name").GetString() == "X-UNKNOWN")
+            .GetProperty("originalSlice").GetString().ShouldBe("X-UNKNOWN;X-P=one,two:kept\r\n");
         snapshot.GetProperty("projection").GetProperty("kind").GetString().ShouldBe("todo");
         result.Content.OfType<TextContentBlock>().Single().Text.ShouldNotContain("BEGIN:VCALENDAR");
         stderr.ShouldBeEmpty();

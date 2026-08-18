@@ -51,8 +51,10 @@ internal static class CalendarEntityCreateArgumentParser
             "relatedTo" => TryBox<CalendarRelation>(value, TryParseRelation, out item),
             "requestStatuses" => TryBox<CalendarRequestStatus>(value, TryParseRequestStatus, out item),
             "alarms" => TryBox<CalendarAlarm>(value, TryParseAlarm, out item),
-            "attachments" or "images" or "conferences" or "links" or "locationUris" or "resourceUris" =>
+            "attachments" or "images" or "conferences" or "links" =>
                 TryBox<CalendarNamedUri>(value, TryParseNamedUri, out item),
+            "locationUris" or "resourceUris" =>
+                TryBox<CalendarNamedComponent>(value, TryParseNamedComponent, out item),
             "concepts" or "structuredDataUris" => TryBox<CalendarUriValue>(value, TryParseUriValue, out item),
             _ => false
         };
@@ -587,8 +589,8 @@ internal static class CalendarEntityCreateArgumentParser
         valid &= TryOptionalArray<CalendarNamedUri>(value, "links", TryParseNamedUri, out var links);
         valid &= TryOptionalArray<CalendarUriValue>(value, "concepts", TryParseUriValue, out var concepts);
         valid &= TryOptionalArray<CalendarUriValue>(value, "structuredDataUris", TryParseUriValue, out var structuredDataUris);
-        valid &= TryOptionalArray<CalendarNamedUri>(value, "locationUris", TryParseNamedUri, out var locationUris);
-        valid &= TryOptionalArray<CalendarNamedUri>(value, "resourceUris", TryParseNamedUri, out var resourceUris);
+        valid &= TryOptionalArray<CalendarNamedComponent>(value, "locationUris", TryParseNamedComponent, out var locationUris);
+        valid &= TryOptionalArray<CalendarNamedComponent>(value, "resourceUris", TryParseNamedComponent, out var resourceUris);
         if (!valid)
             return false;
         data = new CalendarStructuredData(
@@ -630,6 +632,31 @@ internal static class CalendarEntityCreateArgumentParser
             return false;
         }
         parsed = new CalendarNamedUri(uri, label, parameters);
+        return true;
+    }
+
+    private static bool TryParseNamedComponent(JsonElement value, out CalendarNamedComponent parsed)
+    {
+        parsed = null!;
+        string[] allowed =
+        ["uid", "name", "parameters", "description", "geo", "componentTypes", "url", "relatedTo", "concepts", "links", "structuredDataUris"];
+        var valid = HasShape(value, allowed, ["uid", "parameters"]);
+        valid &= TryRequiredString(value, "uid", out var uid);
+        valid &= TryOptionalTextValue(value, "name", out var name);
+        valid &= TryRequiredArray<CalendarParameter>(value, "parameters", TryParseParameter, out var parameters);
+        valid &= TryOptionalTextValue(value, "description", out var description);
+        valid &= TryOptionalGeoProperty(value, "geo", out var geo);
+        valid &= TryOptionalTextListProperty(value, "componentTypes", out var componentTypes);
+        valid &= TryOptionalUriValue(value, "url", out var url);
+        valid &= TryOptionalArray<CalendarRelation>(value, "relatedTo", TryParseRelation, out var relatedTo);
+        valid &= TryOptionalArray<CalendarUriValue>(value, "concepts", TryParseUriValue, out var concepts);
+        valid &= TryOptionalArray<CalendarNamedUri>(value, "links", TryParseNamedUri, out var links);
+        valid &= TryOptionalArray<CalendarUriValue>(value, "structuredDataUris", TryParseUriValue, out var structuredDataUris);
+        if (!valid)
+            return false;
+        parsed = new CalendarNamedComponent(
+            uid, name, parameters, description, geo, componentTypes, url,
+            relatedTo, concepts, links, structuredDataUris);
         return true;
     }
 
@@ -704,8 +731,8 @@ internal static class CalendarEntityCreateArgumentParser
         valid &= TryOptionalArray<CalendarTextValue>(value, "resources", TryParseTextValue, out var resources);
         valid &= TryOptionalArray<CalendarTextValue>(value, "styledDescriptions", TryParseTextValue, out var styledDescriptions);
         valid &= TryOptionalArray<CalendarUriValue>(value, "structuredDataUris", TryParseUriValue, out var structuredDataUris);
-        valid &= TryOptionalArray<CalendarNamedUri>(value, "locationUris", TryParseNamedUri, out var locationUris);
-        valid &= TryOptionalArray<CalendarNamedUri>(value, "resourceUris", TryParseNamedUri, out var resourceUris);
+        valid &= TryOptionalArray<CalendarNamedComponent>(value, "locationUris", TryParseNamedComponent, out var locationUris);
+        valid &= TryOptionalArray<CalendarNamedComponent>(value, "resourceUris", TryParseNamedComponent, out var resourceUris);
         if (!valid)
             return false;
         parsed = new CalendarParticipant(
@@ -893,9 +920,25 @@ internal static class CalendarEntityCreateArgumentParser
         parsed = null!;
         if (!HasShape(
                 value,
-                ["action", "trigger", "description", "repeat", "duration", "summary", "attendees", "attachments"],
+                ["action", "trigger", "description", "repeat", "duration", "summary", "attendees", "attachments",
+                    "uid", "acknowledged", "proximity", "relatedTo", "proximityLocations"],
                 ["action", "trigger"])
-            || !TryRequiredAlarmAction(value, out var action)
+            || !TryParseAlarmCore(value, out var core)
+            || !TryParseAlarmExtensions(value, out var extensions))
+        {
+            return false;
+        }
+        parsed = new CalendarAlarm(
+            core.Action, core.Trigger, core.Description, core.Repeat, core.Duration, core.Summary,
+            core.Attendees, core.Attachments, extensions.Uid, extensions.Acknowledged,
+            extensions.Proximity, extensions.RelatedTo, extensions.ProximityLocations);
+        return true;
+    }
+
+    private static bool TryParseAlarmCore(JsonElement value, out CalendarAlarmCore parsed)
+    {
+        parsed = null!;
+        if (!TryRequiredAlarmAction(value, out var action)
             || !TryRequiredTextValue(value, "trigger", out var trigger)
             || !TryOptionalTextValue(value, "description", out var description)
             || !TryOptionalIntegerProperty(value, "repeat", out var repeat)
@@ -906,9 +949,43 @@ internal static class CalendarEntityCreateArgumentParser
         {
             return false;
         }
-        parsed = new CalendarAlarm(action, trigger, description, repeat, duration, summary, attendees, attachments);
+
+        parsed = new(action, trigger, description, repeat, duration, summary, attendees, attachments);
         return true;
     }
+
+    private static bool TryParseAlarmExtensions(JsonElement value, out CalendarAlarmExtensions parsed)
+    {
+        parsed = null!;
+        if (!TryOptionalTextValue(value, "uid", out var uid)
+            || !TryOptionalTemporalProperty(value, "acknowledged", out var acknowledged)
+            || !TryOptionalTextValue(value, "proximity", out var proximity)
+            || !TryOptionalArray<CalendarRelation>(value, "relatedTo", TryParseRelation, out var relatedTo)
+            || !TryOptionalArray<CalendarNamedComponent>(value, "proximityLocations", TryParseNamedComponent, out var proximityLocations))
+        {
+            return false;
+        }
+
+        parsed = new(uid, acknowledged, proximity, relatedTo, proximityLocations);
+        return true;
+    }
+
+    private sealed record CalendarAlarmCore(
+        CalendarTextValue Action,
+        CalendarTextValue Trigger,
+        CalendarTextValue? Description,
+        CalendarIntegerProperty? Repeat,
+        CalendarDurationProperty? Duration,
+        CalendarTextValue? Summary,
+        IReadOnlyList<CalendarAttendee>? Attendees,
+        IReadOnlyList<CalendarNamedUri>? Attachments);
+
+    private sealed record CalendarAlarmExtensions(
+        CalendarTextValue? Uid,
+        CalendarTemporalProperty? Acknowledged,
+        CalendarTextValue? Proximity,
+        IReadOnlyList<CalendarRelation>? RelatedTo,
+        IReadOnlyList<CalendarNamedComponent>? ProximityLocations);
 
     private static bool TryRequiredAlarmAction(JsonElement owner, out CalendarTextValue action) =>
         TryRequiredTextValue(owner, "action", out action)

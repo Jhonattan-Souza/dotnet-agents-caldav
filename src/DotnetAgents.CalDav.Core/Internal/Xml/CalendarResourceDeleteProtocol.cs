@@ -46,7 +46,7 @@ internal sealed class CalendarResourceDeleteProtocol(
                 HttpCompletionOption.ResponseHeadersRead,
                 cancellationToken);
             if (!IsMethodPreservingRedirect(response.StatusCode))
-                return MapResponse(response);
+                return await MapResponseAsync(response, cancellationToken);
             if (redirectCount >= MaximumRedirects
                 || !TryResolveRedirect(currentUri, response.Headers.Location, out var redirectUri))
             {
@@ -126,8 +126,22 @@ internal sealed class CalendarResourceDeleteProtocol(
     private static bool IsMethodPreservingRedirect(HttpStatusCode statusCode) => statusCode is
         HttpStatusCode.TemporaryRedirect or HttpStatusCode.PermanentRedirect;
 
+    private async Task<CalendarResourceDeleteDispatchResult> MapResponseAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        if (response.StatusCode >= HttpStatusCode.BadRequest
+            && (await DavMutationErrorReader.ReadAsync(response.Content, cancellationToken))
+                .HasFlag(DavMutationErrorKind.UnsupportedCapability))
+        {
+            return new(CalendarResourceDeleteDispatchCode.UnsupportedCapability);
+        }
+        return MapResponse(response);
+    }
+
     private CalendarResourceDeleteDispatchResult MapResponse(HttpResponseMessage response) => response.StatusCode switch
     {
+        HttpStatusCode.Accepted => new(CalendarResourceDeleteDispatchCode.PossiblyDispatched),
         >= HttpStatusCode.OK and < HttpStatusCode.MultipleChoices =>
             new(CalendarResourceDeleteDispatchCode.Dispatched),
         HttpStatusCode.NotFound => new(CalendarResourceDeleteDispatchCode.NotFound),

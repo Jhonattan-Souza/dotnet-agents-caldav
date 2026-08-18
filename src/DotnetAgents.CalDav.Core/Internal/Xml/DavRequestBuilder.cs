@@ -76,6 +76,21 @@ internal static class DavRequestBuilder
         return document.ToString(SaveOptions.DisableFormatting);
     }
 
+    /// <summary>Builds a Calendar multiget request for one authoritative GET candidate.</summary>
+    public static string BuildCalendarMultiget(string resourceHref)
+    {
+        var document = new XDocument(
+            new XDeclaration("1.0", "utf-8", null),
+            new XElement(CalDav + "calendar-multiget",
+                new XAttribute(XNamespace.Xmlns + "d", Dav.NamespaceName),
+                new XAttribute(XNamespace.Xmlns + "c", CalDav.NamespaceName),
+                new XElement(Dav + "prop",
+                    new XElement(Dav + "getetag"),
+                    new XElement(CalDav + "calendar-data")),
+                new XElement(Dav + "href", resourceHref)));
+        return document.ToString(SaveOptions.DisableFormatting);
+    }
+
     private static bool TryGetSafeReportRange(
         DateTimeOffset from,
         DateTimeOffset to,

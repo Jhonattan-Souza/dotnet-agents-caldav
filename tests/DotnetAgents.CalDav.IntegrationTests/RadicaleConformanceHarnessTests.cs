@@ -1,5 +1,9 @@
 using System.Collections.Concurrent;
+using System.Net;
+using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
+using System.Xml.Linq;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.DependencyInjection;
 using DotnetAgents.CalDav.Core.Models;
@@ -35,6 +39,109 @@ public sealed class RadicaleConformanceHarnessTests(RadicaleConformanceFixture f
         fixture.Runtime.VobjectVersion.ShouldBe("0.9.9");
         fixture.Runtime.RuntimeTimeZone.ShouldBe(fixture.Variant.TimeZone);
         fixture.Runtime.StrictPreconditions.ShouldBe(fixture.Variant.StrictPreconditions);
+    }
+
+    [Fact]
+    public async Task Pinned_profile_characterizes_default_support_advertisement_violation_opaque_and_preconditions()
+    {
+        using var client = CreateProbeClient();
+        var eventCalendar = new Uri(fixture.BaseUrl + "/conformance/evidence-event/", UriKind.Absolute);
+        var defaultCalendar = new Uri(fixture.BaseUrl + "/conformance/conformance/", UriKind.Absolute);
+        (await CreateCalendarAsync(client, eventCalendar, "Evidence Events", "VEVENT")).ShouldBe(HttpStatusCode.Created);
+
+        (await ReadAdvertisedComponentsAsync(client, eventCalendar)).ShouldBe(["VEVENT"]);
+        (await ReadAdvertisedComponentsAsync(client, defaultCalendar)).ShouldBe(["VEVENT", "VJOURNAL", "VTODO"]);
+
+        var violatingHref = new Uri(eventCalendar, "advertisement-violation.ics");
+        var violatingPut = await SendProbeAsync(
+            client,
+            HttpMethod.Put,
+            violatingHref,
+            Todo("advertisement-violation"),
+            ("If-None-Match", "*"));
+        violatingPut.Status.ShouldBe(HttpStatusCode.Created);
+        await using (var provider = CreateProvider(fixture.BaseUrl, eventCalendar.AbsoluteUri))
+        {
+            var actual = await provider.GetRequiredService<ICalendarService>().GetResourceAsync(
+                violatingHref.AbsoluteUri,
+                TestContext.Current.CancellationToken);
+            actual.Snapshot.ShouldNotBeNull();
+            actual.Snapshot.Projection.Kind.ShouldBe(CalendarResourceProjectionKind.Todo);
+        }
+
+        var opaqueHref = new Uri(defaultCalendar, "opaque-journal.ics");
+        (await SendProbeAsync(
+            client,
+            HttpMethod.Put,
+            opaqueHref,
+            Journal("opaque-journal"),
+            ("If-None-Match", "*"))).Status.ShouldBe(HttpStatusCode.Created);
+        await using (var provider = CreateProvider(fixture.BaseUrl, defaultCalendar.AbsoluteUri))
+        {
+            var opaque = await provider.GetRequiredService<ICalendarService>().GetResourceAsync(
+                opaqueHref.AbsoluteUri,
+                TestContext.Current.CancellationToken);
+            opaque.Snapshot.ShouldNotBeNull();
+            opaque.Snapshot.Projection.Kind.ShouldBe(CalendarResourceProjectionKind.Opaque);
+            Encoding.UTF8.GetString(opaque.Snapshot.AuthoritativeUtf8.Span).ShouldContain("X-KEEP:opaque");
+        }
+
+        var mixed = Event("mixed-resource", "DTSTART:20260816T100000Z\r\n")
+            .Replace("END:VCALENDAR\r\n", "BEGIN:VTODO\r\nUID:mixed-resource\r\nDTSTAMP:20260815T120000Z\r\nEND:VTODO\r\nEND:VCALENDAR\r\n", StringComparison.Ordinal);
+        (await SendProbeAsync(
+            client,
+            HttpMethod.Put,
+            new Uri(defaultCalendar, "mixed-resource.ics"),
+            mixed,
+            ("If-None-Match", "*"))).Status.ShouldBe(HttpStatusCode.BadRequest);
+
+        await AssertPreconditionAndEntityTagMatrixAsync(client, eventCalendar);
+    }
+
+    [Fact]
+    public async Task Pinned_profile_characterizes_full_expanded_report_and_server_occurrence_ceiling()
+    {
+        using var client = CreateProbeClient();
+        var reportCalendar = new Uri(fixture.BaseUrl + "/conformance/evidence-report/", UriKind.Absolute);
+        var belowCalendar = new Uri(fixture.BaseUrl + "/conformance/evidence-ceiling-below/", UriKind.Absolute);
+        var atCalendar = new Uri(fixture.BaseUrl + "/conformance/evidence-ceiling-at/", UriKind.Absolute);
+        foreach (var calendar in new[] { reportCalendar, belowCalendar, atCalendar })
+            (await CreateCalendarAsync(client, calendar, "Evidence", "VEVENT")).ShouldBe(HttpStatusCode.Created);
+
+        var recurring = Event("report-shape", "DTSTART:20260816T100000Z\r\nRRULE:FREQ=DAILY;COUNT=3\r\nX-KEEP:full\r\n");
+        (await SendProbeAsync(
+            client,
+            HttpMethod.Put,
+            new Uri(reportCalendar, "report-shape.ics"),
+            recurring,
+            ("If-None-Match", "*"))).Status.ShouldBe(HttpStatusCode.Created);
+        var full = await CalendarReportAsync(client, reportCalendar, expand: false);
+        var expanded = await CalendarReportAsync(client, reportCalendar, expand: true);
+
+        full.Status.ShouldBe(HttpStatusCode.MultiStatus);
+        full.Body.ShouldContain("RRULE:FREQ=DAILY;COUNT=3");
+        full.Body.ShouldContain("X-KEEP:full");
+        expanded.Status.ShouldBe(HttpStatusCode.MultiStatus);
+        expanded.Body.ShouldContain("RECURRENCE-ID");
+        expanded.Body.ShouldNotContain("RRULE:");
+
+        (await SendProbeAsync(
+            client,
+            HttpMethod.Put,
+            new Uri(belowCalendar, "below.ics"),
+            Event("below", "DTSTART:20260101T000000Z\r\nRRULE:FREQ=DAILY;COUNT=9999\r\n"),
+            ("If-None-Match", "*"))).Status.ShouldBe(HttpStatusCode.Created);
+        (await SendProbeAsync(
+            client,
+            HttpMethod.Put,
+            new Uri(atCalendar, "at.ics"),
+            Event("at", "DTSTART:20260101T000000Z\r\nRRULE:FREQ=DAILY;COUNT=10000\r\n"),
+            ("If-None-Match", "*"))).Status.ShouldBe(HttpStatusCode.Created);
+
+        (await CalendarReportAsync(client, belowCalendar, expand: true, ceilingWindow: true)).Status
+            .ShouldBe(HttpStatusCode.MultiStatus);
+        (await CalendarReportAsync(client, atCalendar, expand: true, ceilingWindow: true)).Status
+            .ShouldBe(HttpStatusCode.BadRequest);
     }
 
     [Fact]
@@ -665,6 +772,177 @@ public sealed class RadicaleConformanceHarnessTests(RadicaleConformanceFixture f
         return services.BuildServiceProvider();
     }
 
+    private static HttpClient CreateProbeClient()
+    {
+        var client = new HttpClient(new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false,
+            PooledConnectionLifetime = TimeSpan.Zero,
+            PooledConnectionIdleTimeout = TimeSpan.Zero
+        });
+        client.DefaultRequestVersion = HttpVersion.Version10;
+        client.DefaultVersionPolicy = HttpVersionPolicy.RequestVersionExact;
+        client.DefaultRequestHeaders.ConnectionClose = true;
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Basic",
+            Convert.ToBase64String(Encoding.UTF8.GetBytes($"{ConformanceUsername}:{ConformancePassword}")));
+        return client;
+    }
+
+    private static async Task<HttpStatusCode> CreateCalendarAsync(
+        HttpClient client,
+        Uri calendar,
+        string displayName,
+        params string[] componentNames)
+    {
+        var components = string.Concat(componentNames.Select(name => $"<C:comp name=\"{name}\"/>"));
+        var body = $"<?xml version=\"1.0\" encoding=\"utf-8\" ?>"
+            + "<D:mkcol xmlns:D=\"DAV:\" xmlns:C=\"urn:ietf:params:xml:ns:caldav\"><D:set><D:prop>"
+            + "<D:resourcetype><D:collection/><C:calendar/></D:resourcetype>"
+            + $"<D:displayname>{displayName}</D:displayname>"
+            + $"<C:supported-calendar-component-set>{components}</C:supported-calendar-component-set>"
+            + "</D:prop></D:set></D:mkcol>";
+        return (await SendProbeAsync(client, new HttpMethod("MKCOL"), calendar, body)).Status;
+    }
+
+    private static async Task<string[]> ReadAdvertisedComponentsAsync(HttpClient client, Uri calendar)
+    {
+        const string body = "<?xml version=\"1.0\" encoding=\"utf-8\" ?>"
+            + "<D:propfind xmlns:D=\"DAV:\" xmlns:C=\"urn:ietf:params:xml:ns:caldav\">"
+            + "<D:prop><C:supported-calendar-component-set/></D:prop></D:propfind>";
+        var response = await SendProbeAsync(client, new HttpMethod("PROPFIND"), calendar, body, ("Depth", "0"));
+        response.Status.ShouldBe(HttpStatusCode.MultiStatus);
+        return XDocument.Parse(response.Body).Descendants()
+            .Where(element => element.Name.LocalName == "comp")
+            .Select(element => element.Attribute("name")!.Value)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private async Task AssertPreconditionAndEntityTagMatrixAsync(HttpClient client, Uri calendar)
+    {
+        var target = new Uri(calendar, "preconditions.ics");
+        var created = await SendProbeAsync(
+            client,
+            HttpMethod.Put,
+            target,
+            Event("preconditions", "DTSTART:20260816T100000Z\r\nSUMMARY:first\r\n"),
+            ("If-None-Match", "*"));
+        created.Status.ShouldBe(HttpStatusCode.Created);
+        var firstTag = (await SendProbeAsync(client, HttpMethod.Get, target)).EntityTag.ShouldNotBeNull();
+        firstTag.ShouldStartWith("\"");
+        (await SendProbeAsync(
+            client,
+            HttpMethod.Put,
+            target,
+            Event("preconditions", "DTSTART:20260816T100000Z\r\nSUMMARY:duplicate\r\n"),
+            ("If-None-Match", "*"))).Status.ShouldBe(HttpStatusCode.PreconditionFailed);
+
+        var current = await SendProbeAsync(
+            client,
+            HttpMethod.Put,
+            target,
+            Event("preconditions", "DTSTART:20260816T100000Z\r\nSUMMARY:second\r\n"),
+            ("If-Match", firstTag));
+        current.Status.ShouldBe(HttpStatusCode.NoContent);
+        var secondTag = (await SendProbeAsync(client, HttpMethod.Get, target)).EntityTag.ShouldNotBeNull();
+        secondTag.ShouldNotBe(firstTag);
+        (await SendProbeAsync(
+            client,
+            HttpMethod.Put,
+            target,
+            Event("preconditions", "DTSTART:20260816T100000Z\r\nSUMMARY:stale\r\n"),
+            ("If-Match", firstTag))).Status.ShouldBe(HttpStatusCode.PreconditionFailed);
+        (await SendProbeAsync(
+            client,
+            HttpMethod.Put,
+            target,
+            Event("preconditions", "DTSTART:20260816T100000Z\r\nSUMMARY:wildcard\r\n"),
+            ("If-Match", "*"))).Status.ShouldBe(HttpStatusCode.PreconditionFailed);
+        (await SendProbeAsync(
+            client,
+            HttpMethod.Put,
+            new Uri(calendar, "missing.ics"),
+            Event("missing", "DTSTART:20260816T100000Z\r\n"),
+            ("If-Match", "*"))).Status.ShouldBe(HttpStatusCode.PreconditionFailed);
+
+        var unconditionedTarget = new Uri(calendar, "unconditioned.ics");
+        (await SendProbeAsync(
+            client,
+            HttpMethod.Put,
+            unconditionedTarget,
+            Event("unconditioned", "DTSTART:20260816T100000Z\r\nSUMMARY:first\r\n"),
+            ("If-None-Match", "*"))).Status.ShouldBe(HttpStatusCode.Created);
+        var unconditioned = await SendProbeAsync(
+            client,
+            HttpMethod.Put,
+            unconditionedTarget,
+            Event("unconditioned", "DTSTART:20260816T100000Z\r\nSUMMARY:second\r\n"));
+        unconditioned.Status.ShouldBe(
+            fixture.Variant.StrictPreconditions ? HttpStatusCode.PreconditionFailed : HttpStatusCode.NoContent);
+
+        (await SendProbeAsync(
+            client,
+            HttpMethod.Delete,
+            target,
+            content: null,
+            ("If-Match", "*"))).Status.ShouldBe(HttpStatusCode.OK);
+    }
+
+    private static Task<ProbeResponse> CalendarReportAsync(
+        HttpClient client,
+        Uri calendar,
+        bool expand,
+        bool ceilingWindow = false)
+    {
+        var start = ceilingWindow ? "20260101T000000Z" : "20260815T000000Z";
+        var end = ceilingWindow ? "20550101T000000Z" : "20260820T000000Z";
+        var calendarData = expand
+            ? $"<C:calendar-data><C:expand start=\"{start}\" end=\"{end}\"/></C:calendar-data>"
+            : "<C:calendar-data/>";
+        var body = "<?xml version=\"1.0\" encoding=\"utf-8\" ?>"
+            + "<C:calendar-query xmlns:D=\"DAV:\" xmlns:C=\"urn:ietf:params:xml:ns:caldav\">"
+            + $"<D:prop>{calendarData}</D:prop><C:filter><C:comp-filter name=\"VCALENDAR\">"
+            + "<C:comp-filter name=\"VEVENT\"/></C:comp-filter></C:filter></C:calendar-query>";
+        return SendProbeAsync(client, new HttpMethod("REPORT"), calendar, body, ("Depth", "1"));
+    }
+
+    private static async Task<ProbeResponse> SendProbeAsync(
+        HttpClient client,
+        HttpMethod method,
+        Uri target,
+        string? content = null,
+        params (string Name, string Value)[] headers)
+    {
+        using var request = new HttpRequestMessage(method, target);
+        if (content is not null)
+            request.Content = new StringContent(
+                content,
+                Encoding.UTF8,
+                method == HttpMethod.Put ? "text/calendar" : "application/xml");
+        foreach (var header in headers)
+            request.Headers.TryAddWithoutValidation(header.Name, header.Value).ShouldBeTrue();
+        using var response = await client.SendAsync(
+            request,
+            HttpCompletionOption.ResponseHeadersRead,
+            TestContext.Current.CancellationToken);
+        var body = response.StatusCode == HttpStatusCode.MultiStatus
+            ? await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)
+            : string.Empty;
+        return new ProbeResponse(
+            response.StatusCode,
+            response.Headers.ETag?.Tag,
+            body);
+    }
+
+    private static string Todo(string uid) =>
+        $"BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Conformance//EN\r\nBEGIN:VTODO\r\n"
+        + $"UID:{uid}\r\nDTSTAMP:20260815T120000Z\r\nSUMMARY:todo\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+
+    private static string Journal(string uid) =>
+        $"BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Conformance//EN\r\nBEGIN:VJOURNAL\r\n"
+        + $"UID:{uid}\r\nDTSTAMP:20260815T120000Z\r\nX-KEEP:opaque\r\nEND:VJOURNAL\r\nEND:VCALENDAR\r\n";
+
     private async Task<ObservedResource> PutAndGetAsync(
         string calendarHref,
         string name,
@@ -769,6 +1047,8 @@ public sealed class RadicaleConformanceHarnessTests(RadicaleConformanceFixture f
     }
 
     private sealed record ObservedResource(string Name, string Href, string EntityTag, byte[] Utf8);
+
+    private sealed record ProbeResponse(HttpStatusCode Status, string? EntityTag, string Body);
 
     private sealed class SafeRequestTraceFilter(ConcurrentQueue<string> trace) : IHttpMessageHandlerBuilderFilter
     {

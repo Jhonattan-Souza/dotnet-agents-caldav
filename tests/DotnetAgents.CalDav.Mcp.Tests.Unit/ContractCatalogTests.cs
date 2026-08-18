@@ -7,6 +7,35 @@ namespace DotnetAgents.CalDav.Mcp.Tests.Unit;
 public sealed class ContractCatalogTests
 {
     [Fact]
+    public void Evidence_map_names_every_semantic_partition_and_required_pairwise_cross_product()
+    {
+        var map = ReadJson("release-evidence-map.json");
+
+        var categories = map["semanticFixtureInventory"]!["categories"]!.AsArray();
+        categories.Select(value => value!["name"]!.GetValue<string>()).ShouldBe([
+                "discoveryAndScope", "defaults", "snapshotCoherence", "strictSchemas", "patchOperations",
+                "temporalKinds", "recurrenceAndOverrides", "exclusionsCancellationsAndRestoration",
+                "eventStructuredData", "inertContent", "opaqueResources", "concurrency", "postWriteTruth",
+                "limits", "errors", "multiRoundTripRequests"
+            ]);
+        var crossProducts = map["semanticFixtureInventory"]!["pairwiseCrossProducts"]!.AsArray();
+        crossProducts.Select(value => value!["name"]!.GetValue<string>()).ShouldBe([
+                "recurrenceXtemporalKind", "overrideXmutationScope", "patchXopaqueContent",
+                "conditionalsXambiguousOutcome", "multiRoundTripRequestXrevisionChange", "limitsXpagination"
+            ]);
+        var mappedEvidence = map["requirements"]!.AsArray()
+            .Single(row => row!["id"]!.GetValue<string>() == "CAL-EVIDENCE-002")!["testNameContains"]!
+            .AsArray().Select(value => value!.GetValue<string>()).ToHashSet(StringComparer.Ordinal);
+        foreach (var entry in categories.Concat(crossProducts))
+        {
+            var witnesses = entry!["testNameContains"]!.AsArray()
+                .Select(value => value!.GetValue<string>()).ToArray();
+            witnesses.ShouldNotBeEmpty();
+            witnesses.ShouldAllBe(witness => mappedEvidence.Contains(witness));
+        }
+    }
+
+    [Fact]
     public void Mcp_catalog_freezes_the_semantic_and_exact_tool_contract()
     {
         var catalog = ReadJson("mcp-tool-catalog.json");
@@ -117,7 +146,7 @@ public sealed class ContractCatalogTests
             .ShouldBe("#/$defs/entityKinds");
         var snapshot = catalog["$defs"]!["calendarSnapshot"]!["properties"]!.AsObject();
         snapshot.ShouldContainKey("calendarProperties");
-        snapshot.ShouldContainKey("authoritativePayload");
+        snapshot.ShouldNotContainKey("authoritativePayload");
         snapshot.ShouldContainKey("resourceRevision");
         snapshot["calendar"]!["$ref"]!.GetValue<string>().ShouldBe("#/$defs/calendarHref");
         catalog["$defs"]!["calendarDescriptor"]!["properties"]!["calendar"]!["$ref"]!.GetValue<string>()
@@ -144,21 +173,21 @@ public sealed class ContractCatalogTests
         structuredData["structuredDataUris"]!["items"]!["$ref"]!.GetValue<string>().ShouldBe("#/$defs/uriProperty");
         structuredData["concepts"]!["items"]!["$ref"]!.GetValue<string>().ShouldBe("#/$defs/uriProperty");
         catalog["$defs"]!["participant"]!["required"]!.AsArray()
-            .Select(item => item!.GetValue<string>()).ShouldBe(["uid", "participantType"]);
+            .Select(item => item!.GetValue<string>()).ShouldBe(["uid", "participantType", "schedulable"]);
         var participant = catalog["$defs"]!["participant"]!["properties"]!.AsObject();
         participant["uid"]!["$ref"]!.GetValue<string>().ShouldBe("#/$defs/textProperty");
-        participant["participantType"]!["$ref"]!.GetValue<string>().ShouldBe("#/$defs/textProperty");
+        participant["participantType"]!["$ref"]!.GetValue<string>().ShouldBe("#/$defs/openEnumValue");
         participant["created"]!["$ref"]!.GetValue<string>().ShouldBe("#/$defs/utcTemporalProperty");
         participant["geo"]!["$ref"]!.GetValue<string>().ShouldBe("#/$defs/geoProperty");
         participant["priority"]!["$ref"]!.GetValue<string>().ShouldBe("#/$defs/priorityProperty");
         participant["sequence"]!["$ref"]!.GetValue<string>().ShouldBe("#/$defs/nonNegativeIntegerProperty");
-        participant["status"]!["$ref"]!.GetValue<string>().ShouldBe("#/$defs/textProperty");
+        participant["status"]!["$ref"]!.GetValue<string>().ShouldBe("#/$defs/openEnumValue");
         participant["categories"]!["$ref"]!.GetValue<string>().ShouldBe("#/$defs/textListProperty");
         participant["description"]!["$ref"]!.GetValue<string>().ShouldBe("#/$defs/textProperty");
         participant["summary"]!["$ref"]!.GetValue<string>().ShouldBe("#/$defs/textProperty");
         participant["url"]!["$ref"]!.GetValue<string>().ShouldBe("#/$defs/uriProperty");
-        catalog["$defs"]!["attendee"]!["properties"]!["role"]!["type"]!.GetValue<string>()
-            .ShouldBe("string");
+        catalog["$defs"]!["attendee"]!["properties"]!["role"]!["$ref"]!.GetValue<string>()
+            .ShouldBe("#/$defs/effectiveOpenEnumValue");
         var alarm = catalog["$defs"]!["alarm"]!["properties"]!.AsObject();
         alarm["action"]!["$ref"]!.GetValue<string>().ShouldBe("#/$defs/alarmActionProperty");
         alarm["trigger"]!["$ref"]!.GetValue<string>().ShouldBe("#/$defs/textProperty");
@@ -187,7 +216,32 @@ public sealed class ContractCatalogTests
         catalog["$defs"]!["recurrenceDateInput"]!["oneOf"]!.AsArray().Count.ShouldBe(2);
         catalog["$defs"]!["recurrencePeriodInput"]!["oneOf"]!.AsArray().Count.ShouldBe(2);
         catalog["$defs"]!["recurrenceOverride"]!["properties"]!.AsObject().ShouldContainKey("entityKind");
-        catalog["$defs"]!["recurrenceOverride"]!["properties"]!.AsObject().ShouldNotContainKey("fields");
+        catalog["$defs"]!["recurrenceOverride"]!["properties"]!.AsObject().ShouldContainKey("fields");
+        catalog["$defs"]!["recurrenceOverride"]!["allOf"]![0]!["oneOf"]!.AsArray().Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public void Mcp_catalog_keeps_calendar_resource_entity_and_occurrence_identities_distinct()
+    {
+        var definitions = ReadJson("mcp-tool-catalog.json")["$defs"]!;
+
+        definitions["calendarHref"]!["required"]!.AsArray().Select(item => item!.GetValue<string>())
+            .ShouldBe(["href"]);
+        definitions["resourceRevision"]!["required"]!.AsArray().Select(item => item!.GetValue<string>())
+            .ShouldBe(["href", "entityTag"]);
+        var entityRevision = definitions["revisionReference"]!;
+        entityRevision["required"]!.AsArray().Select(item => item!.GetValue<string>())
+            .ShouldBe(["href", "entityUid", "entityKind", "entityTag"]);
+        entityRevision["properties"]!.AsObject().Select(property => property.Key)
+            .ShouldBe(["href", "entityUid", "entityKind", "entityTag"]);
+        var occurrence = definitions["occurrenceSnapshot"]!;
+        occurrence["required"]!.AsArray().Select(item => item!.GetValue<string>())
+            .ShouldBe(["snapshot", "recurrenceIdentity", "timing"]);
+        occurrence["properties"]!["recurrenceIdentity"]!["$ref"]!.GetValue<string>()
+            .ShouldBe("#/$defs/recurrenceIdentity");
+        entityRevision.ToJsonString().ShouldNotContain("summary");
+        entityRevision.ToJsonString().ShouldNotContain("start");
+        entityRevision.ToJsonString().ShouldNotContain("name");
     }
 
     [Fact]
@@ -209,13 +263,13 @@ public sealed class ContractCatalogTests
         var expectedItemReferences = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["categories"] = "string",
-            ["attendees"] = "#/$defs/attendee",
-            ["participants"] = "#/$defs/participant",
+            ["attendees"] = "#/$defs/attendeeInput",
+            ["participants"] = "#/$defs/participantInput",
             ["contacts"] = "#/$defs/textProperty",
             ["resources"] = "#/$defs/textProperty",
-            ["relatedTo"] = "#/$defs/relation",
+            ["relatedTo"] = "#/$defs/relationInput",
             ["requestStatuses"] = "#/$defs/requestStatus",
-            ["alarms"] = "#/$defs/alarm",
+            ["alarms"] = "#/$defs/alarmInput",
             ["attachments"] = "#/$defs/namedUri",
             ["comments"] = "#/$defs/textProperty",
             ["styledDescriptions"] = "#/$defs/textProperty",
@@ -224,8 +278,8 @@ public sealed class ContractCatalogTests
             ["links"] = "#/$defs/namedUri",
             ["concepts"] = "#/$defs/uriProperty",
             ["structuredDataUris"] = "#/$defs/uriProperty",
-            ["locationUris"] = "#/$defs/namedUri",
-            ["resourceUris"] = "#/$defs/namedUri"
+            ["locationUris"] = "#/$defs/namedComponentInput",
+            ["resourceUris"] = "#/$defs/resourceComponentInput"
         };
         var branches = definitions["collectionPatch"]!["oneOf"]!.AsArray();
 
@@ -356,6 +410,9 @@ public sealed class ContractCatalogTests
         matrix.ShouldContain(
             "| To-do Completion | supported | unsafe through Ical.Net | pinned-profile-only | implemented |");
         matrix.ShouldContain("completion instant comes only from the injected server clock");
+        matrix.ShouldContain(
+            "| Other CalDAV servers | pinned-profile-only | required typed rejection | pinned-profile-only | implemented capability negotiation only |");
+        matrix.ShouldContain("an unverified transcript remains operable, but no interoperability claim is made");
     }
 
     [Fact]

@@ -1,5 +1,6 @@
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Configuration;
+using DotnetAgents.CalDav.Core.Internal;
 using DotnetAgents.CalDav.Core.Internal.Ical;
 using DotnetAgents.CalDav.Core.Models;
 using NodaTime;
@@ -35,6 +36,7 @@ internal sealed class CalendarOccurrenceQueryEngine
         if (resources.Code != CalendarEntityQueryCode.Success)
             return MapResourceFailure(resources);
 
+        CalendarOperationProgress.SetPhase(CalendarOperationPhase.Expand);
         var items = new List<CalendarOccurrenceSnapshot>();
         var observedCount = 0;
         foreach (var snapshot in resources.Items)

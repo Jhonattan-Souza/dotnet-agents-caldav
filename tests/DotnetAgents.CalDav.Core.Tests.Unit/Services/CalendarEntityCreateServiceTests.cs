@@ -221,6 +221,15 @@ public sealed class CalendarEntityCreateServiceTests
             new(Start: utcStart, StructuredData: new CalendarStructuredData(
                 RelatedTo: [new CalendarRelation("parent", "REGISTERED-BUT-UNKNOWN")])),
             new(Start: utcStart, StructuredData: new CalendarStructuredData(
+                ResourceUris:
+                [
+                    new CalendarNamedComponent(
+                        "resource-1",
+                        null,
+                        [],
+                        ComponentTypes: new CalendarTextListProperty(["NOT-REGISTERED"], []))
+                ])),
+            new(Start: utcStart, StructuredData: new CalendarStructuredData(
                 RelatedTo: [new CalendarRelation(
                     "parent",
                     "PARENT",
@@ -731,8 +740,8 @@ public sealed class CalendarEntityCreateServiceTests
                     "https://calendar.example.test/event.json",
                     [new CalendarParameter("SCHEMA", ["https://schema.org/Event"])])
             ],
-            LocationUris: [new CalendarNamedUri("geo:40.0,-8.0", null, [])],
-            ResourceUris: [new CalendarNamedUri("urn:uuid:projector", null, [])]);
+            LocationUris: [new CalendarNamedComponent("location-1", null, [])],
+            ResourceUris: [new CalendarNamedComponent("resource-1", null, [])]);
 
         var result = await sut.CreateEventAsync(
             new CalendarEventCreateRequest(
@@ -787,8 +796,8 @@ public sealed class CalendarEntityCreateServiceTests
         content.ShouldContain("STRUCTURED-DATA;VALUE=URI;FMTTYPE=text/vcard:https://calendar.example.test/speaker.vcf\r\nEND:PARTICIPANT\r\n");
         content.ShouldContain("STRUCTURED-DATA;VALUE=URI;SCHEMA=\"https://schema.org/Event\":https://calendar.example.test/event.json\r\n");
         content.ShouldContain("CONCEPT;VALUE=URI:https://example.test/concepts/planning\r\n");
-        content.ShouldContain("BEGIN:VLOCATION\r\nUID:geo:40.0\\,-8.0\r\nEND:VLOCATION\r\n");
-        content.ShouldContain("BEGIN:VRESOURCE\r\nUID:urn:uuid:projector\r\nEND:VRESOURCE\r\nEND:VEVENT\r\n");
+        content.ShouldContain("BEGIN:VLOCATION\r\nUID:location-1\r\nEND:VLOCATION\r\n");
+        content.ShouldContain("BEGIN:VRESOURCE\r\nUID:resource-1\r\nEND:VRESOURCE\r\nEND:VEVENT\r\n");
         await client.Received(1).CreateCalendarResourceAsync(
             Arg.Any<CalendarResourceCreateRequest>(),
             Arg.Any<CancellationToken>());
@@ -1663,8 +1672,8 @@ public sealed class CalendarEntityCreateServiceTests
                     "https://example.test/concepts/todo",
                     [new CalendarParameter("VALUE", ["URI"])])
             ],
-            LocationUris: [new CalendarNamedUri("geo:40.0,-8.0", "Office", [])],
-            ResourceUris: [new CalendarNamedUri("urn:uuid:projector", "Projector", [])]);
+            LocationUris: [new CalendarNamedComponent("location-1", new CalendarTextValue("Office", []), [])],
+            ResourceUris: [new CalendarNamedComponent("resource-1", new CalendarTextValue("Projector", []), [])]);
 
         var result = await sut.CreateTodoAsync(
             new CalendarTodoCreateRequest(
@@ -1705,7 +1714,7 @@ public sealed class CalendarEntityCreateServiceTests
         content.ShouldContain("REPEAT;VALUE=INTEGER;X-REPEAT=todo:1\r\nDURATION;VALUE=DURATION;X-DURATION=todo:PT5M\r\n");
         content.ShouldContain("CONCEPT;VALUE=URI:https://example.test/concepts/todo\r\n");
         content.ShouldContain("X-LIST=\"one,two\"");
-        content.ShouldContain("BEGIN:VLOCATION\r\nUID:geo:40.0\\,-8.0\r\nNAME:Office\r\nEND:VLOCATION\r\n");
+        content.ShouldContain("BEGIN:VLOCATION\r\nUID:location-1\r\nNAME:Office\r\nEND:VLOCATION\r\n");
         content.ShouldContain("END:VRESOURCE\r\nEND:VTODO\r\n");
     }
 
@@ -1877,7 +1886,7 @@ public sealed class CalendarEntityCreateServiceTests
                     .Replace("COMMENT:Second\r\n", string.Empty, StringComparison.Ordinal))));
         var structured = new CalendarStructuredData(
             Comments: [new CalendarTextValue("First", []), new CalendarTextValue("Second", [])],
-            ResourceUris: [new CalendarNamedUri("urn:uuid:projector", "Projector", [])]);
+            ResourceUris: [new CalendarNamedComponent("resource-1", new CalendarTextValue("Projector", []), [])]);
 
         var result = await sut.CreateTodoAsync(
             new CalendarTodoCreateRequest(
@@ -2119,6 +2128,31 @@ public sealed class CalendarEntityCreateServiceTests
         await client.DidNotReceive().CreateCalendarResourceAsync(
             Arg.Any<CalendarResourceCreateRequest>(),
             Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CreateEventAsync_ValidAlternativeRecurrenceScaleIsUnsupportedBeforeDiscoveryOrPut()
+    {
+        var client = Substitute.For<ICalendarClient>();
+        var sut = CreateService(client);
+
+        var result = await sut.CreateEventAsync(
+            new CalendarEventCreateRequest(
+                CalendarCreateDestination.Default,
+                "alternative-scale",
+                new CalendarEventCreateFields(
+                    Start: new CalendarTemporalValue(
+                        CalendarTemporalKind.Date,
+                        "2026-08-17"),
+                    RecurrenceSet: new CalendarEventRecurrenceSetCreate(
+                        Rule: "FREQ=YEARLY;RSCALE=CHINESE;SKIP=BACKWARD"))),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityCreateCode.UnsupportedCapability);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        await client.DidNotReceive().GetCalendarsAsync(Arg.Any<CancellationToken>());
+        await client.DidNotReceive().CreateCalendarResourceAsync(
+            Arg.Any<CalendarResourceCreateRequest>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -2636,11 +2670,12 @@ public sealed class CalendarEntityCreateServiceTests
         var client = Substitute.For<ICalendarClient>();
         var identities = Substitute.For<ICalendarEntityIdentityGenerator>();
         identities.CreateUid().Returns("generated-1", "generated-2");
+        var timeProvider = new ManualTimeProvider(DateTimeOffset.Parse("2026-08-16T12:00:00Z"));
         var sut = new CalendarService(
             client,
             Options.Create(new CalDavOptions { BaseUrl = "https://cal.example", DefaultEventCalendarName = "Events" }),
             Substitute.For<ILogger<CalendarService>>(),
-            TimeProvider.System,
+            timeProvider,
             identities);
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref, "Events")]);
         client.QueryCalendarResourceHrefsAsync(
@@ -2686,6 +2721,9 @@ public sealed class CalendarEntityCreateServiceTests
         {
             var content = Encoding.UTF8.GetString(requests[index].AuthoritativeUtf8.Span);
             content.Split($"UID:generated-{index + 1}\r\n", StringSplitOptions.None).Length.ShouldBe(3);
+            content.Split("DTSTAMP:20260816T120000Z\r\n", StringSplitOptions.None).Length.ShouldBe(3);
+            content.Split("CREATED:20260816T120000Z\r\n", StringSplitOptions.None).Length.ShouldBe(3);
+            content.Split("LAST-MODIFIED:20260816T120000Z\r\n", StringSplitOptions.None).Length.ShouldBe(3);
         }
     }
 

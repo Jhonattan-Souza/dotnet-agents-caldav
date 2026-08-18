@@ -97,6 +97,31 @@ public sealed class StrictToolInputGuardTests
         result.StructuredContent.Value.TryGetProperty("items", out _).ShouldBeFalse();
     }
 
+    [Fact]
+    public void Reject_CapsThirtyThreeSafeViolationsAtThirtyTwoAndSortsByJsonPointer()
+    {
+        var violations = Enumerable.Range(0, 33)
+            .Reverse()
+            .Select(index => new CalendarInputViolation(
+                $"/items/{index:D2}",
+                "invalid_member",
+                "A member is invalid."))
+            .ToArray();
+
+        var result = StrictToolInputGuard.Reject(
+            "calendar_entities.query",
+            new StrictToolInputEvidence(1, false, CollectedViolations: violations));
+
+        result.ShouldNotBeNull();
+        var serialized = result.StructuredContent!.Value;
+        serialized.GetProperty("code").GetString().ShouldBe("invalid_input");
+        var actual = serialized.GetProperty("violations").EnumerateArray().ToArray();
+        actual.Length.ShouldBe(32);
+        actual.Select(item => item.GetProperty("pointer").GetString())
+            .ShouldBe(Enumerable.Range(0, 32).Select(index => $"/items/{index:D2}"));
+        actual.ShouldAllBe(item => item.GetProperty("message").GetString() == "A member is invalid.");
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
