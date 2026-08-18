@@ -268,6 +268,7 @@ public sealed class PackageArtifactTests
         workflow.ShouldContain("ref: ${{ inputs.release_tag }}");
         workflow.ShouldContain("tag_name: ${{ inputs.release_tag }}");
         workflow.ShouldContain("generate_release_notes: true");
+        workflow.ShouldNotContain("${{ runner.temp }}");
         workflow.ShouldNotContain("push:\n    tags:");
         workflow.ShouldNotContain("RELEASE_NOTES_LATEST.md");
         workflow.ShouldNotContain("body_path: RELEASE_NOTES_LATEST.md");
