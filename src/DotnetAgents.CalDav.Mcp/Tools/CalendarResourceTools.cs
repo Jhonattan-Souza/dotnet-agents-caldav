@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using System.Xml;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Models;
+using DotnetAgents.CalDav.Core.Services;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -203,12 +204,12 @@ public sealed record CalendarSnapshotResult(
         CalendarResourceProjectionKind.Event => new CalendarEventProjectionResult(
             "event",
             snapshot.Projection.EntityUid!,
-            CalendarTypedProjectionBuilder.Event(snapshot)),
+            CalendarResourceSemanticProjector.Event(snapshot)),
         CalendarResourceProjectionKind.Todo => new CalendarTodoProjectionResult(
             "todo",
             snapshot.Projection.EntityUid!,
-            CalendarTypedProjectionBuilder.Todo(snapshot),
-            CalendarTypedProjectionBuilder.TodoCompletedAt(snapshot)),
+            CalendarResourceSemanticProjector.Todo(snapshot),
+            CalendarResourceSemanticProjector.TodoCompletedAt(snapshot)),
         _ => new CalendarOpaqueProjectionResult("opaque", snapshot.CalendarProperties.Select(CalendarPropertyResult.FromProperty).ToArray())
     };
 
@@ -235,13 +236,13 @@ public sealed record CalendarEntityRevisionResult(
 public sealed record CalendarEventProjectionResult(
     [property: JsonPropertyName("kind")] string Kind,
     [property: JsonPropertyName("uid")] string Uid,
-    [property: JsonPropertyName("fields")] CalendarEventFieldsResult Fields);
+    [property: JsonPropertyName("fields")] JsonElement Fields);
 
 public sealed record CalendarTodoProjectionResult(
     [property: JsonPropertyName("kind")] string Kind,
     [property: JsonPropertyName("uid")] string Uid,
-    [property: JsonPropertyName("fields")] CalendarTodoFieldsResult Fields,
-    [property: JsonPropertyName("completedAt"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CalendarTemporalResult? CompletedAt);
+    [property: JsonPropertyName("fields")] JsonElement Fields,
+    [property: JsonPropertyName("completedAt"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] JsonElement? CompletedAt);
 
 public sealed record CalendarOpaqueProjectionResult(
     [property: JsonPropertyName("kind")] string Kind,

@@ -1,6 +1,9 @@
 using DotnetAgents.CalDav.Mcp.Hosting;
-using DotnetAgents.CalDav.Core.Internal;
+using DotnetAgents.CalDav.Core.Services;
+using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol;
+using ModelContextProtocol.Protocol;
+using ModelContextProtocol.Server;
 using Shouldly;
 using System.Text.Json;
 using Xunit;
@@ -9,6 +12,167 @@ namespace DotnetAgents.CalDav.Mcp.Tests.Unit;
 
 public sealed class CalendarExecutionPolicyTests
 {
+    [Theory]
+    [InlineData("calendars.list")]
+    [InlineData("calendar_entities.query")]
+    [InlineData("calendar_occurrences.query")]
+    [InlineData("calendar_resources.get")]
+    [InlineData("calendar_resources.exact_get")]
+    public async Task PublicToolFilter_StopsEveryReadAtThirtySecondsWithTypedZeroItemFailure(
+        string toolName)
+    {
+        var result = await InvokeAfterElapsedAsync(
+            toolName,
+            TimeSpan.FromSeconds(30),
+            completeOperation: false);
+        result.IsError.ShouldBe(true);
+        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("limit_exhausted");
+        result.StructuredContent.Value.GetProperty("phase").GetString().ShouldBe("execution");
+        result.StructuredContent.Value.GetProperty("limits").GetProperty("dimension").GetString()
+            .ShouldBe("elapsed_time");
+        result.StructuredContent.Value.TryGetProperty("mutationState", out _).ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData("events.create")]
+    [InlineData("events.patch")]
+    [InlineData("todos.create")]
+    [InlineData("todos.patch")]
+    [InlineData("todos.complete")]
+    [InlineData("calendar_occurrences.add")]
+    [InlineData("calendar_occurrences.exclude")]
+    [InlineData("calendar_occurrences.restore_exclusion")]
+    [InlineData("calendar_occurrences.cancel")]
+    [InlineData("calendar_occurrences.restore_cancellation")]
+    [InlineData("calendar_resources.move")]
+    [InlineData("calendar_resources.delete")]
+    [InlineData("calendar_resources.exact_create")]
+    [InlineData("calendar_resources.exact_replace")]
+    [InlineData("calendar_resources.exact_move")]
+    public async Task PublicToolFilter_StopsEveryMutationAtSixtySecondsWithConservativeUnknownState(
+        string toolName)
+    {
+        var result = await InvokeAfterElapsedAsync(
+            toolName,
+            TimeSpan.FromSeconds(60),
+            completeOperation: false);
+
+        result.IsError.ShouldBe(true);
+        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("limit_exhausted");
+        result.StructuredContent.Value.GetProperty("phase").GetString().ShouldBe("execution");
+        result.StructuredContent.Value.GetProperty("limits").GetProperty("dimension").GetString()
+            .ShouldBe("elapsed_time");
+        result.StructuredContent.Value.GetProperty("mutationState").GetString().ShouldBe("unknown");
+    }
+
+    [Fact]
+    public async Task PublicToolFilter_ReadDeadline_ProvesBelowAtAndAboveBoundary()
+    {
+        var below = await InvokeAfterElapsedAsync(
+            "calendars.list",
+            TimeSpan.FromSeconds(30) - TimeSpan.FromTicks(1),
+            completeOperation: true);
+        var at = await InvokeAfterElapsedAsync(
+            "calendars.list",
+            TimeSpan.FromSeconds(30),
+            completeOperation: false);
+        var above = await InvokeAfterElapsedAsync(
+            "calendars.list",
+            TimeSpan.FromSeconds(30) + TimeSpan.FromTicks(1),
+            completeOperation: false);
+
+        below.IsError.ShouldBe(false);
+        AssertElapsedTimeDeadline(at, mutation: false);
+        AssertElapsedTimeDeadline(above, mutation: false);
+    }
+
+    [Fact]
+    public async Task PublicToolFilter_MutationDeadline_ProvesBelowAtAndAboveBoundary()
+    {
+        var below = await InvokeAfterElapsedAsync(
+            "events.create",
+            TimeSpan.FromSeconds(60) - TimeSpan.FromTicks(1),
+            completeOperation: true);
+        var at = await InvokeAfterElapsedAsync(
+            "events.create",
+            TimeSpan.FromSeconds(60),
+            completeOperation: false);
+        var above = await InvokeAfterElapsedAsync(
+            "events.create",
+            TimeSpan.FromSeconds(60) + TimeSpan.FromTicks(1),
+            completeOperation: false);
+
+        below.IsError.ShouldBe(false);
+        AssertElapsedTimeDeadline(at, mutation: true);
+        AssertElapsedTimeDeadline(above, mutation: true);
+    }
+
+    [Theory]
+    [InlineData("calendars.list")]
+    [InlineData("calendar_entities.query")]
+    [InlineData("calendar_occurrences.query")]
+    [InlineData("calendar_resources.get")]
+    [InlineData("calendar_resources.exact_get")]
+    [InlineData("events.create")]
+    [InlineData("events.patch")]
+    [InlineData("todos.create")]
+    [InlineData("todos.patch")]
+    [InlineData("todos.complete")]
+    [InlineData("calendar_occurrences.add")]
+    [InlineData("calendar_occurrences.exclude")]
+    [InlineData("calendar_occurrences.restore_exclusion")]
+    [InlineData("calendar_occurrences.cancel")]
+    [InlineData("calendar_occurrences.restore_cancellation")]
+    [InlineData("calendar_resources.move")]
+    [InlineData("calendar_resources.delete")]
+    [InlineData("calendar_resources.exact_create")]
+    [InlineData("calendar_resources.exact_replace")]
+    [InlineData("calendar_resources.exact_move")]
+    public async Task PublicToolFilter_PropagatesCallerCancellationBeforeEveryOperationDeadline(
+        string toolName)
+    {
+        var time = new ManualTimeProvider(DateTimeOffset.Parse("2026-08-17T12:00:00Z"));
+        var admission = new CalendarOperationAdmission(time);
+        var services = new ServiceCollection()
+            .AddSingleton<TimeProvider>(time)
+            .AddSingleton(admission)
+            .BuildServiceProvider();
+        await using var transport = new StreamServerTransport(
+            new MemoryStream(),
+            new MemoryStream(),
+            "execution-policy-test",
+            Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
+        await using var server = McpServer.Create(
+            transport,
+            new McpServerOptions(),
+            Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance,
+            services);
+        var context = new RequestContext<CallToolRequestParams>(
+            server,
+            new JsonRpcRequest { Id = new RequestId(1L), Method = "tools/call" },
+            new CallToolRequestParams { Name = toolName });
+        using var callerCancellation = new CancellationTokenSource();
+        var operationStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var filtered = CalendarExecutionPolicy.CallTool(async (_, token) =>
+        {
+            var completion = new TaskCompletionSource<CallToolResult>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            using var registration = token.Register(() => completion.TrySetCanceled(token));
+            operationStarted.SetResult();
+            return await completion.Task;
+        });
+
+        var pending = filtered(context, callerCancellation.Token).AsTask();
+        await operationStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
+        callerCancellation.Cancel();
+
+        await Should.ThrowAsync<OperationCanceledException>(pending);
+        using var next = await admission.AcquireAsync(
+            mutation: CalendarExecutionPolicy.IsMutation(toolName),
+            CancellationToken.None);
+        next.ShouldNotBeNull();
+    }
+
     [Fact]
     public async Task Admission_EnforcesFourOperationsOneMutationAndOneSharedFifoQueue()
     {
@@ -148,7 +312,7 @@ public sealed class CalendarExecutionPolicyTests
     }
 
     [Fact]
-    public async Task QueuedCallReportsAtFiveHundredMillisecondsBeforeBusyAtTwoSeconds()
+    public async Task QueuedCallSuppressesAdmissionProgressBeforeBusyAtTwoSeconds()
     {
         var time = new ManualTimeProvider(DateTimeOffset.Parse("2026-08-17T12:00:00Z"));
         var admission = new CalendarOperationAdmission(time);
@@ -171,14 +335,14 @@ public sealed class CalendarExecutionPolicyTests
         await Task.Yield();
         reports.ShouldBeEmpty();
         time.Advance(TimeSpan.FromMilliseconds(1));
-        await WaitForAsync(() => reports.Count == 1);
-        reports[0].Message.ShouldBe("admission");
+        await Task.Yield();
+        reports.ShouldBeEmpty();
         pending.IsCompleted.ShouldBeFalse();
         time.Advance(TimeSpan.FromMilliseconds(1500));
         await using var execution = await pending;
 
         execution.Lease.ShouldBeNull();
-        reports.Count.ShouldBeInRange(1, 4);
+        reports.ShouldBeEmpty();
         foreach (var lease in active)
             lease.Dispose();
     }
@@ -193,6 +357,7 @@ public sealed class CalendarExecutionPolicyTests
             activeTools.Add((await admission.AcquireAsync(mutation: false, CancellationToken.None))!);
         var serviceCalled = false;
         var protectedRead = CalendarExecutionPolicy.ExecuteProtectedReadAsync(
+            time,
             admission,
             _ =>
             {
@@ -208,6 +373,44 @@ public sealed class CalendarExecutionPolicyTests
         serviceCalled.ShouldBeFalse();
         foreach (var lease in activeTools)
             lease.Dispose();
+    }
+
+    [Fact]
+    public async Task ProtectedResourceRead_StopsAtThirtySecondsAndReleasesItsAdmissionLease()
+    {
+        var at = await InvokeProtectedReadDeadlineAsync(TimeSpan.FromSeconds(30));
+        var above = await InvokeProtectedReadDeadlineAsync(
+            TimeSpan.FromSeconds(30) + TimeSpan.FromTicks(1));
+
+        at.Message.ShouldBe("The protected Calendar resource read exceeded its execution budget.");
+        above.Message.ShouldBe("The protected Calendar resource read exceeded its execution budget.");
+    }
+
+    [Fact]
+    public async Task ProtectedResourceRead_AllowsCompletionImmediatelyBelowThirtySeconds()
+    {
+        var time = new ManualTimeProvider(DateTimeOffset.Parse("2026-08-17T12:00:00Z"));
+        var admission = new CalendarOperationAdmission(time);
+        var operationStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var completion = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var protectedRead = CalendarExecutionPolicy.ExecuteProtectedReadAsync(
+            time,
+            admission,
+            async token =>
+            {
+                operationStarted.SetResult();
+                return await completion.Task.WaitAsync(token);
+            },
+            CancellationToken.None);
+
+        await operationStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
+        time.Advance(TimeSpan.FromSeconds(30) - TimeSpan.FromTicks(1));
+        protectedRead.IsCompleted.ShouldBeFalse();
+        completion.SetResult(42);
+
+        (await protectedRead).ShouldBe(42);
+        using var next = await admission.AcquireAsync(mutation: false, CancellationToken.None);
+        next.ShouldNotBeNull();
     }
 
     [Fact]
@@ -248,6 +451,108 @@ public sealed class CalendarExecutionPolicyTests
             mutationState.GetString().ShouldBe("not_attempted");
     }
 
+    private static async Task<CallToolResult> InvokeAfterElapsedAsync(
+        string toolName,
+        TimeSpan elapsed,
+        bool completeOperation)
+    {
+        var time = new ManualTimeProvider(DateTimeOffset.Parse("2026-08-17T12:00:00Z"));
+        var services = new ServiceCollection()
+            .AddSingleton<TimeProvider>(time)
+            .AddSingleton<CalendarOperationAdmission>()
+            .BuildServiceProvider();
+        await using var transport = new StreamServerTransport(
+            new MemoryStream(),
+            new MemoryStream(),
+            "execution-policy-test",
+            Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
+        await using var server = McpServer.Create(
+            transport,
+            new McpServerOptions(),
+            Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance,
+            services);
+        var context = new RequestContext<CallToolRequestParams>(
+            server,
+            new JsonRpcRequest { Id = new RequestId(1L), Method = "tools/call" },
+            new CallToolRequestParams { Name = toolName });
+        using var callerCancellation = new CancellationTokenSource();
+        var operationStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var deadlineObserved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var completion = new TaskCompletionSource<CallToolResult>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var filtered = CalendarExecutionPolicy.CallTool(async (_, token) =>
+        {
+            using var registration = token.Register(() =>
+            {
+                deadlineObserved.TrySetResult();
+                completion.TrySetCanceled(token);
+            });
+            operationStarted.SetResult();
+            return await completion.Task;
+        });
+
+        var pending = filtered(context, callerCancellation.Token).AsTask();
+        await operationStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
+        context.Services!.GetRequiredService<TimeProvider>().ShouldBeSameAs(time);
+        time.TimerCount.ShouldBe(1);
+        time.Advance(elapsed);
+        if (completeOperation)
+        {
+            completion.TrySetResult(new CallToolResult { IsError = false });
+        }
+        else
+        {
+            await deadlineObserved.Task.WaitAsync(TestContext.Current.CancellationToken);
+        }
+        return await pending;
+    }
+
+    private static async Task<TimeoutException> InvokeProtectedReadDeadlineAsync(TimeSpan elapsed)
+    {
+        var time = new ManualTimeProvider(DateTimeOffset.Parse("2026-08-17T12:00:00Z"));
+        var admission = new CalendarOperationAdmission(time);
+        var operationStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var deadlineObserved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var protectedRead = CalendarExecutionPolicy.ExecuteProtectedReadAsync(
+            time,
+            admission,
+            async token =>
+            {
+                var completion = new TaskCompletionSource<int>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                using var registration = token.Register(() =>
+                {
+                    deadlineObserved.TrySetResult();
+                    completion.TrySetCanceled(token);
+                });
+                operationStarted.SetResult();
+                return await completion.Task;
+            },
+            CancellationToken.None);
+
+        await operationStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
+        time.Advance(elapsed);
+        await deadlineObserved.Task.WaitAsync(TestContext.Current.CancellationToken);
+
+        var exception = await Should.ThrowAsync<TimeoutException>(protectedRead);
+        using var next = await admission.AcquireAsync(mutation: false, CancellationToken.None);
+        next.ShouldNotBeNull();
+        return exception;
+    }
+
+    private static void AssertElapsedTimeDeadline(CallToolResult result, bool mutation)
+    {
+        result.IsError.ShouldBe(true);
+        var structured = result.StructuredContent!.Value;
+        structured.GetProperty("code").GetString().ShouldBe("limit_exhausted");
+        structured.GetProperty("limits").GetProperty("dimension").GetString()
+            .ShouldBe("elapsed_time");
+        if (mutation)
+            structured.GetProperty("mutationState").GetString().ShouldBe("unknown");
+        else
+            structured.TryGetProperty("mutationState", out _).ShouldBeFalse();
+    }
+
     private static async Task WaitForAsync(Func<bool> condition)
     {
         for (var attempt = 0; attempt < 100 && !condition(); attempt++)
@@ -258,6 +563,7 @@ public sealed class CalendarExecutionPolicyTests
     private sealed class ManualTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {
         private readonly List<ManualTimer> _timers = [];
+        public int TimerCount => _timers.Count;
         public override DateTimeOffset GetUtcNow() => utcNow;
 
         public override ITimer CreateTimer(

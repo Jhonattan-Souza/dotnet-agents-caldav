@@ -2705,7 +2705,7 @@
         "idempotentHint": false,
         "openWorldHint": true
       },
-      "description": "Create an exact UTF-8 resource at an explicitly provided absolute destination resource href."
+      "description": "Create a complete caller-authored Calendar Object Resource at an explicitly provided absolute destination resource href."
     },
     {
       "name": "calendar_resources.exact_replace",
@@ -2726,7 +2726,7 @@
         "idempotentHint": false,
         "openWorldHint": true
       },
-      "description": "Confirm and replace one revision-bound resource at its explicitly provided absolute href with exact UTF-8 content."
+      "description": "Confirm and replace one revision-bound resource at its explicitly provided absolute href with a complete caller-authored Calendar Object Resource."
     },
     {
       "name": "calendar_resources.exact_move",
@@ -8418,6 +8418,9 @@
           "type": "array",
           "maxItems": 32,
           "items": { "$ref": "#/$defs/violation" }
+        },
+        "limits": {
+          "$ref": "#/$defs/executionLimits"
         },
         "mutationState": {
           "enum": [

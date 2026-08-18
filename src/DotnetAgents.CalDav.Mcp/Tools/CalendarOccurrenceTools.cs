@@ -5,7 +5,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Xml;
 using DotnetAgents.CalDav.Core.Abstractions;
-using DotnetAgents.CalDav.Core.Internal;
 using DotnetAgents.CalDav.Core.Models;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;

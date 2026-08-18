@@ -2,8 +2,8 @@ using System.Text;
 using System.Text.Json;
 using System.Xml;
 using DotnetAgents.CalDav.Core.Abstractions;
-using DotnetAgents.CalDav.Core.Internal.Ical;
 using DotnetAgents.CalDav.Core.Models;
+using DotnetAgents.CalDav.Core.Services;
 using DotnetAgents.CalDav.Mcp.Hosting;
 using DotnetAgents.CalDav.Mcp.Tools;
 using Json.Schema;
@@ -96,16 +96,12 @@ public sealed class CalendarResourceToolsTests
             + "ATTENDEE:mailto:override@example.com\r\nEND:VEVENT\r\n"
             + "END:VCALENDAR\r\n";
         var bytes = Encoding.UTF8.GetBytes(content);
-        var projected = CalendarResourceProjector.Project(bytes);
-        projected.Projection.Kind.ShouldBe(CalendarResourceProjectionKind.Event);
-        var snapshot = new CalendarResourceSnapshot(
+        var snapshot = CalendarResourceSnapshotFactory.Create(
             calendarHref,
             resourceHref,
             "\"r1\"",
-            bytes,
-            projected.Properties,
-            projected.Projection,
-            projected.Diagnostics);
+            bytes);
+        snapshot.Projection.Kind.ShouldBe(CalendarResourceProjectionKind.Event);
         var service = Substitute.For<ICalendarService>();
         service.GetResourceAsync(resourceHref, Arg.Any<CancellationToken>()).Returns(
             CalendarResourceRead.Success(resourceHref, snapshot.EntityTag, bytes) with { Snapshot = snapshot });
@@ -286,15 +282,11 @@ public sealed class CalendarResourceToolsTests
         const string resourceHref = "https://cal.example/tasks/open.ics";
         var bytes = Encoding.UTF8.GetBytes(
             "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Test//EN\r\nBEGIN:VTODO\r\nUID:open\r\nDTSTAMP:20260815T120000Z\r\nSTATUS:NEEDS-ACTION\r\nEND:VTODO\r\nEND:VCALENDAR\r\n");
-        var projected = CalendarResourceProjector.Project(bytes);
-        var snapshot = new CalendarResourceSnapshot(
+        var snapshot = CalendarResourceSnapshotFactory.Create(
             calendarHref,
             resourceHref,
             "\"r1\"",
-            bytes,
-            projected.Properties,
-            projected.Projection,
-            projected.Diagnostics);
+            bytes);
         var service = Substitute.For<ICalendarService>();
         service.GetResourceAsync(resourceHref, Arg.Any<CancellationToken>()).Returns(
             CalendarResourceRead.Success(resourceHref, snapshot.EntityTag, bytes) with { Snapshot = snapshot });

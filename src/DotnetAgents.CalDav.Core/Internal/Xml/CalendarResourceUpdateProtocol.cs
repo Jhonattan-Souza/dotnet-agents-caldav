@@ -9,8 +9,6 @@ internal sealed class CalendarResourceUpdateProtocol(
     Uri configuredBaseUri,
     TimeProvider? timeProvider = null)
 {
-    private const int MaximumRedirects = 3;
-
     public async Task<CalendarResourceUpdateDispatchResult> UpdateAsync(
         CalendarResourceUpdateRequest request,
         CancellationToken cancellationToken)
@@ -48,9 +46,9 @@ internal sealed class CalendarResourceUpdateProtocol(
                 message,
                 HttpCompletionOption.ResponseHeadersRead,
                 cancellationToken);
-            if (!IsMethodPreservingRedirect(response.StatusCode))
+            if (!CalendarMutationProtocolPrimitives.IsMethodPreservingRedirect(response.StatusCode))
                 return await MapResponseAsync(response, cancellationToken);
-            if (redirectCount >= MaximumRedirects
+            if (redirectCount >= CalendarMutationProtocolPrimitives.MaximumRedirects
                 || !TryResolveRedirect(currentUri, response.Headers.Location, out var redirectUri))
             {
                 return new(CalendarResourceUpdateDispatchCode.UpstreamProtocolError);
@@ -67,13 +65,9 @@ internal sealed class CalendarResourceUpdateProtocol(
         resourceUri = null!;
         entityTag = null!;
         if (request.AuthoritativeUtf8.IsEmpty
-            || !TryValidateAbsoluteUri(request.ResourceHref, out resourceUri)
-            || !HasSameOrigin(configuredBaseUri, resourceUri)
-            || !EntityTagHeaderValue.TryParse(request.EntityTag, out var parsedEntityTag)
-            || parsedEntityTag is null
-            || parsedEntityTag.IsWeak
-            || parsedEntityTag == EntityTagHeaderValue.Any
-            || !string.Equals(parsedEntityTag.ToString(), request.EntityTag, StringComparison.Ordinal))
+            || !CalendarMutationProtocolPrimitives.TryValidateAbsoluteUri(request.ResourceHref, out resourceUri)
+            || !CalendarMutationProtocolPrimitives.HasSameOrigin(configuredBaseUri, resourceUri)
+            || !CalendarMutationProtocolPrimitives.TryParseStrongEntityTag(request.EntityTag, out var parsedEntityTag))
         {
             return false;
         }
@@ -83,49 +77,13 @@ internal sealed class CalendarResourceUpdateProtocol(
 
     private bool TryResolveRedirect(Uri currentUri, Uri? location, out Uri redirectUri)
     {
-        redirectUri = null!;
-        if (location is null
-            || location.OriginalString.Contains("%2e", StringComparison.OrdinalIgnoreCase)
-            || location.OriginalString.Contains("%2F", StringComparison.OrdinalIgnoreCase)
-            || location.OriginalString.Contains("%5C", StringComparison.OrdinalIgnoreCase)
-            || !Uri.TryCreate(currentUri, location, out var candidate)
-            || !IsSafeCanonicalUri(candidate, candidate.AbsoluteUri)
-            || !HasSameOrigin(configuredBaseUri, candidate))
-        {
-            return false;
-        }
-        redirectUri = candidate;
-        return true;
+        return CalendarMutationProtocolPrimitives.TryResolveSameOriginRedirect(
+            configuredBaseUri,
+            currentUri,
+            location,
+            additionalValidation: null,
+            out redirectUri);
     }
-
-    private static bool TryValidateAbsoluteUri(string href, out Uri uri)
-    {
-        uri = null!;
-        if (!Uri.TryCreate(href, UriKind.Absolute, out var candidate)
-            || !IsSafeCanonicalUri(candidate, href))
-            return false;
-        uri = candidate;
-        return true;
-    }
-
-    private static bool IsSafeCanonicalUri(Uri candidate, string original) =>
-        (candidate.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
-            || candidate.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
-        && string.IsNullOrEmpty(candidate.UserInfo)
-        && string.IsNullOrEmpty(candidate.Fragment)
-        && string.IsNullOrEmpty(candidate.Query)
-        && !candidate.AbsolutePath.Contains("%2F", StringComparison.OrdinalIgnoreCase)
-        && !candidate.AbsolutePath.Contains("%5C", StringComparison.OrdinalIgnoreCase)
-        && !original.Contains("%2e", StringComparison.OrdinalIgnoreCase)
-        && string.Equals(candidate.AbsoluteUri, original, StringComparison.Ordinal);
-
-    private static bool HasSameOrigin(Uri left, Uri right) =>
-        string.Equals(left.Scheme, right.Scheme, StringComparison.OrdinalIgnoreCase)
-        && string.Equals(left.Host, right.Host, StringComparison.OrdinalIgnoreCase)
-        && left.Port == right.Port;
-
-    private static bool IsMethodPreservingRedirect(HttpStatusCode statusCode) => statusCode is
-        HttpStatusCode.TemporaryRedirect or HttpStatusCode.PermanentRedirect;
 
     private async Task<CalendarResourceUpdateDispatchResult> MapResponseAsync(
         HttpResponseMessage response,
@@ -140,34 +98,25 @@ internal sealed class CalendarResourceUpdateProtocol(
         return MapResponse(response);
     }
 
-    private CalendarResourceUpdateDispatchResult MapResponse(HttpResponseMessage response) => response.StatusCode switch
+    private CalendarResourceUpdateDispatchResult MapResponse(HttpResponseMessage response) =>
+        CalendarMutationProtocolPrimitives.Classify(response.StatusCode) switch
     {
-        HttpStatusCode.OK or HttpStatusCode.Created or HttpStatusCode.NoContent =>
+        CalendarMutationHttpOutcome.Dispatched =>
             new(CalendarResourceUpdateDispatchCode.Dispatched),
-        HttpStatusCode.Accepted => new(CalendarResourceUpdateDispatchCode.PossiblyDispatched),
-        HttpStatusCode.NotFound => new(CalendarResourceUpdateDispatchCode.NotFound),
-        HttpStatusCode.Conflict or HttpStatusCode.PreconditionFailed => new(CalendarResourceUpdateDispatchCode.Conflict),
-        HttpStatusCode.Unauthorized => new(CalendarResourceUpdateDispatchCode.UpstreamUnauthorized),
-        HttpStatusCode.Forbidden => new(CalendarResourceUpdateDispatchCode.UpstreamForbidden),
-        HttpStatusCode.RequestEntityTooLarge => new(CalendarResourceUpdateDispatchCode.PayloadTooLarge),
-        HttpStatusCode.TooManyRequests => new(
+        CalendarMutationHttpOutcome.PossiblyDispatched => new(CalendarResourceUpdateDispatchCode.PossiblyDispatched),
+        CalendarMutationHttpOutcome.NotFound => new(CalendarResourceUpdateDispatchCode.NotFound),
+        CalendarMutationHttpOutcome.Conflict => new(CalendarResourceUpdateDispatchCode.Conflict),
+        CalendarMutationHttpOutcome.UpstreamUnauthorized => new(CalendarResourceUpdateDispatchCode.UpstreamUnauthorized),
+        CalendarMutationHttpOutcome.UpstreamForbidden => new(CalendarResourceUpdateDispatchCode.UpstreamForbidden),
+        CalendarMutationHttpOutcome.PayloadTooLarge => new(CalendarResourceUpdateDispatchCode.PayloadTooLarge),
+        CalendarMutationHttpOutcome.UpstreamRateLimited => new(
             CalendarResourceUpdateDispatchCode.UpstreamRateLimited,
-            ReadRetryAfterMilliseconds(response.Headers.RetryAfter)),
-        HttpStatusCode.MethodNotAllowed or HttpStatusCode.NotImplemented =>
+            CalendarMutationProtocolPrimitives.ReadRetryAfterMilliseconds(
+                response.Headers.RetryAfter,
+                timeProvider ?? TimeProvider.System)),
+        CalendarMutationHttpOutcome.UnsupportedCapability =>
             new(CalendarResourceUpdateDispatchCode.UnsupportedCapability),
-        HttpStatusCode.InsufficientStorage => new(CalendarResourceUpdateDispatchCode.UpstreamUnavailable),
-        HttpStatusCode.RequestTimeout or >= HttpStatusCode.InternalServerError =>
-            new(CalendarResourceUpdateDispatchCode.PossiblyDispatched),
+        CalendarMutationHttpOutcome.UpstreamUnavailable => new(CalendarResourceUpdateDispatchCode.UpstreamUnavailable),
         _ => new(CalendarResourceUpdateDispatchCode.UpstreamProtocolError)
     };
-
-    private int? ReadRetryAfterMilliseconds(RetryConditionHeaderValue? retryAfter)
-    {
-        if (retryAfter is null)
-            return null;
-        var delay = retryAfter.Delta ?? retryAfter.Date - (timeProvider ?? TimeProvider.System).GetUtcNow();
-        if (delay is null)
-            return null;
-        return (int)Math.Clamp(Math.Ceiling(delay.Value.TotalMilliseconds), 0, int.MaxValue);
-    }
 }

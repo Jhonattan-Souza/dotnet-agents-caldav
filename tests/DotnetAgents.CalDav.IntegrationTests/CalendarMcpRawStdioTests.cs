@@ -137,7 +137,7 @@ public sealed class CalendarMcpRawStdioTests
                 .ShouldAllBe(increases => increases);
             notifications.ShouldAllBe(item =>
                 item.GetProperty("params").GetProperty("progressToken").GetString() == "progress-1");
-            var allowedPhases = new[] { "admission", "discovery", "fetch", "filter", "expand", "reconcile" };
+            var allowedPhases = new[] { "discovery", "fetch", "filter", "expand", "reconcile" };
             notifications.Select(item => item.GetProperty("params").GetProperty("message").GetString())
                 .ShouldAllBe(phase => allowedPhases.Contains(phase));
             var serialized = JsonSerializer.Serialize(notifications);
@@ -641,6 +641,41 @@ public sealed class CalendarMcpRawStdioTests
         server.RequestCount.ShouldBe(0);
     }
 
+    [Fact]
+    public async Task CalendarResourceGet_DuplicateHrefReturnsTypedInvalidInputWithoutNetwork()
+    {
+        await using var server = new AmbiguousCreateServer();
+        const string arguments =
+            "{\"href\":\"https://cal.example/events/a.ics\",\"href\":\"https://cal.example/events/b.ics\"}";
+        var request = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"calendar_resources.get\",\"arguments\":"
+            + arguments + "}}";
+
+        var result = await InvokeRawAsync(request, server.BaseUrl, server.CalendarHref);
+
+        AssertTypedError(result, "invalid_input", "schemaLexicalDiscriminator");
+        server.RequestCount.ShouldBe(0);
+    }
+
+    [Theory]
+    [InlineData(262_144, "invalid_input", "schemaLexicalDiscriminator")]
+    [InlineData(262_145, "payload_too_large", "admissionAndPayload")]
+    public async Task CalendarResourceGet_RawBoundaryAndOversizedDuplicatePrecedenceBeforeNetwork(
+        int argumentBytes,
+        string expectedCode,
+        string expectedPhase)
+    {
+        await using var server = new AmbiguousCreateServer();
+        var arguments = ResourceGetArgumentsAtSize(argumentBytes, duplicateHref: true);
+        Encoding.UTF8.GetByteCount(arguments).ShouldBe(argumentBytes);
+        var request = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"calendar_resources.get\",\"arguments\":"
+            + arguments + "}}";
+
+        var result = await InvokeRawAsync(request, server.BaseUrl, server.CalendarHref);
+
+        AssertTypedError(result, expectedCode, expectedPhase);
+        server.RequestCount.ShouldBe(0);
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
@@ -882,6 +917,18 @@ public sealed class CalendarMcpRawStdioTests
         var fixedBytes = JsonSerializer.SerializeToUtf8Bytes(value).Length;
         value["padding"] = new string('x', argumentBytes - fixedBytes);
         return JsonSerializer.Serialize(value);
+    }
+
+    private static string ResourceGetArgumentsAtSize(int argumentBytes, bool duplicateHref)
+    {
+        const string prefix = "{\"href\":\"https://cal.example/events/a.ics\",";
+        var duplicate = duplicateHref
+            ? "\"href\":\"https://cal.example/events/b.ics\","
+            : string.Empty;
+        const string paddingPrefix = "\"padding\":\"";
+        const string suffix = "\"}";
+        var fixedBytes = Encoding.UTF8.GetByteCount(prefix + duplicate + paddingPrefix + suffix);
+        return prefix + duplicate + paddingPrefix + new string('x', argumentBytes - fixedBytes) + suffix;
     }
 
     private static Process StartServer(string baseUrl, string calendarHref, bool exposeExact = false)

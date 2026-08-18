@@ -1016,17 +1016,16 @@ public sealed class CalendarEntityPatchToolsTests
                 Arg.Any<CancellationToken>())
             .Returns(new CalendarResourceUpdateDispatchResult(CalendarResourceUpdateDispatchCode.Dispatched));
         var time = new MutableTimeProvider(DateTimeOffset.Parse("2026-08-16T12:00:00Z"));
-        var service = new CalendarService(
+        using var serviceHost = CalendarServiceTestHost.Create(
             client,
-            Options.Create(new CalDavOptions
+            options =>
             {
-                BaseUrl = "https://cal.example/",
-                Username = "user",
-                Password = "secret"
-            }),
-            Substitute.For<ILogger<CalendarService>>(),
-            time,
-            Substitute.For<ICalendarEntityIdentityGenerator>());
+                options.BaseUrl = "https://cal.example/";
+                options.Username = "user";
+                options.Password = "secret";
+            },
+            time);
+        var service = serviceHost.Service;
         var sut = CreateTool(service, time);
         var first = await BeginAsync(sut);
 
@@ -1071,17 +1070,16 @@ public sealed class CalendarEntityPatchToolsTests
                 Arg.Any<CancellationToken>())
             .Returns(new CalendarResourceUpdateDispatchResult(CalendarResourceUpdateDispatchCode.Dispatched));
         var time = new MutableTimeProvider(DateTimeOffset.Parse("2026-08-16T12:00:00Z"));
-        var service = new CalendarService(
+        using var serviceHost = CalendarServiceTestHost.Create(
             client,
-            Options.Create(new CalDavOptions
+            options =>
             {
-                BaseUrl = "https://cal.example/",
-                Username = "user",
-                Password = "secret"
-            }),
-            Substitute.For<ILogger<CalendarService>>(),
-            time,
-            Substitute.For<ICalendarEntityIdentityGenerator>());
+                options.BaseUrl = "https://cal.example/";
+                options.Username = "user";
+                options.Password = "secret";
+            },
+            time);
+        var service = serviceHost.Service;
         var sut = CreateTool(service, time);
         var arguments = ReplaceAllArguments();
         arguments["target"] = JsonSerializer.SerializeToElement(new
@@ -1129,17 +1127,16 @@ public sealed class CalendarEntityPatchToolsTests
         client.GetCalendarResourceAsync(href, Arg.Any<CancellationToken>()).Returns(_ =>
             CalendarResourceRead.Success(href, "\"r1\"", Encoding.UTF8.GetBytes(current)));
         var time = new MutableTimeProvider(DateTimeOffset.Parse("2026-08-16T12:00:00Z"));
-        var service = new CalendarService(
+        using var serviceHost = CalendarServiceTestHost.Create(
             client,
-            Options.Create(new CalDavOptions
+            options =>
             {
-                BaseUrl = "https://cal.example/",
-                Username = "user",
-                Password = "secret"
-            }),
-            Substitute.For<ILogger<CalendarService>>(),
-            time,
-            Substitute.For<ICalendarEntityIdentityGenerator>());
+                options.BaseUrl = "https://cal.example/";
+                options.Username = "user";
+                options.Password = "secret";
+            },
+            time);
+        var service = serviceHost.Service;
         var sut = CreateTool(service, time);
         var arguments = ReplaceAllArguments();
         arguments["target"] = JsonSerializer.SerializeToElement(new

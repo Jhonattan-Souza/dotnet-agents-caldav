@@ -12,6 +12,26 @@ namespace DotnetAgents.CalDav.Mcp.Tests.Unit;
 public sealed class PackageArtifactTests
 {
     [Fact]
+    public void McpProductionAssembly_UsesOnlyPublicCoreBoundaries()
+    {
+        var repositoryRoot = RepositoryRoot();
+        var mcpSources = Directory.GetFiles(
+            Path.Combine(repositoryRoot, "src", "DotnetAgents.CalDav.Mcp"),
+            "*.cs",
+            SearchOption.AllDirectories);
+
+        mcpSources.ShouldAllBe(path => !File.ReadAllText(path).Contains(
+            "DotnetAgents.CalDav.Core.Internal",
+            StringComparison.Ordinal));
+        File.ReadAllText(Path.Combine(
+                repositoryRoot,
+                "src",
+                "DotnetAgents.CalDav.Core",
+                "InternalsVisibleTo.cs"))
+            .ShouldNotContain("InternalsVisibleTo(\"DotnetAgents.CalDav.Mcp");
+    }
+
+    [Fact]
     public void SelectedMcpAuthority_BindsStableSourcesAndOfficialSdkVersionWithoutDraftFallback()
     {
         var repositoryRoot = RepositoryRoot();
@@ -215,6 +235,9 @@ public sealed class PackageArtifactTests
         var alternateProfile = workflow.IndexOf("RADICALE_CONFORMANCE_VARIANT=alternate-time-zone", StringComparison.Ordinal);
         var slopwatch = workflow.IndexOf("Run Slopwatch", StringComparison.Ordinal);
         var pack = workflow.IndexOf("- name: Pack", StringComparison.Ordinal);
+        var verifyPackage = workflow.IndexOf("- name: Verify final release packages", StringComparison.Ordinal);
+        var upload = workflow.IndexOf("- name: Upload package artifacts", StringComparison.Ordinal);
+        var push = workflow.IndexOf("- name: Push to NuGet", StringComparison.Ordinal);
 
         workflow.ShouldContain("scripts/prepare-release-metadata.sh");
         workflow.ShouldContain("VERSION_WITHOUT_BUILD=\"${PACKAGE_VERSION%%+*}\"");
@@ -222,6 +245,7 @@ public sealed class PackageArtifactTests
         workflow.ShouldContain("/p:McpServerMetadataPath");
         workflow.ShouldContain("bash scripts/verify-test-results.sh TestResults");
         workflow.ShouldContain("bash scripts/verify-release-evidence.sh contracts/0.2.0/requirement-evidence-catalog.md contracts/0.2.0/release-evidence-map.json TestResults");
+        workflow.ShouldContain("bash scripts/verify-release-package.sh");
         AssertSerialProjectTestCommands(workflow, "release");
         tests.ShouldBeGreaterThan(0);
         coverage.ShouldBeGreaterThan(tests);
@@ -229,6 +253,67 @@ public sealed class PackageArtifactTests
         alternateProfile.ShouldBeGreaterThan(strictProfile);
         slopwatch.ShouldBeGreaterThan(alternateProfile);
         pack.ShouldBeGreaterThan(slopwatch);
+        verifyPackage.ShouldBeGreaterThan(pack);
+        upload.ShouldBeGreaterThan(verifyPackage);
+        push.ShouldBeGreaterThan(verifyPackage);
+    }
+
+    [Fact]
+    public void ReleasePackageVerifier_AcceptsExactArtifactsAndRejectsTamperedContent()
+    {
+        const string releaseTag = "v0.2.0";
+        const string releaseVersion = "0.2.0";
+        var repositoryRoot = RepositoryRoot();
+        var temporaryDirectory = Directory.CreateTempSubdirectory("caldav-final-package-test-");
+        var metadataPath = Path.Combine(temporaryDirectory.FullName, "server.json");
+        var packageDirectory = Path.Combine(temporaryDirectory.FullName, "packages");
+
+        try
+        {
+            Run(
+                "bash",
+                [Path.Combine(repositoryRoot, "scripts", "prepare-release-metadata.sh"), releaseTag, metadataPath],
+                repositoryRoot).ExitCode.ShouldBe(0);
+            Run(
+                "dotnet",
+                [
+                    "build",
+                    Path.Combine(repositoryRoot, "src", "DotnetAgents.CalDav.Mcp", "DotnetAgents.CalDav.Mcp.csproj"),
+                    "-c", "Release", "--no-restore", $"/p:McpServerMetadataPath={metadataPath}"
+                ],
+                repositoryRoot).ExitCode.ShouldBe(0);
+            Run(
+                "dotnet",
+                [
+                    "pack",
+                    Path.Combine(repositoryRoot, "src", "DotnetAgents.CalDav.Mcp", "DotnetAgents.CalDav.Mcp.csproj"),
+                    "-c", "Release", "--no-build", "--no-restore", "-o", packageDirectory,
+                    $"/p:Version={releaseVersion}", $"/p:McpServerMetadataPath={metadataPath}"
+                ],
+                repositoryRoot).ExitCode.ShouldBe(0);
+
+            var script = Path.Combine(repositoryRoot, "scripts", "verify-release-package.sh");
+            var verified = Run("bash", [script, releaseVersion, packageDirectory, metadataPath], repositoryRoot);
+            verified.ExitCode.ShouldBe(0, verified.Output);
+
+            var packagePath = Directory.GetFiles(packageDirectory, "*.nupkg").Single();
+            using (var package = ZipFile.Open(packagePath, ZipArchiveMode.Update))
+            {
+                var entry = package.GetEntry("contracts/0.2.0/mcp-tool-catalog.json").ShouldNotBeNull();
+                entry.Delete();
+                using var writer = new StreamWriter(package.CreateEntry(
+                    "contracts/0.2.0/mcp-tool-catalog.json").Open());
+                writer.Write("{}");
+            }
+
+            var rejected = Run("bash", [script, releaseVersion, packageDirectory, metadataPath], repositoryRoot);
+            rejected.ExitCode.ShouldNotBe(0);
+            rejected.Output.ShouldContain("mismatch", Case.Insensitive);
+        }
+        finally
+        {
+            temporaryDirectory.Delete(recursive: true);
+        }
     }
 
     [Fact]

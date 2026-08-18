@@ -46,6 +46,36 @@ public sealed class CalendarOutputSchemaGuardTests
     }
 
     [Theory]
+    [InlineData("calendars.list", false)]
+    [InlineData("calendar_entities.query", false)]
+    [InlineData("calendar_occurrences.query", false)]
+    [InlineData("calendar_resources.get", false)]
+    [InlineData("calendar_resources.exact_get", false)]
+    [InlineData("events.create", true)]
+    [InlineData("events.patch", true)]
+    [InlineData("todos.create", true)]
+    [InlineData("todos.patch", true)]
+    [InlineData("todos.complete", true)]
+    [InlineData("calendar_occurrences.add", true)]
+    [InlineData("calendar_occurrences.exclude", true)]
+    [InlineData("calendar_occurrences.restore_exclusion", true)]
+    [InlineData("calendar_occurrences.cancel", true)]
+    [InlineData("calendar_occurrences.restore_cancellation", true)]
+    [InlineData("calendar_resources.move", true)]
+    [InlineData("calendar_resources.delete", true)]
+    [InlineData("calendar_resources.exact_create", true)]
+    [InlineData("calendar_resources.exact_replace", true)]
+    [InlineData("calendar_resources.exact_move", true)]
+    public void Validate_CoversExecutionDeadlineRejectionsOutsideTheToolHandler(
+        string toolName,
+        bool mutation)
+    {
+        var result = CalendarExecutionPolicy.CreateDeadlineResult(mutation);
+
+        Should.NotThrow(() => CalendarOutputSchemaGuard.Validate(toolName, result));
+    }
+
+    [Theory]
     [InlineData("calendar_entities.query")]
     [InlineData("events.create")]
     [InlineData("calendar_resources.exact_create")]

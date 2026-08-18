@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
-using DotnetAgents.CalDav.Core.Internal.Ical;
 using DotnetAgents.CalDav.Core.Models;
+using DotnetAgents.CalDav.Core.Services;
 
 namespace DotnetAgents.CalDav.Mcp.Tools;
 
@@ -402,8 +402,7 @@ internal static class CalendarEntityCreateArgumentParser
     }
 
     private static bool IsPositiveDateTimeDuration(string duration)
-        => CalendarDurationArithmetic.TryParse(duration, out var parsed)
-            && parsed.IsStrictlyPositive;
+        => CalendarDurationValidator.IsStrictlyPositive(duration);
 
     private static bool TryParseEventRecurrenceOverride(
         JsonElement value,

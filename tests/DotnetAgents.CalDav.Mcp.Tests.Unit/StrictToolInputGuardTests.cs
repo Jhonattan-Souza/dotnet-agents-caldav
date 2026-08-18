@@ -57,6 +57,10 @@ public sealed class StrictToolInputGuardTests
     [InlineData("calendar_occurrences.query", 262_145, false, "payload_too_large")]
     [InlineData("calendar_occurrences.query", 262_145, true, "payload_too_large")]
     [InlineData("calendar_occurrences.query", 1, true, "invalid_input")]
+    [InlineData("calendar_resources.get", 262_144, false, null)]
+    [InlineData("calendar_resources.get", 262_145, false, "payload_too_large")]
+    [InlineData("calendar_resources.get", 262_145, true, "payload_too_large")]
+    [InlineData("calendar_resources.get", 1, true, "invalid_input")]
     [InlineData("events.create", 262_144, false, null)]
     [InlineData("events.create", 262_145, true, "payload_too_large")]
     [InlineData("events.create", 1, true, "invalid_input")]
@@ -120,6 +124,31 @@ public sealed class StrictToolInputGuardTests
         actual.Select(item => item.GetProperty("pointer").GetString())
             .ShouldBe(Enumerable.Range(0, 32).Select(index => $"/items/{index:D2}"));
         actual.ShouldAllBe(item => item.GetProperty("message").GetString() == "A member is invalid.");
+    }
+
+    [Theory]
+    [InlineData("null", "/", "invalid_type")]
+    [InlineData("[]", "/", "invalid_type")]
+    [InlineData("{}", "/href", "invalid_member")]
+    [InlineData("{\"href\":null}", "/href", "invalid_member")]
+    [InlineData("{\"href\":1}", "/href", "invalid_member")]
+    [InlineData("{\"href\":\"\"}", "/href", "invalid_member")]
+    [InlineData("{\"href\":\"https://cal.example/a.ics\"}", null, null)]
+    [InlineData("{\"href\":\"https://cal.example/a.ics\",\"padding\":\"x\"}", "/padding", "unknown_member")]
+    public void ValidateResourceGetArguments_EnforcesTheClosedNativeShape(
+        string json,
+        string? expectedPointer,
+        string? expectedCode)
+    {
+        var violations = StrictToolInputGuard.ValidateResourceGetArguments(JsonNode.Parse(json));
+
+        if (expectedPointer is null)
+        {
+            violations.ShouldBeEmpty();
+            return;
+        }
+        violations.ShouldContain(violation =>
+            violation.Pointer == expectedPointer && violation.Code == expectedCode);
     }
 
     [Theory]

@@ -123,6 +123,14 @@ jobs:
           /p:Version=${{ steps.version.outputs.package_version }}
           /p:McpServerMetadataPath="${{ env.MCP_SERVER_METADATA_PATH }}"
 
+      - name: Verify final release packages
+        shell: bash
+        run: >
+          bash scripts/verify-release-package.sh
+          "${{ steps.version.outputs.package_version }}"
+          "${{ env.PACKAGE_OUTPUT_DIRECTORY }}"
+          "${{ env.MCP_SERVER_METADATA_PATH }}"
+
       - name: Upload package artifacts
         uses: actions/upload-artifact@v7
         with:

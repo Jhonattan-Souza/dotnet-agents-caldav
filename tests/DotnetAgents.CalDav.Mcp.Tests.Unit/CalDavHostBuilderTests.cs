@@ -539,9 +539,9 @@ public class CalDavHostBuilderTests
             .Where(tool => tool.ProtocolTool.Name.StartsWith("calendar_resources.exact_", StringComparison.Ordinal))
             .ToDictionary(tool => tool.ProtocolTool.Name, tool => tool.ProtocolTool.Description);
         exactDescriptions["calendar_resources.exact_create"].ShouldBe(
-            "Create an exact UTF-8 resource at an explicitly provided absolute destination resource href.");
+            "Create a complete caller-authored Calendar Object Resource at an explicitly provided absolute destination resource href.");
         exactDescriptions["calendar_resources.exact_replace"].ShouldBe(
-            "Confirm and replace one revision-bound resource at its explicitly provided absolute href with exact UTF-8 content.");
+            "Confirm and replace one revision-bound resource at its explicitly provided absolute href with a complete caller-authored Calendar Object Resource.");
         exactDescriptions["calendar_resources.exact_move"].ShouldBe(
             "Confirm and move one revision-bound resource to an explicitly provided absolute destination href.");
     }
