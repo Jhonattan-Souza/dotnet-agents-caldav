@@ -1,5 +1,5 @@
 using System.Text.Json;
-using DotnetAgents.CalDav.Core.Internal;
+using DotnetAgents.CalDav.Core.Services;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
@@ -11,6 +11,8 @@ namespace DotnetAgents.CalDav.Mcp.Hosting;
 internal static class CalendarExecutionPolicy
 {
     private static readonly TimeSpan InitialProgressDelay = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan ReadExecutionBudget = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan MutationExecutionBudget = TimeSpan.FromSeconds(60);
 
     public static McpRequestFilter<CallToolRequestParams, CallToolResult> CallTool => next =>
         async (request, cancellationToken) =>
@@ -31,8 +33,34 @@ internal static class CalendarExecutionPolicy
             if (execution.Lease is null)
                 return CreateBusyResult(mutation);
             using var progress = execution.AttachProgress();
-            return await next(request, cancellationToken).ConfigureAwait(false);
+            return await ExecuteWithinBudgetAsync(
+                services.GetRequiredService<TimeProvider>(),
+                mutation,
+                token => next(request, token),
+                cancellationToken).ConfigureAwait(false);
         };
+
+    private static async ValueTask<CallToolResult> ExecuteWithinBudgetAsync(
+        TimeProvider timeProvider,
+        bool mutation,
+        Func<CancellationToken, ValueTask<CallToolResult>> next,
+        CancellationToken callerCancellationToken)
+    {
+        var budget = mutation ? MutationExecutionBudget : ReadExecutionBudget;
+        using var deadline = new CancellationTokenSource(budget, timeProvider);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+            callerCancellationToken,
+            deadline.Token);
+        try
+        {
+            return await next(linked.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested
+            && !callerCancellationToken.IsCancellationRequested)
+        {
+            return CreateDeadlineResult(mutation);
+        }
+    }
 
     internal static async Task<CalendarExecutionLease> AcquireWithProgressAsync(
         TimeProvider timeProvider,
@@ -86,14 +114,30 @@ internal static class CalendarExecutionPolicy
     }
 
     internal static async Task<T> ExecuteProtectedReadAsync<T>(
+        TimeProvider timeProvider,
         CalendarOperationAdmission admission,
         Func<CancellationToken, Task<T>> read,
-        CancellationToken cancellationToken)
+        CancellationToken callerCancellationToken)
     {
-        using var lease = await admission.AcquireAsync(mutation: false, cancellationToken).ConfigureAwait(false);
+        using var lease = await admission.AcquireAsync(
+            mutation: false,
+            callerCancellationToken).ConfigureAwait(false);
         if (lease is null)
             throw new InvalidOperationException("The configured Calendar origin is busy.");
-        return await read(cancellationToken).ConfigureAwait(false);
+        using var deadline = new CancellationTokenSource(ReadExecutionBudget, timeProvider);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+            callerCancellationToken,
+            deadline.Token);
+        try
+        {
+            return await read(linked.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested
+            && !callerCancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                "The protected Calendar resource read exceeded its execution budget.");
+        }
     }
 
     internal static CallToolResult CreateBusyResult(bool mutation)
@@ -116,12 +160,38 @@ internal static class CalendarExecutionPolicy
             Content = [new TextContentBlock { Text = "Calendar operation admission failed." }]
         };
     }
+
+    internal static CallToolResult CreateDeadlineResult(bool mutation)
+    {
+        var structured = new Dictionary<string, object?>
+        {
+            ["code"] = "limit_exhausted",
+            ["message"] = "The Calendar operation exhausted its elapsed_time execution budget.",
+            ["retryable"] = false,
+            ["phase"] = "execution",
+            ["category"] = "limitsAndAdmission",
+            ["limits"] = new Dictionary<string, object?> { ["dimension"] = "elapsed_time" }
+        };
+        // This outer policy cannot prove whether a timed-out handler crossed its dispatch boundary.
+        // Lower layers return a more specific state when they can; the only safe fallback here is unknown.
+        if (mutation)
+            structured["mutationState"] = "unknown";
+        return new CallToolResult
+        {
+            IsError = true,
+            StructuredContent = JsonSerializer.SerializeToElement(structured),
+            Content = [new TextContentBlock { Text = "Calendar operation exceeded its execution budget." }]
+        };
+    }
 }
 
 internal sealed class CalendarExecutionLease : IAsyncDisposable
 {
     private readonly CancellationTokenSource _progressCancellation;
-    private readonly Task _progressTask;
+    private readonly TimeProvider _timeProvider;
+    private readonly CalendarOperationAdmission _admission;
+    private readonly Func<ProgressNotificationValue, CancellationToken, Task>? _report;
+    private Task _progressTask = Task.CompletedTask;
     private readonly CalendarOperationProgress.State _progressState;
 
     public CalendarExecutionLease(
@@ -130,24 +200,29 @@ internal sealed class CalendarExecutionLease : IAsyncDisposable
         Func<ProgressNotificationValue, CancellationToken, Task>? report,
         CancellationToken cancellationToken)
     {
+        _timeProvider = timeProvider;
+        _admission = admission;
+        _report = report;
         _progressState = CalendarOperationProgress.CreateState();
         _progressCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        _progressTask = report is null
-            ? Task.CompletedTask
-            : CalendarExecutionPolicy.ReportProgressAsync(
-                timeProvider,
-                admission,
-                report,
-                _progressCancellation.Token,
-                () => _progressState.PhaseName);
     }
 
     internal CalendarOperationAdmission.Lease? Lease { get; set; }
 
     internal void MarkAdmitted()
     {
-        if (Lease is not null)
-            _progressState.AdvanceTo(CalendarOperationPhase.Discovery);
+        if (Lease is null)
+            return;
+        _progressState.AdvanceTo(CalendarOperationPhase.Discovery);
+        if (_report is not null)
+        {
+            _progressTask = CalendarExecutionPolicy.ReportProgressAsync(
+                _timeProvider,
+                _admission,
+                _report,
+                _progressCancellation.Token,
+                () => _progressState.PhaseName);
+        }
     }
 
     internal CalendarOperationProgress.ProgressScope AttachProgress() =>

@@ -87,6 +87,10 @@ public sealed class CalendarMcpStdioIntegrationTests
     [Fact]
     public async Task CalendarEntityQuery_ReturnsSchemaValidSnapshotsAndTypedFailureOverStdio()
     {
+        const string content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Integration//EN\r\n"
+            + "BEGIN:VTODO\r\nUID:entity-query-stdio-1\r\nDTSTAMP:20260817T120000Z\r\n"
+            + "SUMMARY:Entity query integration\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+        var href = await PutResourceAsync("entity-query-stdio-1.ics", content);
         var stderr = new ConcurrentQueue<string>();
         await using var client = await CreateClientAsync(stderr, exposeExact: false);
         var tools = await client.ListToolsAsync(new ListToolsRequestParams(), TestContext.Current.CancellationToken);
@@ -159,6 +163,7 @@ public sealed class CalendarMcpStdioIntegrationTests
             .ShouldBe(["event", "todo"]);
         error.TryGetProperty("items", out _).ShouldBeFalse();
         stderr.ShouldBeEmpty();
+        await DeleteResourceAsync(href);
     }
 
     [Fact]
@@ -982,6 +987,30 @@ public sealed class CalendarMcpStdioIntegrationTests
         stderr.ShouldBeEmpty();
     }
 
+    [Theory]
+    [InlineData(262_144, "invalid_input", "schemaLexicalDiscriminator")]
+    [InlineData(262_145, "payload_too_large", "admissionAndPayload")]
+    public async Task CalendarResourceGet_NativeSdkEnforcesExactArgumentBoundaryBeforeDispatch(
+        int argumentBytes,
+        string expectedCode,
+        string expectedPhase)
+    {
+        var stderr = new ConcurrentQueue<string>();
+        await using var client = await CreateClientAsync(stderr, exposeExact: false);
+        var arguments = ResourceGetArgumentsAtSize(argumentBytes);
+        JsonSerializer.SerializeToUtf8Bytes(arguments).Length.ShouldBe(argumentBytes);
+
+        var result = await client.CallToolAsync(
+            "calendar_resources.get",
+            arguments,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        result.IsError.ShouldBe(true);
+        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe(expectedCode);
+        result.StructuredContent.Value.GetProperty("phase").GetString().ShouldBe(expectedPhase);
+        stderr.ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task ExactGet_UsesProtectedNativeResourceReadWhileListRemainsEmpty()
     {
@@ -1395,6 +1424,18 @@ public sealed class CalendarMcpStdioIntegrationTests
         ["entityKind"] = revision.GetProperty("entityKind").GetString(),
         ["entityTag"] = revision.GetProperty("entityTag").GetString()
     };
+
+    private static Dictionary<string, object?> ResourceGetArgumentsAtSize(int argumentBytes)
+    {
+        var arguments = new Dictionary<string, object?>
+        {
+            ["href"] = "https://cal.example/events/a.ics",
+            ["padding"] = string.Empty
+        };
+        var fixedBytes = JsonSerializer.SerializeToUtf8Bytes(arguments).Length;
+        arguments["padding"] = new string('x', argumentBytes - fixedBytes);
+        return arguments;
+    }
 
     private static string ExactEvent(string uid, string summary, string inertLine) =>
         "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Exact Integration//EN\r\n"

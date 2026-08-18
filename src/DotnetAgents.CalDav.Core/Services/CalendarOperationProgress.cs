@@ -1,14 +1,14 @@
-namespace DotnetAgents.CalDav.Core.Internal;
+namespace DotnetAgents.CalDav.Core.Services;
 
 /// <summary>Tracks the current safe aggregate phase for one asynchronous Calendar operation.</summary>
-internal static class CalendarOperationProgress
+public static class CalendarOperationProgress
 {
     private static readonly AsyncLocal<State?> CurrentState = new();
 
-    internal static State CreateState(Action<CalendarOperationPhase>? phaseObserver = null) =>
-        new(CalendarOperationPhase.Admission, phaseObserver);
+    public static State CreateState(Action<CalendarOperationPhase>? phaseObserver = null) =>
+        new(CalendarOperationPhase.Discovery, phaseObserver);
 
-    internal static ProgressScope Attach(State state)
+    public static ProgressScope Attach(State state)
     {
         var previous = CurrentState.Value;
         CurrentState.Value = state;
@@ -17,13 +17,13 @@ internal static class CalendarOperationProgress
 
     internal static void SetPhase(CalendarOperationPhase phase) => CurrentState.Value?.AdvanceTo(phase);
 
-    internal sealed class State(CalendarOperationPhase phase, Action<CalendarOperationPhase>? phaseObserver = null)
+    public sealed class State(CalendarOperationPhase phase, Action<CalendarOperationPhase>? phaseObserver = null)
     {
         private int _phase = (int)phase;
 
-        internal string PhaseName => ((CalendarOperationPhase)Volatile.Read(ref _phase)).ToString().ToLowerInvariant();
+        public string PhaseName => ((CalendarOperationPhase)Volatile.Read(ref _phase)).ToString().ToLowerInvariant();
 
-        internal void AdvanceTo(CalendarOperationPhase next)
+        public void AdvanceTo(CalendarOperationPhase next)
         {
             var candidate = (int)next;
             while (true)
@@ -40,7 +40,7 @@ internal static class CalendarOperationProgress
         }
     }
 
-    internal sealed class ProgressScope : IDisposable
+    public sealed class ProgressScope : IDisposable
     {
         private readonly State? _previous;
         private bool _disposed;
@@ -64,9 +64,8 @@ internal static class CalendarOperationProgress
     }
 }
 
-internal enum CalendarOperationPhase
+public enum CalendarOperationPhase
 {
-    Admission,
     Discovery,
     Fetch,
     Filter,

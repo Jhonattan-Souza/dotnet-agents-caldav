@@ -1,14 +1,22 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using DotnetAgents.CalDav.Core.Internal.Ical;
+using System.Text.Json.Serialization;
 using DotnetAgents.CalDav.Core.Models;
 
-namespace DotnetAgents.CalDav.Mcp.Tools;
+namespace DotnetAgents.CalDav.Core.Internal.Ical;
 
-internal static class CalendarTypedProjectionBuilder
+internal static class CalendarResourceSemanticProjectionMapper
 {
-    public static CalendarEventFieldsResult Event(CalendarResourceSnapshot snapshot)
+    private static readonly JsonSerializerOptions ProjectionJson = new(JsonSerializerDefaults.Web)
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
+
+    internal static JsonElement Event(CalendarResourceSnapshot snapshot) =>
+        JsonSerializer.SerializeToElement(CreateEventFields(snapshot), ProjectionJson);
+
+    private static CalendarEventFieldsResult CreateEventFields(CalendarResourceSnapshot snapshot)
     {
         if (!TryDocumentMaster(snapshot, "VEVENT", out var document, out var master))
             return new CalendarEventFieldsResult(
@@ -41,7 +49,10 @@ internal static class CalendarTypedProjectionBuilder
             StructuredData(document, component));
     }
 
-    public static CalendarTodoFieldsResult Todo(CalendarResourceSnapshot snapshot)
+    internal static JsonElement Todo(CalendarResourceSnapshot snapshot) =>
+        JsonSerializer.SerializeToElement(CreateTodoFields(snapshot), ProjectionJson);
+
+    private static CalendarTodoFieldsResult CreateTodoFields(CalendarResourceSnapshot snapshot)
     {
         if (!TryDocumentMaster(snapshot, "VTODO", out var document, out var master))
             return new CalendarTodoFieldsResult(
@@ -50,11 +61,12 @@ internal static class CalendarTypedProjectionBuilder
         return TodoFields(document, master, includeRecurrence: true);
     }
 
-    public static CalendarTemporalResult? TodoCompletedAt(CalendarResourceSnapshot snapshot)
+    internal static JsonElement? TodoCompletedAt(CalendarResourceSnapshot snapshot)
     {
         if (!TryDocumentMaster(snapshot, "VTODO", out var document, out var master))
             return null;
-        return Temporal(Owned(document, master.Path), "COMPLETED");
+        var completed = Temporal(Owned(document, master.Path), "COMPLETED");
+        return completed is null ? null : JsonSerializer.SerializeToElement(completed, ProjectionJson);
     }
 
     private static bool TryDocumentMaster(
@@ -590,7 +602,7 @@ internal static class CalendarTypedProjectionBuilder
             target[name] = new JsonArray(items);
     }
 
-    private static JsonNode Node<T>(T value) => JsonSerializer.SerializeToNode(value)!;
+    private static JsonNode Node<T>(T value) => JsonSerializer.SerializeToNode(value, ProjectionJson)!;
 
     private static IEnumerable<string> SplitEscaped(string value, char separator)
     {
@@ -606,5 +618,59 @@ internal static class CalendarTypedProjectionBuilder
             escaped = !escaped && value[index] == '\\';
         }
         yield return value[start..];
+    }
+
+    private sealed record CalendarEventFieldsResult(
+        string? Summary,
+        string? Description,
+        CalendarTemporalResult? Start,
+        CalendarTemporalResult? End,
+        string? Duration,
+        string? Location,
+        CalendarGeoResult? Geo,
+        CalendarOpenEnumResult? Status,
+        CalendarOpenEnumResult? Transparency,
+        CalendarOpenEnumResult? Classification,
+        int? Priority,
+        IReadOnlyList<string>? Categories,
+        string? Url,
+        JsonElement? RecurrenceSet,
+        JsonElement? StructuredData);
+
+    private sealed record CalendarTodoFieldsResult(
+        string? Summary,
+        string? Description,
+        CalendarTemporalResult? Start,
+        CalendarTemporalResult? Due,
+        string? Duration,
+        CalendarOpenEnumResult? Status,
+        CalendarOpenEnumResult? Classification,
+        int? Priority,
+        int? PercentComplete,
+        IReadOnlyList<string>? Categories,
+        JsonElement? RecurrenceSet,
+        JsonElement? StructuredData);
+
+    private sealed record CalendarGeoResult(double Latitude, double Longitude);
+
+    private sealed record CalendarRecurrenceRuleResult(string Text, string OriginalSlice);
+
+    private sealed record CalendarOpenEnumResult(string Kind, string RawValue);
+
+    private sealed record CalendarParameterResult(string Name, IReadOnlyList<string> Values);
+
+    private sealed record CalendarTemporalResult(string Kind, string Value, string? TimeZoneId = null)
+    {
+        internal static CalendarTemporalResult FromValue(CalendarTemporalValue value) => new(
+            value.Kind switch
+            {
+                CalendarTemporalKind.Date => "date",
+                CalendarTemporalKind.FloatingDateTime => "floatingDateTime",
+                CalendarTemporalKind.UtcDateTime => "utcDateTime",
+                CalendarTemporalKind.ZonedDateTime => "zonedDateTime",
+                _ => throw new ArgumentOutOfRangeException(nameof(value), value.Kind, null)
+            },
+            value.Value,
+            value.TimeZoneId);
     }
 }

@@ -71,6 +71,8 @@ public sealed class ContractCatalogTests
         executionLimits["additionalProperties"]!.GetValue<bool>().ShouldBeFalse();
         executionLimits["properties"]!["dimension"]!["enum"]!.AsArray()
             .Select(item => item!.GetValue<string>()).ShouldBe(["elapsed_time"]);
+        catalog["$defs"]!["exactMutationErrorOutcome"]!["properties"]!["limits"]!["$ref"]!
+            .GetValue<string>().ShouldBe("#/$defs/executionLimits");
         var mrtr = catalog["mrtrWireContract"]!.AsObject();
         mrtr["toolsCallParams"]!["oneOf"]!.AsArray().Count.ShouldBe(20);
         mrtr["toolsCallParams"]!["oneOf"]![0]!["properties"]!["arguments"]!["$ref"].ShouldNotBeNull();
@@ -136,6 +138,10 @@ public sealed class ContractCatalogTests
             .ShouldBe("#/$defs/exactMoveInput");
         catalog["$defs"]!["calendarDestination"]!["oneOf"]!.AsArray().Count.ShouldBe(2);
         var exactCreateInput = catalog["$defs"]!["exactCreateInput"]!;
+        FindTool(catalog, "calendar_resources.exact_create")["description"]!.GetValue<string>()
+            .ShouldContain("complete caller-authored Calendar Object Resource");
+        FindTool(catalog, "calendar_resources.exact_replace")["description"]!.GetValue<string>()
+            .ShouldContain("complete caller-authored Calendar Object Resource");
         exactCreateInput["properties"]!.AsObject().ShouldContainKey("destinationHref");
         exactCreateInput["properties"]!.AsObject().ShouldContainKey("base64Utf8Resource");
         exactCreateInput["oneOf"]!.AsArray().Count.ShouldBe(2);
@@ -413,6 +419,36 @@ public sealed class ContractCatalogTests
         matrix.ShouldContain(
             "| Other CalDAV servers | pinned-profile-only | required typed rejection | pinned-profile-only | implemented capability negotiation only |");
         matrix.ShouldContain("an unverified transcript remains operable, but no interoperability claim is made");
+    }
+
+    [Fact]
+    public void Compatibility_matrix_rows_resolve_to_executable_behavioral_evidence()
+    {
+        var matrix = File.ReadAllText(ContractPath("compatibility-matrix.md"));
+        var mappedRequirements = ReadJson("release-evidence-map.json")["requirements"]!.AsArray()
+            .ToDictionary(
+                row => row!["id"]!.GetValue<string>(),
+                row => row!["testNameContains"]!.AsArray(),
+                StringComparer.Ordinal);
+        var rows = matrix.Split('\n')
+            .Where(line => line.StartsWith("| ", StringComparison.Ordinal))
+            .Where(line => !line.Contains("Capability |", StringComparison.Ordinal))
+            .Where(line => !line.Contains("---", StringComparison.Ordinal));
+
+        foreach (var row in rows)
+        {
+            var cells = row.Split('|', StringSplitOptions.TrimEntries);
+            var evidenceIds = cells[6].Split('`')
+                .Where(value => value.StartsWith("CAL-", StringComparison.Ordinal))
+                .ToArray();
+
+            evidenceIds.ShouldNotBeEmpty($"Compatibility row has no normative evidence link: {cells[1]}");
+            foreach (var evidenceId in evidenceIds)
+            {
+                mappedRequirements.ShouldContainKey(evidenceId);
+                mappedRequirements[evidenceId].ShouldNotBeEmpty();
+            }
+        }
     }
 
     [Fact]

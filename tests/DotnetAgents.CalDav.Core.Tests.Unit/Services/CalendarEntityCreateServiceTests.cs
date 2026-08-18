@@ -89,7 +89,7 @@ public sealed class CalendarEntityCreateServiceTests
     }
 
     [Fact]
-    public async Task CreateEventAsync_InvalidCompleteCalendarDataFailsBeforeDiscoveryOrPut()
+    public async Task CreateEventAsync_InvalidNonRecurringCompleteCalendarDataFailsAfterDiscoveryWithoutPut()
     {
         const string calendarHref = "https://cal.example/events/";
         var client = Substitute.For<ICalendarClient>();
@@ -281,46 +281,7 @@ public sealed class CalendarEntityCreateServiceTests
                     Trigger("-PT15M"),
                     "Reminder",
                     Repeat: new CalendarIntegerProperty(-1, []),
-                    Duration: new CalendarDurationProperty("PT5M", []))])),
-            new(Start: utcStart, RecurrenceSet: new CalendarEventRecurrenceSetCreate()),
-            new(Start: utcStart, RecurrenceSet: new CalendarEventRecurrenceSetCreate(Rule: "FREQ=BOGUS")),
-            new(Start: utcStart, RecurrenceSet: new CalendarEventRecurrenceSetCreate(
-                Rule: "FREQ=DAILY;COUNT=2\r\nRRULE:FREQ=WEEKLY")),
-            new(Start: utcStart, RecurrenceSet: new CalendarEventRecurrenceSetCreate(
-                RecurrenceDates:
-                [
-                    new CalendarRecurrenceDateCreate(Value: new CalendarTemporalValue(
-                        CalendarTemporalKind.Date,
-                        "2026-08-18"))
-                ])),
-            new(Start: new CalendarTemporalValue(CalendarTemporalKind.Date, "2026-08-17"),
-                RecurrenceSet: new CalendarEventRecurrenceSetCreate(
-                    RecurrenceDates:
-                    [
-                        new CalendarRecurrenceDateCreate(Period: new CalendarRecurrencePeriodCreate(
-                            new CalendarTemporalValue(CalendarTemporalKind.Date, "2026-08-18"),
-                            Duration: "P1D"))
-                    ])),
-            new(Start: utcStart, RecurrenceSet: new CalendarEventRecurrenceSetCreate(
-                Rule: "FREQ=DAILY;COUNT=2",
-                Overrides:
-                [
-                    new CalendarEventRecurrenceOverrideCreate(
-                        utcStart,
-                        CalendarRecurrenceOverrideStatus.Active,
-                        new CalendarEventCreateFields(Start: utcStart, Status: "CANCELLED"))
-                ])),
-            new(Start: utcStart, RecurrenceSet: new CalendarEventRecurrenceSetCreate(
-                Rule: "FREQ=DAILY;COUNT=2",
-                Overrides:
-                [
-                    new CalendarEventRecurrenceOverrideCreate(
-                        utcStart,
-                        CalendarRecurrenceOverrideStatus.Active,
-                        new CalendarEventCreateFields(
-                            Start: utcStart,
-                            RecurrenceSet: new CalendarEventRecurrenceSetCreate(Rule: "FREQ=DAILY")))
-                ]))
+                    Duration: new CalendarDurationProperty("PT5M", []))]))
         ];
 
         foreach (var fields in invalidFields)
@@ -332,14 +293,14 @@ public sealed class CalendarEntityCreateServiceTests
             result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
         }
 
-        await client.DidNotReceive().GetCalendarsAsync(Arg.Any<CancellationToken>());
+        await client.Received(invalidFields.Length).GetCalendarsAsync(Arg.Any<CancellationToken>());
         await client.DidNotReceive().CreateCalendarResourceAsync(
             Arg.Any<CalendarResourceCreateRequest>(),
             Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task CreateEventAsync_MissingStartIsCompleteSemanticFailureBeforeDiscoveryOrPut()
+    public async Task CreateEventAsync_MissingStartIsCompleteSemanticFailureAfterDiscoveryWithoutPut()
     {
         const string calendarHref = "https://cal.example/events/";
         var client = Substitute.For<ICalendarClient>();
@@ -355,14 +316,14 @@ public sealed class CalendarEntityCreateServiceTests
 
         result.Code.ShouldBe(CalendarEntityCreateCode.InvalidCalendarData);
         result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
-        await client.DidNotReceive().GetCalendarsAsync(Arg.Any<CancellationToken>());
+        await client.Received(1).GetCalendarsAsync(Arg.Any<CancellationToken>());
         await client.DidNotReceive().CreateCalendarResourceAsync(
             Arg.Any<CalendarResourceCreateRequest>(),
             Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task CreateEventAsync_MissingStartSemanticFailurePrecedesCapabilityDiscovery()
+    public async Task CreateEventAsync_CapabilityFailurePrecedesNonRecurringCompleteSemanticFailure()
     {
         const string calendarHref = "https://cal.example/events/";
         var client = Substitute.For<ICalendarClient>();
@@ -378,6 +339,38 @@ public sealed class CalendarEntityCreateServiceTests
                 new CalendarEventCreateFields()),
             CancellationToken.None);
 
+        result.Code.ShouldBe(CalendarEntityCreateCode.UnsupportedCapability);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        await client.Received(1).GetCalendarsAsync(Arg.Any<CancellationToken>());
+        await client.DidNotReceive().CreateCalendarResourceAsync(
+            Arg.Any<CalendarResourceCreateRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CreateEventAsync_RecurrenceTemporalFamilyFailurePrecedesDiscoveryFailure()
+    {
+        var client = Substitute.For<ICalendarClient>();
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([]);
+        var sut = CreateService(client, defaultEventName: "Events");
+
+        var result = await sut.CreateEventAsync(
+            new CalendarEventCreateRequest(
+                CalendarCreateDestination.Default,
+                "invalid-recurring-event",
+                new CalendarEventCreateFields(
+                    Start: new CalendarTemporalValue(
+                        CalendarTemporalKind.UtcDateTime,
+                        "2026-08-17T13:00:00Z"),
+                    RecurrenceSet: new CalendarEventRecurrenceSetCreate(
+                        RecurrenceDates:
+                        [
+                            new CalendarRecurrenceDateCreate(Value: new CalendarTemporalValue(
+                                CalendarTemporalKind.Date,
+                                "2026-08-18"))
+                        ]))),
+            CancellationToken.None);
+
         result.Code.ShouldBe(CalendarEntityCreateCode.InvalidCalendarData);
         result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
         await client.DidNotReceive().GetCalendarsAsync(Arg.Any<CancellationToken>());
@@ -387,7 +380,288 @@ public sealed class CalendarEntityCreateServiceTests
     }
 
     [Fact]
-    public async Task CreateTodoAsync_InvalidTemporalRelationshipsFailBeforeDiscoveryOrPut()
+    public async Task CreateEventAsync_UnknownRecurringTimeZonePrecedesCapabilityDiscovery()
+    {
+        var client = Substitute.For<ICalendarClient>();
+        var sut = CreateService(client, defaultEventName: "Events");
+
+        var result = await sut.CreateEventAsync(
+            new CalendarEventCreateRequest(
+                CalendarCreateDestination.Default,
+                "unknown-recurring-zone",
+                new CalendarEventCreateFields(
+                    Start: new CalendarTemporalValue(
+                        CalendarTemporalKind.ZonedDateTime,
+                        "2026-08-17T13:00:00",
+                        "Mars/Olympus"),
+                    RecurrenceSet: new CalendarEventRecurrenceSetCreate(
+                        Rule: "FREQ=DAILY;COUNT=2"))),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityCreateCode.InvalidCalendarData);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        await client.DidNotReceive().GetCalendarsAsync(Arg.Any<CancellationToken>());
+        await client.DidNotReceive().CreateCalendarResourceAsync(
+            Arg.Any<CalendarResourceCreateRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CreateEventAsync_CapabilityFailurePrecedesNonTemporalOverrideSemantics()
+    {
+        const string calendarHref = "https://cal.example/events/";
+        var client = Substitute.For<ICalendarClient>();
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
+            EventCalendar(calendarHref, "Events") with { EventSupport = EntityKindSupport.NotAdvertised }
+        ]);
+        var sut = CreateService(client, defaultEventName: "Events");
+        var start = new CalendarTemporalValue(
+            CalendarTemporalKind.UtcDateTime,
+            "2026-08-17T13:00:00Z");
+        var identity = new CalendarTemporalValue(
+            CalendarTemporalKind.UtcDateTime,
+            "2026-08-18T13:00:00Z");
+
+        var result = await sut.CreateEventAsync(
+            new CalendarEventCreateRequest(
+                CalendarCreateDestination.Default,
+                "invalid-override-event",
+                new CalendarEventCreateFields(
+                    Start: start,
+                    RecurrenceSet: new CalendarEventRecurrenceSetCreate(
+                        Rule: "FREQ=DAILY;COUNT=2",
+                        Overrides:
+                        [
+                            new CalendarEventRecurrenceOverrideCreate(
+                                identity,
+                                CalendarRecurrenceOverrideStatus.Active,
+                                new CalendarEventCreateFields(Start: identity, Priority: 10))
+                        ]))),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityCreateCode.UnsupportedCapability);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        await client.Received(1).GetCalendarsAsync(Arg.Any<CancellationToken>());
+        await client.DidNotReceive().CreateCalendarResourceAsync(
+            Arg.Any<CalendarResourceCreateRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CreateTodoAsync_CapabilityFailurePrecedesNonTemporalOverrideSemantics()
+    {
+        const string calendarHref = "https://cal.example/todos/";
+        var client = Substitute.For<ICalendarClient>();
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
+            TodoCalendar(calendarHref, "Todos") with { TodoSupport = EntityKindSupport.NotAdvertised }
+        ]);
+        var sut = CreateTodoService(client);
+        var start = new CalendarTemporalValue(
+            CalendarTemporalKind.UtcDateTime,
+            "2026-08-17T13:00:00Z");
+        var identity = new CalendarTemporalValue(
+            CalendarTemporalKind.UtcDateTime,
+            "2026-08-18T13:00:00Z");
+
+        var result = await sut.CreateTodoAsync(
+            new CalendarTodoCreateRequest(
+                CalendarCreateDestination.Default,
+                "invalid-override-todo",
+                new CalendarTodoCreateFields(
+                    Start: start,
+                    RecurrenceSet: new CalendarTodoRecurrenceSetCreate(
+                        Rule: "FREQ=DAILY;COUNT=2",
+                        Overrides:
+                        [
+                            new CalendarTodoRecurrenceOverrideCreate(
+                                identity,
+                                CalendarRecurrenceOverrideStatus.Active,
+                                new CalendarTodoCreateFields(Start: identity, Priority: 10))
+                        ]))),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityCreateCode.UnsupportedCapability);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        await client.Received(1).GetCalendarsAsync(Arg.Any<CancellationToken>());
+        await client.DidNotReceive().CreateCalendarResourceAsync(
+            Arg.Any<CalendarResourceCreateRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CreateEventAsync_CapabilityFailurePrecedesOverrideStatusContradiction()
+    {
+        const string calendarHref = "https://cal.example/events/";
+        var client = Substitute.For<ICalendarClient>();
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
+            EventCalendar(calendarHref, "Events") with { EventSupport = EntityKindSupport.NotAdvertised }
+        ]);
+        var sut = CreateService(client, defaultEventName: "Events");
+        var start = new CalendarTemporalValue(
+            CalendarTemporalKind.UtcDateTime,
+            "2026-08-17T13:00:00Z");
+        var identity = new CalendarTemporalValue(
+            CalendarTemporalKind.UtcDateTime,
+            "2026-08-18T13:00:00Z");
+
+        var result = await sut.CreateEventAsync(
+            new CalendarEventCreateRequest(
+                CalendarCreateDestination.Default,
+                "contradictory-override-event",
+                new CalendarEventCreateFields(
+                    Start: start,
+                    RecurrenceSet: new CalendarEventRecurrenceSetCreate(
+                        Rule: "FREQ=DAILY;COUNT=2",
+                        Overrides:
+                        [
+                            new CalendarEventRecurrenceOverrideCreate(
+                                identity,
+                                CalendarRecurrenceOverrideStatus.Active,
+                                new CalendarEventCreateFields(Start: identity, Status: "CANCELLED"))
+                        ]))),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityCreateCode.UnsupportedCapability);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        await client.Received(1).GetCalendarsAsync(Arg.Any<CancellationToken>());
+        await client.DidNotReceive().CreateCalendarResourceAsync(
+            Arg.Any<CalendarResourceCreateRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CreateTodoAsync_CapabilityFailurePrecedesOverrideStatusContradiction()
+    {
+        const string calendarHref = "https://cal.example/todos/";
+        var client = Substitute.For<ICalendarClient>();
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
+            TodoCalendar(calendarHref, "Todos") with { TodoSupport = EntityKindSupport.NotAdvertised }
+        ]);
+        var sut = CreateTodoService(client);
+        var start = new CalendarTemporalValue(
+            CalendarTemporalKind.UtcDateTime,
+            "2026-08-17T13:00:00Z");
+        var identity = new CalendarTemporalValue(
+            CalendarTemporalKind.UtcDateTime,
+            "2026-08-18T13:00:00Z");
+
+        var result = await sut.CreateTodoAsync(
+            new CalendarTodoCreateRequest(
+                CalendarCreateDestination.Default,
+                "contradictory-override-todo",
+                new CalendarTodoCreateFields(
+                    Start: start,
+                    RecurrenceSet: new CalendarTodoRecurrenceSetCreate(
+                        Rule: "FREQ=DAILY;COUNT=2",
+                        Overrides:
+                        [
+                            new CalendarTodoRecurrenceOverrideCreate(
+                                identity,
+                                CalendarRecurrenceOverrideStatus.Active,
+                                new CalendarTodoCreateFields(Start: identity, Status: "CANCELLED"))
+                        ]))),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityCreateCode.UnsupportedCapability);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        await client.Received(1).GetCalendarsAsync(Arg.Any<CancellationToken>());
+        await client.DidNotReceive().CreateCalendarResourceAsync(
+            Arg.Any<CalendarResourceCreateRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CreateEventAsync_OverrideStatusContradictionFailsAfterCapabilityBeforeUidLookup()
+    {
+        const string calendarHref = "https://cal.example/events/";
+        var client = Substitute.For<ICalendarClient>();
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref, "Events")]);
+        var sut = CreateService(client, defaultEventName: "Events");
+        var start = new CalendarTemporalValue(
+            CalendarTemporalKind.UtcDateTime,
+            "2026-08-17T13:00:00Z");
+        var identity = new CalendarTemporalValue(
+            CalendarTemporalKind.UtcDateTime,
+            "2026-08-18T13:00:00Z");
+
+        var result = await sut.CreateEventAsync(
+            new CalendarEventCreateRequest(
+                CalendarCreateDestination.Default,
+                "contradictory-override-event",
+                new CalendarEventCreateFields(
+                    Start: start,
+                    RecurrenceSet: new CalendarEventRecurrenceSetCreate(
+                        Rule: "FREQ=DAILY;COUNT=2",
+                        Overrides:
+                        [
+                            new CalendarEventRecurrenceOverrideCreate(
+                                identity,
+                                CalendarRecurrenceOverrideStatus.Active,
+                                new CalendarEventCreateFields(Start: identity, Status: "CANCELLED"))
+                        ]))),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityCreateCode.InvalidCalendarData);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        await client.Received(1).GetCalendarsAsync(Arg.Any<CancellationToken>());
+        await client.DidNotReceive().QueryCalendarResourceHrefsAsync(
+            Arg.Any<string>(),
+            Arg.Any<CalendarEntityKind>(),
+            Arg.Any<DateTimeOffset?>(),
+            Arg.Any<DateTimeOffset?>(),
+            Arg.Any<CancellationToken>());
+        await client.DidNotReceive().CreateCalendarResourceAsync(
+            Arg.Any<CalendarResourceCreateRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CreateTodoAsync_OverrideStatusContradictionFailsAfterCapabilityBeforeUidLookup()
+    {
+        const string calendarHref = "https://cal.example/todos/";
+        var client = Substitute.For<ICalendarClient>();
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([TodoCalendar(calendarHref, "Todos")]);
+        var sut = CreateTodoService(client);
+        var start = new CalendarTemporalValue(
+            CalendarTemporalKind.UtcDateTime,
+            "2026-08-17T13:00:00Z");
+        var identity = new CalendarTemporalValue(
+            CalendarTemporalKind.UtcDateTime,
+            "2026-08-18T13:00:00Z");
+
+        var result = await sut.CreateTodoAsync(
+            new CalendarTodoCreateRequest(
+                CalendarCreateDestination.Default,
+                "contradictory-override-todo",
+                new CalendarTodoCreateFields(
+                    Start: start,
+                    RecurrenceSet: new CalendarTodoRecurrenceSetCreate(
+                        Rule: "FREQ=DAILY;COUNT=2",
+                        Overrides:
+                        [
+                            new CalendarTodoRecurrenceOverrideCreate(
+                                identity,
+                                CalendarRecurrenceOverrideStatus.Active,
+                                new CalendarTodoCreateFields(Start: identity, Status: "CANCELLED"))
+                        ]))),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityCreateCode.InvalidCalendarData);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        await client.Received(1).GetCalendarsAsync(Arg.Any<CancellationToken>());
+        await client.DidNotReceive().QueryCalendarResourceHrefsAsync(
+            Arg.Any<string>(),
+            Arg.Any<CalendarEntityKind>(),
+            Arg.Any<DateTimeOffset?>(),
+            Arg.Any<DateTimeOffset?>(),
+            Arg.Any<CancellationToken>());
+        await client.DidNotReceive().CreateCalendarResourceAsync(
+            Arg.Any<CalendarResourceCreateRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CreateTodoAsync_InvalidTemporalRelationshipsFailAfterDiscoveryWithoutPut()
     {
         const string calendarHref = "https://cal.example/todos/";
         var client = Substitute.For<ICalendarClient>();
@@ -413,14 +687,14 @@ public sealed class CalendarEntityCreateServiceTests
             result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
         }
 
-        await client.DidNotReceive().GetCalendarsAsync(Arg.Any<CancellationToken>());
+        await client.Received(invalidFields.Length).GetCalendarsAsync(Arg.Any<CancellationToken>());
         await client.DidNotReceive().CreateCalendarResourceAsync(
             Arg.Any<CalendarResourceCreateRequest>(),
             Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task CreateEventAsync_OversizedSerializedResourceFailsBeforeDiscoveryOrPut()
+    public async Task CreateEventAsync_OversizedSerializedResourceFailsAfterDiscoveryWithoutPut()
     {
         const string calendarHref = "https://cal.example/events/";
         var client = Substitute.For<ICalendarClient>();
@@ -438,7 +712,7 @@ public sealed class CalendarEntityCreateServiceTests
 
         result.Code.ShouldBe(CalendarEntityCreateCode.PayloadTooLarge);
         result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
-        await client.DidNotReceive().GetCalendarsAsync(Arg.Any<CancellationToken>());
+        await client.Received(1).GetCalendarsAsync(Arg.Any<CancellationToken>());
         await client.DidNotReceive().CreateCalendarResourceAsync(
             Arg.Any<CalendarResourceCreateRequest>(),
             Arg.Any<CancellationToken>());
@@ -1489,7 +1763,7 @@ public sealed class CalendarEntityCreateServiceTests
     }
 
     [Fact]
-    public async Task CreateTodoAsync_InvalidRecurrenceFamiliesAndOverrideStatesFailBeforeUidLookupOrPut()
+    public async Task CreateTodoAsync_InvalidRecurrenceFamiliesAndIdentitiesFailBeforeUidLookupOrPut()
     {
         const string calendarHref = "https://cal.example/todos/";
         var client = Substitute.For<ICalendarClient>();
@@ -1514,24 +1788,6 @@ public sealed class CalendarEntityCreateServiceTests
                         new CalendarTemporalValue(CalendarTemporalKind.Date, "2026-08-18"),
                         CalendarRecurrenceOverrideStatus.Active,
                         new CalendarTodoCreateFields(Start: masterStart))
-                ])),
-            new(Start: masterStart, RecurrenceSet: new CalendarTodoRecurrenceSetCreate(
-                Rule: "FREQ=DAILY;COUNT=2",
-                Overrides:
-                [
-                    new CalendarTodoRecurrenceOverrideCreate(
-                        matchingIdentity,
-                        CalendarRecurrenceOverrideStatus.Cancelled,
-                        new CalendarTodoCreateFields(Start: matchingIdentity, Status: "NEEDS-ACTION"))
-                ])),
-            new(Start: masterStart, RecurrenceSet: new CalendarTodoRecurrenceSetCreate(
-                Rule: "FREQ=DAILY;COUNT=2",
-                Overrides:
-                [
-                    new CalendarTodoRecurrenceOverrideCreate(
-                        matchingIdentity,
-                        CalendarRecurrenceOverrideStatus.Active,
-                        new CalendarTodoCreateFields(Start: matchingIdentity, Status: "CANCELLED"))
                 ])),
             new(Start: masterStart, RecurrenceSet: new CalendarTodoRecurrenceSetCreate(
                 Rule: "FREQ=DAILY;COUNT=2",

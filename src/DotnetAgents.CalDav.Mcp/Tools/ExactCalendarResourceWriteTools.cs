@@ -64,7 +64,7 @@ public sealed class ExactCalendarResourceWriteTools
         OpenWorld = true,
         UseStructuredContent = true,
         OutputSchemaType = typeof(CalendarEntityCreateSuccessResult)),
-     Description("Create an exact UTF-8 resource at an explicitly provided absolute destination resource href.")]
+     Description("Create a complete caller-authored Calendar Object Resource at an explicitly provided absolute destination resource href.")]
     public Task<CallToolResult> CreateAsync(
         RequestContext<CallToolRequestParams> requestContext,
         McpServer server,
@@ -83,7 +83,7 @@ public sealed class ExactCalendarResourceWriteTools
         OpenWorld = true,
         UseStructuredContent = true,
         OutputSchemaType = typeof(CalendarEntityCreateSuccessResult)),
-     Description("Confirm and replace one revision-bound resource at its explicitly provided absolute href with exact UTF-8 content.")]
+     Description("Confirm and replace one revision-bound resource at its explicitly provided absolute href with a complete caller-authored Calendar Object Resource.")]
     public Task<CallToolResult> ReplaceAsync(
         RequestContext<CallToolRequestParams> requestContext,
         McpServer server,

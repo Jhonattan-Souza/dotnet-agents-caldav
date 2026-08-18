@@ -9,7 +9,6 @@ internal sealed class CalendarResourceMoveProtocol(
     Uri configuredBaseUri,
     TimeProvider? timeProvider = null)
 {
-    private const int MaximumRedirects = 3;
     private static readonly HttpMethod MoveMethod = new("MOVE");
 
     public async Task<CalendarResourceMoveDispatchResult> MoveAsync(
@@ -46,9 +45,9 @@ internal sealed class CalendarResourceMoveProtocol(
                 message,
                 HttpCompletionOption.ResponseHeadersRead,
                 cancellationToken);
-            if (!IsMethodPreservingRedirect(response.StatusCode))
+            if (!CalendarMutationProtocolPrimitives.IsMethodPreservingRedirect(response.StatusCode))
                 return await MapResponseAsync(response, cancellationToken);
-            if (redirectCount >= MaximumRedirects
+            if (redirectCount >= CalendarMutationProtocolPrimitives.MaximumRedirects
                 || !TryResolveRedirect(
                     currentSourceUri,
                     destinationUri,
@@ -99,26 +98,17 @@ internal sealed class CalendarResourceMoveProtocol(
     {
         sourceUri = null!;
         destinationUri = null!;
-        return TryValidateAbsoluteUri(request.SourceHref, out sourceUri)
-            && TryValidateAbsoluteUri(request.DestinationHref, out destinationUri)
-            && HasSameOrigin(configuredBaseUri, sourceUri)
-            && HasSameOrigin(configuredBaseUri, destinationUri)
+        return CalendarMutationProtocolPrimitives.TryValidateAbsoluteUri(request.SourceHref, out sourceUri)
+            && CalendarMutationProtocolPrimitives.TryValidateAbsoluteUri(request.DestinationHref, out destinationUri)
+            && CalendarMutationProtocolPrimitives.HasSameOrigin(configuredBaseUri, sourceUri)
+            && CalendarMutationProtocolPrimitives.HasSameOrigin(configuredBaseUri, destinationUri)
             && !string.Equals(sourceUri.AbsoluteUri, destinationUri.AbsoluteUri, StringComparison.Ordinal);
     }
 
     private static bool TryValidateEntityTag(string value, out EntityTagHeaderValue entityTag)
     {
         entityTag = null!;
-        if (!EntityTagHeaderValue.TryParse(value, out var parsedEntityTag)
-            || parsedEntityTag is null
-            || parsedEntityTag.IsWeak
-            || parsedEntityTag == EntityTagHeaderValue.Any
-            || !string.Equals(parsedEntityTag.ToString(), value, StringComparison.Ordinal))
-        {
-            return false;
-        }
-        entityTag = parsedEntityTag;
-        return true;
+        return CalendarMutationProtocolPrimitives.TryParseStrongEntityTag(value, out entityTag);
     }
 
     private bool TryResolveRedirect(
@@ -127,50 +117,16 @@ internal sealed class CalendarResourceMoveProtocol(
         Uri? location,
         out Uri redirectUri)
     {
-        redirectUri = null!;
-        if (location is null
-            || location.OriginalString.Contains("%2e", StringComparison.OrdinalIgnoreCase)
-            || !Uri.TryCreate(currentUri, location, out var candidate)
-            || !TryValidateAbsoluteUri(candidate.AbsoluteUri, out candidate)
-            || !HasSameOrigin(configuredBaseUri, candidate)
-            || string.Equals(candidate.AbsoluteUri, destinationUri.AbsoluteUri, StringComparison.Ordinal))
-        {
-            return false;
-        }
-        redirectUri = candidate;
-        return true;
+        return CalendarMutationProtocolPrimitives.TryResolveSameOriginRedirect(
+            configuredBaseUri,
+            currentUri,
+            location,
+            candidate => !string.Equals(
+                candidate.AbsoluteUri,
+                destinationUri.AbsoluteUri,
+                StringComparison.Ordinal),
+            out redirectUri);
     }
-
-    private static bool TryValidateAbsoluteUri(string href, out Uri uri)
-    {
-        uri = null!;
-        if (!Uri.TryCreate(href, UriKind.Absolute, out var candidate)
-            || !IsSafeCanonicalUri(candidate, href))
-        {
-            return false;
-        }
-        uri = candidate;
-        return true;
-    }
-
-    private static bool IsSafeCanonicalUri(Uri candidate, string original) =>
-        (candidate.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
-            || candidate.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
-        && string.IsNullOrEmpty(candidate.UserInfo)
-        && string.IsNullOrEmpty(candidate.Fragment)
-        && string.IsNullOrEmpty(candidate.Query)
-        && !candidate.AbsolutePath.Contains("%2F", StringComparison.OrdinalIgnoreCase)
-        && !candidate.AbsolutePath.Contains("%5C", StringComparison.OrdinalIgnoreCase)
-        && !original.Contains("%2e", StringComparison.OrdinalIgnoreCase)
-        && string.Equals(candidate.AbsoluteUri, original, StringComparison.Ordinal);
-
-    private static bool HasSameOrigin(Uri left, Uri right) =>
-        string.Equals(left.Scheme, right.Scheme, StringComparison.OrdinalIgnoreCase)
-        && string.Equals(left.Host, right.Host, StringComparison.OrdinalIgnoreCase)
-        && left.Port == right.Port;
-
-    private static bool IsMethodPreservingRedirect(HttpStatusCode statusCode) => statusCode is
-        HttpStatusCode.TemporaryRedirect or HttpStatusCode.PermanentRedirect;
 
     private async Task<CalendarResourceMoveDispatchResult> MapResponseAsync(
         HttpResponseMessage response,
@@ -192,35 +148,26 @@ internal sealed class CalendarResourceMoveProtocol(
         return MapResponse(response);
     }
 
-    private CalendarResourceMoveDispatchResult MapResponse(HttpResponseMessage response) => response.StatusCode switch
+    private CalendarResourceMoveDispatchResult MapResponse(HttpResponseMessage response) =>
+        CalendarMutationProtocolPrimitives.Classify(response.StatusCode) switch
     {
-        HttpStatusCode.OK or HttpStatusCode.Created or HttpStatusCode.NoContent =>
+        CalendarMutationHttpOutcome.Dispatched =>
             new(CalendarResourceMoveDispatchCode.Dispatched),
-        HttpStatusCode.Accepted => new(CalendarResourceMoveDispatchCode.PossiblyDispatched),
-        HttpStatusCode.NotFound => new(CalendarResourceMoveDispatchCode.NotFound),
-        HttpStatusCode.Conflict or HttpStatusCode.PreconditionFailed =>
+        CalendarMutationHttpOutcome.PossiblyDispatched => new(CalendarResourceMoveDispatchCode.PossiblyDispatched),
+        CalendarMutationHttpOutcome.NotFound => new(CalendarResourceMoveDispatchCode.NotFound),
+        CalendarMutationHttpOutcome.Conflict =>
             new(CalendarResourceMoveDispatchCode.Conflict),
-        HttpStatusCode.Unauthorized => new(CalendarResourceMoveDispatchCode.UpstreamUnauthorized),
-        HttpStatusCode.Forbidden => new(CalendarResourceMoveDispatchCode.UpstreamForbidden),
-        HttpStatusCode.RequestEntityTooLarge => new(CalendarResourceMoveDispatchCode.PayloadTooLarge),
-        HttpStatusCode.TooManyRequests => new(
+        CalendarMutationHttpOutcome.UpstreamUnauthorized => new(CalendarResourceMoveDispatchCode.UpstreamUnauthorized),
+        CalendarMutationHttpOutcome.UpstreamForbidden => new(CalendarResourceMoveDispatchCode.UpstreamForbidden),
+        CalendarMutationHttpOutcome.PayloadTooLarge => new(CalendarResourceMoveDispatchCode.PayloadTooLarge),
+        CalendarMutationHttpOutcome.UpstreamRateLimited => new(
             CalendarResourceMoveDispatchCode.UpstreamRateLimited,
-            ReadRetryAfterMilliseconds(response.Headers.RetryAfter)),
-        HttpStatusCode.MethodNotAllowed or HttpStatusCode.NotImplemented =>
+            CalendarMutationProtocolPrimitives.ReadRetryAfterMilliseconds(
+                response.Headers.RetryAfter,
+                timeProvider ?? TimeProvider.System)),
+        CalendarMutationHttpOutcome.UnsupportedCapability =>
             new(CalendarResourceMoveDispatchCode.UnsupportedCapability),
-        HttpStatusCode.InsufficientStorage => new(CalendarResourceMoveDispatchCode.UpstreamUnavailable),
-        HttpStatusCode.RequestTimeout or >= HttpStatusCode.InternalServerError =>
-            new(CalendarResourceMoveDispatchCode.PossiblyDispatched),
+        CalendarMutationHttpOutcome.UpstreamUnavailable => new(CalendarResourceMoveDispatchCode.UpstreamUnavailable),
         _ => new(CalendarResourceMoveDispatchCode.UpstreamProtocolError)
     };
-
-    private int? ReadRetryAfterMilliseconds(RetryConditionHeaderValue? retryAfter)
-    {
-        if (retryAfter is null)
-            return null;
-        var delay = retryAfter.Delta ?? retryAfter.Date - (timeProvider ?? TimeProvider.System).GetUtcNow();
-        if (delay is null)
-            return null;
-        return (int)Math.Clamp(Math.Ceiling(delay.Value.TotalMilliseconds), 0, int.MaxValue);
-    }
 }

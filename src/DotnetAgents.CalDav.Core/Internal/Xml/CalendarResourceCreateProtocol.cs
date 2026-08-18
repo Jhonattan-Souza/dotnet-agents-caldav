@@ -8,7 +8,6 @@ namespace DotnetAgents.CalDav.Core.Internal.Xml;
 
 internal sealed class CalendarResourceCreateProtocol(HttpClient httpClient, Uri configuredBaseUri)
 {
-    private const int MaximumRedirects = 3;
     internal static string BuildResourceHref(string calendarHref, string uid)
     {
         var opaqueName = Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(uid)))
@@ -56,9 +55,9 @@ internal sealed class CalendarResourceCreateProtocol(HttpClient httpClient, Uri 
                 message,
                 HttpCompletionOption.ResponseHeadersRead,
                 cancellationToken);
-            if (!IsMethodPreservingRedirect(response.StatusCode))
+            if (!CalendarMutationProtocolPrimitives.IsMethodPreservingRedirect(response.StatusCode))
                 return await MapResponseAsync(response, currentUri.AbsoluteUri, cancellationToken);
-            if (redirectCount >= MaximumRedirects
+            if (redirectCount >= CalendarMutationProtocolPrimitives.MaximumRedirects
                 || !TryResolveRedirect(currentUri, calendarUri, response.Headers.Location, out var redirectUri))
             {
                 return new CalendarResourceCreateResult(
@@ -92,10 +91,10 @@ internal sealed class CalendarResourceCreateProtocol(HttpClient httpClient, Uri 
     {
         calendarUri = null!;
         resourceUri = null!;
-        return TryValidateAbsoluteUri(request.CalendarHref, out calendarUri)
-            && TryValidateAbsoluteUri(request.ResourceHref, out resourceUri)
-            && HasSameOrigin(configuredBaseUri, calendarUri)
-            && HasSameOrigin(configuredBaseUri, resourceUri)
+        return CalendarMutationProtocolPrimitives.TryValidateAbsoluteUri(request.CalendarHref, out calendarUri)
+            && CalendarMutationProtocolPrimitives.TryValidateAbsoluteUri(request.ResourceHref, out resourceUri)
+            && CalendarMutationProtocolPrimitives.HasSameOrigin(configuredBaseUri, calendarUri)
+            && CalendarMutationProtocolPrimitives.HasSameOrigin(configuredBaseUri, resourceUri)
             && IsDirectResourceOf(calendarUri, resourceUri);
     }
 
@@ -105,48 +104,17 @@ internal sealed class CalendarResourceCreateProtocol(HttpClient httpClient, Uri 
         Uri? location,
         out Uri redirectUri)
     {
-        redirectUri = null!;
-        if (location is null
-            || location.OriginalString.Contains("%2e", StringComparison.OrdinalIgnoreCase)
-            || location.OriginalString.Contains("%2F", StringComparison.OrdinalIgnoreCase)
-            || location.OriginalString.Contains("%5C", StringComparison.OrdinalIgnoreCase)
-            || !Uri.TryCreate(currentUri, location, out var candidate)
-            || !IsSafeCanonicalUri(candidate, candidate.AbsoluteUri)
-            || !HasSameOrigin(currentUri, candidate)
-            || !IsDirectResourceOf(calendarUri, candidate))
-        {
-            return false;
-        }
-        redirectUri = candidate;
-        return true;
+        return CalendarMutationProtocolPrimitives.TryResolveSameOriginRedirect(
+            currentUri,
+            currentUri,
+            location,
+            candidate => IsDirectResourceOf(calendarUri, candidate),
+            out redirectUri);
     }
-
-    private static bool TryValidateAbsoluteUri(string href, out Uri uri)
-    {
-        uri = null!;
-        if (!Uri.TryCreate(href, UriKind.Absolute, out var candidate)
-            || !IsSafeCanonicalUri(candidate, href))
-        {
-            return false;
-        }
-        uri = candidate;
-        return true;
-    }
-
-    private static bool IsSafeCanonicalUri(Uri candidate, string original) =>
-        (candidate.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
-            || candidate.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
-        && string.IsNullOrEmpty(candidate.UserInfo)
-        && string.IsNullOrEmpty(candidate.Fragment)
-        && string.IsNullOrEmpty(candidate.Query)
-        && !candidate.AbsolutePath.Contains("%2F", StringComparison.OrdinalIgnoreCase)
-        && !candidate.AbsolutePath.Contains("%5C", StringComparison.OrdinalIgnoreCase)
-        && !original.Contains("%2e", StringComparison.OrdinalIgnoreCase)
-        && string.Equals(candidate.AbsoluteUri, original, StringComparison.Ordinal);
 
     private static bool IsDirectResourceOf(Uri calendarUri, Uri resourceUri)
     {
-        if (!HasSameOrigin(calendarUri, resourceUri))
+        if (!CalendarMutationProtocolPrimitives.HasSameOrigin(calendarUri, resourceUri))
             return false;
         var calendarPath = calendarUri.AbsolutePath.EndsWith('/')
             ? calendarUri.AbsolutePath
@@ -156,14 +124,6 @@ internal sealed class CalendarResourceCreateProtocol(HttpClient httpClient, Uri 
         var relativePath = resourceUri.AbsolutePath[calendarPath.Length..];
         return relativePath.Length > 0 && !relativePath.Contains('/');
     }
-
-    private static bool HasSameOrigin(Uri left, Uri right) =>
-        string.Equals(left.Scheme, right.Scheme, StringComparison.OrdinalIgnoreCase)
-        && string.Equals(left.Host, right.Host, StringComparison.OrdinalIgnoreCase)
-        && left.Port == right.Port;
-
-    private static bool IsMethodPreservingRedirect(HttpStatusCode statusCode) => statusCode is
-        HttpStatusCode.TemporaryRedirect or HttpStatusCode.PermanentRedirect;
 
     private static async Task<CalendarResourceCreateResult> MapResponseAsync(
         HttpResponseMessage response,
@@ -185,24 +145,22 @@ internal sealed class CalendarResourceCreateProtocol(HttpClient httpClient, Uri 
     }
 
     private static CalendarResourceCreateResult MapResponse(HttpStatusCode statusCode, string resourceHref) =>
-        statusCode switch
+        CalendarMutationProtocolPrimitives.Classify(statusCode) switch
         {
-            HttpStatusCode.Conflict or HttpStatusCode.PreconditionFailed =>
+            CalendarMutationHttpOutcome.Conflict =>
                 new(CalendarResourceCreateCode.Conflict, resourceHref),
-            HttpStatusCode.MethodNotAllowed or HttpStatusCode.NotImplemented =>
+            CalendarMutationHttpOutcome.UnsupportedCapability =>
                 new(CalendarResourceCreateCode.UnsupportedCapability, resourceHref),
-            HttpStatusCode.RequestEntityTooLarge => new(CalendarResourceCreateCode.PayloadTooLarge, resourceHref),
-            HttpStatusCode.NotFound => new(CalendarResourceCreateCode.NotFound, resourceHref),
-            HttpStatusCode.Unauthorized => new(CalendarResourceCreateCode.UpstreamUnauthorized, resourceHref),
-            HttpStatusCode.Forbidden => new(CalendarResourceCreateCode.UpstreamForbidden, resourceHref),
-            HttpStatusCode.TooManyRequests => new(CalendarResourceCreateCode.UpstreamRateLimited, resourceHref),
-            HttpStatusCode.RequestTimeout => new(CalendarResourceCreateCode.PossiblyDispatched, resourceHref),
-            HttpStatusCode.InsufficientStorage =>
+            CalendarMutationHttpOutcome.PayloadTooLarge => new(CalendarResourceCreateCode.PayloadTooLarge, resourceHref),
+            CalendarMutationHttpOutcome.NotFound => new(CalendarResourceCreateCode.NotFound, resourceHref),
+            CalendarMutationHttpOutcome.UpstreamUnauthorized => new(CalendarResourceCreateCode.UpstreamUnauthorized, resourceHref),
+            CalendarMutationHttpOutcome.UpstreamForbidden => new(CalendarResourceCreateCode.UpstreamForbidden, resourceHref),
+            CalendarMutationHttpOutcome.UpstreamRateLimited => new(CalendarResourceCreateCode.UpstreamRateLimited, resourceHref),
+            CalendarMutationHttpOutcome.UpstreamUnavailable =>
                 new(CalendarResourceCreateCode.UpstreamUnavailable, resourceHref),
-            >= HttpStatusCode.InternalServerError =>
+            CalendarMutationHttpOutcome.PossiblyDispatched =>
                 new(CalendarResourceCreateCode.PossiblyDispatched, resourceHref),
-            HttpStatusCode.Accepted => new(CalendarResourceCreateCode.PossiblyDispatched, resourceHref),
-            >= HttpStatusCode.OK and < HttpStatusCode.MultipleChoices =>
+            CalendarMutationHttpOutcome.Dispatched or CalendarMutationHttpOutcome.OtherSuccess =>
                 CalendarResourceCreateResult.Dispatched(resourceHref),
             _ => new(CalendarResourceCreateCode.UpstreamProtocolError, resourceHref)
         };

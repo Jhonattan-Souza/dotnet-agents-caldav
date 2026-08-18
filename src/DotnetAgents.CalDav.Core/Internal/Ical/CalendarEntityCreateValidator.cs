@@ -62,12 +62,7 @@ internal static class CalendarEntityCreateValidator
     public static void ValidateEvent(string uid, CalendarEventCreateFields fields)
     {
         ValidateSafeValue(uid, allowNewLines: false);
-        var start = ValidateTemporal(fields.Start ?? throw new ArgumentException("An Event start is required."));
-        if (fields.End is not null && fields.Duration is not null)
-            throw new ArgumentException("Event end and duration are mutually exclusive.");
-        if (fields.End is not null)
-            ValidateOrderedTemporal(start, ValidateTemporal(fields.End));
-        ValidateDuration(fields.Duration, start.Kind == CalendarTemporalKind.Date);
+        ValidateEventTemporalFields(fields);
         ValidateCommonFields(
             fields.Summary,
             fields.Description,
@@ -87,15 +82,7 @@ internal static class CalendarEntityCreateValidator
     public static void ValidateTodo(string uid, CalendarTodoCreateFields fields)
     {
         ValidateSafeValue(uid, allowNewLines: false);
-        if (fields.Due is not null && fields.Duration is not null)
-            throw new ArgumentException("To-do due and duration are mutually exclusive.");
-        if (fields.Duration is not null && fields.Start is null)
-            throw new ArgumentException("A To-do duration requires a start.");
-        var start = fields.Start is null ? null : ValidateTemporal(fields.Start);
-        var due = fields.Due is null ? null : ValidateTemporal(fields.Due);
-        if (start is not null && due is not null)
-            ValidateOrderedTemporal(start, due);
-        ValidateDuration(fields.Duration, start?.Kind == CalendarTemporalKind.Date);
+        ValidateTodoTemporalFields(fields);
         ValidateCommonFields(
             fields.Summary,
             fields.Description,
@@ -105,6 +92,28 @@ internal static class CalendarEntityCreateValidator
             CalendarEntityKind.Todo);
         ValidateOpenEnum(fields.Status, TodoStatuses);
         ValidateTodoRecurrence(fields.RecurrenceSet, fields.Start);
+    }
+
+    internal static void ValidateEventRecurrencePreNetwork(CalendarEventCreateFields fields)
+    {
+        if (fields.RecurrenceSet is null)
+            return;
+        ValidateEventTemporalFields(fields);
+        ValidateEventRecurrenceCore(
+            fields.RecurrenceSet,
+            fields.Start,
+            recurrenceOverride => ValidateEventTemporalFields(recurrenceOverride.Fields));
+    }
+
+    internal static void ValidateTodoRecurrencePreNetwork(CalendarTodoCreateFields fields)
+    {
+        if (fields.RecurrenceSet is null)
+            return;
+        ValidateTodoTemporalFields(fields);
+        ValidateTodoRecurrenceCore(
+            fields.RecurrenceSet,
+            fields.Start,
+            recurrenceOverride => ValidateTodoTemporalFields(recurrenceOverride.Fields));
     }
 
     internal static void ValidatePatchScalars(CalendarEventPatch patch, CalendarEntityKind entityKind)
@@ -238,6 +247,21 @@ internal static class CalendarEntityCreateValidator
     {
         if (recurrence is null)
             return;
+        ValidateEventRecurrenceCore(
+            recurrence,
+            masterStart,
+            recurrenceOverride =>
+            {
+                ValidateEvent("override", recurrenceOverride.Fields);
+                ValidateOverrideStatus(recurrenceOverride.Status, recurrenceOverride.Fields.Status);
+            });
+    }
+
+    private static void ValidateEventRecurrenceCore(
+        CalendarEventRecurrenceSetCreate recurrence,
+        CalendarTemporalValue? masterStart,
+        Action<CalendarEventRecurrenceOverrideCreate> validateOverride)
+    {
         ValidateRecurrenceCore(
             recurrence.Rule,
             recurrence.RecurrenceDates,
@@ -251,8 +275,7 @@ internal static class CalendarEntityCreateValidator
             ValidateOverrideRange(recurrenceOverride.Range);
             if (recurrenceOverride.Fields.RecurrenceSet is not null)
                 throw new ArgumentException("A recurrence override cannot contain a nested recurrence set.");
-            ValidateEvent("override", recurrenceOverride.Fields);
-            ValidateOverrideStatus(recurrenceOverride.Status, recurrenceOverride.Fields.Status);
+            validateOverride(recurrenceOverride);
         }
     }
 
@@ -262,6 +285,21 @@ internal static class CalendarEntityCreateValidator
     {
         if (recurrence is null)
             return;
+        ValidateTodoRecurrenceCore(
+            recurrence,
+            masterStart,
+            recurrenceOverride =>
+            {
+                ValidateTodo("override", recurrenceOverride.Fields);
+                ValidateOverrideStatus(recurrenceOverride.Status, recurrenceOverride.Fields.Status);
+            });
+    }
+
+    private static void ValidateTodoRecurrenceCore(
+        CalendarTodoRecurrenceSetCreate recurrence,
+        CalendarTemporalValue? masterStart,
+        Action<CalendarTodoRecurrenceOverrideCreate> validateOverride)
+    {
         ValidateRecurrenceCore(
             recurrence.Rule,
             recurrence.RecurrenceDates,
@@ -275,9 +313,32 @@ internal static class CalendarEntityCreateValidator
             ValidateOverrideRange(recurrenceOverride.Range);
             if (recurrenceOverride.Fields.RecurrenceSet is not null)
                 throw new ArgumentException("A recurrence override cannot contain a nested recurrence set.");
-            ValidateTodo("override", recurrenceOverride.Fields);
-            ValidateOverrideStatus(recurrenceOverride.Status, recurrenceOverride.Fields.Status);
+            validateOverride(recurrenceOverride);
         }
+    }
+
+    private static void ValidateEventTemporalFields(CalendarEventCreateFields fields)
+    {
+        var start = ValidateTemporal(fields.Start
+            ?? throw new ArgumentException("An Event start is required."));
+        if (fields.End is not null && fields.Duration is not null)
+            throw new ArgumentException("Event end and duration are mutually exclusive.");
+        if (fields.End is not null)
+            ValidateOrderedTemporal(start, ValidateTemporal(fields.End));
+        ValidateDuration(fields.Duration, start.Kind == CalendarTemporalKind.Date);
+    }
+
+    private static void ValidateTodoTemporalFields(CalendarTodoCreateFields fields)
+    {
+        if (fields.Due is not null && fields.Duration is not null)
+            throw new ArgumentException("To-do due and duration are mutually exclusive.");
+        if (fields.Duration is not null && fields.Start is null)
+            throw new ArgumentException("A To-do duration requires a start.");
+        var start = fields.Start is null ? null : ValidateTemporal(fields.Start);
+        var due = fields.Due is null ? null : ValidateTemporal(fields.Due);
+        if (start is not null && due is not null)
+            ValidateOrderedTemporal(start, due);
+        ValidateDuration(fields.Duration, start?.Kind == CalendarTemporalKind.Date);
     }
 
     internal static void ValidateRecurrencePatch(

@@ -55,6 +55,7 @@ public sealed class CalDavHostBuilder
                     var services = request.Services!;
                     var service = services.GetRequiredService<DotnetAgents.CalDav.Core.Abstractions.ICalendarService>();
                     return await CalendarExecutionPolicy.ExecuteProtectedReadAsync(
+                        services.GetRequiredService<TimeProvider>(),
                         services.GetRequiredService<CalendarOperationAdmission>(),
                         token => ExactCalendarResourceHandler.ReadAsync(request.Params!.Uri, service, token),
                         cancellationToken).ConfigureAwait(false);

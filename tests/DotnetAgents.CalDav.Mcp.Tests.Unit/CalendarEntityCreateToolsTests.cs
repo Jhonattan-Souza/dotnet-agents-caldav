@@ -670,14 +670,14 @@ public sealed class CalendarEntityCreateToolsTests
         const string calendarHref = "https://cal.example/events/";
         const string resourceHref = "https://cal.example/events/event-1.ics";
         var client = Substitute.For<ICalendarClient>();
-        var service = new CalendarService(
+        using var serviceHost = CalendarServiceTestHost.Create(
             client,
-            Options.Create(new CalDavOptions
+            options =>
             {
-                BaseUrl = "https://cal.example",
-                DefaultEventCalendarName = "Events"
-            }),
-            Substitute.For<ILogger<CalendarService>>());
+                options.BaseUrl = "https://cal.example";
+                options.DefaultEventCalendarName = "Events";
+            });
+        var service = serviceHost.Service;
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
             new CalendarDescriptor
             {
@@ -853,15 +853,15 @@ public sealed class CalendarEntityCreateToolsTests
                 TodoSupport = EntityKindSupport.Advertised
             }
         ]);
-        var service = new CalendarService(
+        using var serviceHost = CalendarServiceTestHost.Create(
             client,
-            Options.Create(new CalDavOptions
+            options =>
             {
-                BaseUrl = "https://cal.example",
-                DefaultEventCalendarName = "Entities",
-                DefaultTodoCalendarName = "Entities"
-            }),
-            Substitute.For<ILogger<CalendarService>>());
+                options.BaseUrl = "https://cal.example";
+                options.DefaultEventCalendarName = "Entities";
+                options.DefaultTodoCalendarName = "Entities";
+            });
+        var service = serviceHost.Service;
         var sut = new CalendarEntityCreateTools(service, TimeProvider.System);
         var eventStart = kind == "event"
             ? "\"start\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-17T13:00:00Z\"},"
@@ -922,14 +922,14 @@ public sealed class CalendarEntityCreateToolsTests
             .Returns(CalendarResourceCreateResult.Dispatched(resourceHref));
         client.GetCalendarResourceAsync(resourceHref, Arg.Any<CancellationToken>()).Returns(_ =>
             CalendarResourceRead.Success(resourceHref, "\"recurring-r1\"", dispatched!.AuthoritativeUtf8));
-        var service = new CalendarService(
+        using var serviceHost = CalendarServiceTestHost.Create(
             client,
-            Options.Create(new CalDavOptions
+            options =>
             {
-                BaseUrl = "https://cal.example",
-                DefaultEventCalendarName = "Events"
-            }),
-            Substitute.For<ILogger<CalendarService>>());
+                options.BaseUrl = "https://cal.example";
+                options.DefaultEventCalendarName = "Events";
+            });
+        var service = serviceHost.Service;
         var sut = new CalendarEntityCreateTools(service, TimeProvider.System);
         var arguments = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
             "{\"destination\":{\"mode\":\"default\"},\"entity\":{\"kind\":\"event\",\"uid\":\"recurring-event\","
@@ -970,14 +970,14 @@ public sealed class CalendarEntityCreateToolsTests
                 TodoSupport = EntityKindSupport.NotAdvertised
             }
         ]);
-        var service = new CalendarService(
+        using var serviceHost = CalendarServiceTestHost.Create(
             client,
-            Options.Create(new CalDavOptions
+            options =>
             {
-                BaseUrl = "https://cal.example",
-                DefaultEventCalendarName = "Events"
-            }),
-            Substitute.For<ILogger<CalendarService>>());
+                options.BaseUrl = "https://cal.example";
+                options.DefaultEventCalendarName = "Events";
+            });
+        var service = serviceHost.Service;
         var sut = new CalendarEntityCreateTools(service, TimeProvider.System);
         var arguments = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
             "{\"destination\":{\"mode\":\"default\"},\"entity\":{\"kind\":\"event\",\"uid\":\"period-event\","
@@ -1016,15 +1016,15 @@ public sealed class CalendarEntityCreateToolsTests
         string rule)
     {
         var client = Substitute.For<ICalendarClient>();
-        var service = new CalendarService(
+        using var serviceHost = CalendarServiceTestHost.Create(
             client,
-            Options.Create(new CalDavOptions
+            options =>
             {
-                BaseUrl = "https://cal.example",
-                DefaultEventCalendarName = "Events",
-                DefaultTodoCalendarName = "Todos"
-            }),
-            Substitute.For<ILogger<CalendarService>>());
+                options.BaseUrl = "https://cal.example";
+                options.DefaultEventCalendarName = "Events";
+                options.DefaultTodoCalendarName = "Todos";
+            });
+        var service = serviceHost.Service;
         var sut = new CalendarEntityCreateTools(service, TimeProvider.System);
         var arguments = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
             """
@@ -1076,10 +1076,12 @@ public sealed class CalendarEntityCreateToolsTests
             .Returns(CalendarResourceCreateResult.Dispatched(resourceHref));
         client.GetCalendarResourceAsync(resourceHref, Arg.Any<CancellationToken>()).Returns(_ =>
             CalendarResourceRead.Success(resourceHref, "\"override-r1\"", dispatched!.AuthoritativeUtf8));
-        var service = new CalendarService(
-            client,
-            Options.Create(new CalDavOptions { BaseUrl = "https://cal.example", DefaultEventCalendarName = "Events" }),
-            Substitute.For<ILogger<CalendarService>>());
+        using var serviceHost = CalendarServiceTestHost.Create(client, options =>
+        {
+            options.BaseUrl = "https://cal.example";
+            options.DefaultEventCalendarName = "Events";
+        });
+        var service = serviceHost.Service;
         var sut = new CalendarEntityCreateTools(service, TimeProvider.System);
         var arguments = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
             "{\"destination\":{\"mode\":\"default\"},\"entity\":{\"kind\":\"event\",\"uid\":\"override-event\","

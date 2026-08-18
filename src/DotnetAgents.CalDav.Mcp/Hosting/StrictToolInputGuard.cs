@@ -13,6 +13,7 @@ internal static class StrictToolInputGuard
     private const string ArgumentBytesKey = "DotnetAgents.CalDav.Mcp.StrictToolInputGuard.ArgumentBytes";
     private const string DuplicateKey = "DotnetAgents.CalDav.Mcp.StrictToolInputGuard.Duplicate";
     private const string InvalidStringKey = "DotnetAgents.CalDav.Mcp.StrictToolInputGuard.InvalidString";
+    private const string ViolationsKey = "DotnetAgents.CalDav.Mcp.StrictToolInputGuard.Violations";
 
     public static McpMessageFilter Incoming => next => async (context, cancellationToken) =>
     {
@@ -30,7 +31,10 @@ internal static class StrictToolInputGuard
                 request.Items.TryGetValue(DuplicateKey, out var duplicate) && duplicate is true);
             evidence = evidence with
             {
-                HasInvalidString = request.Items.TryGetValue(InvalidStringKey, out var invalid) && invalid is true
+                HasInvalidString = request.Items.TryGetValue(InvalidStringKey, out var invalid) && invalid is true,
+                CollectedViolations = request.Items.TryGetValue(ViolationsKey, out var violations)
+                    ? violations as IReadOnlyList<CalendarInputViolation>
+                    : null
             };
             var rejection = Reject(request.Params?.Name, evidence);
             return rejection is null
@@ -51,6 +55,7 @@ internal static class StrictToolInputGuard
                 or "calendar_occurrences.restore_cancellation" => RejectOccurrenceMutation(evidence),
             "calendar_resources.move" => RejectMove(evidence),
             "calendar_resources.delete" => RejectDelete(evidence),
+            "calendar_resources.get" => RejectResourceGet(evidence),
             "calendar_resources.exact_get" => RejectExactGet(evidence),
             "calendar_resources.exact_create" or "calendar_resources.exact_replace" => RejectExactWrite(evidence),
             "calendar_resources.exact_move" => RejectExactMove(evidence),
@@ -82,6 +87,9 @@ internal static class StrictToolInputGuard
         Reject(evidence, CalendarResourceMoveTools.MaximumArgumentBytes, CalendarResourceMoveTools.CreateInputGuardError);
 
     private static CallToolResult? RejectExactGet(StrictToolInputEvidence evidence) =>
+        Reject(evidence, CalendarQueryToolSupport.MaximumArgumentBytes, CalendarResourceTools.CreateInputGuardError);
+
+    private static CallToolResult? RejectResourceGet(StrictToolInputEvidence evidence) =>
         Reject(evidence, CalendarQueryToolSupport.MaximumArgumentBytes, CalendarResourceTools.CreateInputGuardError);
 
     private static CallToolResult? RejectExactWrite(StrictToolInputEvidence evidence) => Reject(
@@ -143,6 +151,7 @@ internal static class StrictToolInputGuard
         if (context.JsonRpcMessage is not JsonRpcRequest { Method: "tools/call", Params: JsonObject parameters })
             return;
 
+        var toolName = parameters["name"]?.GetValue<string>();
         JsonNode? arguments;
         try
         {
@@ -162,6 +171,41 @@ internal static class StrictToolInputGuard
         {
             context.Items[InvalidStringKey] = true;
             parameters["arguments"] = new JsonObject();
+        }
+        if (toolName == "calendar_resources.get"
+            && !evidence.HasDuplicateProperty
+            && !evidence.HasInvalidString)
+        {
+            var violations = ValidateResourceGetArguments(arguments);
+            if (violations.Count > 0)
+                context.Items[ViolationsKey] = violations;
+        }
+    }
+
+    internal static IReadOnlyList<CalendarInputViolation> ValidateResourceGetArguments(JsonNode? arguments)
+    {
+        try
+        {
+            if (arguments is not JsonObject value)
+                return [new("/", "invalid_type", "The arguments must be an object.")];
+            var violations = new List<CalendarInputViolation>();
+            foreach (var property in value)
+            {
+                if (property.Key != "href")
+                    violations.Add(new($"/{property.Key}", "unknown_member", "The member is not allowed."));
+            }
+            if (!value.TryGetPropertyValue("href", out var href)
+                || href is not JsonValue hrefValue
+                || !hrefValue.TryGetValue<string>(out var text)
+                || string.IsNullOrEmpty(text))
+            {
+                violations.Add(new("/href", "invalid_member", "A non-empty href string is required."));
+            }
+            return violations;
+        }
+        catch (InvalidOperationException)
+        {
+            return [new("/", "invalid_object", "The arguments object is invalid.")];
         }
     }
 

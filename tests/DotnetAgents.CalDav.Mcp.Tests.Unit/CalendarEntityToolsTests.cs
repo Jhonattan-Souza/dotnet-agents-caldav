@@ -699,10 +699,10 @@ public sealed class CalendarEntityToolsTests
         var enteredRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var client = Substitute.For<ICalendarClient>();
-        var service = new CalendarService(
+        using var serviceHost = CalendarServiceTestHost.Create(
             client,
-            Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
-            Substitute.For<ILogger<CalendarService>>());
+            options => options.BaseUrl = "https://cal.example");
+        var service = serviceHost.Service;
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(
         [
             new CalendarDescriptor
