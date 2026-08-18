@@ -78,7 +78,7 @@ public sealed class CalendarEntityPatchTools
         OpenWorld = true,
         UseStructuredContent = true,
         OutputSchemaType = typeof(CalendarEntityCreateSuccessResult)),
-     Description("Apply a revision-bound semantic patch to one To-do resource at an explicitly supplied absolute snapshot href.")]
+     Description("Apply a revision-bound semantic patch to one To-do resource at an explicitly supplied absolute snapshot href; completion is reserved for todos.complete.")]
     public Task<CallToolResult> PatchTodoAsync(
         RequestContext<CallToolRequestParams> requestContext,
         McpServer server,

@@ -226,15 +226,27 @@ internal static class CalendarEntityCreateSerializer
     private static void AppendNamedComponents(
         StringBuilder content,
         string componentName,
-        IReadOnlyList<CalendarNamedUri>? values)
+        IReadOnlyList<CalendarNamedComponent>? values)
     {
         foreach (var value in values ?? [])
         {
-            ValidateAbsoluteUri(value.Uri);
             content.Append("BEGIN:").Append(componentName).Append("\r\nUID");
             AppendParameters(content, value.Parameters);
-            content.Append(':').Append(EscapeText(value.Uri)).Append("\r\n");
-            AppendText(content, "NAME", value.Label);
+            content.Append(':').Append(EscapeText(value.Uid)).Append("\r\n");
+            AppendTextValue(content, "NAME", value.Name);
+            AppendTextValue(content, "DESCRIPTION", value.Description);
+            if (value.Geo is not null)
+                AppendGeoProperty(content, value.Geo);
+            AppendTextListProperty(
+                content,
+                componentName == "VLOCATION" ? "LOCATION-TYPE" : "RESOURCE-TYPE",
+                value.ComponentTypes);
+            if (value.Url is not null)
+                AppendUriValue(content, "URL", value.Url, includeValueUri: false);
+            AppendRelations(content, value.RelatedTo);
+            AppendUriValues(content, "CONCEPT", value.Concepts, includeValueUri: false);
+            AppendNamedUris(content, "LINK", value.Links);
+            AppendUriValues(content, "STRUCTURED-DATA", value.StructuredDataUris, includeValueUri: true);
             content.Append("END:").Append(componentName).Append("\r\n");
         }
     }
@@ -455,6 +467,11 @@ internal static class CalendarEntityCreateSerializer
             AppendNamedUris(content, "ATTACH", alarm.Attachments);
             AppendIntegerProperty(content, "REPEAT", alarm.Repeat);
             AppendDurationProperty(content, alarm.Duration);
+            AppendTextValue(content, "UID", alarm.Uid);
+            AppendTemporalProperty(content, "ACKNOWLEDGED", alarm.Acknowledged);
+            AppendTokenValue(content, "PROXIMITY", alarm.Proximity);
+            AppendRelations(content, alarm.RelatedTo);
+            AppendNamedComponents(content, "VLOCATION", alarm.ProximityLocations);
             content.Append("END:VALARM\r\n");
         }
     }

@@ -320,6 +320,7 @@ public sealed class CalendarEntityPatchMatrixTests
     {
         var text = new CalendarTextValue("Value", []);
         var named = new CalendarNamedUri("https://example.test/value", "Label", []);
+        var component = new CalendarNamedComponent("component-1", new CalendarTextValue("Label", []), []);
         var uri = new CalendarUriValue("https://example.test/value", []);
         var attendee = new CalendarAttendee("mailto:person@example.test", []);
         var participant = new CalendarParticipant(new("participant-1", []), new("ACTIVE", []));
@@ -341,8 +342,8 @@ public sealed class CalendarEntityPatchMatrixTests
             (Add(CalendarCollectionField.Links, named), "LINK;VALUE=URI;LABEL=Label:https://example.test/value"),
             (Add(CalendarCollectionField.Concepts, uri), "CONCEPT:https://example.test/value"),
             (Add(CalendarCollectionField.StructuredDataUris, uri), "STRUCTURED-DATA;VALUE=URI:https://example.test/value"),
-            (Add(CalendarCollectionField.LocationUris, named), "BEGIN:VLOCATION"),
-            (Add(CalendarCollectionField.ResourceUris, named), "BEGIN:VRESOURCE")
+            (Add(CalendarCollectionField.LocationUris, component), "BEGIN:VLOCATION"),
+            (Add(CalendarCollectionField.ResourceUris, component), "BEGIN:VRESOURCE")
         };
         foreach (var item in cases)
         {
@@ -394,6 +395,7 @@ public sealed class CalendarEntityPatchMatrixTests
     {
         var text = new CalendarTextValue("Value", []);
         var named = new CalendarNamedUri("https://example.test/value", "Label", []);
+        var component = new CalendarNamedComponent("component-1", new CalendarTextValue("Label", []), []);
         var uri = new CalendarUriValue("https://example.test/value", []);
         var attendee = new CalendarAttendee("mailto:person@example.test", []);
         var participant = new CalendarParticipant(new("participant-1", []), new("ACTIVE", []));
@@ -415,8 +417,8 @@ public sealed class CalendarEntityPatchMatrixTests
             Remove(CalendarCollectionField.Links, named),
             Remove(CalendarCollectionField.Concepts, uri),
             Remove(CalendarCollectionField.StructuredDataUris, uri),
-            Remove(CalendarCollectionField.LocationUris, named),
-            Remove(CalendarCollectionField.ResourceUris, named)
+            Remove(CalendarCollectionField.LocationUris, component),
+            Remove(CalendarCollectionField.ResourceUris, component)
         };
 
         foreach (var patch in cases)

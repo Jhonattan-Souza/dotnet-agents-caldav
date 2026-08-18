@@ -22,6 +22,7 @@ jobs:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       PACKAGE_OUTPUT_DIRECTORY: ${{ github.workspace }}/artifacts
       PACKAGE_PROJECT_PATH: src/DotnetAgents.CalDav.Mcp/DotnetAgents.CalDav.Mcp.csproj
+      MCP_SERVER_METADATA_PATH: ${{ runner.temp }}/dotnet-agents-caldav-server.json
 
     steps:
       - name: Checkout
@@ -47,20 +48,71 @@ jobs:
         run: |
           PACKAGE_VERSION="${GITHUB_REF_NAME#v}"
           echo "package_version=${PACKAGE_VERSION}" >> "$GITHUB_OUTPUT"
+          VERSION_WITHOUT_BUILD="${PACKAGE_VERSION%%+*}"
+          if [[ "$VERSION_WITHOUT_BUILD" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Sync server.json version
+      - name: Prepare tag-versioned server metadata
         shell: bash
-        run: |
-          jq --arg ver "${{ steps.version.outputs.package_version }}" \
-             '.version = $ver | .packages[0].version = $ver' \
-             src/DotnetAgents.CalDav.Mcp/.mcp/server.json > server.json.tmp
-          mv server.json.tmp src/DotnetAgents.CalDav.Mcp/.mcp/server.json
+        run: bash scripts/prepare-release-metadata.sh "$GITHUB_REF_NAME" "$MCP_SERVER_METADATA_PATH"
 
       - name: Build Release
-        run: dotnet build -c Release --no-restore
+        run: >
+          dotnet build -c Release --no-restore
+          /p:McpServerMetadataPath="$MCP_SERVER_METADATA_PATH"
 
-      - name: Run tests
-        run: dotnet test -c Release --no-build
+      - name: Run tests with coverage serially
+        run: |
+          dotnet test tests/DotnetAgents.CalDav.Core.Tests.Unit/DotnetAgents.CalDav.Core.Tests.Unit.csproj -c Release --no-build --settings coverage.runsettings --collect:"XPlat Code Coverage" --logger "trx;LogFilePrefix=release-core" --results-directory TestResults
+          dotnet test tests/DotnetAgents.CalDav.Mcp.Tests.Unit/DotnetAgents.CalDav.Mcp.Tests.Unit.csproj -c Release --no-build --settings coverage.runsettings --collect:"XPlat Code Coverage" --logger "trx;LogFilePrefix=release-mcp" --results-directory TestResults
+          dotnet test tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj -c Release --no-build --settings coverage.runsettings --collect:"XPlat Code Coverage" --logger "trx;LogFilePrefix=release-integration" --results-directory TestResults
+
+      - name: Generate coverage report
+        run: >
+          dotnet reportgenerator
+          -reports:"TestResults/**/coverage.cobertura.xml"
+          -targetdir:"coverage-report"
+          -reporttypes:Cobertura
+          -assemblyfilters:"+DotnetAgents.CalDav.Core;+DotnetAgents.CalDav.Mcp;-*Tests*;-xunit*;-testhost*"
+
+      - name: Verify coverage thresholds
+        run: bash scripts/verify-coverage.sh coverage-report 0.90 0.85
+
+      - name: Run strict-preconditions Radicale conformance variant
+        run: >
+          RADICALE_CONFORMANCE_VARIANT=strict-preconditions
+          dotnet test tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj
+          -c Release
+          --no-build
+          --filter "FullyQualifiedName~RadicaleConformanceHarnessTests"
+          --logger "trx;LogFilePrefix=strict-preconditions"
+          --results-directory TestResults
+
+      - name: Run alternate-time-zone Radicale conformance variant
+        run: >
+          RADICALE_CONFORMANCE_VARIANT=alternate-time-zone
+          dotnet test tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj
+          -c Release
+          --no-build
+          --filter "FullyQualifiedName~RadicaleConformanceHarnessTests"
+          --logger "trx;LogFilePrefix=alternate-time-zone"
+          --results-directory TestResults
+
+      - name: Verify complete normative evidence
+        run: |
+          bash scripts/verify-test-results.sh TestResults
+          bash scripts/verify-release-evidence.sh contracts/0.2.0/requirement-evidence-catalog.md contracts/0.2.0/release-evidence-map.json TestResults
+
+      - name: Run Slopwatch
+        run: dotnet tool run slopwatch analyze --config .slopwatch/slopwatch.json --fail-on warning
+
+      - name: Rebuild tag-versioned Release output
+        run: >
+          dotnet build -c Release --no-restore
+          /p:McpServerMetadataPath="$MCP_SERVER_METADATA_PATH"
 
       - name: Pack
         run: >
@@ -69,6 +121,7 @@ jobs:
           --no-build
           -o ${{ env.PACKAGE_OUTPUT_DIRECTORY }}
           /p:Version=${{ steps.version.outputs.package_version }}
+          /p:McpServerMetadataPath="${{ env.MCP_SERVER_METADATA_PATH }}"
 
       - name: Upload package artifacts
         uses: actions/upload-artifact@v7
@@ -117,4 +170,4 @@ jobs:
             ${{ env.PACKAGE_OUTPUT_DIRECTORY }}/*.nupkg
             ${{ env.PACKAGE_OUTPUT_DIRECTORY }}/*.snupkg
           draft: false
-          prerelease: false
+          prerelease: ${{ steps.version.outputs.prerelease }}

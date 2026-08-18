@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http.Headers;
-using System.Text;
 using DotnetAgents.CalDav.Core.Models;
 
 namespace DotnetAgents.CalDav.Core.Internal.Xml;
@@ -11,9 +10,7 @@ internal sealed class CalendarResourceMoveProtocol(
     TimeProvider? timeProvider = null)
 {
     private const int MaximumRedirects = 3;
-    private const int MaximumErrorBodyBytes = 64 * 1024;
     private static readonly HttpMethod MoveMethod = new("MOVE");
-    private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 
     public async Task<CalendarResourceMoveDispatchResult> MoveAsync(
         CalendarResourceMoveDispatchRequest request,
@@ -179,14 +176,19 @@ internal sealed class CalendarResourceMoveProtocol(
         HttpResponseMessage response,
         CancellationToken cancellationToken)
     {
+        var davError = response.StatusCode >= HttpStatusCode.BadRequest
+            ? await DavMutationErrorReader.ReadAsync(response.Content, cancellationToken)
+            : DavMutationErrorKind.None;
         if ((response.StatusCode is HttpStatusCode.Forbidden
                 or HttpStatusCode.Conflict
                 or HttpStatusCode.PreconditionFailed)
-            && await HasNoUidConflictPreconditionAsync(response.Content, cancellationToken))
+            && davError.HasFlag(DavMutationErrorKind.NoUidConflict))
         {
             return new CalendarResourceMoveDispatchResult(
                 CalendarResourceMoveDispatchCode.DestinationConflict);
         }
+        if (davError.HasFlag(DavMutationErrorKind.UnsupportedCapability))
+            return new(CalendarResourceMoveDispatchCode.UnsupportedCapability);
         return MapResponse(response);
     }
 
@@ -211,43 +213,6 @@ internal sealed class CalendarResourceMoveProtocol(
             new(CalendarResourceMoveDispatchCode.PossiblyDispatched),
         _ => new(CalendarResourceMoveDispatchCode.UpstreamProtocolError)
     };
-
-    private static async Task<bool> HasNoUidConflictPreconditionAsync(
-        HttpContent content,
-        CancellationToken cancellationToken)
-    {
-        if (content.Headers.ContentLength > MaximumErrorBodyBytes)
-            return false;
-        try
-        {
-            await using var source = await content.ReadAsStreamAsync(cancellationToken);
-            using var destination = new MemoryStream();
-            var buffer = new byte[8192];
-            while (destination.Length <= MaximumErrorBodyBytes)
-            {
-                var remainingPlusOne = (MaximumErrorBodyBytes - (int)destination.Length) + 1;
-                var read = await source.ReadAsync(
-                    buffer.AsMemory(0, Math.Min(buffer.Length, remainingPlusOne)),
-                    cancellationToken);
-                if (read == 0)
-                {
-                    return DavResponseParser.IsNoUidConflictError(
-                        StrictUtf8.GetString(destination.GetBuffer(), 0, (int)destination.Length));
-                }
-                if (destination.Length + read > MaximumErrorBodyBytes)
-                    return false;
-                await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
-            }
-        }
-        catch (Exception exception) when (exception is DecoderFallbackException
-            or HttpRequestException
-            or IOException
-            or OperationCanceledException)
-        {
-            return false;
-        }
-        return false;
-    }
 
     private int? ReadRetryAfterMilliseconds(RetryConditionHeaderValue? retryAfter)
     {

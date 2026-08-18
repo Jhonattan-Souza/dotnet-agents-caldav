@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Xml;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Configuration;
+using DotnetAgents.CalDav.Core.Internal;
 using DotnetAgents.CalDav.Core.Internal.Ical;
 using DotnetAgents.CalDav.Core.Internal.Xml;
 using DotnetAgents.CalDav.Core.Models;
@@ -250,6 +251,7 @@ internal sealed class CalendarResourceMoveEngine(
         string sourceCalendarHref,
         string sourceHref)
     {
+        CalendarOperationProgress.SetPhase(CalendarOperationPhase.Reconcile);
         using var verification = new CancellationTokenSource(ReconciliationTimeout, timeProvider);
         var destination = await ObserveResourceAsync(
             destinationCalendarHref,

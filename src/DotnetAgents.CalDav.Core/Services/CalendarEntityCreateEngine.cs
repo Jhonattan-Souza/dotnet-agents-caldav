@@ -1,5 +1,6 @@
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Configuration;
+using DotnetAgents.CalDav.Core.Internal;
 using DotnetAgents.CalDav.Core.Internal.Ical;
 using DotnetAgents.CalDav.Core.Internal.Xml;
 using DotnetAgents.CalDav.Core.Models;
@@ -43,7 +44,9 @@ internal sealed class CalendarEntityCreateEngine(
     {
         if (!IsValidEventCreateRequest(request))
             return Failure(CalendarEntityCreateCode.InvalidInput);
-        var prevalidation = PrevalidateDestination(request.Destination);
+        var prevalidation = PrevalidateCreateRequest(
+            request.Destination,
+            request.Fields.RecurrenceSet?.Rule);
         if (prevalidation is not null)
             return prevalidation;
         var contentValidation = PrevalidateEventContent(request);
@@ -70,7 +73,9 @@ internal sealed class CalendarEntityCreateEngine(
         {
             return Failure(CalendarEntityCreateCode.InvalidInput);
         }
-        var prevalidation = PrevalidateDestination(request.Destination);
+        var prevalidation = PrevalidateCreateRequest(
+            request.Destination,
+            request.Fields.RecurrenceSet?.Rule);
         if (prevalidation is not null)
             return prevalidation;
         var contentValidation = PrevalidateTodoContent(request);
@@ -241,6 +246,7 @@ internal sealed class CalendarEntityCreateEngine(
         CalendarResourceCreateResult transport,
         long startedTimestamp)
     {
+        CalendarOperationProgress.SetPhase(CalendarOperationPhase.Reconcile);
         var observedResult = await ReadVerificationAsync(transport, startedTimestamp);
         if (observedResult.Failure is not null)
             return observedResult.Failure;
@@ -392,6 +398,16 @@ internal sealed class CalendarEntityCreateEngine(
             request.Uid ?? "generated-uid",
             request.Fields,
             timeProvider.GetUtcNow()));
+
+    private static CalendarEntityCreateResult? PrevalidateRecurrenceCapability(string? rule) =>
+        CalendarEntityCreateValidator.RequiresUnsupportedRecurrenceScale(rule)
+            ? Failure(CalendarEntityCreateCode.UnsupportedCapability)
+            : null;
+
+    private CalendarEntityCreateResult? PrevalidateCreateRequest(
+        CalendarCreateDestination destination,
+        string? recurrenceRule) => PrevalidateDestination(destination)
+            ?? PrevalidateRecurrenceCapability(recurrenceRule);
 
     private CalendarEntityCreateResult? PrevalidateTodoContent(CalendarTodoCreateRequest request) =>
         PrevalidateContent(() => CalendarEntityCreateSerializer.SerializeTodo(

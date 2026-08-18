@@ -86,6 +86,24 @@ internal static class DavResponseParser
         }
     }
 
+    /// <summary>Recognizes bounded DAV/CalDAV errors that state the requested operation is unsupported.</summary>
+    public static bool IsUnsupportedCapabilityError(string responseXml)
+    {
+        try
+        {
+            var document = ParseDocument(responseXml);
+            return document.Descendants().Any(element =>
+                element.Name.Namespace == CalDav
+                    && element.Name.LocalName is "supported-calendar-data" or "supported-calendar-component"
+                || element.Name.Namespace == Dav
+                    && element.Name.LocalName is "supported-method" or "supported-report");
+        }
+        catch (XmlException)
+        {
+            return false;
+        }
+    }
+
     private static string? TryParseCalendarResourceHref(XElement response)
     {
         var responseStatus = response.Element(Dav + "status");

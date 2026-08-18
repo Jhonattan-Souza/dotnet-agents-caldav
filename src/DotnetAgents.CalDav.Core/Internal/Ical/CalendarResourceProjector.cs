@@ -242,6 +242,8 @@ internal static class CalendarResourceProjector
             diagnostic = ValidateCalendarProperties(document.Properties);
             if (diagnostic is not null)
                 return Opaque(properties, diagnostic);
+            if (document.Properties.Any(HasUnsupportedTypedProjectionValue))
+                return Opaque(properties, "typed_projection_unsupported");
             if (HasUnsupportedCalendarScale(document.Properties))
                 return Opaque(properties, "typed_projection_invalid");
             diagnostic = ValidateFilteredProjectionExtensions(document.Properties);
@@ -422,13 +424,21 @@ internal static class CalendarResourceProjector
             return "registered_property_value_invalid";
         if (properties.Any(HasInvalidKnownValue))
             return "typed_projection_invalid";
-
         var rootProperties = properties.Where(property => property.ComponentPath.Count == 1).ToArray();
         return GetRequiredValue(rootProperties, "VERSION") is null
             || GetRequiredValue(rootProperties, "PRODID") is null
                 ? "calendar_required_property_invalid"
                 : null;
     }
+
+    private static bool HasUnsupportedTypedProjectionValue(CalendarContentProperty property) =>
+        property.Name.ToUpperInvariant() switch
+        {
+            "ATTACH" or "IMAGE" or "LINK" or "STRUCTURED-DATA" =>
+                GetSingleParameterValue(property, "VALUE") is { } value
+                && !value.Equals("URI", StringComparison.OrdinalIgnoreCase),
+            _ => false
+        };
 
     private static bool HasExactCalendarVersion(IReadOnlyList<CalendarContentProperty> properties) =>
         properties.Count(property => property.ComponentPath.Count == 1

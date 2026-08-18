@@ -671,10 +671,13 @@ public sealed class ExactCalendarResourceTests
     }
 
     [Theory]
+    [InlineData("create", -1)]
     [InlineData("create", 0)]
     [InlineData("create", 1)]
+    [InlineData("replace", -1)]
     [InlineData("replace", 0)]
     [InlineData("replace", 1)]
+    [InlineData("move", -1)]
     [InlineData("move", 0)]
     [InlineData("move", 1)]
     public async Task ExactWriteRawAsync_EnforcesExactMetadataBoundaryBeforeReview(
@@ -727,8 +730,8 @@ public sealed class ExactCalendarResourceTests
         };
 
         result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe(
-            extraByte == 0 ? "invalid_input" : "payload_too_large");
-        var expectedReviews = extraByte == 0 ? 1 : 0;
+            extraByte <= 0 ? "invalid_input" : "payload_too_large");
+        var expectedReviews = extraByte <= 0 ? 1 : 0;
         service.ReceivedCalls().Count(call => call.GetMethodInfo().Name.StartsWith(
             "ReviewExact",
             StringComparison.Ordinal)).ShouldBe(expectedReviews);
@@ -1067,7 +1070,8 @@ public sealed class ExactCalendarResourceTests
     public async Task ExactGetBlobCanBeSubmittedToExactReplaceWithoutChangingSplitUtf8FoldBytes()
     {
         var prefix = Encoding.UTF8.GetBytes("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Tests//EN\r\n"
-            + "BEGIN:VEVENT\r\nUID:roundtrip\r\nDTSTAMP:20260817T120000Z\r\nDTSTART:20260818T120000Z\r\nSUMMARY:Caf");
+            + "BEGIN:VEVENT\r\nUID:roundtrip\r\nDTSTAMP:20260817T120000Z\r\nDTSTART:20260818T120000Z\r\n"
+            + "RRULE:FREQ=YEARLY;RSCALE=CHINESE;SKIP=BACKWARD\r\nSUMMARY:Caf");
         var suffix = Encoding.UTF8.GetBytes("\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n");
         byte[] bytes = [.. prefix, 0xc3, (byte)'\r', (byte)'\n', (byte)' ', 0xa9, .. suffix];
         var snapshot = CreateSnapshot("\"r1\"") with { AuthoritativeUtf8 = bytes };

@@ -296,6 +296,8 @@ public sealed class CalendarOccurrenceMutationServiceTests
     [InlineData(CalendarEntityKind.Todo, "VTODO", "DTSTART;VALUE=DATE:20260818", CalendarTemporalKind.Date, "2026-08-25", null, "RDATE;VALUE=DATE:20260825")]
     [InlineData(CalendarEntityKind.Event, "VEVENT", "DTSTART:20260818T090000", CalendarTemporalKind.FloatingDateTime, "2026-08-25T09:00:00", null, "RDATE:20260825T090000")]
     [InlineData(CalendarEntityKind.Todo, "VTODO", "DTSTART:20260818T090000", CalendarTemporalKind.FloatingDateTime, "2026-08-25T09:00:00", null, "RDATE:20260825T090000")]
+    [InlineData(CalendarEntityKind.Event, "VEVENT", "DTSTART:20260818T090000Z", CalendarTemporalKind.UtcDateTime, "2026-08-25T09:00:00Z", null, "RDATE:20260825T090000Z")]
+    [InlineData(CalendarEntityKind.Todo, "VTODO", "DTSTART:20260818T090000Z", CalendarTemporalKind.UtcDateTime, "2026-08-25T09:00:00Z", null, "RDATE:20260825T090000Z")]
     [InlineData(CalendarEntityKind.Event, "VEVENT", "DTSTART;TZID=Europe/Zurich:20260818T090000", CalendarTemporalKind.ZonedDateTime, "2026-08-25T09:00:00", "Europe/Zurich", "RDATE;TZID=Europe/Zurich:20260825T090000")]
     [InlineData(CalendarEntityKind.Todo, "VTODO", "DTSTART;TZID=Europe/Zurich:20260818T090000", CalendarTemporalKind.ZonedDateTime, "2026-08-25T09:00:00", "Europe/Zurich", "RDATE;TZID=Europe/Zurich:20260825T090000")]
     public async Task AddOccurrenceAsync_PreservesEveryTemporalFamilyForEventAndTodo(

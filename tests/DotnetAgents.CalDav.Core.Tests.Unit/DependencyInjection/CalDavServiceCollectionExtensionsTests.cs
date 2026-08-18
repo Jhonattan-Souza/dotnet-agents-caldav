@@ -116,6 +116,25 @@ public sealed class CalDavServiceCollectionExtensionsTests
     }
 
     [Fact]
+    public async Task AddCalDavCalendars_DoesNotRetryWebDavMove()
+    {
+        var handler = new CountingUnavailableHandler();
+        using var provider = BuildProvider(handler);
+        var client = provider.GetRequiredService<ICalendarClient>();
+
+        var result = await client.MoveCalendarResourceAsync(
+            new CalendarResourceMoveDispatchRequest(
+                "https://cal.example/tasks/a.ics",
+                "https://cal.example/tasks/b.ics",
+                "\"r1\""),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceMoveDispatchCode.PossiblyDispatched);
+        handler.RequestCount.ShouldBe(1);
+        handler.Methods.ShouldHaveSingleItem().Method.ShouldBe("MOVE");
+    }
+
+    [Fact]
     public async Task AddCalDavCalendars_CallerCancellationStopsReadWithoutRetry()
     {
         var handler = new CancelingHandler();
@@ -130,7 +149,29 @@ public sealed class CalDavServiceCollectionExtensionsTests
         handler.RequestCount.ShouldBeLessThanOrEqualTo(1);
     }
 
-    private static ServiceProvider BuildProvider(HttpMessageHandler handler)
+    [Fact]
+    public async Task AddCalDavCalendars_CancelsEachInFlightHttpAttemptAtTenSeconds()
+    {
+        var handler = new BlockingHandler();
+        var time = new ManualTimeProvider(DateTimeOffset.Parse("2026-08-17T12:00:00Z"));
+        using var provider = BuildProvider(handler, time);
+        var client = provider.GetRequiredService<ICalendarClient>();
+        using var cancellation = new CancellationTokenSource();
+
+        var pending = client.GetCalendarResourceAsync(
+            "https://cal.example/events/a.ics", cancellation.Token);
+        await handler.Started.Task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+        time.Advance(TimeSpan.FromMilliseconds(9_999));
+        handler.CancellationCount.ShouldBe(0);
+        time.Advance(TimeSpan.FromMilliseconds(1));
+        await handler.FirstCancellation.Task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+
+        handler.CancellationCount.ShouldBe(1);
+        cancellation.Cancel();
+        await Should.ThrowAsync<OperationCanceledException>(() => pending);
+    }
+
+    private static ServiceProvider BuildProvider(HttpMessageHandler handler, TimeProvider? timeProvider = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -140,6 +181,8 @@ public sealed class CalDavServiceCollectionExtensionsTests
             options.Username = "user";
             options.Password = "password";
         });
+        if (timeProvider is not null)
+            services.AddSingleton(timeProvider);
         services.AddHttpClient<CalDavClient>().ConfigurePrimaryHttpMessageHandler(() => handler);
         return services.BuildServiceProvider();
     }
@@ -180,6 +223,96 @@ public sealed class CalDavServiceCollectionExtensionsTests
             var pending = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             await pending.Task.WaitAsync(cancellationToken);
             return new HttpResponseMessage(System.Net.HttpStatusCode.OK);
+        }
+    }
+
+    private sealed class BlockingHandler : HttpMessageHandler
+    {
+        private int _cancellationCount;
+        internal TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource FirstCancellation { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal int CancellationCount => Volatile.Read(ref _cancellationCount);
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            Started.TrySetResult();
+            var pending = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            try
+            {
+                await pending.Task.WaitAsync(cancellationToken);
+                return new HttpResponseMessage(System.Net.HttpStatusCode.OK);
+            }
+            finally
+            {
+                if (Interlocked.Increment(ref _cancellationCount) == 1)
+                    FirstCancellation.TrySetResult();
+            }
+        }
+    }
+
+    private sealed class ManualTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        private readonly List<ManualTimer> _timers = [];
+        private long _timestamp;
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+        public override DateTimeOffset GetUtcNow() => utcNow;
+        public override long GetTimestamp() => _timestamp;
+
+        public override ITimer CreateTimer(
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime,
+            TimeSpan period)
+        {
+            var timer = new ManualTimer(this, callback, state, dueTime, period);
+            _timers.Add(timer);
+            return timer;
+        }
+
+        internal void Advance(TimeSpan amount)
+        {
+            utcNow += amount;
+            _timestamp += amount.Ticks;
+            foreach (var timer in _timers.ToArray())
+                timer.FireIfDue();
+        }
+
+        private sealed class ManualTimer(
+            ManualTimeProvider owner,
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime,
+            TimeSpan period) : ITimer
+        {
+            private DateTimeOffset? _dueAt = dueTime == Timeout.InfiniteTimeSpan
+                ? null
+                : owner.GetUtcNow() + dueTime;
+            private bool _disposed;
+
+            public bool Change(TimeSpan newDueTime, TimeSpan newPeriod)
+            {
+                if (_disposed)
+                    return false;
+                period = newPeriod;
+                _dueAt = newDueTime == Timeout.InfiniteTimeSpan
+                    ? null
+                    : owner.GetUtcNow() + newDueTime;
+                return true;
+            }
+
+            public void Dispose() => _disposed = true;
+            public ValueTask DisposeAsync() { Dispose(); return ValueTask.CompletedTask; }
+
+            internal void FireIfDue()
+            {
+                if (_disposed || _dueAt is null || owner.GetUtcNow() < _dueAt)
+                    return;
+                _dueAt = period == Timeout.InfiniteTimeSpan ? null : owner.GetUtcNow() + period;
+                callback(state);
+            }
         }
     }
 }

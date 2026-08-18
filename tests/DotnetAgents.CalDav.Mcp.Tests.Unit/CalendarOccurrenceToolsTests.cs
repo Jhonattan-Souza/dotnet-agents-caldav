@@ -20,6 +20,7 @@ public sealed class CalendarOccurrenceToolsTests
     private static readonly CalendarEntityUtcArgument To = new("utcDateTime", "2026-08-16T12:00:00Z");
 
     [Theory]
+    [InlineData(-1, false)]
     [InlineData(0, false)]
     [InlineData(1, true)]
     public async Task QueryRawAsync_EnforcesExactArgumentByteBoundary(int extraByte, bool rejected)
@@ -67,6 +68,28 @@ public sealed class CalendarOccurrenceToolsTests
         observed.ShouldNotBeNull();
         observed.Scope.Calendar!.Href.ShouldBe("https://cal.example/a/");
         observed.EvaluationTimeZone.ShouldBe("America/New_York");
+    }
+
+    [Theory]
+    [InlineData(50)]
+    [InlineData(200)]
+    public async Task QueryCoreAsync_AcceptsDefaultAndMaximumPageSizes(int pageSize)
+    {
+        var service = Substitute.For<ICalendarService>();
+        service.QueryOccurrencesAsync(Arg.Any<CalendarOccurrenceQuery>(), Arg.Any<CancellationToken>())
+            .Returns(CalendarOccurrenceQueryResult.Success([]));
+        var sut = CreateTool(service, new MutableTimeProvider(Now));
+
+        var result = await sut.QueryCoreAsync(
+            new CalendarEntityScopeArgument("all"),
+            From,
+            To,
+            CancellationToken.None,
+            pageSize: pageSize);
+
+        result.IsError.ShouldBe(false);
+        await service.Received(1).QueryOccurrencesAsync(
+            Arg.Any<CalendarOccurrenceQuery>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -289,7 +312,8 @@ public sealed class CalendarOccurrenceToolsTests
                 Occurrence("2026-08-15T12:00:00Z", "https://cal.example/a/", "z", "2026-08-15T10:00:00Z")
             ]));
         var time = new MutableTimeProvider(Now);
-        var sut = CreateTool(service, time);
+        var key = Enumerable.Range(0, 64).Select(index => (byte)index).ToArray();
+        var sut = CreateTool(service, time, key, "cursor-secret-password-sentinel");
 
         var first = await sut.QueryCoreAsync(
             new CalendarEntityScopeArgument("all"), From, To, CancellationToken.None,
@@ -406,13 +430,23 @@ public sealed class CalendarOccurrenceToolsTests
                 Occurrence("2026-08-15T13:00:00Z", "https://cal.example/a/", "a", "2026-08-15T13:00:00Z")
             ]));
         var time = new MutableTimeProvider(Now);
-        var sut = CreateTool(service, time);
+        var key = Enumerable.Range(0, 64).Select(index => (byte)index).ToArray();
+        var sut = CreateTool(service, time, key, "cursor-secret-password-sentinel");
         var first = await sut.QueryCoreAsync(new CalendarEntityScopeArgument("all"), From, To, CancellationToken.None, pageSize: 1);
         var repeated = await sut.QueryCoreAsync(new CalendarEntityScopeArgument("all"), From, To, CancellationToken.None, pageSize: 1);
         var cursor = GetCursor(first);
         var otherCursor = GetCursor(repeated);
 
         cursor.ShouldNotBe(otherCursor);
+        var protectedBytes = DecodeBase64Url(cursor);
+        var protectedText = Encoding.UTF8.GetString(protectedBytes);
+        protectedText.ShouldNotContain("https://cal.example/a/");
+        protectedText.ShouldNotContain("https://cal.example/a/a.ics");
+        protectedText.ShouldNotContain("2026-08-15T12:00:00Z");
+        protectedText.ShouldNotContain("2026-08-16T12:00:00Z");
+        protectedText.ShouldNotContain("https://cal.example");
+        protectedText.ShouldNotContain("user");
+        protectedText.ShouldNotContain("cursor-secret-password-sentinel");
         await AssertInvalidCursor(sut.QueryCoreAsync(
             new CalendarEntityScopeArgument("all"), From, To, CancellationToken.None, pageSize: 2, cursor: cursor));
         await AssertInvalidCursor(sut.QueryCoreAsync(
@@ -566,6 +600,13 @@ public sealed class CalendarOccurrenceToolsTests
                 key),
             timeProvider);
 
+    private static byte[] DecodeBase64Url(string value)
+    {
+        var normalized = value.Replace('-', '+').Replace('_', '/');
+        normalized = normalized.PadRight(normalized.Length + ((4 - normalized.Length % 4) % 4), '=');
+        return Convert.FromBase64String(normalized);
+    }
+
     private static CalendarOccurrenceSnapshot Occurrence(
         string effectiveStart,
         string calendarHref,
@@ -574,6 +615,9 @@ public sealed class CalendarOccurrenceToolsTests
         byte[]? bytes = null)
     {
         bytes ??= Encoding.UTF8.GetBytes("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n");
+        var properties = bytes.Length >= 3_000_000
+            ? LargeCalendarProperties(bytes.Length)
+            : [];
         var temporalIdentity = new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, identity);
         var effective = new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, effectiveStart);
         return new CalendarOccurrenceSnapshot(
@@ -582,11 +626,22 @@ public sealed class CalendarOccurrenceToolsTests
                 $"{calendarHref}{uid}.ics",
                 "\"r1\"",
                 bytes,
-                [],
+                properties,
                 new CalendarResourceProjection(CalendarResourceProjectionKind.Event, uid, "summary"),
                 []),
             temporalIdentity,
             new CalendarOccurrenceTiming(temporalIdentity, effective, EvaluatedStartUtc: effective));
+    }
+
+    private static IReadOnlyList<CalendarProperty> LargeCalendarProperties(int length)
+    {
+        var value = new string('x', checked(length * 2));
+        return
+        [
+            new CalendarProperty(
+                [new CalendarComponentPathSegment("VCALENDAR", 0), new CalendarComponentPathSegment("VEVENT", 0)],
+                "X-LARGE", [], CalendarPropertyValueType.Unknown, value, $"X-LARGE:{value}\r\n")
+        ];
     }
 
     private static string GetCursor(ModelContextProtocol.Protocol.CallToolResult result) =>

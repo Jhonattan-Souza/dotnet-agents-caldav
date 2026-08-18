@@ -49,7 +49,7 @@ internal sealed class CalendarResourceUpdateProtocol(
                 HttpCompletionOption.ResponseHeadersRead,
                 cancellationToken);
             if (!IsMethodPreservingRedirect(response.StatusCode))
-                return MapResponse(response);
+                return await MapResponseAsync(response, cancellationToken);
             if (redirectCount >= MaximumRedirects
                 || !TryResolveRedirect(currentUri, response.Headers.Location, out var redirectUri))
             {
@@ -126,6 +126,19 @@ internal sealed class CalendarResourceUpdateProtocol(
 
     private static bool IsMethodPreservingRedirect(HttpStatusCode statusCode) => statusCode is
         HttpStatusCode.TemporaryRedirect or HttpStatusCode.PermanentRedirect;
+
+    private async Task<CalendarResourceUpdateDispatchResult> MapResponseAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        if (response.StatusCode >= HttpStatusCode.BadRequest
+            && (await DavMutationErrorReader.ReadAsync(response.Content, cancellationToken))
+                .HasFlag(DavMutationErrorKind.UnsupportedCapability))
+        {
+            return new(CalendarResourceUpdateDispatchCode.UnsupportedCapability);
+        }
+        return MapResponse(response);
+    }
 
     private CalendarResourceUpdateDispatchResult MapResponse(HttpResponseMessage response) => response.StatusCode switch
     {

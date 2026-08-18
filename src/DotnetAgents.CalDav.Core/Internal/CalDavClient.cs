@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Buffers;
+using System.IO.Compression;
+using System.Collections.Concurrent;
 using System.Net;
 using System.Text;
 using DotnetAgents.CalDav.Core.Abstractions;
@@ -28,17 +30,30 @@ internal sealed class CalDavClient : ICalendarClient
     private readonly HttpClient _httpClient;
     private readonly IOptions<CalDavOptions> _options;
     private readonly ILogger<CalDavClient> _logger;
+    private readonly ConcurrentDictionary<CapabilityKey, CapabilityState> _capabilities = new();
+    private readonly object _configurationGate = new();
+    private int _configurationFingerprint;
+    private long _capabilityGeneration;
 
     public CalDavClient(HttpClient httpClient, IOptions<CalDavOptions> options, ILogger<CalDavClient> logger)
     {
         _httpClient = httpClient;
         _options = options;
         _logger = logger;
+        _configurationFingerprint = GetConfigurationFingerprint(options.Value);
+    }
+
+    public void RediscoverCapabilities()
+    {
+        EnsureCapabilityConfiguration();
+        lock (_configurationGate)
+            InvalidateCapabilityObservations();
     }
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<CalendarDescriptor>> GetCalendarsAsync(CancellationToken cancellationToken)
     {
+        CalendarOperationProgress.SetPhase(CalendarOperationPhase.Discovery);
         using var activity = ActivitySource.StartActivity("caldav.get_calendars", ActivityKind.Client);
 
         var homeSetHref = await DiscoverCalendarHomeSetAsync(cancellationToken, failOnNotFound: true);
@@ -75,6 +90,9 @@ internal sealed class CalDavClient : ICalendarClient
         DateTimeOffset? to,
         CancellationToken cancellationToken)
     {
+        CalendarOperationProgress.SetPhase(CalendarOperationPhase.Fetch);
+        EnsureCapabilityConfiguration();
+        var generation = Volatile.Read(ref _capabilityGeneration);
         if (!TryCanonicalizeCalendarHref(
                 new Uri(_options.Value.BaseUrl, UriKind.Absolute),
                 calendarHref,
@@ -83,30 +101,13 @@ internal sealed class CalDavClient : ICalendarClient
             throw new CalendarDiscoveryProtocolException("Unsafe CalDAV REPORT href.");
         }
         var authorizedCalendarUri = new Uri(authorizedCalendarHref, UriKind.Absolute);
-        var body = DavRequestBuilder.BuildCalendarEntityQuery(entityKind, from, to);
-        (string Content, Uri RequestUri) response;
-        try
-        {
-            response = await SendReportAsync(calendarHref, body, cancellationToken);
-        }
-        catch (CalendarQueryFilterUnsupportedException) when (from is not null && to is not null)
-        {
-            try
-            {
-                response = await SendReportAsync(
-                    calendarHref,
-                    DavRequestBuilder.BuildCalendarEntityQuery(entityKind),
-                    cancellationToken);
-            }
-            catch (CalendarQueryFilterUnsupportedException exception)
-            {
-                throw new CalendarDiscoveryUnsupportedCapabilityException(exception.Message);
-            }
-        }
-        catch (CalendarQueryFilterUnsupportedException exception)
-        {
-            throw new CalendarDiscoveryUnsupportedCapabilityException(exception.Message);
-        }
+        var response = await QueryWithCapabilitiesAsync(
+            authorizedCalendarHref,
+            entityKind,
+            from,
+            to,
+            generation,
+            cancellationToken);
         var calendarUri = response.RequestUri;
         var hrefs = new List<string>();
         foreach (var candidateHref in DavResponseParser.ParseCalendarResourceHrefs(response.Content))
@@ -123,9 +124,62 @@ internal sealed class CalDavClient : ICalendarClient
         return hrefs.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
     }
 
+    private async Task<(string Content, Uri RequestUri)> QueryWithCapabilitiesAsync(
+        string calendarHref,
+        CalendarEntityKind entityKind,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        long generation,
+        CancellationToken cancellationToken)
+    {
+        var isFiltered = (from, to) is ({ }, { });
+        var minimalKey = CapabilityKey.Query(calendarHref, entityKind, filtered: false);
+        var filteredKey = CapabilityKey.Query(calendarHref, entityKind, filtered: true);
+        try
+        {
+            if (isFiltered && IsUnavailable(filteredKey))
+                throw new CalendarQueryFilterUnsupportedException();
+            if (!isFiltered && IsUnavailable(minimalKey))
+                throw new CalendarDiscoveryUnsupportedCapabilityException("The minimal Calendar query capability is unavailable.");
+
+            var response = await SendReportAsync(
+                calendarHref,
+                DavRequestBuilder.BuildCalendarEntityQuery(entityKind, from, to),
+                cancellationToken);
+            ObserveCapability(isFiltered ? filteredKey : minimalKey, CapabilityState.Verified, generation);
+            return response;
+        }
+        catch (CalendarQueryFilterUnsupportedException) when (isFiltered)
+        {
+            ObserveCapability(filteredKey, CapabilityState.Unavailable, generation);
+            try
+            {
+                if (IsUnavailable(minimalKey))
+                    throw new CalendarDiscoveryUnsupportedCapabilityException("The minimal Calendar query capability is unavailable.");
+                var response = await SendReportAsync(
+                    calendarHref,
+                    DavRequestBuilder.BuildCalendarEntityQuery(entityKind),
+                    cancellationToken);
+                ObserveCapability(minimalKey, CapabilityState.Verified, generation);
+                return response;
+            }
+            catch (CalendarQueryFilterUnsupportedException exception)
+            {
+                ObserveCapability(minimalKey, CapabilityState.Unavailable, generation);
+                throw new CalendarDiscoveryUnsupportedCapabilityException(exception.Message);
+            }
+        }
+        catch (CalendarQueryFilterUnsupportedException exception)
+        {
+            ObserveCapability(minimalKey, CapabilityState.Unavailable, generation);
+            throw new CalendarDiscoveryUnsupportedCapabilityException(exception.Message);
+        }
+    }
+
     /// <inheritdoc />
     public async Task<CalendarResourceRead> GetCalendarResourceAsync(string href, CancellationToken cancellationToken)
     {
+        CalendarOperationProgress.SetPhase(CalendarOperationPhase.Fetch);
         if (!TryValidateAbsoluteResourceHref(href, out var resourceUri))
             return new CalendarResourceRead(CalendarResourceReadCode.InvalidInput);
 
@@ -161,32 +215,132 @@ internal sealed class CalDavClient : ICalendarClient
     }
 
     /// <inheritdoc />
+    public async Task<CalendarResourceRead> GetCalendarResourceForQueryAsync(
+        string calendarHref,
+        string href,
+        CancellationToken cancellationToken)
+    {
+        CalendarOperationProgress.SetPhase(CalendarOperationPhase.Fetch);
+        EnsureCapabilityConfiguration();
+        var generation = Volatile.Read(ref _capabilityGeneration);
+        var origin = new Uri(_options.Value.BaseUrl, UriKind.Absolute);
+        if (!TryCanonicalizeCalendarHref(origin, calendarHref, out var canonicalCalendarHref)
+            || !TryValidateAbsoluteResourceHref(href, out var resourceUri)
+            || !IsDirectResourceOf(new Uri(canonicalCalendarHref, UriKind.Absolute), resourceUri))
+        {
+            return new CalendarResourceRead(CalendarResourceReadCode.InvalidInput);
+        }
+
+        var capabilityKey = CapabilityKey.CalendarMultiget(canonicalCalendarHref);
+        if (IsUnavailable(capabilityKey))
+            throw new CalendarDiscoveryUnsupportedCapabilityException("The Calendar multiget capability is unavailable.");
+
+        (string Content, Uri RequestUri) response;
+        try
+        {
+            response = await SendReportAsync(
+                canonicalCalendarHref,
+                DavRequestBuilder.BuildCalendarMultiget(resourceUri.AbsoluteUri),
+                cancellationToken);
+        }
+        catch (CalendarQueryFilterUnsupportedException exception)
+        {
+            ObserveCapability(capabilityKey, CapabilityState.Unavailable, generation);
+            throw new CalendarDiscoveryUnsupportedCapabilityException(exception.Message);
+        }
+        var returned = new List<string>();
+        foreach (var candidate in DavResponseParser.ParseCalendarResourceHrefs(response.Content))
+        {
+            if (!TryCanonicalizeResourceHref(response.RequestUri, candidate, out var canonical))
+                throw new CalendarDiscoveryProtocolException("The Calendar multiget response contained an unsafe resource href.");
+            returned.Add(canonical);
+        }
+        ObserveCapability(capabilityKey, CapabilityState.Verified, generation);
+        if (!returned.Contains(resourceUri.AbsoluteUri, StringComparer.Ordinal))
+            return new CalendarResourceRead(CalendarResourceReadCode.NotFound);
+        return await GetCalendarResourceAsync(resourceUri.AbsoluteUri, cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async Task<CalendarResourceCreateResult> CreateCalendarResourceAsync(
         CalendarResourceCreateRequest request,
-        CancellationToken cancellationToken) => await new CalendarResourceCreateProtocol(
-            _httpClient,
-            new Uri(_options.Value.BaseUrl, UriKind.Absolute)).CreateAsync(request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var key = CapabilityKey.Mutation(
+            _options.Value.BaseUrl,
+            request.CalendarHref,
+            request.ResourceHref,
+            "create");
+        return await ExecuteCapabilityOperationAsync(
+            key,
+            () => new CalendarResourceCreateResult(CalendarResourceCreateCode.UnsupportedCapability, request.ResourceHref),
+            () => new CalendarResourceCreateProtocol(_httpClient, new Uri(_options.Value.BaseUrl, UriKind.Absolute))
+                .CreateAsync(request, cancellationToken),
+            result => result.Code == CalendarResourceCreateCode.UnsupportedCapability,
+            result => result.Code == CalendarResourceCreateCode.Dispatched);
+    }
 
     /// <inheritdoc />
     public async Task<CalendarResourceDeleteDispatchResult> DeleteCalendarResourceAsync(
         CalendarResourceDeleteRequest request,
-        CancellationToken cancellationToken) => await new CalendarResourceDeleteProtocol(
-            _httpClient,
-            new Uri(_options.Value.BaseUrl, UriKind.Absolute)).DeleteAsync(request, cancellationToken);
+        CancellationToken cancellationToken) => await ExecuteCapabilityOperationAsync(
+            CapabilityKey.Mutation(_options.Value.BaseUrl, ParentHref(request.ResourceHref), request.ResourceHref, "delete"),
+            () => new CalendarResourceDeleteDispatchResult(CalendarResourceDeleteDispatchCode.UnsupportedCapability),
+            () => new CalendarResourceDeleteProtocol(_httpClient, new Uri(_options.Value.BaseUrl, UriKind.Absolute))
+                .DeleteAsync(request, cancellationToken),
+            result => result.Code == CalendarResourceDeleteDispatchCode.UnsupportedCapability,
+            result => result.Code == CalendarResourceDeleteDispatchCode.Dispatched);
 
     /// <inheritdoc />
     public async Task<CalendarResourceMoveDispatchResult> MoveCalendarResourceAsync(
         CalendarResourceMoveDispatchRequest request,
-        CancellationToken cancellationToken) => await new CalendarResourceMoveProtocol(
-            _httpClient,
-            new Uri(_options.Value.BaseUrl, UriKind.Absolute)).MoveAsync(request, cancellationToken);
+        CancellationToken cancellationToken) => await ExecuteCapabilityOperationAsync(
+            CapabilityKey.Mutation(
+                _options.Value.BaseUrl,
+                $"{ParentHref(request.SourceHref)}->{ParentHref(request.DestinationHref)}",
+                request.SourceHref,
+                "move"),
+            () => new CalendarResourceMoveDispatchResult(CalendarResourceMoveDispatchCode.UnsupportedCapability),
+            () => new CalendarResourceMoveProtocol(_httpClient, new Uri(_options.Value.BaseUrl, UriKind.Absolute))
+                .MoveAsync(request, cancellationToken),
+            result => result.Code == CalendarResourceMoveDispatchCode.UnsupportedCapability,
+            result => result.Code == CalendarResourceMoveDispatchCode.Dispatched);
 
     /// <inheritdoc />
     public async Task<CalendarResourceUpdateDispatchResult> UpdateCalendarResourceAsync(
         CalendarResourceUpdateRequest request,
-        CancellationToken cancellationToken) => await new CalendarResourceUpdateProtocol(
-            _httpClient,
-            new Uri(_options.Value.BaseUrl, UriKind.Absolute)).UpdateAsync(request, cancellationToken);
+        CancellationToken cancellationToken) => await ExecuteCapabilityOperationAsync(
+            CapabilityKey.Mutation(_options.Value.BaseUrl, ParentHref(request.ResourceHref), request.ResourceHref, "update"),
+            () => new CalendarResourceUpdateDispatchResult(CalendarResourceUpdateDispatchCode.UnsupportedCapability),
+            () => new CalendarResourceUpdateProtocol(_httpClient, new Uri(_options.Value.BaseUrl, UriKind.Absolute))
+                .UpdateAsync(request, cancellationToken),
+            result => result.Code == CalendarResourceUpdateDispatchCode.UnsupportedCapability,
+            result => result.Code == CalendarResourceUpdateDispatchCode.Dispatched);
+
+    private async Task<TResult> ExecuteCapabilityOperationAsync<TResult>(
+        CapabilityKey key,
+        Func<TResult> unavailableResult,
+        Func<Task<TResult>> operation,
+        Func<TResult, bool> isUnavailable,
+        Func<TResult, bool> isVerified)
+    {
+        EnsureCapabilityConfiguration();
+        var generation = Volatile.Read(ref _capabilityGeneration);
+        if (IsUnavailable(key))
+            return unavailableResult();
+
+        var result = await operation();
+        if (isUnavailable(result))
+            ObserveCapability(key, CapabilityState.Unavailable, generation);
+        else if (isVerified(result))
+            ObserveCapability(key, CapabilityState.Verified, generation);
+        return result;
+    }
+
+    private static string? ParentHref(string resourceHref) =>
+        Uri.TryCreate(resourceHref, UriKind.Absolute, out var resourceUri)
+            ? new Uri(resourceUri, ".").AbsoluteUri
+            : null;
 
     private async Task<HttpResponseMessage> SendGetWithRedirectHandlingAsync(
         Uri initialUri,
@@ -278,12 +432,16 @@ internal sealed class CalDavClient : ICalendarClient
         HttpContent content,
         CancellationToken cancellationToken)
     {
-        if (content.Headers.ContentLength > MaximumCalendarResourceBytes)
+        var gzipEncoded = content.Headers.ContentEncoding.Contains("gzip", StringComparer.OrdinalIgnoreCase);
+        if (!gzipEncoded && content.Headers.ContentLength > MaximumCalendarResourceBytes)
             return new BoundedContentRead(null, SaturateByteCount(content.Headers.ContentLength.Value));
 
-        await using var stream = await content.ReadAsStreamAsync(cancellationToken);
+        await using var encodedStream = await content.ReadAsStreamAsync(cancellationToken);
+        await using Stream stream = gzipEncoded
+            ? new GZipStream(encodedStream, CompressionMode.Decompress, leaveOpen: false)
+            : encodedStream;
         using var destination = new MemoryStream(
-            content.Headers.ContentLength is >= 0 and <= MaximumCalendarResourceBytes
+            !gzipEncoded && content.Headers.ContentLength is >= 0 and <= MaximumCalendarResourceBytes
                 ? (int)content.Headers.ContentLength.Value
                 : 0);
         var buffer = ArrayPool<byte>.Shared.Rent(81920);
@@ -320,25 +478,35 @@ internal sealed class CalDavClient : ICalendarClient
         var principalHref = "/.well-known/caldav";
 
         var suppressUpstreamFailures = !failOnNotFound;
+        var configuredResult = await TryDiscoverFromBaseUrlAsync(
+            principalBody,
+            depth: 0,
+            cancellationToken,
+            suppressUpstreamFailures);
+        if (IsConfiguredCalendarHome(configuredResult.HomeSet))
+            return configuredResult.HomeSet;
+
         var wellKnownResult = await TryDiscoverFromPathAsync(principalHref, principalBody, depth: 0, cancellationToken, suppressUpstreamFailures);
         if (wellKnownResult.HomeSet is not null)
             return wellKnownResult.HomeSet;
 
         if (wellKnownResult.PrincipalUrl is null)
         {
-            var baseUrlResult = await TryDiscoverFromBaseUrlAsync(principalBody, depth: 0, cancellationToken, suppressUpstreamFailures);
-            if (baseUrlResult.HomeSet is not null)
-                return baseUrlResult.HomeSet;
+            if (configuredResult.HomeSet is not null)
+                return configuredResult.HomeSet;
 
-            if (baseUrlResult.PrincipalUrl is null)
+            if (configuredResult.PrincipalUrl is null)
             {
-                _logger.LogWarning("Failed to discover calendar-home-set from {BaseUrl}", _options.Value.BaseUrl);
+                _logger.LogWarning(
+                    "CalDAV operation {Code} failed at {Phase}",
+                    "home_not_found",
+                    "selectionDiscoveryCapability");
                 if (failOnNotFound)
                     throw new CalendarDiscoveryProtocolException("Calendar-home-set was not discovered.");
                 return null;
             }
 
-            wellKnownResult = baseUrlResult;
+            wellKnownResult = configuredResult;
         }
 
         var discoveredHomeSet = await TryDiscoverFromPrincipalAsync(wellKnownResult.PrincipalUrl!, principalBody, depth: 0, cancellationToken, suppressUpstreamFailures);
@@ -347,8 +515,33 @@ internal sealed class CalDavClient : ICalendarClient
         return discoveredHomeSet;
     }
 
+    private bool IsConfiguredCalendarHome(string? discoveredHomeSet)
+    {
+        if (discoveredHomeSet is null)
+            return false;
+
+        var configuredText = _options.Value.BaseUrl;
+        if (!Uri.TryCreate(configuredText, UriKind.Absolute, out var configuredUri)
+            || !IsSafeCanonicalUri(configuredUri, configuredText)
+            || !TryCanonicalizeCalendarHref(configuredUri, discoveredHomeSet, out var canonicalHomeSet))
+        {
+            return false;
+        }
+
+        return string.Equals(
+            configuredUri.AbsolutePath.TrimEnd('/'),
+            new Uri(canonicalHomeSet, UriKind.Absolute).AbsolutePath.TrimEnd('/'),
+            StringComparison.Ordinal)
+            && string.Equals(configuredUri.Query, new Uri(canonicalHomeSet, UriKind.Absolute).Query, StringComparison.Ordinal);
+    }
+
     private async Task<(string? HomeSet, string? PrincipalUrl)> TryDiscoverFromPathAsync(
-        string path, string body, int depth, CancellationToken cancellationToken, bool suppressUpstreamFailures)
+        string path,
+        string body,
+        int depth,
+        CancellationToken cancellationToken,
+        bool suppressUpstreamFailures,
+        bool allowUnsupportedEndpoint = false)
     {
         try
         {
@@ -368,9 +561,15 @@ internal sealed class CalDavClient : ICalendarClient
                 throw new CalendarDiscoveryProtocolException("Unsafe current-user-principal href.");
             return (null, canonicalPrincipal);
         }
-        catch (HttpRequestException exception) when (suppressUpstreamFailures || exception.StatusCode == HttpStatusCode.NotFound)
+        catch (HttpRequestException exception) when (
+            suppressUpstreamFailures
+            || exception.StatusCode == HttpStatusCode.NotFound
+            || allowUnsupportedEndpoint && exception.StatusCode is HttpStatusCode.MethodNotAllowed or HttpStatusCode.NotImplemented)
         {
-            _logger.LogDebug("CalDAV path not found: {Path}", path);
+            _logger.LogDebug(
+                "CalDAV operation {Code} failed at {Phase}",
+                "endpoint_unavailable",
+                "selectionDiscoveryCapability");
             return (null, null);
         }
     }
@@ -381,7 +580,13 @@ internal sealed class CalDavClient : ICalendarClient
         var baseUrl = _options.Value.BaseUrl.TrimEnd('/');
         var uri = new Uri(baseUrl);
         var path = uri.AbsolutePath.TrimEnd('/') + "/";
-        return await TryDiscoverFromPathAsync(path, body, depth, cancellationToken, suppressUpstreamFailures);
+        return await TryDiscoverFromPathAsync(
+            path,
+            body,
+            depth,
+            cancellationToken,
+            suppressUpstreamFailures,
+            allowUnsupportedEndpoint: true);
     }
 
     private async Task<string?> TryDiscoverFromPrincipalAsync(
@@ -389,7 +594,10 @@ internal sealed class CalDavClient : ICalendarClient
     {
         try
         {
-            _logger.LogDebug("PROPFIND principal at {PrincipalUrl} for calendar-home-set", principalUrl);
+            _logger.LogDebug(
+                "CalDAV operation {Code} entered {Phase}",
+                "principal_discovery",
+                "selectionDiscoveryCapability");
             var response = await SendPropFindAsync(principalUrl, body, depth, cancellationToken);
             var homeSet = DavResponseParser.ParseCalendarHomeSet(response.Content);
             if (homeSet is null)
@@ -398,9 +606,13 @@ internal sealed class CalDavClient : ICalendarClient
                 throw new CalendarDiscoveryProtocolException("Unsafe calendar-home-set href.");
             return canonicalHomeSet;
         }
-        catch (HttpRequestException ex) when (suppressUpstreamFailures || ex.StatusCode == HttpStatusCode.NotFound)
+        catch (HttpRequestException exception) when (
+            suppressUpstreamFailures || exception.StatusCode == HttpStatusCode.NotFound)
         {
-            _logger.LogWarning(ex, "Failed to discover calendar-home-set from principal at {PrincipalUrl}", principalUrl);
+            _logger.LogWarning(
+                "CalDAV operation {Code} failed at {Phase}",
+                "principal_unavailable",
+                "selectionDiscoveryCapability");
             return null;
         }
     }
@@ -450,7 +662,8 @@ internal sealed class CalDavClient : ICalendarClient
             var content = StrictUtf8.GetString(bounded.Content);
             if (!response.IsSuccessStatusCode)
             {
-                if (response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Forbidden
+                if (response.StatusCode is HttpStatusCode.MethodNotAllowed or HttpStatusCode.NotImplemented
+                    || response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Forbidden
                     && DavResponseParser.IsSupportedFilterError(content))
                     throw new CalendarQueryFilterUnsupportedException();
                 response.EnsureSuccessStatusCode();
@@ -517,6 +730,86 @@ internal sealed class CalDavClient : ICalendarClient
     {
     }
 
+    private bool IsUnavailable(CapabilityKey key) =>
+        _capabilities.TryGetValue(key, out var state) && state == CapabilityState.Unavailable;
+
+    private void EnsureCapabilityConfiguration()
+    {
+        var fingerprint = GetConfigurationFingerprint(_options.Value);
+        if (fingerprint == _configurationFingerprint)
+            return;
+
+        lock (_configurationGate)
+        {
+            if (fingerprint == _configurationFingerprint)
+                return;
+            InvalidateCapabilityObservations();
+            _configurationFingerprint = fingerprint;
+        }
+    }
+
+    private void InvalidateCapabilityObservations()
+    {
+        Interlocked.Increment(ref _capabilityGeneration);
+        _capabilities.Clear();
+    }
+
+    private void ObserveCapability(CapabilityKey key, CapabilityState state, long generation)
+    {
+        lock (_configurationGate)
+        {
+            if (generation == _capabilityGeneration)
+                _capabilities[key] = state;
+        }
+    }
+
+    private static int GetConfigurationFingerprint(CalDavOptions options) => HashCode.Combine(
+        options.BaseUrl,
+        options.Username,
+        options.Password,
+        options.CalendarHrefs,
+        options.DefaultEventCalendarName,
+        options.DefaultTodoCalendarName);
+
+    private enum CapabilityState
+    {
+        Verified,
+        Unavailable
+    }
+
+    private sealed record CapabilityKey(string Origin, string CalendarHref, string? ResourceHref, string Operation)
+    {
+        public static CapabilityKey Query(string calendarHref, CalendarEntityKind kind, bool filtered)
+        {
+            var calendar = new Uri(calendarHref, UriKind.Absolute);
+            return new CapabilityKey(
+                calendar.GetLeftPart(UriPartial.Authority),
+                calendar.AbsoluteUri,
+                null,
+                $"calendar-query:{kind}:{(filtered ? "filtered" : "minimal")}");
+        }
+
+        public static CapabilityKey CalendarMultiget(string calendarHref)
+        {
+            var calendar = new Uri(calendarHref, UriKind.Absolute);
+            return new CapabilityKey(
+                calendar.GetLeftPart(UriPartial.Authority),
+                calendar.AbsoluteUri,
+                null,
+                "calendar-multiget");
+        }
+
+        public static CapabilityKey Mutation(
+            string baseUrl,
+            string? calendarHref,
+            string resourceHref,
+            string operation) => new(
+                new Uri(baseUrl, UriKind.Absolute).GetLeftPart(UriPartial.Authority),
+                calendarHref ?? string.Empty,
+                resourceHref,
+                operation);
+    }
+
     private HttpRequestMessage? CreateRedirectRequest(
         HttpResponseMessage response,
         HttpRequestMessage currentRequest,
@@ -546,7 +839,10 @@ internal sealed class CalDavClient : ICalendarClient
             throw new CalendarDiscoveryProtocolException("Unsafe CalDAV redirect href.");
         }
 
-        _logger.LogDebug("{Method} redirect {StatusCode} within the configured origin", method, (int)response.StatusCode);
+        _logger.LogDebug(
+            "CalDAV operation {Code} entered {Phase}",
+            "safe_redirect",
+            "execution");
         var redirectRequest = new HttpRequestMessage(method, canonicalRedirectUrl)
         {
             Content = new StringContent(body, Encoding.UTF8, contentType)
@@ -582,10 +878,12 @@ internal sealed class CalDavClient : ICalendarClient
     private bool TryCanonicalizeCalendarHref(Uri homeSetUri, string href, out string canonicalHref)
     {
         canonicalHref = string.Empty;
-        if (!Uri.TryCreate(homeSetUri, href, out var candidate)
+        if (HasUnsafeEncodedPath(href)
+            || !Uri.TryCreate(homeSetUri, href, out var candidate)
             || !candidate.IsAbsoluteUri
             || !string.IsNullOrEmpty(candidate.UserInfo)
-            || !string.IsNullOrEmpty(candidate.Fragment))
+            || !string.IsNullOrEmpty(candidate.Fragment)
+            || !string.IsNullOrEmpty(candidate.Query))
         {
             return false;
         }
@@ -601,6 +899,11 @@ internal sealed class CalDavClient : ICalendarClient
         canonicalHref = candidate.AbsoluteUri;
         return true;
     }
+
+    private static bool HasUnsafeEncodedPath(string href) =>
+        href.Contains("%2e", StringComparison.OrdinalIgnoreCase)
+        || href.Contains("%2f", StringComparison.OrdinalIgnoreCase)
+        || href.Contains("%5c", StringComparison.OrdinalIgnoreCase);
 
     private bool TryCanonicalizeResourceHref(Uri calendarUri, string href, out string canonicalHref)
     {

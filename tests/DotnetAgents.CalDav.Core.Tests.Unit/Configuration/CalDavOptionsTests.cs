@@ -58,6 +58,28 @@ public class CalDavOptionsTests
         result.Failures.ShouldContain(failure => failure.Contains("HTTP or HTTPS URL"));
     }
 
+    [Theory]
+    [InlineData("https://user:pass@caldav.example.com/")]
+    [InlineData("https://caldav.example.com/path?query=1")]
+    [InlineData("https://caldav.example.com/path#fragment")]
+    [InlineData("https://caldav.example.com/a/%2e%2e/private/")]
+    [InlineData("https://caldav.example.com/a%2fprivate/")]
+    [InlineData("https://caldav.example.com/a/../private/")]
+    [InlineData("https://CALDAV.example.com/calendars/")]
+    [InlineData("https://caldav.example.com:443/calendars/")]
+    public void ValidateCalDavOptions_RejectsNoncanonicalOrCredentialBearingEndpoint(string baseUrl)
+    {
+        var result = new ValidateCalDavOptions().Validate(null, new CalDavOptions
+        {
+            BaseUrl = baseUrl,
+            Username = "user",
+            Password = "pass"
+        });
+
+        result.Failed.ShouldBeTrue();
+        result.Failures.ShouldContain(failure => failure.Contains("canonical", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void ValidateCalDavOptions_FailsOnWhitespaceUsername()
     {

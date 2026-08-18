@@ -30,7 +30,10 @@ public sealed class CalDavHostBuilder
         var mcpBuilder = builder.Services.AddMcpServer(options => options.ProtocolVersion = "2026-07-28")
             .WithStdioServerTransport()
             .WithMessageFilters(filters => filters.AddIncomingFilter(StrictToolInputGuard.Incoming))
-            .WithRequestFilters(filters => filters.AddCallToolFilter(StrictToolInputGuard.CallTool))
+            .WithRequestFilters(filters => filters
+                .AddCallToolFilter(CalendarOutputSchemaGuard.CallTool)
+                .AddCallToolFilter(CalendarExecutionPolicy.CallTool)
+                .AddCallToolFilter(StrictToolInputGuard.CallTool))
             .WithTools<CalendarTools>()
             .WithTools<CalendarEntityTools>()
             .WithTools<CalendarOccurrenceTools>()
@@ -49,10 +52,11 @@ public sealed class CalDavHostBuilder
                 .WithListResourcesHandler((_, _) => ValueTask.FromResult(ExactCalendarResourceHandler.List()))
                 .WithReadResourceHandler(async (request, cancellationToken) =>
                 {
-                    var service = request.Services!.GetRequiredService<DotnetAgents.CalDav.Core.Abstractions.ICalendarService>();
-                    return await ExactCalendarResourceHandler.ReadAsync(
-                        request.Params!.Uri,
-                        service,
+                    var services = request.Services!;
+                    var service = services.GetRequiredService<DotnetAgents.CalDav.Core.Abstractions.ICalendarService>();
+                    return await CalendarExecutionPolicy.ExecuteProtectedReadAsync(
+                        services.GetRequiredService<CalendarOperationAdmission>(),
+                        token => ExactCalendarResourceHandler.ReadAsync(request.Params!.Uri, service, token),
                         cancellationToken).ConfigureAwait(false);
                 });
         }
@@ -60,6 +64,7 @@ public sealed class CalDavHostBuilder
         builder.Services.PostConfigure<ModelContextProtocol.Server.McpServerOptions>(ConfigureCalendarToolContract);
 
         builder.Services.AddSingleton(TimeProvider.System);
+        builder.Services.AddSingleton<CalendarOperationAdmission>();
         builder.Services.AddSingleton<CalendarMutationAdmission>();
         builder.Services.AddSingleton<CalendarMutationRequestStateProtector>();
         builder.Services.AddSingleton<CalendarEntityCursorProtector>();

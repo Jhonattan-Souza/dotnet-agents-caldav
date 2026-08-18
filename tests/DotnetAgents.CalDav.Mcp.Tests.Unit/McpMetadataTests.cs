@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using Json.Schema;
 using Shouldly;
 using Xunit;
 
@@ -40,12 +41,21 @@ public class McpMetadataTests
     [Fact]
     public void McpServerJson_DeclaresOnlyFrozenCalendarEnvironmentVariables()
     {
-        var serverJsonPath = GetOutputFilePath(".mcp", "server.json");
+        var serverJsonPath = Path.Combine(GetMcpProjectDir(), ".mcp", "server.json");
         File.Exists(serverJsonPath).ShouldBeTrue(".mcp/server.json must exist for this test");
 
         var json = File.ReadAllText(serverJsonPath);
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
+
+        root.GetProperty("$schema").GetString()
+            .ShouldBe("https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json");
+        root.GetProperty("name").GetString()
+            .ShouldBe("io.github.jhonattan-souza/dotnet-agents-caldav");
+        root.GetProperty("version").GetString().ShouldBe("0.0.0");
+        root.GetProperty("packages")[0].GetProperty("version").GetString().ShouldBe("0.0.0");
+        root.GetProperty("packages")[0].GetProperty("transport").GetProperty("type").GetString()
+            .ShouldBe("stdio");
 
         // MCP Registry schema: environmentVariables are inside packages[0]
         var envVars = root.GetProperty("packages")[0].GetProperty("environmentVariables");
@@ -71,6 +81,19 @@ public class McpMetadataTests
         description.ShouldNotContain("task management", Case.Insensitive);
     }
 
+    [Fact]
+    public async Task McpServerJson_IsValidAgainstThePinnedRegistrySchema()
+    {
+        var projectDirectory = GetMcpProjectDir();
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var metadata = await File.ReadAllTextAsync(Path.Combine(projectDirectory, ".mcp", "server.json"), cancellationToken);
+        var schemaPath = Path.GetFullPath(Path.Combine(projectDirectory, "..", "..", "contracts", "0.2.0", "mcp-server.schema.json"));
+        var schema = McpRegistrySchema.Parse(await File.ReadAllTextAsync(schemaPath, cancellationToken));
+        using var document = JsonDocument.Parse(metadata);
+
+        schema.Evaluate(document.RootElement).IsValid.ShouldBeTrue();
+    }
+
     // ─── packaging metadata ─────────────────────────────────────────────────────
 
     [Fact]
@@ -87,4 +110,11 @@ public class McpMetadataTests
         csproj.ShouldContain("<PackAsTool>");
         csproj.ShouldContain("<ToolCommandName>dotnet-agents-caldav</ToolCommandName>");
     }
+}
+
+internal static class McpRegistrySchema
+{
+    public static JsonSchema Parse(string schemaJson) => JsonSchema.FromText(
+        schemaJson,
+        new BuildOptions { SchemaRegistry = new SchemaRegistry() });
 }

@@ -7,10 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-17
+
 ### Added
-- Initial release: CalDAV Tasks (VTODO) MCP server
-- 7 MCP tools: list_task_lists, list_tasks, get_task, create_task, update_task, complete_task, delete_task
-- Custom thin HttpClient-based CalDAV client with Ical.Net v5
-- ETag-based optimistic concurrency control
-- Full test suite: 220+ tests with 98%+ line coverage
-- Testcontainers integration tests against Radicale
+
+- Unified semantic MCP catalog for Calendars, Events, To-dos, and bounded recurring Occurrences.
+- Opt-in exact Calendar Object Resource reads and writes, protected independently from the semantic catalog.
+- Strict structured results, typed failures, strong-ETag revision references, post-write verification, and MCP MRTR confirmation for high-impact writes.
+- Digest-pinned Radicale 3.7.8 interoperability profile and permanent requirement-to-evidence catalog.
+- [0.1.x to 0.2.0 migration and rollback guide](docs/migrating-0.1.x-to-0.2.0.md).
+
+### Changed
+
+- Replaced task-list configuration with canonical Calendar href scope, independent Event and To-do defaults, and an exact-tool gate.
+- Made the Calendar Object Resource the persistence and concurrency aggregate while retaining server-returned UTF-8 content as authority.
+
+### Removed
+
+- Removed all twelve 0.1.x task tools, task-specific public domain types, old environment names, summary-based mutation shortcuts, blind href-only writes, and legacy compatibility modes.
+
+### Security
+
+- Existing-resource writes now require an exact strong Entity Tag; ambiguous outcomes reconcile through reads and are never blindly retried.
+- Calendar scope and origin checks constrain network access; alarms, scheduling data, and URI values remain inert.

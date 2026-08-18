@@ -650,8 +650,10 @@ internal static class CalendarEntityPatchArgumentParser
             CalendarCollectionField.RequestStatuses => Typed<CalendarRequestStatus>(field, operation, add, remove, values),
             CalendarCollectionField.Alarms => Typed<CalendarAlarm>(field, operation, add, remove, values),
             CalendarCollectionField.Attachments or CalendarCollectionField.Images or CalendarCollectionField.Conferences
-                or CalendarCollectionField.Links or CalendarCollectionField.LocationUris or CalendarCollectionField.ResourceUris =>
+                or CalendarCollectionField.Links =>
                 Typed<CalendarNamedUri>(field, operation, add, remove, values),
+            CalendarCollectionField.LocationUris or CalendarCollectionField.ResourceUris =>
+                Typed<CalendarNamedComponent>(field, operation, add, remove, values),
             _ => Typed<CalendarUriValue>(field, operation, add, remove, values)
         };
 

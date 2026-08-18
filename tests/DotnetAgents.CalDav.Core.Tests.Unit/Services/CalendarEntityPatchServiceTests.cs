@@ -15,6 +15,47 @@ namespace DotnetAgents.CalDav.Core.Tests.Unit.Services;
 public sealed class CalendarEntityPatchServiceTests
 {
     [Fact]
+    public async Task PatchEventAsync_TwoMasterResourceIsOpaqueWithoutAnySemanticWriteRoute()
+    {
+        const string href = "https://cal.example/events/two-masters.ics";
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260820T100000Z\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260821T100000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var client = ClientReturning(href, original);
+
+        var result = await CreateService(client).PatchEventAsync(new CalendarEventPatchRequest(
+            new CalendarResourceRevisionReference(href, "event-1", CalendarEntityKind.Event, "\"r1\""),
+            new CalendarMutationTarget("master"),
+            new CalendarEventPatch(Summary: new(CalendarScalarPatchOperation.Set, "No route"))),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityPatchCode.OpaqueResource);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        await client.DidNotReceive().UpdateCalendarResourceAsync(
+            Arg.Any<CalendarResourceUpdateRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData(CalendarScalarPatchOperation.Set, "CONFIRMED")]
+    [InlineData(CalendarScalarPatchOperation.Clear, null)]
+    public async Task PatchEventAsync_UnknownRegisteredStatusRequiresExactReplacementWithoutWriting(
+        CalendarScalarPatchOperation operation,
+        string? value)
+    {
+        const string href = "https://cal.example/events/event-1.ics";
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260820T100000Z\r\nSTATUS:FUTURE\r\nX-KEEP:opaque\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var client = ClientReturning(href, original);
+
+        var result = await CreateService(client).PatchEventAsync(new CalendarEventPatchRequest(
+            new CalendarResourceRevisionReference(href, "event-1", CalendarEntityKind.Event, "\"r1\""),
+            new CalendarMutationTarget("master"),
+            new CalendarEventPatch(Status: new(operation, value))), CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityPatchCode.InvalidInput);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        await client.DidNotReceive().UpdateCalendarResourceAsync(
+            Arg.Any<CalendarResourceUpdateRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public void Broad_patch_digest_excludes_only_generated_entity_last_modified_values()
     {
         const string first = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VTIMEZONE\r\nTZID:Custom/Zone\r\nLAST-MODIFIED:20260815T100000Z\r\nEND:VTIMEZONE\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART;TZID=Custom/Zone:20260820T100000\r\nRRULE:FREQ=DAILY;COUNT=2\r\nLAST-MODIFIED:20260817T120000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
@@ -596,8 +637,8 @@ public sealed class CalendarEntityPatchServiceTests
     {
         const string calendarHref = "https://cal.example/events/";
         const string resourceHref = "https://cal.example/events/event-1.ics";
-        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260820T100000Z\r\nCREATED:20260815T100000Z\r\nLAST-MODIFIED:20260815T100000Z\r\nSEQUENCE:7\r\nSUMMARY:Original\r\nX-KEEP;X-DUP=One,one,TWO:https://example.test/a,b;c\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
-        const string expected = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260820T100000Z\r\nCREATED:20260815T100000Z\r\nLAST-MODIFIED:20260817T120000Z\r\nSEQUENCE:7\r\nSUMMARY:Updated\r\nX-KEEP;X-DUP=One,one,TWO:https://example.test/a,b;c\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260820T100000Z\r\nCREATED:20260815T100000Z\r\nLAST-MODIFIED:20260815T100000Z\r\nSEQUENCE:7\r\nSUMMARY:Original\r\nCOLOR:#112233\r\nIMAGE:https://e/x.png\r\nCONFERENCE:https://e/c\r\nLOCATION-TYPE:office\r\nX-KEEP:1\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        const string expected = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260820T100000Z\r\nCREATED:20260815T100000Z\r\nLAST-MODIFIED:20260817T120000Z\r\nSEQUENCE:7\r\nSUMMARY:Updated\r\nCOLOR:#112233\r\nIMAGE:https://e/x.png\r\nCONFERENCE:https://e/c\r\nLOCATION-TYPE:office\r\nX-KEEP:1\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
         var client = Substitute.For<ICalendarClient>();
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
             new CalendarDescriptor
@@ -647,6 +688,26 @@ public sealed class CalendarEntityPatchServiceTests
             new CalendarEventPatch(Summary: new(CalendarScalarPatchOperation.Set, "Same"))), CancellationToken.None);
 
         result.Code.ShouldBe(CalendarEntityPatchCode.NoChange);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        await client.DidNotReceive().UpdateCalendarResourceAsync(
+            Arg.Any<CalendarResourceUpdateRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task PatchEventAsync_CannotConvertAnExistingTodoAndWritesNothing()
+    {
+        const string href = "https://cal.example/events/event-1.ics";
+        const string content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\n"
+            + "BEGIN:VTODO\r\nUID:event-1\r\nDTSTAMP:20260816T100000Z\r\nSUMMARY:Todo\r\n"
+            + "END:VTODO\r\nEND:VCALENDAR\r\n";
+        var client = ClientReturning(href, content);
+
+        var result = await CreateService(client).PatchEventAsync(EventRequest(
+            href,
+            new CalendarEventPatch(Summary: new(CalendarScalarPatchOperation.Set, "Event"))),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityPatchCode.EntityKindMismatch);
         result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
         await client.DidNotReceive().UpdateCalendarResourceAsync(
             Arg.Any<CalendarResourceUpdateRequest>(), Arg.Any<CancellationToken>());

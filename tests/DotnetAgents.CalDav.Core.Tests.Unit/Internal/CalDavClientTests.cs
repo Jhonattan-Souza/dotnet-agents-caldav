@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
+using System.IO.Compression;
 using System.Text;
 using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Core.Internal;
@@ -15,6 +16,213 @@ namespace DotnetAgents.CalDav.Core.Tests.Unit.Internal;
 
 public class CalDavClientTests
 {
+    [Fact]
+    public async Task GetCalendarResourceForQueryAsync_UsesCalendarMultigetThenAuthoritativeGet()
+    {
+        const string calendarHref = "https://example.com/calendars/user/events/";
+        const string resourceHref = "https://example.com/calendars/user/events/a.ics";
+        var requests = new List<(HttpMethod Method, string Body)>();
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            requests.Add((request.Method, request.Content is null
+                ? string.Empty
+                : request.Content.ReadAsStringAsync(TestContext.Current.CancellationToken).GetAwaiter().GetResult()));
+            if (request.Method.Method == "REPORT")
+            {
+                return new HttpResponseMessage(HttpStatusCode.MultiStatus)
+                {
+                    Content = new StringContent("<d:multistatus xmlns:d='DAV:' xmlns:c='urn:ietf:params:xml:ns:caldav'><d:response><d:href>/calendars/user/events/a.ics</d:href><d:propstat><d:prop><d:getetag>\"r1\"</d:getetag><c:calendar-data>normalized-only-for-capability</c:calendar-data></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>")
+                };
+            }
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Headers = { ETag = new EntityTagHeaderValue("\"r1\"") },
+                Content = new ByteArrayContent(Encoding.UTF8.GetBytes("authoritative\r\nX-KEEP:opaque\r\n"))
+            };
+        });
+        var sut = CreateSut(handler);
+
+        var result = await sut.GetCalendarResourceForQueryAsync(calendarHref, resourceHref, CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceReadCode.Success);
+        Encoding.UTF8.GetString(result.AuthoritativeUtf8.Span).ShouldBe("authoritative\r\nX-KEEP:opaque\r\n");
+        requests.Select(request => request.Method.Method).ShouldBe(["REPORT", "GET"]);
+        requests[0].Body.ShouldContain("calendar-multiget");
+        requests[0].Body.ShouldContain("calendar-data");
+        requests[0].Body.ShouldContain(resourceHref);
+    }
+
+    [Fact]
+    public async Task GetCalendarResourceForQueryAsync_RetainsUnavailableMultigetPerCalendarUntilRediscovery()
+    {
+        const string firstCalendar = "https://example.com/calendars/user/events/";
+        const string secondCalendar = "https://example.com/calendars/user/other/";
+        var requestCount = 0;
+        var sut = CreateSut(new StubHttpMessageHandler(_ =>
+        {
+            requestCount++;
+            return new HttpResponseMessage(HttpStatusCode.MethodNotAllowed);
+        }));
+
+        await Should.ThrowAsync<CalendarDiscoveryUnsupportedCapabilityException>(() =>
+            sut.GetCalendarResourceForQueryAsync(firstCalendar, firstCalendar + "a.ics", CancellationToken.None));
+        await Should.ThrowAsync<CalendarDiscoveryUnsupportedCapabilityException>(() =>
+            sut.GetCalendarResourceForQueryAsync(firstCalendar, firstCalendar + "a.ics", CancellationToken.None));
+        await Should.ThrowAsync<CalendarDiscoveryUnsupportedCapabilityException>(() =>
+            sut.GetCalendarResourceForQueryAsync(secondCalendar, secondCalendar + "a.ics", CancellationToken.None));
+        requestCount.ShouldBe(2);
+
+        sut.RediscoverCapabilities();
+        await Should.ThrowAsync<CalendarDiscoveryUnsupportedCapabilityException>(() =>
+            sut.GetCalendarResourceForQueryAsync(firstCalendar, firstCalendar + "a.ics", CancellationToken.None));
+        requestCount.ShouldBe(3);
+    }
+
+    [Theory]
+    [InlineData("https://foreign.example/calendars/user/events/a.ics")]
+    [InlineData("/calendars/user/events/nested/a.ics")]
+    [InlineData("/calendars/user/events/../outside.ics")]
+    public async Task GetCalendarResourceForQueryAsync_RejectsUnsafeMultigetResponseBeforeVerification(string returnedHref)
+    {
+        const string calendarHref = "https://example.com/calendars/user/events/";
+        const string resourceHref = calendarHref + "a.ics";
+        var requestCount = 0;
+        var sut = CreateSut(new StubHttpMessageHandler(_ =>
+        {
+            requestCount++;
+            return new HttpResponseMessage(HttpStatusCode.MultiStatus)
+            {
+                Content = new StringContent(
+                    $"<d:multistatus xmlns:d='DAV:'><d:response><d:href>{returnedHref}</d:href><d:propstat><d:prop><d:getetag>\"r1\"</d:getetag></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>")
+            };
+        }));
+
+        await Should.ThrowAsync<CalendarDiscoveryProtocolException>(() =>
+            sut.GetCalendarResourceForQueryAsync(calendarHref, resourceHref, CancellationToken.None));
+        await Should.ThrowAsync<CalendarDiscoveryProtocolException>(() =>
+            sut.GetCalendarResourceForQueryAsync(calendarHref, resourceHref, CancellationToken.None));
+
+        requestCount.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task MutationCapabilities_AreRetainedAndScopedByResourceAndOperation()
+    {
+        var requestCount = 0;
+        var sut = CreateSut(new StubHttpMessageHandler(_ =>
+        {
+            requestCount++;
+            return new HttpResponseMessage(HttpStatusCode.MethodNotAllowed);
+        }), "https://example.com/");
+        var delete = new CalendarResourceDeleteRequest(
+            "https://example.com/calendars/user/events/a.ics",
+            "\"r1\"");
+
+        (await sut.DeleteCalendarResourceAsync(delete, CancellationToken.None)).Code
+            .ShouldBe(CalendarResourceDeleteDispatchCode.UnsupportedCapability);
+        (await sut.DeleteCalendarResourceAsync(delete, CancellationToken.None)).Code
+            .ShouldBe(CalendarResourceDeleteDispatchCode.UnsupportedCapability);
+        (await sut.UpdateCalendarResourceAsync(
+            new CalendarResourceUpdateRequest(delete.ResourceHref, delete.EntityTag, "body"u8.ToArray()),
+            CancellationToken.None)).Code.ShouldBe(CalendarResourceUpdateDispatchCode.UnsupportedCapability);
+        (await sut.DeleteCalendarResourceAsync(
+            delete with { ResourceHref = "https://example.com/calendars/user/events/b.ics" },
+            CancellationToken.None)).Code.ShouldBe(CalendarResourceDeleteDispatchCode.UnsupportedCapability);
+
+        requestCount.ShouldBe(3);
+    }
+
+    [Fact]
+    public async Task MutationCapabilities_DavUnsupportedErrorIsRetainedForEveryOperationWithoutRedispatch()
+    {
+        const string calendarHref = "https://example.com/calendars/user/events/";
+        const string sourceHref = calendarHref + "a.ics";
+        var requestCount = 0;
+        var sut = CreateSut(new StubHttpMessageHandler(_ =>
+        {
+            requestCount++;
+            return new HttpResponseMessage(HttpStatusCode.Forbidden)
+            {
+                Content = new StringContent(
+                    "<d:error xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\"><c:supported-calendar-component/></d:error>",
+                    Encoding.UTF8,
+                    "application/xml")
+            };
+        }), "https://example.com/");
+        var create = new CalendarResourceCreateRequest(calendarHref, calendarHref + "created.ics", "body"u8.ToArray());
+        var delete = new CalendarResourceDeleteRequest(sourceHref, "\"r1\"");
+        var update = new CalendarResourceUpdateRequest(sourceHref, "\"r1\"", "body"u8.ToArray());
+        var move = new CalendarResourceMoveDispatchRequest(sourceHref, calendarHref + "moved.ics", "\"r1\"");
+
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            (await sut.CreateCalendarResourceAsync(create, CancellationToken.None)).Code
+                .ShouldBe(CalendarResourceCreateCode.UnsupportedCapability);
+            (await sut.DeleteCalendarResourceAsync(delete, CancellationToken.None)).Code
+                .ShouldBe(CalendarResourceDeleteDispatchCode.UnsupportedCapability);
+            (await sut.UpdateCalendarResourceAsync(update, CancellationToken.None)).Code
+                .ShouldBe(CalendarResourceUpdateDispatchCode.UnsupportedCapability);
+            (await sut.MoveCalendarResourceAsync(move, CancellationToken.None)).Code
+                .ShouldBe(CalendarResourceMoveDispatchCode.UnsupportedCapability);
+        }
+
+        requestCount.ShouldBe(4);
+    }
+
+    [Fact]
+    public async Task MoveCapability_IsScopedToTheSourceAndDestinationCalendarPair()
+    {
+        const string sourceHref = "https://example.com/calendars/user/source/a.ics";
+        const string blockedDestination = "https://example.com/calendars/user/blocked/a.ics";
+        const string supportedDestination = "https://example.com/calendars/user/supported/a.ics";
+        var requestCount = 0;
+        var sut = CreateSut(new StubHttpMessageHandler(request =>
+        {
+            requestCount++;
+            var destination = request.Headers.GetValues("Destination").Single();
+            return destination == blockedDestination
+                ? new HttpResponseMessage(HttpStatusCode.Forbidden)
+                {
+                    Content = new StringContent(
+                        "<d:error xmlns:d='DAV:' xmlns:c='urn:ietf:params:xml:ns:caldav'><c:supported-calendar-component/></d:error>")
+                }
+                : new HttpResponseMessage(HttpStatusCode.Created);
+        }), "https://example.com/");
+
+        var blocked = new CalendarResourceMoveDispatchRequest(sourceHref, blockedDestination, "\"r1\"");
+        var supported = new CalendarResourceMoveDispatchRequest(sourceHref, supportedDestination, "\"r1\"");
+
+        (await sut.MoveCalendarResourceAsync(blocked, CancellationToken.None)).Code
+            .ShouldBe(CalendarResourceMoveDispatchCode.UnsupportedCapability);
+        (await sut.MoveCalendarResourceAsync(blocked, CancellationToken.None)).Code
+            .ShouldBe(CalendarResourceMoveDispatchCode.UnsupportedCapability);
+        (await sut.MoveCalendarResourceAsync(supported, CancellationToken.None)).Code
+            .ShouldBe(CalendarResourceMoveDispatchCode.Dispatched);
+
+        requestCount.ShouldBe(2);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.RequestTimeout)]
+    [InlineData(HttpStatusCode.TooManyRequests)]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    public async Task CreateCalendarResourceAsync_TransientOutcomeLeavesCapabilityUnknown(HttpStatusCode statusCode)
+    {
+        var sut = CreateSut(new StubHttpMessageHandler(_ => new HttpResponseMessage(statusCode)));
+
+        _ = await sut.CreateCalendarResourceAsync(
+            CreateCalendarResourceRequest("transient.ics"),
+            CancellationToken.None);
+
+        var field = typeof(CalDavClient).GetField(
+            "_capabilities",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        var observations = field.GetValue(sut)!;
+        var count = (int)observations.GetType().GetProperty("Count")!.GetValue(observations)!;
+        count.ShouldBe(0);
+    }
+
     [Fact]
     public async Task CreateCalendarResourceAsync_UsesConditionalPutWithoutSchedulingHeaders()
     {
@@ -282,6 +490,7 @@ public class CalDavClientTests
     [InlineData(HttpStatusCode.TooManyRequests, CalendarResourceCreateCode.UpstreamRateLimited)]
     [InlineData(HttpStatusCode.InternalServerError, CalendarResourceCreateCode.PossiblyDispatched)]
     [InlineData(HttpStatusCode.InsufficientStorage, CalendarResourceCreateCode.UpstreamUnavailable)]
+    [InlineData(HttpStatusCode.Accepted, CalendarResourceCreateCode.PossiblyDispatched)]
     [InlineData(HttpStatusCode.OK, CalendarResourceCreateCode.Dispatched)]
     [InlineData(HttpStatusCode.NoContent, CalendarResourceCreateCode.Dispatched)]
     public async Task CreateCalendarResourceAsync_MapsMutationHttpStatus(
@@ -538,6 +747,158 @@ public class CalDavClientTests
                 CancellationToken.None));
 
         requestCount.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task QueryCalendarResourceHrefsAsync_UnavailableMinimalCapabilityIsRetainedWithoutAnotherRequest()
+    {
+        var requestCount = 0;
+        var handler = new StubHttpMessageHandler(_ =>
+        {
+            requestCount++;
+            return new HttpResponseMessage(HttpStatusCode.MethodNotAllowed);
+        });
+        var sut = CreateSut(handler);
+
+        await Should.ThrowAsync<CalendarDiscoveryUnsupportedCapabilityException>(() =>
+            sut.QueryCalendarResourceHrefsAsync(
+                "https://example.com/calendars/user/events/",
+                CalendarEntityKind.Event,
+                null,
+                null,
+                CancellationToken.None));
+        await Should.ThrowAsync<CalendarDiscoveryUnsupportedCapabilityException>(() =>
+            sut.QueryCalendarResourceHrefsAsync(
+                "https://example.com/calendars/user/events/",
+                CalendarEntityKind.Event,
+                null,
+                null,
+                CancellationToken.None));
+
+        requestCount.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task QueryCalendarResourceHrefsAsync_TransientFailureDoesNotDowngradeCapability()
+    {
+        var requestCount = 0;
+        var handler = new StubHttpMessageHandler(_ =>
+        {
+            requestCount++;
+            return requestCount == 1
+                ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+                : new HttpResponseMessage(HttpStatusCode.MultiStatus)
+                {
+                    Content = new StringContent("<d:multistatus xmlns:d=\"DAV:\" />")
+                };
+        });
+        var sut = CreateSut(handler);
+
+        await Should.ThrowAsync<HttpRequestException>(() =>
+            sut.QueryCalendarResourceHrefsAsync(
+                "https://example.com/calendars/user/events/",
+                CalendarEntityKind.Event,
+                null,
+                null,
+                CancellationToken.None));
+        var result = await sut.QueryCalendarResourceHrefsAsync(
+            "https://example.com/calendars/user/events/",
+            CalendarEntityKind.Event,
+            null,
+            null,
+            CancellationToken.None);
+
+        result.ShouldBeEmpty();
+        requestCount.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task QueryCalendarResourceHrefsAsync_ConfigurationChangeInvalidatesUnavailableCapability()
+    {
+        var requestCount = 0;
+        var options = new CalDavOptions { BaseUrl = "https://example.com/", Username = "first" };
+        var handler = new StubHttpMessageHandler(_ =>
+        {
+            requestCount++;
+            return new HttpResponseMessage(HttpStatusCode.NotImplemented);
+        });
+        var sut = CreateSut(handler, options);
+
+        await AssertMinimalQueryUnsupportedAsync(sut, "https://example.com/calendars/user/events/");
+        options.Username = "second";
+        await AssertMinimalQueryUnsupportedAsync(sut, "https://example.com/calendars/user/events/");
+
+        requestCount.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task QueryCalendarResourceHrefsAsync_ExplicitRediscoveryInvalidatesUnavailableCapability()
+    {
+        var requestCount = 0;
+        var handler = new StubHttpMessageHandler(_ =>
+        {
+            requestCount++;
+            return new HttpResponseMessage(HttpStatusCode.MethodNotAllowed);
+        });
+        var sut = CreateSut(handler);
+
+        await AssertMinimalQueryUnsupportedAsync(sut, "https://example.com/calendars/user/events/");
+        sut.RediscoverCapabilities();
+        await AssertMinimalQueryUnsupportedAsync(sut, "https://example.com/calendars/user/events/");
+
+        requestCount.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task QueryCalendarResourceHrefsAsync_StaleInFlightObservationCannotRepopulateAfterRediscovery()
+    {
+        var requestStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseResponse = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var requestCount = 0;
+        var handler = new AsyncStubHttpMessageHandler(async _ =>
+        {
+            requestCount++;
+            if (requestCount == 1)
+            {
+                requestStarted.SetResult();
+                await releaseResponse.Task;
+            }
+            return new HttpResponseMessage(HttpStatusCode.MethodNotAllowed);
+        });
+        var sut = CreateSut(handler);
+
+        var first = AssertMinimalQueryUnsupportedAsync(sut, "https://example.com/calendars/user/events/");
+        await requestStarted.Task;
+        sut.RediscoverCapabilities();
+        releaseResponse.SetResult();
+        await first;
+        await AssertMinimalQueryUnsupportedAsync(sut, "https://example.com/calendars/user/events/");
+
+        requestCount.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task QueryCalendarResourceHrefsAsync_CapabilityKeysSeparateCalendarAndOperation()
+    {
+        var requestCount = 0;
+        var handler = new StubHttpMessageHandler(_ =>
+        {
+            requestCount++;
+            return new HttpResponseMessage(HttpStatusCode.MethodNotAllowed);
+        });
+        var sut = CreateSut(handler, "https://example.com/");
+
+        await AssertMinimalQueryUnsupportedAsync(sut, "https://example.com/calendars/user/events/");
+        await AssertMinimalQueryUnsupportedAsync(sut, "https://example.com/calendars/user/todos/");
+        await Should.ThrowAsync<CalendarDiscoveryUnsupportedCapabilityException>(() =>
+            sut.QueryCalendarResourceHrefsAsync(
+                "https://example.com/calendars/user/events/",
+                CalendarEntityKind.Todo,
+                null,
+                null,
+                CancellationToken.None));
+
+        requestCount.ShouldBe(3);
     }
 
     [Fact]
@@ -860,10 +1221,15 @@ public class CalDavClientTests
         CalendarResourceReadCode expectedCode)
     {
         var payload = Enumerable.Repeat((byte)'A', byteCount).ToArray();
+        using var compressed = new MemoryStream();
+        await using (var gzip = new GZipStream(compressed, CompressionLevel.SmallestSize, leaveOpen: true))
+            await gzip.WriteAsync(payload, TestContext.Current.CancellationToken);
+        var content = new ByteArrayContent(compressed.ToArray());
+        content.Headers.ContentEncoding.Add("gzip");
         var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
             Headers = { ETag = new EntityTagHeaderValue("\"revision-1\"") },
-            Content = new ByteArrayContent(payload)
+            Content = content
         });
         var sut = CreateSut(handler);
 
@@ -930,6 +1296,183 @@ public class CalDavClientTests
     #region PROPFIND and REPORT Tests
 
     [Fact]
+    public async Task GetCalendarsAsync_ConfiguredCalendarHomeIsProvedAndUsedWithoutWellKnownDiscovery()
+    {
+        const string configuredHome = "https://example.com/calendars/user/";
+        var requests = new List<HttpRequestMessage>();
+        var handler = CreateSequencedHandler(
+        [
+            CreateCalendarHomeSetResponse(configuredHome),
+            CreateCalendarListingResponse()
+        ], requests);
+        var sut = CreateSut(handler, configuredHome);
+
+        var calendars = await sut.GetCalendarsAsync(CancellationToken.None);
+
+        calendars.ShouldHaveSingleItem().Href.ShouldBe("https://example.com/calendars/user/events/");
+        requests.Select(request => request.RequestUri!.AbsoluteUri).ShouldBe([configuredHome, configuredHome]);
+        requests.Select(request => request.Headers.GetValues("Depth").Single()).ShouldBe(["0", "1"]);
+    }
+
+    [Fact]
+    public async Task GetCalendarsAsync_ServerEndpointFallsBackToWellKnownWithoutRepeatingTheConfiguredProbe()
+    {
+        const string serverEndpoint = "https://example.com/remote.php/dav/";
+        var requests = new List<HttpRequestMessage>();
+        var handler = CreateSequencedHandler(
+        [
+            CreateEmptyMultiStatusResponse(),
+            CreateCalendarHomeSetResponse("https://example.com/calendars/user/"),
+            CreateCalendarListingResponse()
+        ], requests);
+        var sut = CreateSut(handler, serverEndpoint);
+
+        var calendars = await sut.GetCalendarsAsync(CancellationToken.None);
+
+        calendars.ShouldHaveSingleItem().Href.ShouldBe("https://example.com/calendars/user/events/");
+        requests.Select(request => request.RequestUri!.AbsoluteUri).ShouldBe(
+        [
+            serverEndpoint,
+            "https://example.com/.well-known/caldav",
+            "https://example.com/calendars/user/"
+        ]);
+    }
+
+    [Fact]
+    public async Task GetCalendarsAsync_UnverifiedServerTranscriptFollowsPrincipalToHomeExactlyOnce()
+    {
+        const string serverEndpoint = "https://example.com/remote.php/dav/";
+        const string principalHref = "https://example.com/principals/user/";
+        const string homeHref = "https://example.com/calendars/user/";
+        var requests = new List<HttpRequestMessage>();
+        var principalResponse = new HttpResponseMessage(HttpStatusCode.MultiStatus)
+        {
+            Content = new StringContent($"""
+                <d:multistatus xmlns:d="DAV:">
+                  <d:response><d:href>/</d:href><d:propstat><d:prop><d:current-user-principal><d:href>{principalHref}</d:href></d:current-user-principal></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>
+                </d:multistatus>
+                """, Encoding.UTF8, "application/xml")
+        };
+        var handler = CreateSequencedHandler(
+        [
+            CreateEmptyMultiStatusResponse(),
+            principalResponse,
+            CreateCalendarHomeSetResponse(homeHref),
+            CreateCalendarListingResponse()
+        ], requests);
+        var sut = CreateSut(handler, serverEndpoint);
+
+        var calendars = await sut.GetCalendarsAsync(CancellationToken.None);
+
+        calendars.ShouldHaveSingleItem().Href.ShouldBe("https://example.com/calendars/user/events/");
+        requests.Select(request => request.RequestUri!.AbsoluteUri).ShouldBe([
+            serverEndpoint,
+            "https://example.com/.well-known/caldav",
+            principalHref,
+            homeHref
+        ]);
+        requests.Select(request => request.Headers.GetValues("Depth").Single()).ShouldBe(["0", "0", "0", "1"]);
+    }
+
+    [Fact]
+    public async Task DiscoveryFailureLogsOnlySafeCodeAndPhaseWithoutConfiguredOrRawMarkers()
+    {
+        const string configured = "https://example.com/private-user-path/";
+        var logger = new CapturingLogger<CalDavClient>();
+        var handler = new StubHttpMessageHandler(_ => CreateEmptyMultiStatusResponse());
+        var sut = new CalDavClient(
+            new HttpClient(handler),
+            Options.Create(new CalDavOptions
+            {
+                BaseUrl = configured,
+                Username = "credential-user-sentinel",
+                Password = "credential-password-sentinel"
+            }),
+            logger);
+
+        await Should.ThrowAsync<CalendarDiscoveryProtocolException>(() =>
+            sut.GetCalendarsAsync(CancellationToken.None));
+
+        logger.Entries.ShouldNotBeEmpty();
+        foreach (var entry in logger.Entries)
+            entry.Keys.ShouldAllBe(key => key == "Code" || key == "Phase" || key == "{OriginalFormat}");
+        var text = string.Join('\n', logger.Entries.Select(entry => entry.Message));
+        text.ShouldNotContain(configured);
+        text.ShouldNotContain("private-user-path");
+        text.ShouldNotContain("credential-user-sentinel");
+        text.ShouldNotContain("credential-password-sentinel");
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.MethodNotAllowed)]
+    [InlineData(HttpStatusCode.NotImplemented)]
+    public async Task GetCalendarsAsync_UnsupportedServerEndpointFallsBackToWellKnown(
+        HttpStatusCode endpointStatus)
+    {
+        var requests = new List<HttpRequestMessage>();
+        var handler = CreateSequencedHandler(
+        [
+            new HttpResponseMessage(endpointStatus),
+            CreateCalendarHomeSetResponse("https://example.com/calendars/user/"),
+            CreateCalendarListingResponse()
+        ], requests);
+        var sut = CreateSut(handler, "https://example.com/remote.php/dav/");
+
+        var calendars = await sut.GetCalendarsAsync(CancellationToken.None);
+
+        calendars.ShouldHaveSingleItem();
+        requests.Select(request => request.RequestUri!.AbsoluteUri).ShouldBe(
+        [
+            "https://example.com/remote.php/dav/",
+            "https://example.com/.well-known/caldav",
+            "https://example.com/calendars/user/"
+        ]);
+    }
+
+    [Fact]
+    public async Task GetCalendarsAsync_ConfiguredCalendarHomeFollowsCanonicalSameOriginRedirectOnce()
+    {
+        const string configuredHome = "https://example.com/calendars/user";
+        var requests = new List<HttpRequestMessage>();
+        var redirect = new HttpResponseMessage(HttpStatusCode.PermanentRedirect);
+        redirect.Headers.Location = new Uri("/calendars/user/", UriKind.Relative);
+        var handler = CreateSequencedHandler(
+        [
+            redirect,
+            CreateCalendarHomeSetResponse("/calendars/user/"),
+            CreateCalendarListingResponse()
+        ], requests);
+        var sut = CreateSut(handler, configuredHome);
+
+        var calendars = await sut.GetCalendarsAsync(CancellationToken.None);
+
+        calendars.ShouldHaveSingleItem();
+        requests.Select(request => request.RequestUri!.AbsoluteUri).ShouldBe(
+        [
+            "https://example.com/calendars/user/",
+            "https://example.com/calendars/user/",
+            "https://example.com/calendars/user/"
+        ]);
+        requests.ShouldAllBe(request => request.Method.Method == "PROPFIND");
+    }
+
+    [Fact]
+    public async Task GetCalendarsAsync_ConfiguredCalendarHomeRejectsCrossOriginRedirectWithoutDiscoveryFallback()
+    {
+        var requests = new List<HttpRequestMessage>();
+        var redirect = new HttpResponseMessage(HttpStatusCode.PermanentRedirect);
+        redirect.Headers.Location = new Uri("https://other.example/calendars/user/");
+        var handler = CreateSequencedHandler([redirect], requests);
+        var sut = CreateSut(handler, "https://example.com/calendars/user/");
+
+        await Should.ThrowAsync<CalendarDiscoveryProtocolException>(() =>
+            sut.GetCalendarsAsync(CancellationToken.None));
+
+        requests.ShouldHaveSingleItem();
+        requests[0].RequestUri!.Host.ShouldBe("example.com");
+    }
+
+    [Fact]
     public async Task GetCalendarsAsync_ReturnsCanonicalAbsoluteHrefsForEveryCalendar()
     {
         var requests = new List<HttpRequestMessage>();
@@ -947,7 +1490,7 @@ public class CalDavClientTests
                     """, Encoding.UTF8, "application/xml")
             }
         ], requests);
-        var sut = CreateSut(handler, "https://example.com/remote.php/dav/");
+        var sut = CreateSut(handler, "https://example.com/calendars/user/");
 
         var calendars = await sut.GetCalendarsAsync(CancellationToken.None);
 
@@ -977,7 +1520,7 @@ public class CalDavClientTests
                     """, Encoding.UTF8, "application/xml")
             }
         ], requests);
-        var sut = CreateSut(handler, "https://example.com/remote.php/dav/");
+        var sut = CreateSut(handler, "https://example.com/calendars/user/");
 
         await Should.ThrowAsync<CalendarDiscoveryProtocolException>(() =>
             sut.GetCalendarsAsync(CancellationToken.None));
@@ -1002,7 +1545,7 @@ public class CalDavClientTests
                     """, Encoding.UTF8, "application/xml")
             }
         ], requests);
-        var sut = CreateSut(handler, "https://example.com/remote.php/dav/");
+        var sut = CreateSut(handler, "https://example.com/calendars/user/");
 
         await Should.ThrowAsync<CalendarDiscoveryProtocolException>(() =>
             sut.GetCalendarsAsync(CancellationToken.None));
@@ -1029,7 +1572,7 @@ public class CalDavClientTests
                     """, Encoding.UTF8, "application/xml")
             }
         ], requests);
-        var sut = CreateSut(handler, "https://example.com/remote.php/dav/");
+        var sut = CreateSut(handler, "https://example.com/calendars/user/");
 
         await Should.ThrowAsync<CalendarDiscoveryProtocolException>(() =>
             sut.GetCalendarsAsync(CancellationToken.None));
@@ -1067,14 +1610,24 @@ public class CalDavClientTests
 
     private static CalDavClient CreateSut(HttpMessageHandler handler, string baseUrl = "https://example.com/remote.php/dav")
     {
-        var httpClient = new HttpClient(handler);
-        var options = Options.Create(new CalDavOptions
-        {
-            BaseUrl = baseUrl,
-        });
-
-        return new CalDavClient(httpClient, options, Substitute.For<ILogger<CalDavClient>>());
+        return CreateSut(handler, new CalDavOptions { BaseUrl = baseUrl });
     }
+
+    private static CalDavClient CreateSut(HttpMessageHandler handler, CalDavOptions options)
+    {
+        var httpClient = new HttpClient(handler);
+
+        return new CalDavClient(httpClient, Options.Create(options), Substitute.For<ILogger<CalDavClient>>());
+    }
+
+    private static async Task AssertMinimalQueryUnsupportedAsync(CalDavClient sut, string calendarHref) =>
+        await Should.ThrowAsync<CalendarDiscoveryUnsupportedCapabilityException>(() =>
+            sut.QueryCalendarResourceHrefsAsync(
+                calendarHref,
+                CalendarEntityKind.Event,
+                null,
+                null,
+                CancellationToken.None));
 
     private static CalendarResourceCreateRequest CreateCalendarResourceRequest(string name) => new(
         "https://example.com/calendars/user/events/",
@@ -1165,15 +1718,63 @@ public class CalDavClientTests
         });
     }
 
-    private static HttpResponseMessage CreateCalendarHomeSetResponse() =>
+    private static HttpResponseMessage CreateCalendarHomeSetResponse(
+        string homeSetHref = "/calendars/user/") =>
+        new(HttpStatusCode.MultiStatus)
+        {
+            Content = new StringContent($"""
+                <d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+                  <d:response><d:href>{homeSetHref}</d:href><d:propstat><d:prop><c:calendar-home-set><d:href>{homeSetHref}</d:href></c:calendar-home-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>
+                </d:multistatus>
+                """, Encoding.UTF8, "application/xml")
+        };
+
+    private static HttpResponseMessage CreateEmptyMultiStatusResponse() =>
+        new(HttpStatusCode.MultiStatus)
+        {
+            Content = new StringContent(
+                "<d:multistatus xmlns:d=\"DAV:\" />",
+                Encoding.UTF8,
+                "application/xml")
+        };
+
+    private static HttpResponseMessage CreateCalendarListingResponse() =>
         new(HttpStatusCode.MultiStatus)
         {
             Content = new StringContent("""
                 <d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
-                  <d:response><d:href>/calendars/user/</d:href><d:propstat><d:prop><c:calendar-home-set><d:href>/calendars/user/</d:href></c:calendar-home-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>
+                  <d:response><d:href>events/</d:href><d:propstat><d:prop><d:resourcetype><c:calendar/></d:resourcetype><c:supported-calendar-component-set><c:comp name="VEVENT"/></c:supported-calendar-component-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>
                 </d:multistatus>
                 """, Encoding.UTF8, "application/xml")
         };
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        internal List<(string Message, IReadOnlyList<string> Keys)> Entries { get; } = [];
+
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            var keys = state is IEnumerable<KeyValuePair<string, object?>> values
+                ? values.Select(value => value.Key).ToArray()
+                : [];
+            Entries.Add((formatter(state, exception), keys));
+        }
+
+        private sealed class NullScope : IDisposable
+        {
+            internal static NullScope Instance { get; } = new();
+            public void Dispose() { }
+        }
+    }
 
     #endregion
 }

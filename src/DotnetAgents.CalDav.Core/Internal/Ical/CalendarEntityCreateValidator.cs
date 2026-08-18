@@ -9,6 +9,10 @@ namespace DotnetAgents.CalDav.Core.Internal.Ical;
 
 internal static class CalendarEntityCreateValidator
 {
+    internal static bool RequiresUnsupportedRecurrenceScale(string? rule) => rule?.Split(';')
+        .Any(part => part.StartsWith("RSCALE=", StringComparison.OrdinalIgnoreCase)
+            || part.StartsWith("SKIP=", StringComparison.OrdinalIgnoreCase)) == true;
+
     private static readonly FrozenSet<string> EventStatuses =
         new[] { "TENTATIVE", "CONFIRMED", "CANCELLED" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
     private static readonly FrozenSet<string> TodoStatuses =
@@ -31,11 +35,29 @@ internal static class CalendarEntityCreateValidator
         new[] { "CHAIR", "REQUIRED", "OPTIONAL", "NON-PARTICIPANT" }
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
     private static readonly FrozenSet<string> RelationTypes =
-        new[] { "PARENT", "CHILD", "SIBLING" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+        new[]
+        {
+            "PARENT", "CHILD", "SIBLING", "FINISHTOSTART", "FINISHTOFINISH", "STARTTOFINISH",
+            "STARTTOSTART", "FIRST", "NEXT", "DEPENDS-ON", "REFID", "CONCEPT", "SNOOZE"
+        }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+    private static readonly FrozenSet<string> ResourceTypes =
+        new[] { "PROJECTOR", "ROOM", "REMOTE-CONFERENCE-AUDIO", "REMOTE-CONFERENCE-VIDEO" }
+            .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+    private static readonly FrozenSet<string> AlarmProximities =
+        new[] { "ARRIVE", "DEPART", "CONNECT", "DISCONNECT" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
     private static readonly FrozenSet<string> EventTransparencies =
         new[] { "OPAQUE", "TRANSPARENT" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
     private static readonly FrozenSet<string> Classifications =
         new[] { "PUBLIC", "PRIVATE", "CONFIDENTIAL" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+    internal static bool IsRecognizedOpenEnum(CalendarEntityKind kind, string propertyName, string value) =>
+        propertyName.ToUpperInvariant() switch
+        {
+            "STATUS" => (kind == CalendarEntityKind.Event ? EventStatuses : TodoStatuses).Contains(value),
+            "TRANSP" when kind == CalendarEntityKind.Event => EventTransparencies.Contains(value),
+            "CLASS" when kind == CalendarEntityKind.Event => Classifications.Contains(value),
+            _ => false
+        };
 
     public static void ValidateEvent(string uid, CalendarEventCreateFields fields)
     {
@@ -501,8 +523,8 @@ internal static class CalendarEntityCreateValidator
         ValidateNamedUris(data.Links, "URI", "LABEL");
         ValidateUriValues(data.Concepts);
         ValidateUriValues(data.StructuredDataUris);
-        ValidateNamedUris(data.LocationUris, "TEXT");
-        ValidateNamedUris(data.ResourceUris, "TEXT");
+        ValidateNamedComponents(data.LocationUris, allowUrl: true);
+        ValidateNamedComponents(data.ResourceUris, allowUrl: false);
     }
 
     private static void ValidateRelations(IReadOnlyList<CalendarRelation>? relations)
@@ -582,8 +604,8 @@ internal static class CalendarEntityCreateValidator
         ValidateTextValues(participant.Resources);
         ValidateTextValues(participant.StyledDescriptions);
         ValidateUriValues(participant.StructuredDataUris);
-        ValidateNamedUris(participant.LocationUris, "TEXT");
-        ValidateNamedUris(participant.ResourceUris, "TEXT");
+        ValidateNamedComponents(participant.LocationUris, allowUrl: true);
+        ValidateNamedComponents(participant.ResourceUris, allowUrl: false);
     }
 
     private static void ValidateUtcTemporalProperty(CalendarTemporalProperty? property)
@@ -629,6 +651,13 @@ internal static class CalendarEntityCreateValidator
         foreach (var attendee in alarm.Attendees ?? [])
             ValidateAttendee(attendee, entityKind);
         ValidateNamedUris(alarm.Attachments, "URI", "LABEL");
+        ValidateTextValue(alarm.Uid);
+        ValidateUtcTemporalProperty(alarm.Acknowledged);
+        ValidateOpenEnum(alarm.Proximity?.Value, AlarmProximities);
+        ValidateTextValue(alarm.Proximity, "VALUE");
+        ValidateRelations(alarm.RelatedTo);
+        ValidateNamedComponents(alarm.ProximityLocations, allowUrl: true);
+        ValidateAlarmProximity(alarm);
         ValidateAlarmShape(action, alarm);
         ValidateAlarmRepeat(alarm);
         var relative = CalendarDurationArithmetic.TryParse(alarm.Trigger.Value, out _);
@@ -643,6 +672,21 @@ internal static class CalendarEntityCreateValidator
             throw new ArgumentException("The alarm trigger is invalid.");
         }
         ValidateAlarmTriggerParameters(alarm.Trigger.Parameters, relative);
+    }
+
+    private static void ValidateAlarmProximity(CalendarAlarm alarm)
+    {
+        var locations = alarm.ProximityLocations ?? [];
+        if (locations.Count > 0 && alarm.Proximity is null)
+            throw new ArgumentException("Alarm proximity locations require PROXIMITY.");
+        if (locations.Any(location =>
+                location.Url is null
+                || !location.Url.Uri.StartsWith("geo:", StringComparison.OrdinalIgnoreCase)))
+            throw new ArgumentException("Alarm VLOCATION values require URL geo URI values.");
+        if (alarm.Proximity?.Value.ToUpperInvariant() is ("ARRIVE" or "DEPART") && locations.Count == 0)
+        {
+            throw new ArgumentException("ARRIVE and DEPART alarms require VLOCATION URL geo URI values.");
+        }
     }
 
     private static void ValidateAlarmTriggerParameters(
@@ -874,6 +918,46 @@ internal static class CalendarEntityCreateValidator
         ValidateUri(value.Uri);
         ValidateSafeValue(value.Label);
         ValidateTypedParameters(value.Parameters, expectedValueType, reservedParameterNames);
+    }
+
+    private static void ValidateNamedComponents(
+        IReadOnlyList<CalendarNamedComponent>? values,
+        bool allowUrl)
+    {
+        foreach (var value in values ?? [])
+        {
+            ValidateSafeValue(value.Uid, allowNewLines: false);
+            if (string.IsNullOrEmpty(value.Uid))
+                throw new ArgumentException("A VLOCATION or VRESOURCE UID is required.");
+            ValidateTypedParameters(value.Parameters, "TEXT", "VALUE");
+            ValidateTextValue(value.Name);
+            ValidateTextValue(value.Description);
+            ValidateGeoProperty(value.Geo);
+            ValidateComponentTypes(value.ComponentTypes, isResource: !allowUrl);
+            ValidateUriValue(value.Url);
+            if (!allowUrl && value.Url is not null)
+                throw new ArgumentException("VRESOURCE does not support URL.");
+            ValidateRelations(value.RelatedTo);
+            ValidateUriValues(value.Concepts);
+            ValidateNamedUris(value.Links, "URI", "LABEL");
+            ValidateUriValues(value.StructuredDataUris);
+        }
+    }
+
+    private static void ValidateComponentTypes(CalendarTextListProperty? componentTypes, bool isResource)
+    {
+        if (componentTypes is null)
+            return;
+        foreach (var componentType in componentTypes.Value)
+            ValidateSafeValue(componentType);
+        ValidateTypedParameters(componentTypes.Parameters, "TEXT", "VALUE");
+        if (!isResource)
+            return;
+        if (componentTypes.Value.Count != 1)
+            throw new ArgumentException("VRESOURCE RESOURCE-TYPE requires exactly one token.");
+        ValidateToken(componentTypes.Value[0]);
+        if (!ResourceTypes.Contains(componentTypes.Value[0]))
+            throw new ArgumentException("VRESOURCE RESOURCE-TYPE is not a recognized registered value.");
     }
 
     private static void ValidateUriValues(IReadOnlyList<CalendarUriValue>? values)

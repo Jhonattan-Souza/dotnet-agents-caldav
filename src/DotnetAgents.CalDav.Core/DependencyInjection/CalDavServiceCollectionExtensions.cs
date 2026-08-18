@@ -81,6 +81,7 @@ public static class CalDavServiceCollectionExtensions
             // still have an ambiguous transport outcome and must be reconciled before another dispatch.
             options.Retry.MaxRetryAttempts = 2;
             options.Retry.DisableForUnsafeHttpMethods();
+            options.Retry.DisableFor(new HttpMethod("MOVE"));
             options.Retry.BackoffType = DelayBackoffType.Exponential;
             options.Retry.UseJitter = true;
             options.Retry.Delay = TimeSpan.FromMilliseconds(200);

@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Configuration;
+using DotnetAgents.CalDav.Core.Internal;
 using DotnetAgents.CalDav.Core.Internal.Ical;
 using DotnetAgents.CalDav.Core.Models;
 
@@ -322,6 +323,7 @@ internal sealed class CalendarExactResourceEngine(
         string destinationCalendarHref,
         CalendarResourceMoveDispatchResult dispatch)
     {
+        CalendarOperationProgress.SetPhase(CalendarOperationPhase.Reconcile);
         if (dispatch.Code == CalendarResourceMoveDispatchCode.Conflict)
             return await ClassifyMoveConflictAsync(request, source, destinationCalendarHref);
         if (dispatch.Code is not (CalendarResourceMoveDispatchCode.Dispatched
@@ -488,6 +490,7 @@ internal sealed class CalendarExactResourceEngine(
         CalendarResourceSnapshot current,
         CalendarResourceUpdateDispatchResult dispatch)
     {
+        CalendarOperationProgress.SetPhase(CalendarOperationPhase.Reconcile);
         if (dispatch.Code == CalendarResourceUpdateDispatchCode.Conflict)
         {
             var conflict = await ObserveSnapshotAsync(calendarHref, request.Revision.Href);
@@ -887,6 +890,7 @@ internal sealed class CalendarExactResourceEngine(
         CalendarExactResourceIdentity identity,
         CalendarResourceCreateResult dispatch)
     {
+        CalendarOperationProgress.SetPhase(CalendarOperationPhase.Reconcile);
         if (dispatch.Code is not (CalendarResourceCreateCode.Dispatched or CalendarResourceCreateCode.PossiblyDispatched))
             return FromCreateFailure(dispatch.Code);
         var observed = await ObserveAsync(dispatch.ResourceHref);

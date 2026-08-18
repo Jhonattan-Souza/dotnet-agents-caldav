@@ -49,6 +49,7 @@ public sealed class CalendarResourceDeleteProtocolTests
     [InlineData(HttpStatusCode.InsufficientStorage, CalendarResourceDeleteDispatchCode.UpstreamUnavailable)]
     [InlineData(HttpStatusCode.RequestTimeout, CalendarResourceDeleteDispatchCode.PossiblyDispatched)]
     [InlineData(HttpStatusCode.ServiceUnavailable, CalendarResourceDeleteDispatchCode.PossiblyDispatched)]
+    [InlineData(HttpStatusCode.Accepted, CalendarResourceDeleteDispatchCode.PossiblyDispatched)]
     [InlineData(HttpStatusCode.BadRequest, CalendarResourceDeleteDispatchCode.UpstreamProtocolError)]
     public async Task DeleteAsync_MapsDefinitiveHttpOutcome(
         HttpStatusCode statusCode,

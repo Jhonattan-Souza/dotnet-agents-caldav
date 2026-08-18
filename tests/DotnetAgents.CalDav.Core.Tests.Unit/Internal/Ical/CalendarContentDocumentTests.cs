@@ -74,6 +74,57 @@ public sealed class CalendarContentDocumentTests
     }
 
     [Fact]
+    public void LosslessEditorPreservesRangeLocalTimeZoneAndUnknownContentWithoutIcalNetRegeneration()
+    {
+        const string content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\n"
+            + "BEGIN:VTIMEZONE\r\nTZID:Private/Office\r\nX-ZONE:keep\r\nBEGIN:STANDARD\r\n"
+            + "DTSTART:19700101T000000\r\nTZOFFSETFROM:+0100\r\nTZOFFSETTO:+0100\r\nEND:STANDARD\r\nEND:VTIMEZONE\r\n"
+            + "BEGIN:VEVENT\r\nUID:u1\r\nDTSTAMP:20260815T120000Z\r\n"
+            + "RECURRENCE-ID;RANGE=THISANDFUTURE;TZID=Private/Office:20260816T090000\r\n"
+            + "DTSTART;TZID=Private/Office:20260816T100000\r\nSUMMARY:old\r\nX-ENTITY:keep\r\n"
+            + "END:VEVENT\r\nEND:VCALENDAR\r\n";
+        var bytes = Encoding.UTF8.GetBytes(content);
+        var document = CalendarContentDocument.Parse(bytes);
+        var eventPath = document.Components.Single(component =>
+            component.Path.Select(part => part.Name).SequenceEqual(new[] { "VCALENDAR", "VEVENT" })).Path;
+
+        var edited = document.ReplaceSinglePropertyValue(eventPath, "SUMMARY", "new");
+
+        document.Replay().ShouldBe(bytes);
+        Encoding.UTF8.GetString(edited).ShouldBe(
+            content.Replace("SUMMARY:old\r\n", "SUMMARY:new\r\n", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void LosslessAuthorityRetainsMultipleRulesDatesExclusionsAndOverridesInOriginalOrder()
+    {
+        const string content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\n"
+            + "BEGIN:VEVENT\r\nUID:u1\r\nDTSTAMP:20260815T120000Z\r\nDTSTART:20260816T090000Z\r\n"
+            + "RRULE:FREQ=DAILY;COUNT=4\r\nRRULE:FREQ=WEEKLY;COUNT=2\r\n"
+            + "RDATE:20260818T090000Z\r\nRDATE:20260819T090000Z\r\nEXDATE:20260817T090000Z\r\nEND:VEVENT\r\n"
+            + "BEGIN:VEVENT\r\nUID:u1\r\nDTSTAMP:20260815T120000Z\r\nRECURRENCE-ID:20260818T090000Z\r\n"
+            + "DTSTART:20260818T100000Z\r\nEND:VEVENT\r\n"
+            + "BEGIN:VEVENT\r\nUID:u1\r\nDTSTAMP:20260815T120000Z\r\nRECURRENCE-ID:20260819T090000Z\r\n"
+            + "DTSTART:20260819T110000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var bytes = Encoding.UTF8.GetBytes(content);
+
+        var document = CalendarContentDocument.Parse(bytes);
+
+        document.Replay().ShouldBe(bytes);
+        document.Properties.Where(property => property.Name is "RRULE" or "RDATE" or "EXDATE" or "RECURRENCE-ID")
+            .Select(property => $"{property.Name}:{property.RawEncodedValue}")
+            .ShouldBe([
+                "RRULE:FREQ=DAILY;COUNT=4",
+                "RRULE:FREQ=WEEKLY;COUNT=2",
+                "RDATE:20260818T090000Z",
+                "RDATE:20260819T090000Z",
+                "EXDATE:20260817T090000Z",
+                "RECURRENCE-ID:20260818T090000Z",
+                "RECURRENCE-ID:20260819T090000Z"
+            ]);
+    }
+
+    [Fact]
     public void ProjectionReplayExcludesValidatedUnsupportedExtensionsWithoutChangingAuthority()
     {
         const string content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\n"
@@ -473,6 +524,10 @@ public sealed class CalendarContentDocumentTests
 
         var result = CalendarResourceProjector.Project(Encoding.UTF8.GetBytes(content));
 
+        result.Projection.Kind.ShouldBe(CalendarResourceProjectionKind.Opaque);
+        result.Projection.EntityUid.ShouldBeNull();
+        result.Projection.Summary.ShouldBeNull();
+        result.Diagnostics.Count.ShouldBe(1);
         result.Diagnostics.Select(item => item.Code).ShouldBe(["mixed_entity_kinds"]);
     }
 
@@ -502,7 +557,31 @@ public sealed class CalendarContentDocumentTests
 
         var result = CalendarResourceProjector.Project(Encoding.UTF8.GetBytes(content));
 
+        result.Projection.Kind.ShouldBe(CalendarResourceProjectionKind.Opaque);
+        result.Projection.EntityUid.ShouldBeNull();
+        result.Diagnostics.Count.ShouldBe(1);
         result.Diagnostics.Select(item => item.Code).ShouldBe(["entity_master_cardinality"]);
+    }
+
+    [Fact]
+    public void Project_OneMasterOverrideAndTimeZoneIsOneProjectableAggregate()
+    {
+        const string content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\n"
+            + "BEGIN:VTIMEZONE\r\nTZID:Private/Office\r\nBEGIN:STANDARD\r\nDTSTART:19700101T000000\r\n"
+            + "TZOFFSETFROM:+0100\r\nTZOFFSETTO:+0100\r\nEND:STANDARD\r\nEND:VTIMEZONE\r\n"
+            + "BEGIN:VEVENT\r\nUID:u1\r\nDTSTAMP:20260815T120000Z\r\n"
+            + "DTSTART;TZID=Private/Office:20260816T090000\r\nRRULE:FREQ=DAILY;COUNT=2\r\nEND:VEVENT\r\n"
+            + "BEGIN:VEVENT\r\nUID:u1\r\nDTSTAMP:20260815T120000Z\r\n"
+            + "RECURRENCE-ID;TZID=Private/Office:20260817T090000\r\n"
+            + "DTSTART;TZID=Private/Office:20260817T100000\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        var result = CalendarResourceProjector.Project(Encoding.UTF8.GetBytes(content));
+
+        result.Projection.Kind.ShouldBe(CalendarResourceProjectionKind.Event);
+        result.Projection.EntityUid.ShouldBe("u1");
+        result.Diagnostics.ShouldBeEmpty();
+        result.Properties.Count(property => property.Name == "UID").ShouldBe(2);
+        result.Properties.Single(property => property.Name == "TZID").RawEncodedValue.ShouldBe("Private/Office");
     }
 
     [Theory]
@@ -641,10 +720,8 @@ public sealed class CalendarContentDocumentTests
     [InlineData("CONCEPT:https://example.test/concept")]
     [InlineData("CONFERENCE:https://example.test/conference")]
     [InlineData("IMAGE:https://example.test/image")]
-    [InlineData("IMAGE;VALUE=BINARY;ENCODING=BASE64;FMTTYPE=image/png:aGVsbG8=")]
     [InlineData("LINK:https://example.test/link")]
     [InlineData("STRUCTURED-DATA;VALUE=URI:https://example.test/data")]
-    [InlineData("STRUCTURED-DATA;VALUE=BINARY;ENCODING=BASE64;FMTTYPE=application/json:e30=")]
     [InlineData("STYLED-DESCRIPTION;FMTTYPE=text/html:<b>valid</b>")]
     public void Project_ValidatesEachRemovedEntityExtensionBeforeProjecting(string property)
     {
@@ -656,6 +733,28 @@ public sealed class CalendarContentDocumentTests
 
         result.Projection.Kind.ShouldBe(CalendarResourceProjectionKind.Event);
         result.Diagnostics.ShouldBeEmpty();
+    }
+
+    [Theory]
+    [InlineData("ATTACH;VALUE=BINARY;ENCODING=BASE64:aGVsbG8=")]
+    [InlineData("IMAGE;VALUE=BINARY;ENCODING=BASE64;FMTTYPE=image/png:aGVsbG8=")]
+    [InlineData("LINK;VALUE=UID;LINKREL=alternate:linked-uid")]
+    [InlineData("LINK;VALUE=XML-REFERENCE;LINKREL=alternate:https://example.test/data.xml#item")]
+    [InlineData("STRUCTURED-DATA;VALUE=TEXT;FMTTYPE=application/json;SCHEMA=\"https://example.test/schema\":e30=")]
+    [InlineData("STRUCTURED-DATA;VALUE=BINARY;ENCODING=BASE64;FMTTYPE=application/json;SCHEMA=\"https://example.test/schema\":e30=")]
+    public void Project_ValidStandardsGrammarOutsideTypedSurfaceIsOpaqueButExactValid(string property)
+    {
+        var content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\n"
+            + "BEGIN:VEVENT\r\nUID:u1\r\nDTSTAMP:20260815T120000Z\r\nDTSTART:20260816T090000Z\r\n"
+            + property + "\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var bytes = Encoding.UTF8.GetBytes(content);
+        var document = CalendarContentDocument.Parse(bytes);
+
+        CalendarResourceProjector.IsValidExactResource(document).ShouldBeTrue();
+        var result = CalendarResourceProjector.Project(bytes);
+
+        result.Projection.Kind.ShouldBe(CalendarResourceProjectionKind.Opaque);
+        result.Diagnostics.Select(item => item.Code).ShouldBe(["typed_projection_unsupported"]);
     }
 
     [Theory]

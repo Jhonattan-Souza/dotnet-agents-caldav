@@ -185,7 +185,6 @@ public sealed record CalendarResourceSuccessResult(
 public sealed record CalendarSnapshotResult(
     [property: JsonPropertyName("calendar")] CalendarHref Calendar,
     [property: JsonPropertyName("resourceRevision")] CalendarResourceRevisionResult ResourceRevision,
-    [property: JsonPropertyName("authoritativePayload")] CalendarAuthoritativePayloadResult AuthoritativePayload,
     [property: JsonPropertyName("calendarProperties")] IReadOnlyList<CalendarPropertyResult> CalendarProperties,
     [property: JsonPropertyName("projection")] object Projection,
     [property: JsonPropertyName("diagnostics")] IReadOnlyList<CalendarDiagnosticResult> Diagnostics,
@@ -194,7 +193,6 @@ public sealed record CalendarSnapshotResult(
     internal static CalendarSnapshotResult FromSnapshot(CalendarResourceSnapshot snapshot) => new(
         new CalendarHref(snapshot.CalendarHref),
         new CalendarResourceRevisionResult(snapshot.ResourceHref, snapshot.EntityTag),
-        new CalendarAuthoritativePayloadResult("base64", Convert.ToBase64String(snapshot.AuthoritativeUtf8.Span)),
         snapshot.CalendarProperties.Select(CalendarPropertyResult.FromProperty).ToArray(),
         CreateProjection(snapshot),
         snapshot.Diagnostics.Select(CalendarDiagnosticResult.FromResourceDiagnostic).ToArray(),
@@ -205,11 +203,12 @@ public sealed record CalendarSnapshotResult(
         CalendarResourceProjectionKind.Event => new CalendarEventProjectionResult(
             "event",
             snapshot.Projection.EntityUid!,
-            new CalendarEventFieldsResult(snapshot.Projection.Summary)),
+            CalendarTypedProjectionBuilder.Event(snapshot)),
         CalendarResourceProjectionKind.Todo => new CalendarTodoProjectionResult(
             "todo",
             snapshot.Projection.EntityUid!,
-            new CalendarTodoFieldsResult(snapshot.Projection.Summary)),
+            CalendarTypedProjectionBuilder.Todo(snapshot),
+            CalendarTypedProjectionBuilder.TodoCompletedAt(snapshot)),
         _ => new CalendarOpaqueProjectionResult("opaque", snapshot.CalendarProperties.Select(CalendarPropertyResult.FromProperty).ToArray())
     };
 
@@ -227,10 +226,6 @@ public sealed record CalendarResourceRevisionResult(
     [property: JsonPropertyName("href")] string Href,
     [property: JsonPropertyName("entityTag")] string EntityTag);
 
-public sealed record CalendarAuthoritativePayloadResult(
-    [property: JsonPropertyName("encoding")] string Encoding,
-    [property: JsonPropertyName("base64Utf8")] string Base64Utf8);
-
 public sealed record CalendarEntityRevisionResult(
     [property: JsonPropertyName("href")] string Href,
     [property: JsonPropertyName("entityUid")] string EntityUid,
@@ -245,17 +240,55 @@ public sealed record CalendarEventProjectionResult(
 public sealed record CalendarTodoProjectionResult(
     [property: JsonPropertyName("kind")] string Kind,
     [property: JsonPropertyName("uid")] string Uid,
-    [property: JsonPropertyName("fields")] CalendarTodoFieldsResult Fields);
+    [property: JsonPropertyName("fields")] CalendarTodoFieldsResult Fields,
+    [property: JsonPropertyName("completedAt"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CalendarTemporalResult? CompletedAt);
 
 public sealed record CalendarOpaqueProjectionResult(
     [property: JsonPropertyName("kind")] string Kind,
     [property: JsonPropertyName("properties")] IReadOnlyList<CalendarPropertyResult> Properties);
 
 public sealed record CalendarEventFieldsResult(
-    [property: JsonPropertyName("summary"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Summary);
+    [property: JsonPropertyName("summary"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Summary,
+    [property: JsonPropertyName("description"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Description,
+    [property: JsonPropertyName("start"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CalendarTemporalResult? Start,
+    [property: JsonPropertyName("end"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CalendarTemporalResult? End,
+    [property: JsonPropertyName("duration"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Duration,
+    [property: JsonPropertyName("location"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Location,
+    [property: JsonPropertyName("geo"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CalendarGeoResult? Geo,
+    [property: JsonPropertyName("status"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CalendarOpenEnumResult? Status,
+    [property: JsonPropertyName("transparency"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CalendarOpenEnumResult? Transparency,
+    [property: JsonPropertyName("classification"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CalendarOpenEnumResult? Classification,
+    [property: JsonPropertyName("priority"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Priority,
+    [property: JsonPropertyName("categories"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Categories,
+    [property: JsonPropertyName("url"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Url,
+    [property: JsonPropertyName("recurrenceSet"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] JsonElement? RecurrenceSet,
+    [property: JsonPropertyName("structuredData"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] JsonElement? StructuredData);
 
 public sealed record CalendarTodoFieldsResult(
-    [property: JsonPropertyName("summary"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Summary);
+    [property: JsonPropertyName("summary"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Summary,
+    [property: JsonPropertyName("description"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Description,
+    [property: JsonPropertyName("start"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CalendarTemporalResult? Start,
+    [property: JsonPropertyName("due"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CalendarTemporalResult? Due,
+    [property: JsonPropertyName("duration"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Duration,
+    [property: JsonPropertyName("status"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CalendarOpenEnumResult? Status,
+    [property: JsonPropertyName("classification"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CalendarOpenEnumResult? Classification,
+    [property: JsonPropertyName("priority"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Priority,
+    [property: JsonPropertyName("percentComplete"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? PercentComplete,
+    [property: JsonPropertyName("categories"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Categories,
+    [property: JsonPropertyName("recurrenceSet"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] JsonElement? RecurrenceSet,
+    [property: JsonPropertyName("structuredData"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] JsonElement? StructuredData);
+
+public sealed record CalendarGeoResult(
+    [property: JsonPropertyName("latitude")] double Latitude,
+    [property: JsonPropertyName("longitude")] double Longitude);
+
+public sealed record CalendarRecurrenceRuleResult(
+    [property: JsonPropertyName("text")] string Text,
+    [property: JsonPropertyName("originalSlice")] string OriginalSlice);
+
+public sealed record CalendarOpenEnumResult(
+    [property: JsonPropertyName("kind")] string Kind,
+    [property: JsonPropertyName("rawValue")] string RawValue);
 
 public sealed record CalendarPropertyResult(
     [property: JsonPropertyName("componentPath")] IReadOnlyList<CalendarComponentPathResult> ComponentPath,

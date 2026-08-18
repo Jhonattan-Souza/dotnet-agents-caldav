@@ -195,6 +195,7 @@ public sealed class CalendarOccurrenceMutationToolsTests
     [Theory]
     [InlineData("date", "2026-08-18", null, CalendarTemporalKind.Date)]
     [InlineData("floatingDateTime", "2026-08-18T09:00:00", null, CalendarTemporalKind.FloatingDateTime)]
+    [InlineData("utcDateTime", "2026-08-18T09:00:00Z", null, CalendarTemporalKind.UtcDateTime)]
     [InlineData("zonedDateTime", "2026-08-18T09:00:00", "Europe/Zurich", CalendarTemporalKind.ZonedDateTime)]
     public async Task AddRawAsync_ParsesEveryTemporalIdentityFamily(
         string kind,

@@ -22,6 +22,8 @@ internal static class CalendarRecurrenceSetPatchEditor
     {
         try
         {
+            if (CalendarEntityCreateValidator.RequiresUnsupportedRecurrenceScale(patch.Value?.Rule))
+                return Failed(document, snapshot, CalendarEntityPatchCode.UnsupportedCapability);
             if (CalendarOccurrenceEvaluator.HasUnevaluableRecurrenceStructure(snapshot))
                 return Failed(document, snapshot, CalendarEntityPatchCode.RecurrenceUnevaluable);
             var masterStart = DirectProperties(document, master, "DTSTART").SingleOrDefault();
