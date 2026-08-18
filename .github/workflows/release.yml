@@ -25,7 +25,7 @@ jobs:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       PACKAGE_OUTPUT_DIRECTORY: ${{ github.workspace }}/artifacts
       PACKAGE_PROJECT_PATH: src/DotnetAgents.CalDav.Mcp/DotnetAgents.CalDav.Mcp.csproj
-      MCP_SERVER_METADATA_PATH: ${{ runner.temp }}/dotnet-agents-caldav-server.json
+      MCP_SERVER_METADATA_PATH: ${{ github.workspace }}/.release-metadata/server.json
       RELEASE_TAG: ${{ inputs.release_tag }}
 
     steps:
