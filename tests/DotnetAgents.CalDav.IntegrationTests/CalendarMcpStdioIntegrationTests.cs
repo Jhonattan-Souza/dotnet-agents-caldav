@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
@@ -218,6 +219,41 @@ public sealed class CalendarMcpStdioIntegrationTests
         advertised.Meta!["cache"]!["ttlMs"]!.GetValue<int>().ShouldBe(5000);
         advertised.Meta!["cache"]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
         stderr.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task CalendarOccurrenceQuery_ReturnsFiveSelectedCalendarResourcesBeforeReadDeadline()
+    {
+        var hrefs = new List<string>();
+        try
+        {
+            foreach (var index in Enumerable.Range(1, 5))
+            {
+                hrefs.Add(await PutResourceAsync(
+                    $"occurrence-five-{index}.ics",
+                    Todo($"occurrence-five-{index}", "DUE:20260823T100000Z\r\n")));
+            }
+
+            var stderr = new ConcurrentQueue<string>();
+            await using var client = await CreateClientAsync(stderr, exposeExact: false);
+
+            var stopwatch = Stopwatch.StartNew();
+            var result = await CallOccurrenceAsync(client, "2026-08-23T09:59:00Z", "2026-08-23T10:01:00Z");
+            stopwatch.Stop();
+
+            result.IsError.ShouldBe(false);
+            result.StructuredContent!.Value.GetProperty("outcome").GetString().ShouldBe("success");
+            result.StructuredContent.Value.GetProperty("items").EnumerateArray()
+                .Select(item => item.GetProperty("snapshot").GetProperty("projection").GetProperty("uid").GetString())
+                .ShouldBe(Enumerable.Range(1, 5).Select(index => $"occurrence-five-{index}").ToArray(), ignoreOrder: true);
+            stopwatch.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(30));
+            stderr.ShouldBeEmpty();
+        }
+        finally
+        {
+            foreach (var href in hrefs)
+                await DeleteResourceAsync(href);
+        }
     }
 
     [Fact]

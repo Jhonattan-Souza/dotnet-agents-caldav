@@ -4,6 +4,7 @@ using System.Buffers;
 using System.IO.Compression;
 using System.Collections.Concurrent;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Configuration;
@@ -221,16 +222,28 @@ internal sealed class CalDavClient : ICalendarClient
         string href,
         CancellationToken cancellationToken)
     {
+        var reads = await GetCalendarResourcesForQueryAsync(calendarHref, [href], cancellationToken);
+        return reads[0];
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<CalendarResourceRead>> GetCalendarResourcesForQueryAsync(
+        string calendarHref,
+        IReadOnlyList<string> hrefs,
+        CancellationToken cancellationToken)
+    {
         CalendarOperationProgress.SetPhase(CalendarOperationPhase.Fetch);
+        if (hrefs.Count == 0)
+            return [];
         EnsureCapabilityConfiguration();
         var generation = Volatile.Read(ref _capabilityGeneration);
-        var origin = new Uri(_options.Value.BaseUrl, UriKind.Absolute);
-        if (!TryCanonicalizeCalendarHref(origin, calendarHref, out var canonicalCalendarHref)
-            || !TryValidateAbsoluteResourceHref(href, out var resourceUri)
-            || !IsDirectResourceOf(new Uri(canonicalCalendarHref, UriKind.Absolute), resourceUri))
+        if (!TryCreateMultigetPlan(calendarHref, hrefs, out var canonicalCalendarHref, out var resourceUris))
         {
-            return new CalendarResourceRead(CalendarResourceReadCode.InvalidInput);
+            return hrefs.Select(href => new CalendarResourceRead(
+                CalendarResourceReadCode.InvalidInput,
+                ResourceHref: href)).ToArray();
         }
+        var calendarUri = new Uri(canonicalCalendarHref, UriKind.Absolute);
 
         var capabilityKey = CapabilityKey.CalendarMultiget(canonicalCalendarHref);
         if (IsUnavailable(capabilityKey))
@@ -241,7 +254,7 @@ internal sealed class CalDavClient : ICalendarClient
         {
             response = await SendReportAsync(
                 canonicalCalendarHref,
-                DavRequestBuilder.BuildCalendarMultiget(resourceUri.AbsoluteUri),
+                DavRequestBuilder.BuildCalendarMultiget(resourceUris.Select(resourceUri => resourceUri.AbsoluteUri).ToArray()),
                 cancellationToken);
         }
         catch (CalendarQueryFilterUnsupportedException exception)
@@ -249,17 +262,78 @@ internal sealed class CalDavClient : ICalendarClient
             ObserveCapability(capabilityKey, CapabilityState.Unavailable, generation);
             throw new CalendarDiscoveryUnsupportedCapabilityException(exception.Message);
         }
-        var returned = new List<string>();
-        foreach (var candidate in DavResponseParser.ParseCalendarResourceHrefs(response.Content))
+        var requested = resourceUris.Select(resourceUri => resourceUri.AbsoluteUri).ToHashSet(StringComparer.Ordinal);
+        var returned = new Dictionary<string, CalendarMultigetResource>(StringComparer.Ordinal);
+        foreach (var candidate in DavResponseParser.ParseCalendarMultigetResources(response.Content))
         {
-            if (!TryCanonicalizeResourceHref(response.RequestUri, candidate, out var canonical))
+            if (!TryAddMultigetResource(response.RequestUri, calendarUri, requested, returned, candidate))
                 throw new CalendarDiscoveryProtocolException("The Calendar multiget response contained an unsafe resource href.");
-            returned.Add(canonical);
         }
         ObserveCapability(capabilityKey, CapabilityState.Verified, generation);
-        if (!returned.Contains(resourceUri.AbsoluteUri, StringComparer.Ordinal))
-            return new CalendarResourceRead(CalendarResourceReadCode.NotFound);
-        return await GetCalendarResourceAsync(resourceUri.AbsoluteUri, cancellationToken);
+        return resourceUris.Select(resourceUri => ToCalendarResourceRead(
+                resourceUri.AbsoluteUri,
+                returned.GetValueOrDefault(resourceUri.AbsoluteUri)))
+            .ToArray();
+    }
+
+    private bool TryCreateMultigetPlan(
+        string calendarHref,
+        IReadOnlyList<string> hrefs,
+        out string canonicalCalendarHref,
+        out IReadOnlyList<Uri> resourceUris)
+    {
+        canonicalCalendarHref = string.Empty;
+        resourceUris = [];
+        var origin = new Uri(_options.Value.BaseUrl, UriKind.Absolute);
+        if (hrefs.Count > CalendarQueryPolicy.MaximumMultigetBatchSize
+            || !TryCanonicalizeCalendarHref(origin, calendarHref, out canonicalCalendarHref))
+            return false;
+
+        var calendarUri = new Uri(canonicalCalendarHref, UriKind.Absolute);
+        var validated = new List<Uri>(hrefs.Count);
+        foreach (var href in hrefs)
+        {
+            if (!TryValidateAbsoluteResourceHref(href, out var resourceUri)
+                || !IsDirectResourceOf(calendarUri, resourceUri))
+                return false;
+            validated.Add(resourceUri);
+        }
+        resourceUris = validated;
+        return true;
+    }
+
+    private bool TryAddMultigetResource(
+        Uri responseUri,
+        Uri calendarUri,
+        IReadOnlySet<string> requested,
+        IDictionary<string, CalendarMultigetResource> returned,
+        CalendarMultigetResource candidate)
+    {
+        if (!TryCanonicalizeResourceHref(responseUri, candidate.Href, out var canonical)
+            || !IsDirectResourceOf(calendarUri, new Uri(canonical, UriKind.Absolute))
+            || !requested.Contains(canonical))
+            return false;
+        return returned.TryAdd(canonical, candidate);
+    }
+
+    private static CalendarResourceRead ToCalendarResourceRead(
+        string resourceHref,
+        CalendarMultigetResource? resource)
+    {
+        if (resource is null || resource.StatusCode == (int)HttpStatusCode.NotFound)
+            return new CalendarResourceRead(CalendarResourceReadCode.NotFound, ResourceHref: resourceHref);
+        if (resource.StatusCode is < 200 or > 299 || resource.CalendarData is null)
+            return new CalendarResourceRead(CalendarResourceReadCode.UpstreamProtocolError, ResourceHref: resourceHref);
+
+        var content = StrictUtf8.GetBytes(resource.CalendarData.ReplaceLineEndings("\r\n"));
+        if (!EntityTagHeaderValue.TryParse(resource.EntityTag, out var entityTag) || entityTag.IsWeak)
+        {
+            return new CalendarResourceRead(
+                CalendarResourceReadCode.ConcurrencyUnavailable,
+                ResourceHref: resourceHref,
+                AuthoritativeUtf8: content);
+        }
+        return CalendarResourceRead.Success(resourceHref, entityTag.ToString(), content);
     }
 
     /// <inheritdoc />

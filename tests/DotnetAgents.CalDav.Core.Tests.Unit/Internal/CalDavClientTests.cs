@@ -17,7 +17,90 @@ namespace DotnetAgents.CalDav.Core.Tests.Unit.Internal;
 public class CalDavClientTests
 {
     [Fact]
-    public async Task GetCalendarResourceForQueryAsync_UsesCalendarMultigetThenAuthoritativeGet()
+    public async Task GetCalendarResourcesForQueryAsync_ReturnsFiveAuthoritativeResourcesFromOneMultiget()
+    {
+        const string calendarHref = "https://example.com/calendars/user/events/";
+        var hrefs = Enumerable.Range(1, 5).Select(index => $"{calendarHref}{index}.ics").ToArray();
+        var requests = new List<(HttpMethod Method, string Body)>();
+        var responses = string.Concat(hrefs.Select((href, index) =>
+            $"<d:response><d:href>{new Uri(href).AbsolutePath}</d:href><d:propstat><d:prop>"
+            + $"<d:getetag>&quot;r{index + 1}&quot;</d:getetag>"
+            + $"<c:calendar-data>BEGIN:VCALENDAR\nBEGIN:VEVENT\nUID:event-{index + 1}\n"
+            + "END:VEVENT\nEND:VCALENDAR\n</c:calendar-data>"
+            + "</d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>"));
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            requests.Add((request.Method, request.Content is null
+                ? string.Empty
+                : request.Content.ReadAsStringAsync(TestContext.Current.CancellationToken).GetAwaiter().GetResult()));
+            if (request.Method.Method == "REPORT")
+            {
+                return new HttpResponseMessage(HttpStatusCode.MultiStatus)
+                {
+                    Content = new StringContent(
+                        $"<d:multistatus xmlns:d='DAV:' xmlns:c='urn:ietf:params:xml:ns:caldav'>{responses}</d:multistatus>")
+                };
+            }
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Headers = { ETag = new EntityTagHeaderValue("\"fallback\"") },
+                Content = new StringContent("unexpected fallback")
+            };
+        });
+        var sut = CreateSut(handler);
+
+        var results = await sut.GetCalendarResourcesForQueryAsync(calendarHref, hrefs, CancellationToken.None);
+
+        results.Count.ShouldBe(5);
+        results.ShouldAllBe(result => result.Code == CalendarResourceReadCode.Success);
+        results.Select(result => result.ResourceHref).ShouldBe(hrefs);
+        results.Select(result => result.EntityTag).ShouldBe(Enumerable.Range(1, 5).Select(index => $"\"r{index}\"").ToArray());
+        Encoding.UTF8.GetString(results[0].AuthoritativeUtf8.Span).ShouldBe(
+            "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:event-1\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n");
+        requests.Count.ShouldBe(1);
+        requests[0].Method.Method.ShouldBe("REPORT");
+        requests[0].Body.ShouldContain("calendar-multiget");
+        hrefs.ShouldAllBe(href => requests[0].Body.Contains(href, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task GetCalendarResourcesForQueryAsync_ReturnsTypedPerResourceFailuresWithoutFallbackGets()
+    {
+        const string calendarHref = "https://example.com/calendars/user/events/";
+        var hrefs = Enumerable.Range(1, 5).Select(index => $"{calendarHref}{index}.ics").ToArray();
+        var requestCount = 0;
+        var sut = CreateSut(new StubHttpMessageHandler(request =>
+        {
+            requestCount++;
+            request.Method.Method.ShouldBe("REPORT");
+            return new HttpResponseMessage(HttpStatusCode.MultiStatus)
+            {
+                Content = new StringContent("""
+                    <d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+                      <d:response><d:href>/calendars/user/events/2.ics</d:href><d:status>HTTP/1.1 404 Not Found</d:status></d:response>
+                      <d:response><d:href>/calendars/user/events/3.ics</d:href><d:propstat><d:prop><d:getetag>W/&quot;r3&quot;</d:getetag><c:calendar-data>weak</c:calendar-data></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>
+                      <d:response><d:href>/calendars/user/events/4.ics</d:href><d:status>HTTP/1.1 500 Server Error</d:status></d:response>
+                      <d:response><d:href>/calendars/user/events/5.ics</d:href><d:propstat><d:prop><d:getetag>&quot;r5&quot;</d:getetag></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>
+                    </d:multistatus>
+                    """)
+            };
+        }));
+
+        var results = await sut.GetCalendarResourcesForQueryAsync(calendarHref, hrefs, CancellationToken.None);
+
+        results.Select(result => result.Code).ShouldBe([
+            CalendarResourceReadCode.NotFound,
+            CalendarResourceReadCode.NotFound,
+            CalendarResourceReadCode.ConcurrencyUnavailable,
+            CalendarResourceReadCode.UpstreamProtocolError,
+            CalendarResourceReadCode.UpstreamProtocolError
+        ]);
+        Encoding.UTF8.GetString(results[2].AuthoritativeUtf8.Span).ShouldBe("weak");
+        requestCount.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task GetCalendarResourceForQueryAsync_UsesCalendarMultigetAsAuthoritativeRead()
     {
         const string calendarHref = "https://example.com/calendars/user/events/";
         const string resourceHref = "https://example.com/calendars/user/events/a.ics";
@@ -45,8 +128,8 @@ public class CalDavClientTests
         var result = await sut.GetCalendarResourceForQueryAsync(calendarHref, resourceHref, CancellationToken.None);
 
         result.Code.ShouldBe(CalendarResourceReadCode.Success);
-        Encoding.UTF8.GetString(result.AuthoritativeUtf8.Span).ShouldBe("authoritative\r\nX-KEEP:opaque\r\n");
-        requests.Select(request => request.Method.Method).ShouldBe(["REPORT", "GET"]);
+        Encoding.UTF8.GetString(result.AuthoritativeUtf8.Span).ShouldBe("normalized-only-for-capability");
+        requests.Select(request => request.Method.Method).ShouldBe(["REPORT"]);
         requests[0].Body.ShouldContain("calendar-multiget");
         requests[0].Body.ShouldContain("calendar-data");
         requests[0].Body.ShouldContain(resourceHref);
@@ -611,8 +694,8 @@ public class CalDavClientTests
         captured.Headers.GetValues("Depth").ShouldBe(["1"]);
         var body = await captured.Content!.ReadAsStringAsync(CancellationToken.None);
         body.ShouldContain("name=\"VEVENT\"");
-        body.ShouldContain("start=\"20260816T100000Z\"");
-        body.ShouldContain("end=\"20260817T100000Z\"");
+        body.ShouldContain("start=\"20260814T095959Z\"");
+        body.ShouldContain("end=\"20260819T100001Z\"");
         body.ShouldNotContain("calendar-data");
     }
 
@@ -638,8 +721,45 @@ public class CalDavClientTests
             CancellationToken.None);
 
         body.ShouldNotBeNull();
-        body.ShouldContain("start=\"20260816T100000Z\"");
-        body.ShouldContain("end=\"20260816T110001Z\"");
+        body.ShouldContain("start=\"20260814T100000Z\"");
+        body.ShouldContain("end=\"20260818T110001Z\"");
+    }
+
+    [Fact]
+    public async Task QueryCalendarResourceHrefsAsync_OmitsUnsafeNearLimitRanges()
+    {
+        var bodies = new List<string>();
+        var handler = new AsyncStubHttpMessageHandler(async request =>
+        {
+            bodies.Add(await request.Content!.ReadAsStringAsync(CancellationToken.None));
+            return new HttpResponseMessage(HttpStatusCode.MultiStatus)
+            {
+                Content = new StringContent("<d:multistatus xmlns:d=\"DAV:\"/>")
+            };
+        });
+        var sut = CreateSut(handler);
+        var minimumSafeFrom = DateTimeOffset.MinValue.AddDays(2);
+        var maximumSafeTo = DateTimeOffset.MaxValue.AddDays(-2);
+        (DateTimeOffset From, DateTimeOffset To)[] ranges =
+        [
+            (minimumSafeFrom.AddTicks(-1), minimumSafeFrom.AddHours(1)),
+            (minimumSafeFrom, minimumSafeFrom.AddHours(1)),
+            (maximumSafeTo.AddHours(-1), maximumSafeTo),
+            (maximumSafeTo.AddHours(-1), maximumSafeTo.AddTicks(1))
+        ];
+
+        foreach (var range in ranges)
+        {
+            await sut.QueryCalendarResourceHrefsAsync(
+                "https://example.com/calendars/user/events/",
+                CalendarEntityKind.Event,
+                range.From,
+                range.To,
+                CancellationToken.None);
+        }
+
+        bodies.Count.ShouldBe(ranges.Length);
+        bodies.ShouldAllBe(body => !body.Contains("time-range", StringComparison.Ordinal));
     }
 
     [Fact]

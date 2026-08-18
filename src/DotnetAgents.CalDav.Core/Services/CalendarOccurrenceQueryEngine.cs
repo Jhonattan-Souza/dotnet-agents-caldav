@@ -31,8 +31,13 @@ internal sealed class CalendarOccurrenceQueryEngine
             return CalendarOccurrenceQueryResult.Failure(CalendarOccurrenceQueryCode.InvalidInput);
 
         var resources = await _entityQueryEngine.QueryAsync(
-            new CalendarEntityQuery(query.Scope, [CalendarEntityKind.Event, CalendarEntityKind.Todo]),
-            cancellationToken);
+            new CalendarEntityQuery(
+                query.Scope,
+                [CalendarEntityKind.Event, CalendarEntityKind.Todo],
+                query.From,
+                query.To),
+            cancellationToken,
+            applyTemporalFilters: false);
         if (resources.Code != CalendarEntityQueryCode.Success)
             return MapResourceFailure(resources);
 

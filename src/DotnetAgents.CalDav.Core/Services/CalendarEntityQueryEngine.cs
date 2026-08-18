@@ -33,7 +33,8 @@ internal sealed class CalendarEntityQueryEngine
 
     public async Task<CalendarEntityQueryResult> QueryAsync(
         CalendarEntityQuery query,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool applyTemporalFilters = true)
     {
         if (!IsValidQueryShape(query))
             return CalendarEntityQueryResult.Failure(CalendarEntityQueryCode.InvalidInput);
@@ -63,6 +64,11 @@ internal sealed class CalendarEntityQueryEngine
         var fetched = await FetchSnapshotsAsync(candidates, plan.Diagnostics, cancellationToken);
         if (fetched.Code != CalendarEntityQueryCode.Success)
             return CalendarEntityQueryResult.Failure(fetched.Code, limits: fetched.Limits);
+        if (!applyTemporalFilters)
+        {
+            CalendarOperationProgress.SetPhase(CalendarOperationPhase.Filter);
+            return CalendarEntityQueryResult.Success(fetched.Snapshots, fetched.Diagnostics);
+        }
 
         CalendarOperationProgress.SetPhase(CalendarOperationPhase.Filter);
         var filtered = ApplyFilters(fetched.Snapshots, query, fetched.Diagnostics, cancellationToken);
@@ -110,52 +116,93 @@ internal sealed class CalendarEntityQueryEngine
         var snapshots = new List<CalendarResourceSnapshot>();
         var snapshotKeys = new HashSet<(string CalendarHref, string ResourceHref)>();
         var diagnostics = initialDiagnostics.ToList();
-        foreach (var candidate in candidates)
+        foreach (var calendarCandidates in candidates.GroupBy(candidate => candidate.Value.Href, StringComparer.Ordinal))
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            CalendarResourceRead read;
-            try
+            var calendar = calendarCandidates.First().Value;
+            foreach (var batch in calendarCandidates.Select(candidate => candidate.Key)
+                         .Chunk(CalendarQueryPolicy.MaximumMultigetBatchSize))
             {
-                read = await ReadSnapshotAsync(candidate.Value, candidate.Key, cancellationToken);
-            }
-            catch (Exception exception) when (exception is CalendarDiscoveryProtocolException or XmlException)
-            {
-                return CandidateFetchResult.Failure(CalendarEntityQueryCode.UpstreamProtocolError);
-            }
-            if (read.Code == CalendarResourceReadCode.NotFound)
-            {
-                AddDiagnostic(diagnostics, "resource_disappeared_during_query",
-                    "A REPORT candidate disappeared before its authoritative snapshot was read.");
-                continue;
-            }
-            if (read.Code != CalendarResourceReadCode.Success || read.Snapshot is null)
-                return CandidateFetchResult.Failure(
-                    MapReadFailure(read.Code),
-                    read.ObservedByteCount is null
-                        ? null
-                        : new CalendarEntityQueryExecutionLimits(ByteCount: read.ObservedByteCount));
-            if (snapshotKeys.Add((read.Snapshot.CalendarHref, read.Snapshot.ResourceHref)))
-                snapshots.Add(read.Snapshot);
-            if (read.Snapshot.Projection.Kind == CalendarResourceProjectionKind.Opaque)
-            {
-                AddDiagnostic(diagnostics, "opaque_filter_unresolved",
-                    "An opaque Calendar Object Resource could not be classified by the requested semantic filters.");
+                cancellationToken.ThrowIfCancellationRequested();
+                IReadOnlyList<CalendarResourceRead> reads;
+                try
+                {
+                    reads = await ReadBatchAsync(calendar, batch, cancellationToken);
+                }
+                catch (Exception exception) when (exception is CalendarDiscoveryProtocolException or XmlException)
+                {
+                    return CandidateFetchResult.Failure(CalendarEntityQueryCode.UpstreamProtocolError);
+                }
+                foreach (var read in reads)
+                {
+                    var failure = AccumulateRead(read, snapshots, snapshotKeys, diagnostics);
+                    if (failure is not null)
+                        return failure;
+                }
             }
         }
         return CandidateFetchResult.Success(snapshots, diagnostics);
     }
 
-    private async Task<CalendarResourceRead> ReadSnapshotAsync(
+    private async Task<IReadOnlyList<CalendarResourceRead>> ReadBatchAsync(
         CalendarDescriptor calendar,
-        string href,
+        IReadOnlyList<string> hrefs,
         CancellationToken cancellationToken)
     {
-        var read = await _calendarClient.GetCalendarResourceForQueryAsync(calendar.Href, href, cancellationToken);
-        if (read is null)
-            read = await _calendarClient.GetCalendarResourceAsync(href, cancellationToken);
-        if (read.Code != CalendarResourceReadCode.Success)
-            return read;
-        return CalendarResourceProjector.AttachSnapshot(calendar.Href, read);
+        IReadOnlyList<CalendarResourceRead>? reads;
+        try
+        {
+            reads = await _calendarClient.GetCalendarResourcesForQueryAsync(calendar.Href, hrefs, cancellationToken);
+        }
+        catch (CalendarDiscoveryUnsupportedCapabilityException)
+        {
+            reads = null;
+        }
+        if (reads is null || reads.Count != hrefs.Count)
+            reads = await ReadDirectlyAsync(hrefs, cancellationToken);
+        return reads.Select(read => read.Code == CalendarResourceReadCode.Success
+                ? CalendarResourceProjector.AttachSnapshot(calendar.Href, read)
+                : read)
+            .ToArray();
+    }
+
+    private async Task<IReadOnlyList<CalendarResourceRead>> ReadDirectlyAsync(
+        IReadOnlyList<string> hrefs,
+        CancellationToken cancellationToken)
+    {
+        var reads = new List<CalendarResourceRead>(hrefs.Count);
+        foreach (var href in hrefs)
+            reads.Add(await _calendarClient.GetCalendarResourceAsync(href, cancellationToken));
+        return reads;
+    }
+
+    private static CandidateFetchResult? AccumulateRead(
+        CalendarResourceRead read,
+        ICollection<CalendarResourceSnapshot> snapshots,
+        ISet<(string CalendarHref, string ResourceHref)> snapshotKeys,
+        ICollection<CalendarResourceDiagnostic> diagnostics)
+    {
+        if (read.Code == CalendarResourceReadCode.NotFound)
+        {
+            AddDiagnostic(diagnostics, "resource_disappeared_during_query",
+                "A REPORT candidate disappeared before its authoritative snapshot was read.");
+            return null;
+        }
+        if (read.Code != CalendarResourceReadCode.Success || read.Snapshot is null)
+        {
+            return CandidateFetchResult.Failure(
+                MapReadFailure(read.Code),
+                read.ObservedByteCount is null
+                    ? null
+                    : new CalendarEntityQueryExecutionLimits(ByteCount: read.ObservedByteCount));
+        }
+        if (snapshotKeys.Add((read.Snapshot.CalendarHref, read.Snapshot.ResourceHref)))
+            snapshots.Add(read.Snapshot);
+        if (read.Snapshot.Projection.Kind == CalendarResourceProjectionKind.Opaque)
+        {
+            AddDiagnostic(diagnostics, "opaque_filter_unresolved",
+                "An opaque Calendar Object Resource could not be classified by the requested semantic filters.");
+        }
+        return null;
     }
 
     private static FilterResult ApplyFilters(

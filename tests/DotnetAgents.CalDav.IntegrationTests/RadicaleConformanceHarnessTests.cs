@@ -967,14 +967,14 @@ public sealed class RadicaleConformanceHarnessTests(RadicaleConformanceFixture f
 
     private static string RangeEvent() =>
         "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Conformance//EN\r\n"
-        + "BEGIN:VEVENT\r\nUID:range\r\nDTSTAMP:20260815T120000Z\r\nDTSTART:20260814T090000Z\r\n"
-        + "DURATION:PT1H\r\nRRULE:FREQ=DAILY;COUNT=5\r\nEND:VEVENT\r\n"
+        + "BEGIN:VEVENT\r\nUID:range\r\nDTSTAMP:20260815T120000Z\r\nDTSTART:20260801T090000Z\r\n"
+        + "DURATION:PT1H\r\nRRULE:FREQ=DAILY;COUNT=30\r\nEND:VEVENT\r\n"
         + "BEGIN:VEVENT\r\nUID:range\r\nDTSTAMP:20260815T120000Z\r\n"
-        + "RECURRENCE-ID;RANGE=THISANDFUTURE:20260816T090000Z\r\n"
-        + "DTSTART:20260816T110000Z\r\nDURATION:PT1H\r\nEND:VEVENT\r\n"
+        + "RECURRENCE-ID;RANGE=THISANDFUTURE:20260805T090000Z\r\n"
+        + "DTSTART:20260805T110000Z\r\nDURATION:PT1H\r\nEND:VEVENT\r\n"
         + "BEGIN:VEVENT\r\nUID:range\r\nDTSTAMP:20260815T120000Z\r\n"
-        + "RECURRENCE-ID;RANGE=THISANDFUTURE:20260817T090000Z\r\n"
-        + "DTSTART:20260817T130000Z\r\nDURATION:PT2H\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        + "RECURRENCE-ID;RANGE=THISANDFUTURE:20260810T090000Z\r\n"
+        + "DTSTART:20260810T130000Z\r\nDURATION:PT2H\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
 
     private static CalendarTemporalValue Zoned(string value, string timeZoneId) =>
         new(CalendarTemporalKind.ZonedDateTime, value, timeZoneId);
