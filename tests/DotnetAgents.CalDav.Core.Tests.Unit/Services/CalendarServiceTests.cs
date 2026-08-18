@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
@@ -56,15 +57,15 @@ public sealed class CalendarServiceTests
         client.QueryCalendarResourceHrefsAsync(
                 calendarHref,
                 CalendarEntityKind.Event,
-                null,
-                null,
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<CancellationToken>())
             .Returns([resourceHref]);
         client.QueryCalendarResourceHrefsAsync(
                 calendarHref,
                 CalendarEntityKind.Todo,
-                null,
-                null,
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<CancellationToken>())
             .Returns([]);
         client.GetCalendarResourceAsync(resourceHref, Arg.Any<CancellationToken>()).Returns(
@@ -92,6 +93,176 @@ public sealed class CalendarServiceTests
     }
 
     [Fact]
+    public async Task QueryOccurrencesAsync_PreservesRequestedWindowInCandidatePlanning()
+    {
+        const string calendarHref = "https://cal.example/events/";
+        const string resourceHref = "https://cal.example/events/recurring.ics";
+        var from = DateTimeOffset.Parse("2026-08-17T20:30:00Z");
+        var to = DateTimeOffset.Parse("2026-08-17T20:45:00Z");
+        var client = Substitute.For<ICalendarClient>();
+        var sut = new CalendarService(
+            client,
+            Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
+            Substitute.For<ILogger<CalendarService>>());
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(
+            [EntityCalendar(calendarHref, "Events", EntityKindSupport.Advertised, EntityKindSupport.NotAdvertised)]);
+        client.QueryCalendarResourceHrefsAsync(
+                calendarHref,
+                CalendarEntityKind.Event,
+                from,
+                to,
+                Arg.Any<CancellationToken>())
+            .Returns([resourceHref]);
+        client.QueryCalendarResourceHrefsAsync(
+                calendarHref,
+                CalendarEntityKind.Todo,
+                from,
+                to,
+                Arg.Any<CancellationToken>())
+            .Returns([]);
+        client.GetCalendarResourceAsync(resourceHref, Arg.Any<CancellationToken>()).Returns(
+            CalendarResourceRead.Success(resourceHref, "\"r1\"", OverrideEvent()));
+
+        var result = await sut.QueryOccurrencesAsync(
+            new CalendarOccurrenceQuery(
+                CalendarEntityScope.Selected(new CalendarReference(Href: calendarHref)),
+                from,
+                to),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarOccurrenceQueryCode.Success);
+        result.Items.ShouldHaveSingleItem().RecurrenceIdentity.Value.ShouldBe("2026-08-17T10:00:00Z");
+        await client.Received(1).QueryCalendarResourceHrefsAsync(
+            calendarHref,
+            CalendarEntityKind.Event,
+            from,
+            to,
+            Arg.Any<CancellationToken>());
+        await client.Received(1).QueryCalendarResourceHrefsAsync(
+            calendarHref,
+            CalendarEntityKind.Todo,
+            from,
+            to,
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task QueryOccurrencesAsync_FetchesFiveCandidatesInOneAuthoritativeBatch()
+    {
+        const string calendarHref = "https://cal.example/events/";
+        var from = DateTimeOffset.Parse("2026-08-16T10:00:00Z");
+        var to = DateTimeOffset.Parse("2026-08-16T11:00:00Z");
+        var hrefs = Enumerable.Range(1, 5).Select(index => $"{calendarHref}{index}.ics").ToArray();
+        var requests = new List<(HttpMethod Method, string Body)>();
+        var handler = new AsyncHttpMessageHandler(async (request, cancellationToken) =>
+        {
+            var body = await request.Content!.ReadAsStringAsync(cancellationToken);
+            requests.Add((request.Method, body));
+            _ = await Delayed(true);
+            var responseBody = body.Contains("calendar-multiget", StringComparison.Ordinal)
+                ? MultigetResponse(hrefs)
+                : body.Contains("name=\"VEVENT\"", StringComparison.Ordinal)
+                    ? CandidateResponse(hrefs)
+                    : CandidateResponse([]);
+            return new HttpResponseMessage(HttpStatusCode.MultiStatus)
+            {
+                Content = new StringContent(responseBody)
+            };
+        });
+        var options = Options.Create(new CalDavOptions
+        {
+            BaseUrl = "https://cal.example",
+            CalendarHrefs = calendarHref
+        });
+        using var httpClient = new HttpClient(handler);
+        var transport = new CalDavClient(httpClient, options, Substitute.For<ILogger<CalDavClient>>());
+        var client = new DelegatingQueryCalendarClient(
+            transport,
+            EntityCalendar(calendarHref, "Events", EntityKindSupport.Advertised, EntityKindSupport.NotAdvertised));
+        var sut = new CalendarService(client, options, Substitute.For<ILogger<CalendarService>>());
+
+        var stopwatch = Stopwatch.StartNew();
+        var result = await sut.QueryOccurrencesAsync(
+            new CalendarOccurrenceQuery(
+                CalendarEntityScope.Selected(new CalendarReference(Href: calendarHref)),
+                from,
+                to),
+            CancellationToken.None);
+        stopwatch.Stop();
+
+        result.Code.ShouldBe(CalendarOccurrenceQueryCode.Success);
+        result.Items.Count.ShouldBe(5);
+        stopwatch.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(15));
+        requests.Count.ShouldBe(3);
+        requests.ShouldAllBe(request => request.Method.Method == "REPORT");
+        requests.Count(request => request.Body.Contains("calendar-query", StringComparison.Ordinal)).ShouldBe(2);
+        requests.Count(request => request.Body.Contains("calendar-multiget", StringComparison.Ordinal)).ShouldBe(1);
+        hrefs.ShouldAllBe(href => requests[2].Body.Contains(href, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task QueryOccurrencesAsync_RequestCountGrowsByBoundedBatches()
+    {
+        const string calendarHref = "https://cal.example/events/";
+        var from = DateTimeOffset.Parse("2026-08-16T10:00:00Z");
+        var to = DateTimeOffset.Parse("2026-08-16T11:00:00Z");
+        var hrefs = Enumerable.Range(1, 51).Select(index => $"{calendarHref}{index}.ics").ToArray();
+        var batchSizes = new List<int>();
+        var client = Substitute.For<ICalendarClient>();
+        var sut = new CalendarService(
+            client,
+            Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
+            Substitute.For<ILogger<CalendarService>>());
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(
+            [EntityCalendar(calendarHref, "Events", EntityKindSupport.Advertised, EntityKindSupport.NotAdvertised)]);
+        client.QueryCalendarResourceHrefsAsync(
+                calendarHref,
+                CalendarEntityKind.Event,
+                from,
+                to,
+                Arg.Any<CancellationToken>())
+            .Returns(hrefs);
+        client.QueryCalendarResourceHrefsAsync(
+                calendarHref,
+                CalendarEntityKind.Todo,
+                from,
+                to,
+                Arg.Any<CancellationToken>())
+            .Returns([]);
+        client.GetCalendarResourcesForQueryAsync(
+                calendarHref,
+                Arg.Any<IReadOnlyList<string>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var batch = call.ArgAt<IReadOnlyList<string>>(1);
+                batchSizes.Add(batch.Count);
+                return batch.Select((href, index) => CalendarResourceRead.Success(
+                    href,
+                    $"\"r{index + 1}\"",
+                    Event(href, "20260816T103000Z", href))).ToArray();
+            });
+
+        var result = await sut.QueryOccurrencesAsync(
+            new CalendarOccurrenceQuery(
+                CalendarEntityScope.Selected(new CalendarReference(Href: calendarHref)),
+                from,
+                to),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarOccurrenceQueryCode.Success);
+        result.Items.Count.ShouldBe(51);
+        batchSizes.ShouldBe([50, 1]);
+        await client.Received(2).GetCalendarResourcesForQueryAsync(
+            calendarHref,
+            Arg.Any<IReadOnlyList<string>>(),
+            Arg.Any<CancellationToken>());
+        await client.DidNotReceive().GetCalendarResourceAsync(
+            Arg.Any<string>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task QueryOccurrencesAsync_SelectedScopeIncludesEventsAndEveryTimedTodoForm()
     {
         const string calendarHref = "https://cal.example/mixed/";
@@ -104,9 +275,11 @@ public sealed class CalendarServiceTests
             Substitute.For<ILogger<CalendarService>>());
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(
             [EntityCalendar(calendarHref, "Mixed", EntityKindSupport.Advertised, EntityKindSupport.Advertised)]);
-        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Event, null, null, Arg.Any<CancellationToken>())
+        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Event,
+                Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>())
             .Returns([hrefs["event"]]);
-        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Todo, null, null, Arg.Any<CancellationToken>())
+        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Todo,
+                Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>())
             .Returns([hrefs["todo-span"], hrefs["todo-due"], hrefs["todo-start"], hrefs["todo-none"]]);
         client.GetCalendarResourceAsync(hrefs["event"], Arg.Any<CancellationToken>()).Returns(
             CalendarResourceRead.Success(hrefs["event"], "\"e1\"", Event("event", "20260816T101500Z", "Event")));
@@ -147,9 +320,19 @@ public sealed class CalendarServiceTests
             Substitute.For<ILogger<CalendarService>>());
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(
             [EntityCalendar(calendarHref, "Events", EntityKindSupport.Advertised, EntityKindSupport.NotAdvertised)]);
-        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Event, null, null, Arg.Any<CancellationToken>())
+        client.QueryCalendarResourceHrefsAsync(
+                calendarHref,
+                CalendarEntityKind.Event,
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<CancellationToken>())
             .Returns([resourceHref]);
-        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Todo, null, null, Arg.Any<CancellationToken>())
+        client.QueryCalendarResourceHrefsAsync(
+                calendarHref,
+                CalendarEntityKind.Todo,
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<CancellationToken>())
             .Returns([]);
         client.GetCalendarResourceAsync(resourceHref, Arg.Any<CancellationToken>()).Returns(
             CalendarResourceRead.Success(resourceHref, "\"r1\"", OverrideEvent()));
@@ -192,9 +375,11 @@ public sealed class CalendarServiceTests
             Substitute.For<ILogger<CalendarService>>());
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(
             [EntityCalendar(calendarHref, "Events", EntityKindSupport.Advertised, EntityKindSupport.NotAdvertised)]);
-        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Event, null, null, Arg.Any<CancellationToken>())
+        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Event,
+                Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>())
             .Returns([resourceHref]);
-        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Todo, null, null, Arg.Any<CancellationToken>())
+        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Todo,
+                Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>())
             .Returns([]);
         client.GetCalendarResourceAsync(resourceHref, Arg.Any<CancellationToken>()).Returns(
             CalendarResourceRead.Success(resourceHref, "\"r1\"", RangeOverrideEvent()));
@@ -1095,9 +1280,11 @@ public sealed class CalendarServiceTests
             Substitute.For<ILogger<CalendarService>>());
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(
             [EntityCalendar(calendarHref, "Events", EntityKindSupport.Advertised, EntityKindSupport.NotAdvertised)]);
-        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Event, null, null, Arg.Any<CancellationToken>())
+        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Event,
+                Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>())
             .Returns([resourceHref]);
-        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Todo, null, null, Arg.Any<CancellationToken>())
+        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Todo,
+                Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>())
             .Returns([]);
         client.GetCalendarResourceAsync(resourceHref, Arg.Any<CancellationToken>()).Returns(
             CalendarResourceRead.Success(resourceHref, "\"r1\"", EventWithRawStart("floating", string.Empty, "20260816T100000")));
@@ -1404,9 +1591,11 @@ public sealed class CalendarServiceTests
             Substitute.For<ILogger<CalendarService>>());
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(
             [EntityCalendar(calendarHref, "Events", EntityKindSupport.Advertised, EntityKindSupport.NotAdvertised)]);
-        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Event, null, null, Arg.Any<CancellationToken>())
+        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Event,
+                Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>())
             .Returns([resourceHref]);
-        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Todo, null, null, Arg.Any<CancellationToken>())
+        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Todo,
+                Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>())
             .Returns([]);
         client.GetCalendarResourceAsync(resourceHref, Arg.Any<CancellationToken>()).Returns(
             CalendarResourceRead.Success(resourceHref, "\"r1\"", ResourceLocalZoneEvent()));
@@ -1504,9 +1693,11 @@ public sealed class CalendarServiceTests
             Substitute.For<ILogger<CalendarService>>());
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(
             [EntityCalendar(calendarHref, "To-dos", EntityKindSupport.NotAdvertised, EntityKindSupport.Advertised)]);
-        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Event, null, null, Arg.Any<CancellationToken>())
+        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Event,
+                Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>())
             .Returns([]);
-        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Todo, null, null, Arg.Any<CancellationToken>())
+        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Todo,
+                Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>())
             .Returns([startHref, dueHref]);
         client.GetCalendarResourceAsync(startHref, Arg.Any<CancellationToken>()).Returns(
             CalendarResourceRead.Success(startHref, "\"s1\"", TodoWithTemporalLines("start", "DTSTART;VALUE=DATE:20260816\r\n")));
@@ -1706,11 +1897,14 @@ public sealed class CalendarServiceTests
             EntityCalendar(laterCalendar, "Z", EntityKindSupport.Advertised, EntityKindSupport.NotAdvertised),
             EntityCalendar(firstCalendar, "A", EntityKindSupport.Advertised, EntityKindSupport.NotAdvertised)
         ]);
-        client.QueryCalendarResourceHrefsAsync(firstCalendar, CalendarEntityKind.Event, null, null, Arg.Any<CancellationToken>())
+        client.QueryCalendarResourceHrefsAsync(firstCalendar, CalendarEntityKind.Event,
+                Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>())
             .Returns([laterUidHref, recurringHref]);
-        client.QueryCalendarResourceHrefsAsync(laterCalendar, CalendarEntityKind.Event, null, null, Arg.Any<CancellationToken>())
+        client.QueryCalendarResourceHrefsAsync(laterCalendar, CalendarEntityKind.Event,
+                Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>())
             .Returns([laterCalendarHref]);
-        client.QueryCalendarResourceHrefsAsync(Arg.Any<string>(), CalendarEntityKind.Todo, null, null, Arg.Any<CancellationToken>())
+        client.QueryCalendarResourceHrefsAsync(Arg.Any<string>(), CalendarEntityKind.Todo,
+                Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>())
             .Returns([]);
         client.GetCalendarResourceAsync(recurringHref, Arg.Any<CancellationToken>()).Returns(
             CalendarResourceRead.Success(recurringHref, "\"r1\"", SameEffectiveStartRecurrence("a")));
@@ -1750,9 +1944,11 @@ public sealed class CalendarServiceTests
             Substitute.For<ILogger<CalendarService>>());
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(
             [EntityCalendar(calendarHref, "Events", EntityKindSupport.Advertised, EntityKindSupport.NotAdvertised)]);
-        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Event, null, null, Arg.Any<CancellationToken>())
+        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Event,
+                Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>())
             .Returns([vanished, current]);
-        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Todo, null, null, Arg.Any<CancellationToken>())
+        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Todo,
+                Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>())
             .Returns([]);
         client.GetCalendarResourceAsync(vanished, Arg.Any<CancellationToken>()).Returns(
             new CalendarResourceRead(CalendarResourceReadCode.NotFound));
@@ -1783,9 +1979,11 @@ public sealed class CalendarServiceTests
             Substitute.For<ILogger<CalendarService>>());
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(
             [EntityCalendar(calendarHref, "Events", EntityKindSupport.Advertised, EntityKindSupport.NotAdvertised)]);
-        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Event, null, null, Arg.Any<CancellationToken>())
+        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Event,
+                Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>())
             .Returns([resourceHref]);
-        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Todo, null, null, Arg.Any<CancellationToken>())
+        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Todo,
+                Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>())
             .Returns([]);
         client.GetCalendarResourceAsync(resourceHref, Arg.Any<CancellationToken>())
             .Returns<Task<CalendarResourceRead>>(_ => throw new CalendarDiscoveryProtocolException("candidate failure"));
@@ -3586,6 +3784,32 @@ public sealed class CalendarServiceTests
     private static byte[] Mixed(string eventUid, string todoUid) => System.Text.Encoding.UTF8.GetBytes(
         $"BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\nBEGIN:VEVENT\r\nUID:{eventUid}\r\nDTSTAMP:20260815T120000Z\r\nDTSTART:20260816T090000Z\r\nEND:VEVENT\r\nBEGIN:VTODO\r\nUID:{todoUid}\r\nDTSTAMP:20260815T120000Z\r\nEND:VTODO\r\nEND:VCALENDAR\r\n");
 
+    private static async Task<T> Delayed<T>(T result)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2.5));
+        _ = await timer.WaitForNextTickAsync(TestContext.Current.CancellationToken);
+        return result;
+    }
+
+    private static string CandidateResponse(IReadOnlyList<string> hrefs) =>
+        "<d:multistatus xmlns:d=\"DAV:\">"
+        + string.Concat(hrefs.Select(href =>
+            $"<d:response><d:href>{href}</d:href><d:status>HTTP/1.1 200 OK</d:status></d:response>"))
+        + "</d:multistatus>";
+
+    private static string MultigetResponse(IReadOnlyList<string> hrefs) =>
+        "<d:multistatus xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\">"
+        + string.Concat(hrefs.Select((href, index) =>
+        {
+            var content = System.Text.Encoding.UTF8.GetString(
+                Event($"event-{index + 1}", $"20260816T10{index:D2}00Z", $"Event {index + 1}"));
+            return $"<d:response><d:href>{href}</d:href><d:propstat><d:prop>"
+                + $"<d:getetag>&quot;r{index + 1}&quot;</d:getetag>"
+                + $"<c:calendar-data>{System.Security.SecurityElement.Escape(content)}</c:calendar-data>"
+                + "</d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>";
+        }))
+        + "</d:multistatus>";
+
     private static async Task<CalendarEntityQueryResult> QuerySingleEventAsync(
         string temporalLines,
         string from,
@@ -3631,9 +3855,19 @@ public sealed class CalendarServiceTests
             Substitute.For<ILogger<CalendarService>>());
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(
             [EntityCalendar(calendarHref, "Events", EntityKindSupport.Advertised, EntityKindSupport.NotAdvertised)]);
-        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Event, null, null, Arg.Any<CancellationToken>())
+        client.QueryCalendarResourceHrefsAsync(
+                calendarHref,
+                CalendarEntityKind.Event,
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<CancellationToken>())
             .Returns([resourceHref]);
-        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Todo, null, null, Arg.Any<CancellationToken>())
+        client.QueryCalendarResourceHrefsAsync(
+                calendarHref,
+                CalendarEntityKind.Todo,
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<CancellationToken>())
             .Returns([]);
         var bytes = System.Text.Encoding.UTF8.GetBytes(
             "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\n" + calendarLines
@@ -3670,13 +3904,18 @@ public sealed class CalendarServiceTests
                 kind == CalendarEntityKind.Event ? EntityKindSupport.Advertised : EntityKindSupport.NotAdvertised,
                 kind == CalendarEntityKind.Todo ? EntityKindSupport.Advertised : EntityKindSupport.NotAdvertised)
         ]);
-        client.QueryCalendarResourceHrefsAsync(calendarHref, kind, null, null, Arg.Any<CancellationToken>())
+        client.QueryCalendarResourceHrefsAsync(
+                calendarHref,
+                kind,
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<CancellationToken>())
             .Returns([resourceHref]);
         client.QueryCalendarResourceHrefsAsync(
                 calendarHref,
                 kind == CalendarEntityKind.Event ? CalendarEntityKind.Todo : CalendarEntityKind.Event,
-                null,
-                null,
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
                 Arg.Any<CancellationToken>())
             .Returns([]);
         client.GetCalendarResourceAsync(resourceHref, Arg.Any<CancellationToken>()).Returns(
@@ -3701,9 +3940,19 @@ public sealed class CalendarServiceTests
             Substitute.For<ILogger<CalendarService>>());
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(
             [EntityCalendar(calendarHref, "Events", EntityKindSupport.Advertised, EntityKindSupport.NotAdvertised)]);
-        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Event, null, null, Arg.Any<CancellationToken>())
+        client.QueryCalendarResourceHrefsAsync(
+                calendarHref,
+                CalendarEntityKind.Event,
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<CancellationToken>())
             .Returns(hrefs);
-        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Todo, null, null, Arg.Any<CancellationToken>())
+        client.QueryCalendarResourceHrefsAsync(
+                calendarHref,
+                CalendarEntityKind.Todo,
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<CancellationToken>())
             .Returns([]);
         for (var index = 0; index < hrefs.Length; index++)
         {
@@ -3802,6 +4051,14 @@ public sealed class CalendarServiceTests
         public Task<CalendarResourceRead> GetCalendarResourceAsync(string href, CancellationToken cancellationToken) =>
             transport.GetCalendarResourceAsync(href, cancellationToken);
 
+        public Task<IReadOnlyList<CalendarResourceRead>> GetCalendarResourcesForQueryAsync(
+            string calendarHref,
+            IReadOnlyList<string> hrefs,
+            CancellationToken cancellationToken) => transport.GetCalendarResourcesForQueryAsync(
+                calendarHref,
+                hrefs,
+                cancellationToken);
+
         public Task<CalendarResourceCreateResult> CreateCalendarResourceAsync(
             CalendarResourceCreateRequest request,
             CancellationToken cancellationToken) => transport.CreateCalendarResourceAsync(request, cancellationToken);
@@ -3816,5 +4073,13 @@ public sealed class CalendarServiceTests
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken) => Task.FromResult(handler(request));
+    }
+
+    private sealed class AsyncHttpMessageHandler(
+        Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> handler) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) => handler(request, cancellationToken);
     }
 }

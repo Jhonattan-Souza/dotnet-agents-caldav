@@ -54,6 +54,15 @@ internal static class DavResponseParser
             .ToArray();
     }
 
+    /// <summary>Parses Calendar multiget resources with their response status, strong-tag candidate, and content.</summary>
+    public static IReadOnlyList<CalendarMultigetResource> ParseCalendarMultigetResources(string multistatusXml)
+    {
+        var document = ParseDocument(multistatusXml);
+        return document.Descendants(Dav + "response")
+            .Select(ParseCalendarMultigetResource)
+            .ToArray();
+    }
+
     /// <summary>Recognizes the bounded CalDAV precondition that rejects a REPORT filter.</summary>
     public static bool IsSupportedFilterError(string responseXml)
     {
@@ -119,6 +128,44 @@ internal static class DavResponseParser
             throw new XmlException("A successful WebDAV response is missing its href.");
 
         return href;
+    }
+
+    private static CalendarMultigetResource ParseCalendarMultigetResource(XElement response)
+    {
+        var href = GetRequiredMultigetHref(response);
+        var properties = GetSuccessfulMultigetProperties(response);
+        if (properties is null)
+            return new CalendarMultigetResource(href, GetMultigetFailureStatus(response), null, null);
+
+        return new CalendarMultigetResource(
+            href,
+            200,
+            properties.Element(Dav + "getetag")?.Value.Trim(),
+            properties.Element(CalDav + "calendar-data")?.Value);
+    }
+
+    private static string GetRequiredMultigetHref(XElement response)
+    {
+        var href = response.Element(Dav + "href")?.Value?.Trim();
+        return string.IsNullOrEmpty(href)
+            ? throw new XmlException("A Calendar multiget response is missing its href.")
+            : href;
+    }
+
+    private static XElement? GetSuccessfulMultigetProperties(XElement response) => response.Elements(Dav + "propstat")
+        .FirstOrDefault(IsSuccessfulPropStat)
+        ?.Element(Dav + "prop");
+
+    private static bool IsSuccessfulPropStat(XElement propStat) => propStat.Element(Dav + "status") is { } status
+        && IsSuccessStatus(status.Value);
+
+    private static int GetMultigetFailureStatus(XElement response)
+    {
+        var statusText = response.Element(Dav + "status")?.Value
+            ?? response.Elements(Dav + "propstat").Select(item => item.Element(Dav + "status")?.Value).FirstOrDefault();
+        return statusText is null
+            ? throw new XmlException("A Calendar multiget response is missing its status.")
+            : ParseStatusCode(statusText);
     }
 
     private static XDocument ParseDocument(string xml)
@@ -237,7 +284,9 @@ internal static class DavResponseParser
             && propStat.Element(Dav + "prop")?.Element(propertyName) is not null;
     }
 
-    private static bool IsSuccessStatus(string rawStatus)
+    private static bool IsSuccessStatus(string rawStatus) => ParseStatusCode(rawStatus) is >= 200 and <= 299;
+
+    private static int ParseStatusCode(string rawStatus)
     {
         var parts = rawStatus.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length < 2
@@ -249,8 +298,7 @@ internal static class DavResponseParser
         {
             throw new XmlException("The WebDAV response contains a malformed HTTP status line.");
         }
-
-        return statusCode is >= 200 and <= 299;
+        return statusCode;
     }
 
     private static bool IsHttpVersion(string value)
@@ -267,3 +315,9 @@ internal static class DavResponseParser
                 && version[(dot + 1)..].ContainsAnyExceptInRange('0', '9') is false;
     }
 }
+
+internal sealed record CalendarMultigetResource(
+    string Href,
+    int StatusCode,
+    string? EntityTag,
+    string? CalendarData);

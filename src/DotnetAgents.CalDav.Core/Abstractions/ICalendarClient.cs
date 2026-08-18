@@ -30,6 +30,18 @@ public interface ICalendarClient
         string href,
         CancellationToken cancellationToken) => await GetCalendarResourceAsync(href, cancellationToken);
 
+    /// <summary>Reads one bounded batch of complete Calendar Object Resource revisions for query evaluation.</summary>
+    async Task<IReadOnlyList<CalendarResourceRead>> GetCalendarResourcesForQueryAsync(
+        string calendarHref,
+        IReadOnlyList<string> hrefs,
+        CancellationToken cancellationToken)
+    {
+        var reads = new List<CalendarResourceRead>(hrefs.Count);
+        foreach (var href in hrefs)
+            reads.Add(await GetCalendarResourceAsync(href, cancellationToken));
+        return reads;
+    }
+
     /// <summary>Conditionally creates one complete Calendar Object Resource without overwriting.</summary>
     Task<CalendarResourceCreateResult> CreateCalendarResourceAsync(
         CalendarResourceCreateRequest request,

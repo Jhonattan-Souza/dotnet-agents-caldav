@@ -8,6 +8,10 @@ namespace DotnetAgents.CalDav.Core.Internal.Xml;
 /// </summary>
 internal static class DavRequestBuilder
 {
+    // CalDAV servers evaluate time-range against the complete resource, including recurrences and
+    // detached overrides. This is only a representation envelope for DATE values and UTC offsets;
+    // it is deliberately not a recurrence lookback window.
+    private static readonly TimeSpan CandidatePlanningMargin = TimeSpan.FromDays(2);
     private static readonly XNamespace Dav = "DAV:";
     private static readonly XNamespace CalDav = "urn:ietf:params:xml:ns:caldav";
     private static readonly XNamespace AppleCs = "http://apple.com/ns/ical/";
@@ -76,8 +80,8 @@ internal static class DavRequestBuilder
         return document.ToString(SaveOptions.DisableFormatting);
     }
 
-    /// <summary>Builds a Calendar multiget request for one authoritative GET candidate.</summary>
-    public static string BuildCalendarMultiget(string resourceHref)
+    /// <summary>Builds a Calendar multiget request for one bounded authoritative resource batch.</summary>
+    public static string BuildCalendarMultiget(IReadOnlyList<string> resourceHrefs)
     {
         var document = new XDocument(
             new XDeclaration("1.0", "utf-8", null),
@@ -87,7 +91,7 @@ internal static class DavRequestBuilder
                 new XElement(Dav + "prop",
                     new XElement(Dav + "getetag"),
                     new XElement(CalDav + "calendar-data")),
-                new XElement(Dav + "href", resourceHref)));
+                resourceHrefs.Select(resourceHref => new XElement(Dav + "href", resourceHref))));
         return document.ToString(SaveOptions.DisableFormatting);
     }
 
@@ -97,14 +101,34 @@ internal static class DavRequestBuilder
         out DateTimeOffset reportFrom,
         out DateTimeOffset reportTo)
     {
-        reportFrom = from.AddTicks(-(from.Ticks % TimeSpan.TicksPerSecond));
-        var remainder = to.Ticks % TimeSpan.TicksPerSecond;
-        if (remainder == 0)
+        if (from.Ticks < DateTimeOffset.MinValue.Ticks + CandidatePlanningMargin.Ticks
+            || to.Ticks > DateTimeOffset.MaxValue.Ticks - CandidatePlanningMargin.Ticks)
         {
-            reportTo = to;
-            return true;
+            reportFrom = default;
+            reportTo = default;
+            return false;
         }
-        var ticksToAdd = TimeSpan.TicksPerSecond - remainder;
+        from -= CandidatePlanningMargin;
+        to += CandidatePlanningMargin;
+
+        var fromRemainder = from.Ticks % TimeSpan.TicksPerSecond;
+        if (fromRemainder == 0)
+        {
+            if (from.Ticks < DateTimeOffset.MinValue.Ticks + TimeSpan.TicksPerSecond)
+            {
+                reportFrom = default;
+                reportTo = default;
+                return false;
+            }
+            reportFrom = from.AddSeconds(-1);
+        }
+        else
+        {
+            reportFrom = from.AddTicks(-fromRemainder);
+        }
+
+        var toRemainder = to.Ticks % TimeSpan.TicksPerSecond;
+        var ticksToAdd = toRemainder == 0 ? TimeSpan.TicksPerSecond : TimeSpan.TicksPerSecond - toRemainder;
         if (to.Ticks > DateTimeOffset.MaxValue.Ticks - ticksToAdd)
         {
             reportTo = default;
