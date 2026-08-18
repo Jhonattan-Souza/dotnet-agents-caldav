@@ -259,6 +259,16 @@ public sealed class PackageArtifactTests
     }
 
     [Fact]
+    public void ReleaseWorkflow_GeneratesGitHubReleaseNotes()
+    {
+        var workflow = File.ReadAllText(Path.Combine(RepositoryRoot(), ".github", "workflows", "release.yml"));
+
+        workflow.ShouldContain("generate_release_notes: true");
+        workflow.ShouldNotContain("RELEASE_NOTES_LATEST.md");
+        workflow.ShouldNotContain("body_path: RELEASE_NOTES_LATEST.md");
+    }
+
+    [Fact]
     public void ReleasePackageVerifier_AcceptsExactArtifactsAndRejectsTamperedContent()
     {
         const string releaseTag = "v0.2.0";

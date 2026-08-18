@@ -154,26 +154,10 @@ jobs:
           --source https://api.nuget.org/v3/index.json
           --skip-duplicate
 
-      - name: Extract latest release notes
-        shell: bash
-        run: |
-          awk '
-            /^## / {
-              if (capture) {
-                exit
-              }
-              capture=1
-            }
-            capture {
-              print
-            }
-          ' RELEASE_NOTES.md > RELEASE_NOTES_LATEST.md
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          name: dotnet-agents-caldav ${{ steps.version.outputs.package_version }}
-          body_path: RELEASE_NOTES_LATEST.md
+          generate_release_notes: true
           files: |
             ${{ env.PACKAGE_OUTPUT_DIRECTORY }}/*.nupkg
             ${{ env.PACKAGE_OUTPUT_DIRECTORY }}/*.snupkg
