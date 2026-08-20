@@ -385,7 +385,8 @@ public sealed class CalendarOccurrenceMutationTools
         CalendarEntityPatchCode.OpaqueResource or CalendarEntityPatchCode.TemporalUnresolved
             or CalendarEntityPatchCode.RecurrenceUnevaluable or CalendarEntityPatchCode.UnsupportedCapability =>
             "capabilityAndProjection",
-        CalendarEntityPatchCode.Conflict or CalendarEntityPatchCode.ConcurrencyUnavailable => "state",
+        CalendarEntityPatchCode.Conflict or CalendarEntityPatchCode.ConcurrencyUnavailable
+            or CalendarEntityPatchCode.CompletionStateConflict => "state",
         CalendarEntityPatchCode.PayloadTooLarge or CalendarEntityPatchCode.LimitExhausted => "limitsAndAdmission",
         CalendarEntityPatchCode.FidelityFailure or CalendarEntityPatchCode.CommittedButUnverified
             or CalendarEntityPatchCode.CommittedButConcurrencyUnavailable or CalendarEntityPatchCode.Indeterminate =>

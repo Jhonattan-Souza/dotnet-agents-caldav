@@ -4,6 +4,70 @@ set -euo pipefail
 catalog=${1:-contracts/0.2.0/requirement-evidence-catalog.md}
 evidence_map=${2:-contracts/0.2.0/release-evidence-map.json}
 results_directory=${3:-TestResults}
+
+if ! jq -e 'has("requirements")' "$evidence_map" >/dev/null; then
+  [[ $(jq -r '.contractVersion' "$evidence_map") == "0.2.1" ]] || {
+    echo "Compact evidence map must declare contractVersion 0.2.1." >&2
+    exit 68
+  }
+  grep -q '^# Requirement-to-evidence catalog: compact To-do query contract 0.2.1$' "$catalog" || {
+    echo "Compact 0.2.1 evidence catalog heading is missing." >&2
+    exit 69
+  }
+  [[ $(jq -r '.issue' "$evidence_map") == "78" ]] || {
+    echo "Compact evidence map must identify issue 78." >&2
+    exit 69
+  }
+  [[ $(jq -r '.semanticTool' "$evidence_map") == "todos.query" ]] || {
+    echo "Compact evidence map must identify todos.query." >&2
+    exit 69
+  }
+  [[ $(jq -r '.structuredResultBudgetBytes' "$evidence_map") == "65536" ]] || {
+    echo "Compact evidence map must freeze the 64 KiB structured result budget." >&2
+    exit 69
+  }
+  [[ $(jq -r '.pageSize.default' "$evidence_map") == "50" && $(jq -r '.pageSize.maximum' "$evidence_map") == "200" ]] || {
+    echo "Compact evidence map has invalid page-size bounds." >&2
+    exit 69
+  }
+  jq -e '.normalizationStates | sort == ["cancelled", "completed", "indeterminate", "open"]' "$evidence_map" >/dev/null || {
+    echo "Compact evidence map has incomplete normalization states." >&2
+    exit 69
+  }
+  jq -e '.backwardCompatibleTools | index("calendar_entities.query") != null' "$evidence_map" >/dev/null || {
+    echo "Compact evidence map does not record calendar_entities.query compatibility." >&2
+    exit 69
+  }
+  [[ -d $results_directory ]] || {
+    echo "Test result directory does not exist: $results_directory" >&2
+    exit 70
+  }
+  mapfile -d '' compact_results < <(find "$results_directory" -type f -name '*.trx' -print0)
+  [[ ${#compact_results[@]} -gt 0 ]] || {
+    echo "No TRX evidence exists under $results_directory." >&2
+    exit 70
+  }
+  while IFS= read -r evidence_name; do
+    matches=$(grep -F "$evidence_name" "${compact_results[@]}" | grep '<UnitTestResult ' || true)
+    if [[ -z $matches ]] || grep -qv 'outcome="Passed"' <<< "$matches"; then
+      echo "0.2.1 compact evidence did not execute passing evidence matching: $evidence_name" >&2
+      exit 72
+    fi
+  done < <(jq -r '.requiredEvidence[]' "$evidence_map")
+  while IFS=$'\t' read -r requirement_id evidence_name; do
+    grep -q "$requirement_id" "$catalog" || {
+      echo "0.2.1 evidence catalog is missing requirement $requirement_id." >&2
+      exit 69
+    }
+    grep -q "$evidence_name" "$catalog" || {
+      echo "0.2.1 evidence catalog does not name mapped evidence $evidence_name." >&2
+      exit 69
+    }
+  done < <(jq -r '.requirementEvidence[] | [.requirement, .evidence] | @tsv' "$evidence_map")
+  echo "Verified compact 0.2.1 evidence map and every required test family passed."
+  exit 0
+fi
+
 row_count=$(grep -cE '^## CAL-' "$catalog" || true)
 if [[ $row_count -ne 96 ]]; then
   echo "Expected 96 normative evidence rows, found $row_count." >&2

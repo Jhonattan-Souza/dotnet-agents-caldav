@@ -13,6 +13,16 @@ public static class CalendarResourceSemanticProjector
     public static JsonElement Todo(CalendarResourceSnapshot snapshot) =>
         CalendarResourceSemanticProjectionMapper.Todo(snapshot);
 
+    public static JsonElement TodoForOccurrence(
+        CalendarResourceSnapshot snapshot,
+        CalendarTemporalValue recurrenceIdentity) =>
+        CalendarResourceSemanticProjectionMapper.TodoForOccurrence(snapshot, recurrenceIdentity);
+
     public static JsonElement? TodoCompletedAt(CalendarResourceSnapshot snapshot) =>
         CalendarResourceSemanticProjectionMapper.TodoCompletedAt(snapshot);
+
+    public static JsonElement? TodoCompletedAtForOccurrence(
+        CalendarResourceSnapshot snapshot,
+        CalendarTemporalValue recurrenceIdentity) =>
+        CalendarResourceSemanticProjectionMapper.TodoCompletedAtForOccurrence(snapshot, recurrenceIdentity);
 }

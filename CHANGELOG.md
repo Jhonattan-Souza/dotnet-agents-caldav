@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-08-19
+
+### Added
+
+- Added the bounded `todos.query` semantic MCP tool with explicit Calendar Scope, typed completion normalization, projection allowlisting, query-bound cursors, and strong revision targets.
+- Added the `To-do Completion State` domain term, ADR 0001, 0.2.1 contract/evidence artifacts, and native Radicale/stdio coverage.
+
+### Changed
+
+- Default semantic discovery now contains 17 tools; `calendar_entities.query` remains backward compatible.
+- `todos.complete` now shares normalized completion evidence with `todos.query`; cancelled and contradictory evidence produce typed state failures.
+
 ## [0.2.0] - 2026-08-17
 
 ### Added

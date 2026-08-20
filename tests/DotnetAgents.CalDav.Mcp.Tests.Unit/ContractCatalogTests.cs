@@ -40,11 +40,11 @@ public sealed class ContractCatalogTests
     {
         var catalog = ReadJson("mcp-tool-catalog.json");
 
-        catalog["contractVersion"]!.GetValue<string>().ShouldBe("0.2.0");
+        catalog["contractVersion"]!.GetValue<string>().ShouldBe("0.2.1");
         catalog["protocolRevision"]!.GetValue<string>().ShouldBe("2026-07-28");
-        catalog["discoveryOrder"]!.AsArray().Count.ShouldBe(16);
+        catalog["discoveryOrder"]!.AsArray().Count.ShouldBe(17);
         catalog["exactTools"]!.AsArray().Count.ShouldBe(4);
-        catalog["tools"]!.AsArray().Count.ShouldBe(20);
+        catalog["tools"]!.AsArray().Count.ShouldBe(21);
 
         var calendarReference = catalog["$defs"]!["calendarReference"]!.AsObject();
         var referenceBranches = calendarReference["oneOf"]!.AsArray();
@@ -74,7 +74,7 @@ public sealed class ContractCatalogTests
         catalog["$defs"]!["exactMutationErrorOutcome"]!["properties"]!["limits"]!["$ref"]!
             .GetValue<string>().ShouldBe("#/$defs/executionLimits");
         var mrtr = catalog["mrtrWireContract"]!.AsObject();
-        mrtr["toolsCallParams"]!["oneOf"]!.AsArray().Count.ShouldBe(20);
+        mrtr["toolsCallParams"]!["oneOf"]!.AsArray().Count.ShouldBe(21);
         mrtr["toolsCallParams"]!["oneOf"]![0]!["properties"]!["arguments"]!["$ref"].ShouldNotBeNull();
         var callBranches = mrtr["toolsCallParams"]!["oneOf"]!.AsArray();
         callBranches.All(branch => branch!["required"]!.ToJsonString().Contains("_meta", StringComparison.Ordinal)).ShouldBeTrue();
@@ -97,6 +97,18 @@ public sealed class ContractCatalogTests
         var temporalKinds = catalog["$defs"]!["temporalValue"]!["oneOf"]!.AsArray()
             .Select(value => value!["properties"]!["kind"]!["const"]!.GetValue<string>()).ToArray();
         temporalKinds.ShouldBe(["date", "floatingDateTime", "utcDateTime", "zonedDateTime"]);
+        var todoQueryInput = catalog["$defs"]!["todoQueryInput"]!.AsObject();
+        todoQueryInput["properties"]!["scope"]!["$ref"]!.GetValue<string>().ShouldBe("#/$defs/todoScope");
+        var todoScope = catalog["$defs"]!["todoScope"]!["oneOf"]!.AsArray();
+        todoScope.Count.ShouldBe(2);
+        todoScope.ToJsonString().ShouldNotContain("default");
+        catalog["$defs"]!["todoQueryItem"]!["properties"]!["status"]!["$ref"]!.GetValue<string>()
+            .ShouldBe("#/$defs/openEnumValue");
+        catalog["$defs"]!["todoQueryItem"]!["properties"]!["due"]!["$ref"]!.GetValue<string>()
+            .ShouldBe("#/$defs/effectiveTemporalValue");
+        catalog["$defs"]!["todoCompletionTarget"]!["oneOf"]!.AsArray().Count.ShouldBe(3);
+        catalog["$defs"]!["todoRecurrenceIdentity"]!["$ref"]!.GetValue<string>()
+            .ShouldBe("#/$defs/temporalValue");
         var occurrenceInput = catalog["$defs"]!["occurrenceQueryInput"]!.AsObject();
         occurrenceInput["required"]!.ToJsonString().ShouldNotContain("evaluationTimeZone");
         occurrenceInput["properties"]!.AsObject().ShouldContainKey("evaluationTimeZone");
@@ -207,6 +219,8 @@ public sealed class ContractCatalogTests
         catalog["$defs"]!["requestStatus"]!["required"]!.ToJsonString().ShouldContain("parameters");
         catalog["$defs"]!["errorOutcome"]!["properties"]!["category"]!["enum"]!.AsArray().Count.ShouldBe(8);
         catalog["$defs"]!["errorOutcome"]!["properties"]!["phase"]!["enum"]!.AsArray().Count.ShouldBe(10);
+        catalog["$defs"]!["errorOutcome"]!["properties"]!["code"]!["enum"]!.ToJsonString()
+            .ShouldContain("completion_state_conflict");
         FindOpenSchemaNodes(catalog).ShouldBeEmpty();
     }
 
@@ -452,18 +466,21 @@ public sealed class ContractCatalogTests
     }
 
     [Fact]
-    public void Agent_instructions_name_the_frozen_default_semantic_catalog()
+    public void Agent_instructions_name_the_additive_default_semantic_catalog()
     {
         var instructions = File.ReadAllText(Path.Combine(RepositoryRoot(), "AGENTS.md"));
 
-        instructions.ShouldContain("default host exposes exactly the frozen 16-tool semantic catalog");
+        instructions.ShouldContain("default host exposes the additive 0.2.1 17-tool semantic catalog");
         instructions.ShouldContain("including `todos.complete`");
         instructions.ShouldContain("It contains no legacy aliases");
     }
 
     private const string RadicaleConformanceIndexDigest = "sha256:3a0080ea51ac69dcd74e345b9587dc14a8c8af0652046069005749f9a75c5c80";
 
-    private static JsonObject ReadJson(string fileName) => JsonNode.Parse(File.ReadAllText(ContractPath(fileName)))!.AsObject();
+    private static JsonObject ReadJson(string fileName) => JsonNode.Parse(File.ReadAllText(
+        fileName == "mcp-tool-catalog.json"
+            ? Path.Combine(RepositoryRoot(), "contracts", "0.2.1", fileName)
+            : ContractPath(fileName)))!.AsObject();
 
     private static IReadOnlyList<string> FindOpenSchemaNodes(JsonNode node, string path = "$")
     {

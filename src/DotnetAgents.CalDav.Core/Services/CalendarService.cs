@@ -105,6 +105,15 @@ internal sealed class CalendarService : ICalendarService
             ResolveDefaultCalendar).QueryAsync(query, cancellationToken);
 
     /// <inheritdoc />
+    public async Task<CalendarTodoQueryResult> QueryTodosAsync(
+        CalendarTodoQuery query,
+        CancellationToken cancellationToken) => await new CalendarTodoQueryEngine(
+            _calendarClient,
+            _options.Value,
+            ApplyScope,
+            ResolveDefaultCalendar).QueryAsync(query, cancellationToken);
+
+    /// <inheritdoc />
     public Task<CalendarResourceRead> GetResourceAsync(string href, CancellationToken cancellationToken) =>
         GetResourceAsync(href, expectedKind: null, cancellationToken);
 

@@ -41,7 +41,7 @@ dotnet tool run slopwatch analyze --config .slopwatch/slopwatch.json --fail-on w
 
 - Runtime flow is `MCP tools -> ICalendarService -> CalendarService -> CalDavClient -> HttpClient`; `CalendarService` stays thin. WebDAV request/response logic belongs under `Core/Internal/Xml`, and iCalendar mapping belongs under `Core/Internal/Ical`.
 - `Program.cs` maps `CALDAV_*` environment variables, then delegates startup to `CalDavMcpRunner` and `CalDavHostBuilder`; keep startup testable through those types rather than adding logic to top-level statements.
-- The default host exposes exactly the frozen 16-tool semantic catalog, including `todos.complete`. It contains no legacy aliases. `CALDAV_EXPOSE_EXACT_TOOLS=true` independently enables the four exact Calendar resource tools.
+- The default host exposes the additive 0.2.1 17-tool semantic catalog, including `todos.complete` and the new `todos.query` surface. It contains no legacy aliases. `CALDAV_EXPOSE_EXACT_TOOLS=true` independently enables the four exact Calendar resource tools.
 - `.opencode/opencode.jsonc` launches the published NuGet tool through `dnx`; it does not run the current checkout. Do not treat that configuration as source-level end-to-end validation.
 
 ## Invariants

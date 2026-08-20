@@ -74,8 +74,16 @@ public sealed class PackageArtifactTests
             entries.ShouldContain("contracts/0.2.0/mcp-server.schema.json");
             entries.ShouldContain("contracts/0.2.0/mcp-authority-manifest.json");
             entries.ShouldContain("contracts/0.2.0/release-evidence-map.json");
+            entries.ShouldContain("contracts/0.2.1/mcp-tool-catalog.json");
+            entries.ShouldContain("contracts/0.2.1/mcp-server.schema.json");
+            entries.ShouldContain("contracts/0.2.1/mcp-authority-manifest.json");
+            entries.ShouldContain("contracts/0.2.1/radicale-3.7.8-profile.json");
+            entries.ShouldContain("contracts/0.2.1/compatibility-matrix.md");
+            entries.ShouldContain("contracts/0.2.1/requirement-evidence-catalog.md");
+            entries.ShouldContain("contracts/0.2.1/release-evidence-map.json");
             entries.ShouldContain("skills/caldav-calendars/SKILL.md");
             entries.ShouldContain("docs/migrating-0.1.x-to-0.2.0.md");
+            entries.ShouldContain("docs/migrating-0.2.0-to-0.2.1.md");
             entries.ShouldContain("CHANGELOG.md");
             entries.ShouldContain("RELEASE_NOTES.md");
         }
@@ -734,7 +742,7 @@ public sealed class PackageArtifactTests
         string[] unifiedTools =
         [
             "calendars.list", "calendar_entities.query", "calendar_occurrences.query",
-            "calendar_resources.get", "events.create", "events.patch", "todos.create", "todos.patch",
+            "todos.query", "calendar_resources.get", "events.create", "events.patch", "todos.create", "todos.patch",
             "todos.complete", "calendar_occurrences.add", "calendar_occurrences.exclude",
             "calendar_occurrences.restore_exclusion", "calendar_occurrences.cancel",
             "calendar_occurrences.restore_cancellation", "calendar_resources.move",

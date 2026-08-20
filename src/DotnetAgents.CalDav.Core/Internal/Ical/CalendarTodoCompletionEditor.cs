@@ -22,9 +22,12 @@ internal static class CalendarTodoCompletionEditor
                 return (null, selected.Failure);
             document = selected.Document!;
             var target = selected.Component!;
-            if (IsCancelled(document, target))
+            var classification = CalendarTodoCompletionClassifier.Classify(document, target.Path);
+            if (classification.State == CalendarTodoCompletionState.Cancelled)
                 return (null, Failure(CalendarEntityPatchCode.InvalidInput, snapshot));
-            if (IsCompleted(document, target))
+            if (classification.State == CalendarTodoCompletionState.Indeterminate)
+                return (null, Failure(CalendarEntityPatchCode.CompletionStateConflict, snapshot));
+            if (classification.State == CalendarTodoCompletionState.Completed)
                 return (null, null);
 
             var instant = now.UtcDateTime.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture);
@@ -90,9 +93,12 @@ internal static class CalendarTodoCompletionEditor
         if (inspection.IsExcluded)
             return Failed(CalendarEntityPatchCode.NotFound, snapshot);
         var effective = inspection.Individual ?? inspection.Range ?? inspection.Master!;
-        if (IsCancelled(document, effective))
+        var classification = CalendarTodoCompletionClassifier.Classify(document, effective.Path);
+        if (classification.State == CalendarTodoCompletionState.Cancelled)
             return Failed(CalendarEntityPatchCode.InvalidInput, snapshot);
-        if (IsCompleted(document, effective))
+        if (classification.State == CalendarTodoCompletionState.Indeterminate)
+            return Failed(CalendarEntityPatchCode.CompletionStateConflict, snapshot);
+        if (classification.State == CalendarTodoCompletionState.Completed)
             return new(document, effective, null);
         if (inspection.Individual is not null)
             return new(document, inspection.Individual, null);
@@ -114,20 +120,6 @@ internal static class CalendarTodoCompletionEditor
         || document.Components.Any(component => component.Path.Count == 2
             && component.Path[^1].Name.Equals("VTODO", StringComparison.OrdinalIgnoreCase)
             && !component.Path.SequenceEqual(master.Path));
-
-    private static bool IsCompleted(
-        CalendarContentDocument document,
-        CalendarContentComponent component) => document.Properties.Any(property =>
-        property.ComponentPath.SequenceEqual(component.Path)
-        && property.Name.Equals("STATUS", StringComparison.OrdinalIgnoreCase)
-        && property.RawEncodedValue.Equals("COMPLETED", StringComparison.OrdinalIgnoreCase));
-
-    private static bool IsCancelled(
-        CalendarContentDocument document,
-        CalendarContentComponent component) => document.Properties.Any(property =>
-        property.ComponentPath.SequenceEqual(component.Path)
-        && property.Name.Equals("STATUS", StringComparison.OrdinalIgnoreCase)
-        && property.RawEncodedValue.Equals("CANCELLED", StringComparison.OrdinalIgnoreCase));
 
     private static CalendarEntityPatchResult Failure(
         CalendarEntityPatchCode code,

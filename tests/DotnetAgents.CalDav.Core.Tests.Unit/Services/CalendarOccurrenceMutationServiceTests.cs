@@ -563,6 +563,9 @@ public sealed class CalendarOccurrenceMutationServiceTests
     [InlineData("unresolved", CalendarEntityPatchCode.TemporalUnresolved)]
     [InlineData("unevaluable", CalendarEntityPatchCode.RecurrenceUnevaluable)]
     [InlineData("completed", CalendarEntityPatchCode.NoChange)]
+    [InlineData("completed_timestamp", CalendarEntityPatchCode.NoChange)]
+    [InlineData("completed_percent", CalendarEntityPatchCode.NoChange)]
+    [InlineData("completion_conflict", CalendarEntityPatchCode.CompletionStateConflict)]
     [InlineData("missing", CalendarEntityPatchCode.NotFound)]
     [InlineData("wrong_kind", CalendarEntityPatchCode.EntityKindMismatch)]
     public async Task CompleteTodoAsync_StateInteractionsAreDeterministicAndNeverWrite(
@@ -763,6 +766,9 @@ public sealed class CalendarOccurrenceMutationServiceTests
         {
             "cancelled" => "BEGIN:VTODO\r\nUID:series-1\r\nDTSTAMP:20260816T110000Z\r\nRECURRENCE-ID:20260819T090000Z\r\nDTSTART:20260819T090000Z\r\nSTATUS:CANCELLED\r\nEND:VTODO\r\n",
             "completed" => "BEGIN:VTODO\r\nUID:series-1\r\nDTSTAMP:20260816T110000Z\r\nRECURRENCE-ID:20260819T090000Z\r\nDTSTART:20260819T090000Z\r\nSTATUS:COMPLETED\r\nPERCENT-COMPLETE:100\r\nCOMPLETED:20260816T120000Z\r\nEND:VTODO\r\n",
+            "completed_timestamp" => "BEGIN:VTODO\r\nUID:series-1\r\nDTSTAMP:20260816T110000Z\r\nRECURRENCE-ID:20260819T090000Z\r\nDTSTART:20260819T090000Z\r\nCOMPLETED:20260816T120000Z\r\nEND:VTODO\r\n",
+            "completed_percent" => "BEGIN:VTODO\r\nUID:series-1\r\nDTSTAMP:20260816T110000Z\r\nRECURRENCE-ID:20260819T090000Z\r\nDTSTART:20260819T090000Z\r\nPERCENT-COMPLETE:100\r\nEND:VTODO\r\n",
+            "completion_conflict" => "BEGIN:VTODO\r\nUID:series-1\r\nDTSTAMP:20260816T110000Z\r\nRECURRENCE-ID:20260819T090000Z\r\nDTSTART:20260819T090000Z\r\nSTATUS:IN-PROCESS\r\nPERCENT-COMPLETE:100\r\nEND:VTODO\r\n",
             _ => string.Empty
         };
         return "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VTODO\r\n"
