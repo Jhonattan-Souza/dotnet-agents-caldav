@@ -74,7 +74,15 @@ contracts/0.2.0/mcp-tool-catalog.json|contracts/0.2.0/mcp-tool-catalog.json
 contracts/0.2.0/mcp-server.schema.json|contracts/0.2.0/mcp-server.schema.json
 contracts/0.2.0/mcp-authority-manifest.json|contracts/0.2.0/mcp-authority-manifest.json
 contracts/0.2.0/release-evidence-map.json|contracts/0.2.0/release-evidence-map.json
+contracts/0.2.1/mcp-tool-catalog.json|contracts/0.2.1/mcp-tool-catalog.json
+contracts/0.2.1/mcp-server.schema.json|contracts/0.2.1/mcp-server.schema.json
+contracts/0.2.1/mcp-authority-manifest.json|contracts/0.2.1/mcp-authority-manifest.json
+contracts/0.2.1/radicale-3.7.8-profile.json|contracts/0.2.1/radicale-3.7.8-profile.json
+contracts/0.2.1/compatibility-matrix.md|contracts/0.2.1/compatibility-matrix.md
+contracts/0.2.1/requirement-evidence-catalog.md|contracts/0.2.1/requirement-evidence-catalog.md
+contracts/0.2.1/release-evidence-map.json|contracts/0.2.1/release-evidence-map.json
 docs/migrating-0.1.x-to-0.2.0.md|docs/migrating-0.1.x-to-0.2.0.md
+docs/migrating-0.2.0-to-0.2.1.md|docs/migrating-0.2.0-to-0.2.1.md
 skills/caldav-calendars/SKILL.md|skills/caldav-calendars/SKILL.md
 EOF
 

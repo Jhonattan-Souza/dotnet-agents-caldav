@@ -5,7 +5,8 @@ public sealed record CalendarOccurrenceQuery(
     CalendarEntityScope Scope,
     DateTimeOffset From,
     DateTimeOffset To,
-    string? EvaluationTimeZone = null);
+    string? EvaluationTimeZone = null,
+    bool IncludeCancelledOccurrences = false);
 
 /// <summary>Preserved temporal family of a Calendar value.</summary>
 public enum CalendarTemporalKind

@@ -25,6 +25,7 @@ This step is complete when the intended scope resolves to the requested Entity K
 
 - Use `calendar_entities.query` for persisted Event or To-do snapshots. Follow `nextCursor` until the requested bounded result is complete.
 - Use `calendar_occurrences.query` for derived recurrence instances in a non-empty half-open UTC window. Supply an IANA evaluation time zone when floating or date-only values require one.
+- Use `todos.query` for routine compact To-do lists. Provide an explicit selected or all-Calendar Scope; the server normalizes completion evidence and returns strong revision targets.
 - Use `calendar_resources.get` for the authoritative semantic-or-opaque snapshot of one confirmed absolute resource href.
 
 An Occurrence is read-only. Any mutation targets its containing resource revision and, when applicable, its original Recurrence Identity.

@@ -23,6 +23,11 @@ public interface ICalendarService
         CalendarOccurrenceQuery query,
         CancellationToken cancellationToken);
 
+    /// <summary>Queries compact normalized To-do results within an explicit Calendar Scope.</summary>
+    Task<CalendarTodoQueryResult> QueryTodosAsync(
+        CalendarTodoQuery query,
+        CancellationToken cancellationToken);
+
     /// <summary>Reads one authoritative Calendar Object Resource snapshot.</summary>
     Task<CalendarResourceRead> GetResourceAsync(string href, CancellationToken cancellationToken);
 

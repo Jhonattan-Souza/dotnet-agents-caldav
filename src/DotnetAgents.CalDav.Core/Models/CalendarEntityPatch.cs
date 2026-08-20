@@ -196,7 +196,8 @@ public enum CalendarEntityPatchCode
     CommittedButUnverified,
     CommittedButConcurrencyUnavailable,
     Indeterminate,
-    TemporalUnresolved
+    TemporalUnresolved,
+    CompletionStateConflict
 }
 
 /// <summary>Earliest completed validation or execution phase that produced a patch outcome.</summary>

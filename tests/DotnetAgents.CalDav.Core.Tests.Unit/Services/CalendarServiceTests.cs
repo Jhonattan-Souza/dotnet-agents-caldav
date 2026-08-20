@@ -2000,6 +2000,307 @@ public sealed class CalendarServiceTests
     }
 
     [Fact]
+    public async Task QueryTodosAsync_NormalizesCompletionBeforeFiltering()
+    {
+        const string calendarHref = "https://cal.example/todos/";
+        var hrefs = new[]
+        {
+            $"{calendarHref}open.ics",
+            $"{calendarHref}completed.ics",
+            $"{calendarHref}cancelled.ics",
+            $"{calendarHref}conflict.ics"
+        };
+        var client = Substitute.For<ICalendarClient>();
+        var sut = new CalendarService(
+            client,
+            Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
+            Substitute.For<ILogger<CalendarService>>());
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(
+            [EntityCalendar(calendarHref, "To-dos", EntityKindSupport.NotAdvertised, EntityKindSupport.Advertised)]);
+        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Todo, null, null, Arg.Any<CancellationToken>())
+            .Returns(hrefs);
+        client.GetCalendarResourceAsync(hrefs[0], Arg.Any<CancellationToken>()).Returns(
+            CalendarResourceRead.Success(hrefs[0], "\"r1\"", TodoWithTemporalLines("open", "SUMMARY:Open\r\n")));
+        client.GetCalendarResourceAsync(hrefs[1], Arg.Any<CancellationToken>()).Returns(
+            CalendarResourceRead.Success(hrefs[1], "\"r2\"", TodoWithTemporalLines("completed", "STATUS:COMPLETED\r\nPERCENT-COMPLETE:100\r\n")));
+        client.GetCalendarResourceAsync(hrefs[2], Arg.Any<CancellationToken>()).Returns(
+            CalendarResourceRead.Success(hrefs[2], "\"r3\"", TodoWithTemporalLines("cancelled", "STATUS:CANCELLED\r\n")));
+        client.GetCalendarResourceAsync(hrefs[3], Arg.Any<CancellationToken>()).Returns(
+            CalendarResourceRead.Success(hrefs[3], "\"r4\"", TodoWithTemporalLines("conflict", "STATUS:IN-PROCESS\r\nPERCENT-COMPLETE:100\r\n")));
+
+        var result = await sut.QueryTodosAsync(
+            new CalendarTodoQuery(CalendarEntityScope.Selected(new CalendarReference(Href: calendarHref))),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarTodoQueryCode.Success);
+        result.Items.ShouldHaveSingleItem().Completion.State.ShouldBe(CalendarTodoCompletionState.Open);
+        result.ExcludedIndeterminateCount.ShouldBe(1);
+        await client.Received(1).QueryCalendarResourceHrefsAsync(
+            calendarHref, CalendarEntityKind.Todo, null, null, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task QueryTodosAsync_WindowReturnsRecurringOccurrenceAndUndatedLane()
+    {
+        const string calendarHref = "https://cal.example/todos/";
+        const string recurringHref = "https://cal.example/todos/recurring.ics";
+        const string undatedHref = "https://cal.example/todos/undated.ics";
+        var from = DateTimeOffset.Parse("2026-08-15T00:00:00Z");
+        var to = DateTimeOffset.Parse("2026-08-17T00:00:00Z");
+        var client = Substitute.For<ICalendarClient>();
+        var sut = new CalendarService(
+            client,
+            Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
+            Substitute.For<ILogger<CalendarService>>());
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(
+            [EntityCalendar(calendarHref, "To-dos", EntityKindSupport.NotAdvertised, EntityKindSupport.Advertised)]);
+        client.QueryCalendarResourceHrefsAsync(
+                calendarHref, CalendarEntityKind.Todo, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>())
+            .Returns([recurringHref, undatedHref]);
+        client.GetCalendarResourceAsync(recurringHref, Arg.Any<CancellationToken>()).Returns(
+            CalendarResourceRead.Success(recurringHref, "\"r1\"", TodoWithTemporalLines(
+                "recurring", "DTSTART:20260815T100000Z\r\nDUE:20260815T103000Z\r\nRRULE:FREQ=DAILY;COUNT=2\r\n")));
+        client.GetCalendarResourceAsync(undatedHref, Arg.Any<CancellationToken>()).Returns(
+            CalendarResourceRead.Success(undatedHref, "\"r2\"", TodoWithTemporalLines("undated", "SUMMARY:Undated\r\n")));
+
+        var result = await sut.QueryTodosAsync(
+            new CalendarTodoQuery(
+                CalendarEntityScope.Selected(new CalendarReference(Href: calendarHref)),
+                [CalendarTodoCompletionState.Open],
+                from,
+                to),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarTodoQueryCode.Success);
+        result.Items.Select(item => item.ResultKind).ShouldBe([
+            CalendarTodoQueryResultKind.Occurrence,
+            CalendarTodoQueryResultKind.Occurrence,
+            CalendarTodoQueryResultKind.Entity]);
+        result.Items[0].Occurrence.ShouldNotBeNull();
+        result.Items[0].EvaluatedDueUtc.ShouldBe(DateTimeOffset.Parse("2026-08-15T10:30:00Z"));
+    }
+
+    [Fact]
+    public async Task QueryTodosAsync_WindowIncludesCancelledRangeOverrideWhenRequested()
+    {
+        var bytes = System.Text.Encoding.UTF8.GetBytes(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\n"
+            + "BEGIN:VTODO\r\nUID:cancelled-range\r\nDTSTAMP:20260815T120000Z\r\n"
+            + "DTSTART:20260819T100000Z\r\nRRULE:FREQ=DAILY;COUNT=4\r\nEND:VTODO\r\n"
+            + "BEGIN:VTODO\r\nUID:cancelled-range\r\nDTSTAMP:20260815T120000Z\r\n"
+            + "RECURRENCE-ID;RANGE=THISANDFUTURE:20260820T100000Z\r\nSTATUS:CANCELLED\r\n"
+            + "END:VTODO\r\nEND:VCALENDAR\r\n");
+
+        var result = await QuerySingleTodoAsync(bytes, new CalendarTodoQuery(
+            CalendarEntityScope.Selected(new CalendarReference(Href: "https://cal.example/todos/")),
+            [CalendarTodoCompletionState.Cancelled],
+            DateTimeOffset.Parse("2026-08-19T00:00:00Z"),
+            DateTimeOffset.Parse("2026-08-23T00:00:00Z")));
+
+        result.Code.ShouldBe(CalendarTodoQueryCode.Success);
+        result.Items.Select(item => item.Occurrence!.RecurrenceIdentity.Value)
+            .ShouldBe(["2026-08-20T10:00:00Z", "2026-08-21T10:00:00Z", "2026-08-22T10:00:00Z"]);
+        result.Items.ShouldAllBe(item => item.Completion.State == CalendarTodoCompletionState.Cancelled);
+    }
+
+    [Fact]
+    public async Task QueryTodosAsync_WindowDoesNotInventDueForRecurringStartOnlyTodo()
+    {
+        var bytes = TodoWithTemporalLines(
+            "start-only-recurring",
+            "DTSTART:20260819T100000Z\r\nRRULE:FREQ=DAILY;COUNT=3\r\n");
+
+        var result = await QuerySingleTodoAsync(bytes, new CalendarTodoQuery(
+            CalendarEntityScope.Selected(new CalendarReference(Href: "https://cal.example/todos/")),
+            [CalendarTodoCompletionState.Open],
+            DateTimeOffset.Parse("2026-08-19T00:00:00Z"),
+            DateTimeOffset.Parse("2026-08-22T00:00:00Z"),
+            DueFrom: DateTimeOffset.Parse("2026-08-19T00:00:00Z"),
+            DueTo: DateTimeOffset.Parse("2026-08-22T00:00:00Z")));
+
+        result.Code.ShouldBe(CalendarTodoQueryCode.Success);
+        result.Items.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task QueryTodosAsync_RejectsDefaultScopeAndUnpairedWindowBeforeDiscovery()
+    {
+        var client = Substitute.For<ICalendarClient>();
+        var sut = new CalendarService(
+            client,
+            Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
+            Substitute.For<ILogger<CalendarService>>());
+
+        var defaultScope = await sut.QueryTodosAsync(new CalendarTodoQuery(CalendarEntityScope.Default), CancellationToken.None);
+        var unpaired = await sut.QueryTodosAsync(
+            new CalendarTodoQuery(CalendarEntityScope.All, From: DateTimeOffset.UtcNow), CancellationToken.None);
+
+        defaultScope.Code.ShouldBe(CalendarTodoQueryCode.InvalidInput);
+        unpaired.Code.ShouldBe(CalendarTodoQueryCode.InvalidInput);
+        await client.DidNotReceive().GetCalendarsAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task QueryTodosAsync_DueWindowExcludesUndatedAndUsesHalfOpenBounds()
+    {
+        const string calendarHref = "https://cal.example/todos/";
+        const string firstHref = "https://cal.example/todos/first.ics";
+        const string boundaryHref = "https://cal.example/todos/boundary.ics";
+        var client = Substitute.For<ICalendarClient>();
+        var sut = new CalendarService(
+            client,
+            Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
+            Substitute.For<ILogger<CalendarService>>());
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(
+            [EntityCalendar(calendarHref, "To-dos", EntityKindSupport.NotAdvertised, EntityKindSupport.Advertised)]);
+        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Todo, null, null, Arg.Any<CancellationToken>())
+            .Returns([firstHref, boundaryHref]);
+        client.GetCalendarResourceAsync(firstHref, Arg.Any<CancellationToken>()).Returns(
+            CalendarResourceRead.Success(firstHref, "\"r1\"", TodoWithTemporalLines("first", "DUE:20260816T100000Z\r\n")));
+        client.GetCalendarResourceAsync(boundaryHref, Arg.Any<CancellationToken>()).Returns(
+            CalendarResourceRead.Success(boundaryHref, "\"r2\"", TodoWithTemporalLines("boundary", "DUE:20260817T100000Z\r\n")));
+
+        var result = await sut.QueryTodosAsync(
+            new CalendarTodoQuery(
+                CalendarEntityScope.Selected(new CalendarReference(Href: calendarHref)),
+                [CalendarTodoCompletionState.Open],
+                DueFrom: DateTimeOffset.Parse("2026-08-16T00:00:00Z"),
+                DueTo: DateTimeOffset.Parse("2026-08-17T00:00:00Z")),
+            CancellationToken.None);
+
+        result.Items.ShouldHaveSingleItem().Snapshot.Projection.EntityUid.ShouldBe("first");
+    }
+
+    [Fact]
+    public async Task QueryTodosAsync_ExplicitStatesIncludeCancelledAndCompleted()
+    {
+        const string calendarHref = "https://cal.example/todos/";
+        const string href = "https://cal.example/todos/completed.ics";
+        var client = Substitute.For<ICalendarClient>();
+        var sut = new CalendarService(
+            client,
+            Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
+            Substitute.For<ILogger<CalendarService>>());
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(
+            [EntityCalendar(calendarHref, "To-dos", EntityKindSupport.NotAdvertised, EntityKindSupport.Advertised)]);
+        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Todo, null, null, Arg.Any<CancellationToken>())
+            .Returns([href]);
+        client.GetCalendarResourceAsync(href, Arg.Any<CancellationToken>()).Returns(
+            CalendarResourceRead.Success(href, "\"r1\"", TodoWithTemporalLines("cancelled", "STATUS:CANCELLED\r\n")));
+
+        var result = await sut.QueryTodosAsync(
+            new CalendarTodoQuery(
+                CalendarEntityScope.Selected(new CalendarReference(Href: calendarHref)),
+                [CalendarTodoCompletionState.Cancelled]),
+            CancellationToken.None);
+
+        result.Items.ShouldHaveSingleItem().Completion.State.ShouldBe(CalendarTodoCompletionState.Cancelled);
+    }
+
+    [Fact]
+    public async Task QueryTodosAsync_UnknownTemporalRequiresEvaluationContext()
+    {
+        const string calendarHref = "https://cal.example/todos/";
+        const string href = "https://cal.example/todos/floating.ics";
+        var client = Substitute.For<ICalendarClient>();
+        var sut = new CalendarService(
+            client,
+            Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
+            Substitute.For<ILogger<CalendarService>>());
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(
+            [EntityCalendar(calendarHref, "To-dos", EntityKindSupport.NotAdvertised, EntityKindSupport.Advertised)]);
+        client.QueryCalendarResourceHrefsAsync(calendarHref, CalendarEntityKind.Todo, null, null, Arg.Any<CancellationToken>())
+            .Returns([href]);
+        client.GetCalendarResourceAsync(href, Arg.Any<CancellationToken>()).Returns(
+            CalendarResourceRead.Success(href, "\"r1\"", TodoWithTemporalLines("floating", "DUE:20260816T100000\r\n")));
+
+        var result = await sut.QueryTodosAsync(
+            new CalendarTodoQuery(CalendarEntityScope.Selected(new CalendarReference(Href: calendarHref)), [CalendarTodoCompletionState.Open]),
+            CancellationToken.None);
+
+        result.Items.ShouldBeEmpty();
+        result.Diagnostics.ShouldContain(diagnostic => diagnostic.Code == "temporal_unresolved");
+    }
+
+    [Theory]
+    [InlineData(CalendarResourceReadCode.ConcurrencyUnavailable, CalendarTodoQueryCode.ConcurrencyUnavailable)]
+    [InlineData(CalendarResourceReadCode.PayloadTooLarge, CalendarTodoQueryCode.PayloadTooLarge)]
+    [InlineData(CalendarResourceReadCode.UpstreamProtocolError, CalendarTodoQueryCode.UpstreamProtocolError)]
+    public async Task QueryTodosAsync_MapsOccurrenceSnapshotReadFailures(
+        CalendarResourceReadCode readCode,
+        CalendarTodoQueryCode expectedCode)
+    {
+        const string calendarHref = "https://cal.example/todos/";
+        const string entityHref = "https://cal.example/todos/entity.ics";
+        const string failedHref = "https://cal.example/todos/failed.ics";
+        var from = DateTimeOffset.Parse("2026-08-15T00:00:00Z");
+        var to = DateTimeOffset.Parse("2026-08-17T00:00:00Z");
+        var client = Substitute.For<ICalendarClient>();
+        var sut = new CalendarService(
+            client,
+            Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
+            Substitute.For<ILogger<CalendarService>>());
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(
+            [EntityCalendar(calendarHref, "To-dos", EntityKindSupport.Advertised, EntityKindSupport.Advertised)]);
+        client.QueryCalendarResourceHrefsAsync(
+                calendarHref,
+                Arg.Any<CalendarEntityKind>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call => call.ArgAt<DateTimeOffset?>(2) is null ? [entityHref] : [failedHref]);
+        client.GetCalendarResourceAsync(entityHref, Arg.Any<CancellationToken>()).Returns(
+            CalendarResourceRead.Success(entityHref, "\"entity\"", TodoWithTemporalLines("entity", "SUMMARY:Entity\r\n")));
+        client.GetCalendarResourceAsync(failedHref, Arg.Any<CancellationToken>()).Returns(
+            new CalendarResourceRead(
+                readCode,
+                failedHref,
+                ObservedByteCount: readCode == CalendarResourceReadCode.PayloadTooLarge ? 4_194_305 : null));
+
+        var result = await sut.QueryTodosAsync(
+            new CalendarTodoQuery(CalendarEntityScope.Selected(new CalendarReference(Href: calendarHref)), [CalendarTodoCompletionState.Open], from, to),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(expectedCode);
+        result.Items.ShouldBeEmpty();
+    }
+
+    [Theory]
+    [InlineData(CalendarEntityScopeMode.Default, null, null, null, null)]
+    [InlineData(CalendarEntityScopeMode.Selected, "", null, null, null)]
+    [InlineData(CalendarEntityScopeMode.All, null, "2026-08-15T00:00:00+01:00", "2026-08-16T00:00:00Z", null)]
+    [InlineData(CalendarEntityScopeMode.All, null, "2026-08-15T00:00:00Z", "2027-08-17T00:00:00Z", null)]
+    [InlineData(CalendarEntityScopeMode.All, null, null, null, "America/Sao_Paulo")]
+    [InlineData(CalendarEntityScopeMode.All, null, null, null, "Not/AZone")]
+    public async Task QueryTodosAsync_RejectsInvalidCompletionQueryShapes(
+        CalendarEntityScopeMode scopeMode,
+        string? selectorName,
+        string? fromText,
+        string? toText,
+        string? evaluationTimeZone)
+    {
+        var client = Substitute.For<ICalendarClient>();
+        var sut = new CalendarService(
+            client,
+            Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
+            Substitute.For<ILogger<CalendarService>>());
+        var scope = scopeMode switch
+        {
+            CalendarEntityScopeMode.Default => CalendarEntityScope.Default,
+            CalendarEntityScopeMode.Selected => CalendarEntityScope.Selected(new CalendarReference(Name: selectorName)),
+            _ => CalendarEntityScope.All
+        };
+        DateTimeOffset? from = fromText is null ? null : DateTimeOffset.Parse(fromText);
+        DateTimeOffset? to = toText is null ? null : DateTimeOffset.Parse(toText);
+        var result = await sut.QueryTodosAsync(
+            new CalendarTodoQuery(scope, [CalendarTodoCompletionState.Open, CalendarTodoCompletionState.Open], from, to, evaluationTimeZone),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarTodoQueryCode.InvalidInput);
+        await client.DidNotReceive().GetCalendarsAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task QueryEntitiesAsync_DefaultScopeUsesOnlyTheRequestedIndependentDefault()
     {
         const string eventCalendar = "https://cal.example/events/";
@@ -3927,6 +4228,32 @@ public sealed class CalendarServiceTests
                 DateTimeOffset.Parse(to),
                 evaluationTimeZone),
             CancellationToken.None);
+    }
+
+    private static async Task<CalendarTodoQueryResult> QuerySingleTodoAsync(
+        byte[] authoritativeBytes,
+        CalendarTodoQuery query)
+    {
+        const string calendarHref = "https://cal.example/todos/";
+        const string resourceHref = "https://cal.example/todos/occurrence.ics";
+        var client = Substitute.For<ICalendarClient>();
+        var sut = new CalendarService(
+            client,
+            Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
+            Substitute.For<ILogger<CalendarService>>());
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
+            EntityCalendar(calendarHref, "To-dos", EntityKindSupport.NotAdvertised, EntityKindSupport.Advertised)
+        ]);
+        client.QueryCalendarResourceHrefsAsync(
+                calendarHref,
+                CalendarEntityKind.Todo,
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<CancellationToken>())
+            .Returns([resourceHref]);
+        client.GetCalendarResourceAsync(resourceHref, Arg.Any<CancellationToken>()).Returns(
+            CalendarResourceRead.Success(resourceHref, "\"r1\"", authoritativeBytes));
+        return await sut.QueryTodosAsync(query, CancellationToken.None);
     }
 
     private static async Task<CalendarOccurrenceQueryResult> QueryOccurrenceCountsAsync(params int[] occurrenceCounts)

@@ -52,6 +52,11 @@ internal static class CalendarResourceSemanticProjectionMapper
     internal static JsonElement Todo(CalendarResourceSnapshot snapshot) =>
         JsonSerializer.SerializeToElement(CreateTodoFields(snapshot), ProjectionJson);
 
+    internal static JsonElement TodoForOccurrence(
+        CalendarResourceSnapshot snapshot,
+        CalendarTemporalValue recurrenceIdentity) =>
+        JsonSerializer.SerializeToElement(CreateTodoFieldsForOccurrence(snapshot, recurrenceIdentity), ProjectionJson);
+
     private static CalendarTodoFieldsResult CreateTodoFields(CalendarResourceSnapshot snapshot)
     {
         if (!TryDocumentMaster(snapshot, "VTODO", out var document, out var master))
@@ -67,6 +72,35 @@ internal static class CalendarResourceSemanticProjectionMapper
             return null;
         var completed = Temporal(Owned(document, master.Path), "COMPLETED");
         return completed is null ? null : JsonSerializer.SerializeToElement(completed, ProjectionJson);
+    }
+
+    internal static JsonElement? TodoCompletedAtForOccurrence(
+        CalendarResourceSnapshot snapshot,
+        CalendarTemporalValue recurrenceIdentity)
+    {
+        try
+        {
+            var document = CalendarContentDocument.Parse(snapshot.AuthoritativeUtf8.Span);
+            var component = CalendarTodoComponentSelector.Select(document, recurrenceIdentity);
+            var completed = Temporal(Owned(document, component.Path), "COMPLETED");
+            return completed is null ? null : JsonSerializer.SerializeToElement(completed, ProjectionJson);
+        }
+        catch (Exception exception) when (exception is FormatException or InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    private static CalendarTodoFieldsResult CreateTodoFieldsForOccurrence(
+        CalendarResourceSnapshot snapshot,
+        CalendarTemporalValue recurrenceIdentity)
+    {
+        if (!TryDocumentMaster(snapshot, "VTODO", out var document, out var master))
+            return new CalendarTodoFieldsResult(
+                snapshot.Projection.Summary,
+                null, null, null, null, null, null, null, null, null, null, null);
+        var effective = CalendarTodoComponentSelector.Select(document, recurrenceIdentity);
+        return TodoFields(document, effective, includeRecurrence: true, recurrenceComponent: master);
     }
 
     private static bool TryDocumentMaster(
@@ -92,7 +126,8 @@ internal static class CalendarResourceSemanticProjectionMapper
     private static CalendarTodoFieldsResult TodoFields(
         CalendarContentDocument document,
         CalendarContentComponent component,
-        bool includeRecurrence)
+        bool includeRecurrence,
+        CalendarContentComponent? recurrenceComponent = null)
     {
         var properties = Owned(document, component.Path);
         return new CalendarTodoFieldsResult(
@@ -106,7 +141,7 @@ internal static class CalendarResourceSemanticProjectionMapper
             Integer(properties, "PRIORITY"),
             Integer(properties, "PERCENT-COMPLETE"),
             TextList(properties, "CATEGORIES"),
-            includeRecurrence ? Recurrence(document, component, "todo") : null,
+            includeRecurrence ? Recurrence(document, recurrenceComponent ?? component, "todo") : null,
             StructuredData(document, component));
     }
 

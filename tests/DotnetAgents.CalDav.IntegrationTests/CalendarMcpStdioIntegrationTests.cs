@@ -55,6 +55,7 @@ public sealed class CalendarMcpStdioIntegrationTests
             "calendars.list",
             "calendar_entities.query",
             "calendar_occurrences.query",
+            "todos.query",
             "calendar_resources.get",
             "events.create",
             "events.patch",
@@ -165,6 +166,92 @@ public sealed class CalendarMcpStdioIntegrationTests
         error.TryGetProperty("items", out _).ShouldBeFalse();
         stderr.ShouldBeEmpty();
         await DeleteResourceAsync(href);
+    }
+
+    [Fact]
+    public async Task TodoQuery_ReturnsNormalizedCompactResultsBeforePaginationOverNativeStdioAndRadicale()
+    {
+        var hrefs = new List<string>();
+        try
+        {
+            foreach (var index in Enumerable.Range(1, 40))
+            {
+                hrefs.Add(await PutResourceAsync(
+                    $"todo-query-completed-{index:00}.ics",
+                    Todo($"todo-query-completed-{index:00}",
+                        $"SUMMARY:Completed task {index:00}\r\nSTATUS:COMPLETED\r\nCOMPLETED:20260817T120000Z\r\nPERCENT-COMPLETE:100\r\nDESCRIPTION:{new string('x', 512)}\r\n")));
+            }
+            foreach (var index in Enumerable.Range(1, 4))
+            {
+                hrefs.Add(await PutResourceAsync(
+                    $"todo-query-open-{index:00}.ics",
+                    Todo($"todo-query-open-{index:00}", $"SUMMARY:Open task {index:00}\r\n")));
+            }
+            hrefs.Add(await PutResourceAsync("todo-query-cancelled.ics", Todo(
+                "todo-query-cancelled", "SUMMARY:Cancelled task\r\nSTATUS:CANCELLED\r\n")));
+            hrefs.Add(await PutResourceAsync("todo-query-conflict.ics", Todo(
+                "todo-query-conflict", "SUMMARY:Conflict task\r\nSTATUS:IN-PROCESS\r\nPERCENT-COMPLETE:100\r\n")));
+
+            var stderr = new ConcurrentQueue<string>();
+            await using var client = await CreateClientAsync(stderr, exposeExact: false);
+            var scope = new Dictionary<string, object?>
+            {
+                ["mode"] = "selected",
+                ["calendar"] = new Dictionary<string, object?>
+                {
+                    ["by"] = "href",
+                    ["href"] = $"{_fixture.BaseUrl}{_fixture.TodoCalendarHref}"
+                }
+            };
+            var openPages = new List<JsonElement>();
+            Dictionary<string, object?>? openArguments = new() { ["scope"] = scope, ["pageSize"] = 2 };
+            do
+            {
+                var open = await client.CallToolAsync(
+                    "todos.query",
+                    openArguments,
+                    cancellationToken: TestContext.Current.CancellationToken);
+                open.IsError.ShouldBe(false);
+                var openStructured = open.StructuredContent!.Value;
+                foreach (var item in openStructured.GetProperty("items").EnumerateArray())
+                {
+                    item.GetProperty("completionState").GetString().ShouldBe("open");
+                    openPages.Add(item.Clone());
+                }
+                var nextCursor = openStructured.GetProperty("pagination").GetProperty("nextCursor");
+                openArguments = nextCursor.ValueKind == JsonValueKind.Null
+                    ? null
+                    : new Dictionary<string, object?> { ["scope"] = scope, ["pageSize"] = 2, ["cursor"] = nextCursor.GetString() };
+            }
+            while (openArguments is not null);
+
+            var explicitStates = await client.CallToolAsync(
+                "todos.query",
+                new Dictionary<string, object?>
+                {
+                    ["scope"] = scope,
+                    ["completionStates"] = new[] { "completed", "cancelled", "indeterminate" },
+                    ["pageSize"] = 200,
+                    ["projection"] = new[] { "summary", "status", "completedAt", "percentComplete" }
+                },
+                cancellationToken: TestContext.Current.CancellationToken);
+
+            openPages.Count.ShouldBe(4);
+            openPages.Select(item => item.GetProperty("uid").GetString()).Distinct().Count().ShouldBe(4);
+            openPages.Sum(item => Encoding.UTF8.GetByteCount(item.GetRawText())).ShouldBeLessThan(64 * 1024);
+            explicitStates.IsError.ShouldBe(false);
+            var states = explicitStates.StructuredContent!.Value.GetProperty("items")
+                .EnumerateArray().Select(item => item.GetProperty("completionState").GetString()!).ToHashSet();
+            states.OrderBy(value => value, StringComparer.Ordinal).ShouldBe(
+                new[] { "completed", "cancelled", "indeterminate" }.OrderBy(value => value, StringComparer.Ordinal));
+            explicitStates.StructuredContent.Value.GetProperty("excludedIndeterminateCount").GetInt32().ShouldBe(0);
+            stderr.ShouldBeEmpty();
+        }
+        finally
+        {
+            foreach (var href in hrefs)
+                await DeleteResourceAsync(href);
+        }
     }
 
     [Fact]
@@ -1070,6 +1157,7 @@ public sealed class CalendarMcpStdioIntegrationTests
             "calendars.list",
             "calendar_entities.query",
             "calendar_occurrences.query",
+            "todos.query",
             "calendar_resources.get",
             "events.create",
             "events.patch",

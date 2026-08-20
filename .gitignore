@@ -497,6 +497,9 @@ apm_modules/
 .opencode
 docs/*
 !docs/migrating-0.1.x-to-0.2.0.md
+!docs/adr/
+!docs/adr/0001-compact-todo-query.md
+!docs/migrating-0.2.0-to-0.2.1.md
 .docs
 .agents
 skills-lock.json

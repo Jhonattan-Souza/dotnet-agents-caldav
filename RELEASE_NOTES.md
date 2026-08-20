@@ -1,5 +1,18 @@
 # Release Notes
 
+## 0.2.1 — 2026-08-19
+
+Additive compact semantic To-do reads are available through `todos.query`.
+The query requires an explicit Calendar Scope, normalizes completion evidence
+into open/completed/cancelled/indeterminate states, filters before pagination,
+and returns bounded typed items with strong revision targets. Existing
+`calendar_entities.query` callers remain compatible.
+To-do completion mutations now use the same normalized evidence: completed
+evidence is a no-op, cancelled evidence is rejected, and contradictory or
+indeterminate evidence returns the typed `completion_state_conflict` outcome.
+
+See [the 0.2.0 to 0.2.1 migration guide](docs/migrating-0.2.0-to-0.2.1.md).
+
 ## 0.2.0 — 2026-08-17
 
 Version 0.2.0 is a deliberate breaking replacement for the 0.1.x task-specific contract. The NuGet package and MCP server identities are unchanged, but the old tools, environment names, public task types, and response shapes are removed without aliases or a legacy mode. Follow the [0.1.x to 0.2.0 migration and rollback guide](docs/migrating-0.1.x-to-0.2.0.md) before upgrading.

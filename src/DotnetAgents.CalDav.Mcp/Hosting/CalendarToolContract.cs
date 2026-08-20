@@ -4,7 +4,7 @@ using System.Text.Json.Nodes;
 
 namespace DotnetAgents.CalDav.Mcp.Hosting;
 
-/// <summary>Loads the frozen 0.2.0 schemas and cache metadata for the Calendar tracer bullet.</summary>
+/// <summary>Loads the additive 0.2.1 schemas and cache metadata for the Calendar tracer bullet.</summary>
 internal static class CalendarToolContract
 {
     private const string ResourceName = "DotnetAgents.CalDav.Mcp.CalendarToolCatalog.json";

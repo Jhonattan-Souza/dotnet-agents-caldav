@@ -182,3 +182,7 @@ _Avoid_: Notification job, reminder execution
 **To-do Completion**:
 A transition that marks a non-recurring To-do or exactly one Occurrence of a recurring To-do as completed at a specific time while retaining its other data.
 _Avoid_: Done flag, finish operation, task completion
+
+**To-do Completion State**:
+The server-owned interpretation of a To-do's completion evidence as `open`, `completed`, `cancelled`, or `indeterminate`, derived conservatively from STATUS, COMPLETED, and PERCENT-COMPLETE without rewriting the authoritative Calendar Object Resource.
+_Avoid_: Boolean done flag, client-side status guess, cancellation as deletion

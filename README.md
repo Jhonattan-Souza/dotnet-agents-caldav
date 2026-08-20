@@ -13,7 +13,7 @@ Add this MCP server to VS Code, Claude Desktop, Cursor, or any MCP client:
   "mcpServers": {
     "caldav-calendars": {
       "command": "dnx",
-      "args": ["--yes", "dotnet-agents-caldav@0.2.0"],
+      "args": ["--yes", "dotnet-agents-caldav@0.2.1"],
       "env": {
         "CALDAV_URL": "https://caldav.example.com",
         "CALDAV_USERNAME": "user",
@@ -45,6 +45,7 @@ Add this MCP server to VS Code, Claude Desktop, Cursor, or any MCP client:
 - `calendars.list` — Discover the configured Calendar Scope.
 - `calendar_entities.query` — Query bounded persisted Event and To-do snapshots across default, selected, or explicit-all Calendar Scope.
 - `calendar_occurrences.query` — Expand Event and To-do occurrences locally within a required half-open UTC window, using an explicit IANA evaluation time zone only when floating or date-only values require it.
+- `todos.query` — Read compact normalized To-do results in an explicit Calendar Scope; routine open-task reads use this surface instead of parsing full snapshots.
 - `calendar_resources.get` — Read an authoritative semantic-or-opaque snapshot by confirmed absolute href.
 - `events.create` — Create one Event in a selected Calendar.
 - `events.patch` — Apply a revision-bound semantic patch to one Event resource.
@@ -59,7 +60,7 @@ Add this MCP server to VS Code, Claude Desktop, Cursor, or any MCP client:
 - `calendar_resources.move` — Atomically move one reviewed Calendar Object Resource to a selected Calendar.
 - `calendar_resources.delete` — Delete an entire resource from an explicitly supplied revision reference (href, UID, kind, and exact strong ETag) after MCP MRTR review and confirmation; success requires verified absence.
 
-The default catalog contains exactly these 16 tools in the order shown. It has no legacy task aliases or compatibility mode.
+The 0.2.1 default catalog contains exactly these 17 tools in the order shown. It has no legacy task aliases or compatibility mode.
 
 ### Exact Calendar resource tools
 
@@ -72,7 +73,7 @@ The four exact tools are enabled with `CALDAV_EXPOSE_EXACT_TOOLS=true`; this fla
 
 ## Supported servers
 
-The verified interoperability profile is the official Radicale 3.7.8 image pinned in `contracts/0.2.0/radicale-3.7.8-profile.json`. Other CalDAV servers are unverified profiles even when capability negotiation allows them to operate.
+The verified interoperability profile is the official Radicale 3.7.8 image pinned in `contracts/0.2.1/radicale-3.7.8-profile.json`. Other CalDAV servers are unverified profiles even when capability negotiation allows them to operate.
 
 ## Migrating from 0.1.x
 
