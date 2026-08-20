@@ -171,12 +171,14 @@ public sealed class CalendarMcpStdioIntegrationTests
     [Fact]
     public async Task TodoQuery_ReturnsNormalizedCompactResultsBeforePaginationOverNativeStdioAndRadicale()
     {
+        var calendarHref = _fixture.WorkCalendarHref;
         var hrefs = new List<string>();
         try
         {
             foreach (var index in Enumerable.Range(1, 40))
             {
                 hrefs.Add(await PutResourceAsync(
+                    calendarHref,
                     $"todo-query-completed-{index:00}.ics",
                     Todo($"todo-query-completed-{index:00}",
                         $"SUMMARY:Completed task {index:00}\r\nSTATUS:COMPLETED\r\nCOMPLETED:20260817T120000Z\r\nPERCENT-COMPLETE:100\r\nDESCRIPTION:{new string('x', 512)}\r\n")));
@@ -184,23 +186,27 @@ public sealed class CalendarMcpStdioIntegrationTests
             foreach (var index in Enumerable.Range(1, 4))
             {
                 hrefs.Add(await PutResourceAsync(
+                    calendarHref,
                     $"todo-query-open-{index:00}.ics",
                     Todo($"todo-query-open-{index:00}", $"SUMMARY:Open task {index:00}\r\n")));
             }
-            hrefs.Add(await PutResourceAsync("todo-query-cancelled.ics", Todo(
+            hrefs.Add(await PutResourceAsync(calendarHref, "todo-query-cancelled.ics", Todo(
                 "todo-query-cancelled", "SUMMARY:Cancelled task\r\nSTATUS:CANCELLED\r\n")));
-            hrefs.Add(await PutResourceAsync("todo-query-conflict.ics", Todo(
+            hrefs.Add(await PutResourceAsync(calendarHref, "todo-query-conflict.ics", Todo(
                 "todo-query-conflict", "SUMMARY:Conflict task\r\nSTATUS:IN-PROCESS\r\nPERCENT-COMPLETE:100\r\n")));
 
             var stderr = new ConcurrentQueue<string>();
-            await using var client = await CreateClientAsync(stderr, exposeExact: false);
+            await using var client = await CreateClientAsync(
+                stderr,
+                exposeExact: false,
+                calendarHrefs: $"{_fixture.BaseUrl}{calendarHref}");
             var scope = new Dictionary<string, object?>
             {
                 ["mode"] = "selected",
                 ["calendar"] = new Dictionary<string, object?>
                 {
                     ["by"] = "href",
-                    ["href"] = $"{_fixture.BaseUrl}{_fixture.TodoCalendarHref}"
+                    ["href"] = $"{_fixture.BaseUrl}{calendarHref}"
                 }
             };
             var openPages = new List<JsonElement>();
