@@ -96,27 +96,29 @@ Layered design:
 Build:
 
 ```bash
-dotnet build -c Release
+dotnet tool restore
+dotnet restore
+dotnet build -c Release --no-restore
 ```
 
-Test:
+Run one test project with Microsoft.Testing.Platform:
 
 ```bash
-dotnet test
+dotnet test --project tests/DotnetAgents.CalDav.Core.Tests.Unit/DotnetAgents.CalDav.Core.Tests.Unit.csproj -c Release
 ```
 
-Coverage:
+Run the complete CI-equivalent test, coverage, and Radicale conformance suite:
 
 ```bash
-dotnet test --settings coverage.runsettings --collect:"XPlat Code Coverage"
-dotnet reportgenerator -reports:"TestResults/**/coverage.cobertura.xml" -targetdir:"coverage-report" -reporttypes:Cobertura -assemblyfilters:"+DotnetAgents.CalDav.Core;+DotnetAgents.CalDav.Mcp;-*Tests*;-xunit*;-testhost*"
-bash scripts/verify-coverage.sh coverage-report 0.90 0.85
+bash scripts/run-test-suite.sh
 ```
+
+The suite uses a new temporary artifact directory for every run. Successful local runs clean it up; failed runs retain it and print its path. Coverage aggregation validates and uses only the three current root-level reports, so stale `TestResults` or nested runner staging files cannot affect a later run.
 
 Slopwatch:
 
 ```bash
-slopwatch analyze --config .slopwatch/slopwatch.json --fail-on warning
+dotnet tool run slopwatch analyze --config .slopwatch/slopwatch.json --fail-on warning
 ```
 
 The behavior gates, final-package smoke test, and package-content policy are documented in [Release validation](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/main/docs/release-process.md).

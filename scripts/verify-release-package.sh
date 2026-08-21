@@ -121,11 +121,14 @@ installed_executable="$tool_directory/dotnet-agents-caldav"
 
 DOTNET_AGENTS_CALDAV_PACKAGE_SMOKE_EXECUTABLE="$installed_executable" \
   dotnet test \
-    "$repository_root/tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj" \
+    --project "$repository_root/tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj" \
     -c Release \
     --no-build \
     --no-restore \
-    --filter "Category=PackageSmoke" \
-    --logger "console;verbosity=minimal"
+    --filter-trait "Category=PackageSmoke" \
+    --minimum-expected-tests 1 \
+    --fail-skips on \
+    --zero-tests-policy strict \
+    --no-ansi
 
 echo "verified final release packages for version $package_version"

@@ -11,10 +11,20 @@ permissions:
 jobs:
   build-test:
     runs-on: ubuntu-latest
+    env:
+      TESTINGPLATFORM_TELEMETRY_OPTOUT: "1"
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Create isolated test artifact directory
+        id: test-artifacts
+        shell: bash
+        run: |
+          TEST_ARTIFACTS_DIR=$(mktemp -d "$RUNNER_TEMP/caldav-tests.XXXXXX")
+          echo "TEST_ARTIFACTS_DIR=$TEST_ARTIFACTS_DIR" >> "$GITHUB_ENV"
+          echo "path=$TEST_ARTIFACTS_DIR" >> "$GITHUB_OUTPUT"
 
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v5
@@ -31,56 +41,26 @@ jobs:
       - name: Build Release
         run: dotnet build -c Release --no-restore
 
-      - name: Run tests with coverage serially
-        run: |
-          dotnet test tests/DotnetAgents.CalDav.Core.Tests.Unit/DotnetAgents.CalDav.Core.Tests.Unit.csproj -c Release --no-build --settings coverage.runsettings --collect:"XPlat Code Coverage" --logger "trx;LogFilePrefix=pr-core" --results-directory TestResults
-          dotnet test tests/DotnetAgents.CalDav.Mcp.Tests.Unit/DotnetAgents.CalDav.Mcp.Tests.Unit.csproj -c Release --no-build --settings coverage.runsettings --collect:"XPlat Code Coverage" --logger "trx;LogFilePrefix=pr-mcp" --results-directory TestResults
-          dotnet test tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj -c Release --no-build --settings coverage.runsettings --collect:"XPlat Code Coverage" --logger "trx;LogFilePrefix=pr-integration" --results-directory TestResults
-
-      - name: Generate coverage report
-        run: dotnet reportgenerator -reports:"TestResults/**/coverage.cobertura.xml" -targetdir:"coverage-report" -reporttypes:Cobertura -assemblyfilters:"+DotnetAgents.CalDav.Core;+DotnetAgents.CalDav.Mcp;-*Tests*;-xunit*;-testhost*"
-
-      - name: Verify coverage gate
-        run: bash scripts/verify-coverage.sh coverage-report 0.90 0.85
-
-      - name: Run strict-preconditions Radicale conformance variant
-        run: >
-          RADICALE_CONFORMANCE_VARIANT=strict-preconditions
-          dotnet test tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj
-          -c Release
-          --no-build
-          --filter "FullyQualifiedName~RadicaleConformanceHarnessTests"
-          --logger "trx;LogFilePrefix=strict-preconditions"
-          --results-directory TestResults
-
-      - name: Run alternate-time-zone Radicale conformance variant
-        run: >
-          RADICALE_CONFORMANCE_VARIANT=alternate-time-zone
-          dotnet test tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj
-          -c Release
-          --no-build
-          --filter "FullyQualifiedName~RadicaleConformanceHarnessTests"
-          --logger "trx;LogFilePrefix=alternate-time-zone"
-          --results-directory TestResults
-
-      - name: Verify complete test results
-        run: bash scripts/verify-test-results.sh TestResults
+      - name: Run isolated test suite
+        run: bash scripts/run-test-suite.sh --artifacts-dir "$TEST_ARTIFACTS_DIR"
 
       - name: Run Slopwatch
         run: dotnet tool run slopwatch analyze --config .slopwatch/slopwatch.json --fail-on warning
 
-      - name: Upload coverage report
+      - name: Upload test evidence
+        if: ${{ always() && steps.test-artifacts.outputs.path != '' }}
         uses: actions/upload-artifact@v7
         with:
-          name: coverage-report
-          path: coverage-report/
+          name: test-evidence
+          path: ${{ steps.test-artifacts.outputs.path }}
+          if-no-files-found: warn
           retention-days: 30
 
       - name: Post coverage summary
+        if: ${{ success() }}
         run: |
-          LINE_RATE=$(grep -oP 'line-rate="[^"]*"' coverage-report/Cobertura.xml | head -1 | grep -oP '[\d.]+')
-          BRANCH_RATE=$(grep -oP 'branch-rate="[^"]*"' coverage-report/Cobertura.xml | head -1 | grep -oP '[\d.]+')
-          LINE_PCT=$(echo "$LINE_RATE * 100" | bc)
+          LINE_RATE=$(grep -m1 -oP 'line-rate="[^"]*"' "$TEST_ARTIFACTS_DIR/coverage-report/Cobertura.xml" | grep -oP '[\d.]+')
+          BRANCH_RATE=$(grep -m1 -oP 'branch-rate="[^"]*"' "$TEST_ARTIFACTS_DIR/coverage-report/Cobertura.xml" | grep -oP '[\d.]+')
           BRANCH_PCT=$(echo "$BRANCH_RATE * 100" | bc | xargs printf "%.1f")
           LINE_PCT_FMT=$(echo "$LINE_RATE * 100" | bc | xargs printf "%.1f")
           echo "## Code Coverage" >> $GITHUB_STEP_SUMMARY
@@ -88,3 +68,7 @@ jobs:
           echo "|--------|----------|" >> $GITHUB_STEP_SUMMARY
           echo "| Lines  | ${LINE_PCT_FMT}% |" >> $GITHUB_STEP_SUMMARY
           echo "| Branches | ${BRANCH_PCT}% |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Clean isolated test artifacts
+        if: ${{ always() && steps.test-artifacts.outputs.path != '' }}
+        run: bash scripts/cleanup-test-artifacts.sh "$TEST_ARTIFACTS_DIR" "$RUNNER_TEMP"

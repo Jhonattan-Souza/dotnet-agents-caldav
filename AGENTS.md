@@ -11,29 +11,25 @@ dotnet tool restore
 dotnet restore
 ```
 
-- Run one unit-test project, or focus a class/method with the verified VSTest filter form:
+- Run one unit-test project, or focus a class/method with the native xUnit MTP filters:
 
 ```bash
-dotnet test tests/DotnetAgents.CalDav.Core.Tests.Unit/DotnetAgents.CalDav.Core.Tests.Unit.csproj -c Release
-dotnet test tests/DotnetAgents.CalDav.Core.Tests.Unit/DotnetAgents.CalDav.Core.Tests.Unit.csproj -c Release --filter "FullyQualifiedName~TypeOrMethod"
+dotnet test --project tests/DotnetAgents.CalDav.Core.Tests.Unit/DotnetAgents.CalDav.Core.Tests.Unit.csproj -c Release
+dotnet test --project tests/DotnetAgents.CalDav.Core.Tests.Unit/DotnetAgents.CalDav.Core.Tests.Unit.csproj -c Release --filter-class '*TypeName'
+dotnet test --project tests/DotnetAgents.CalDav.Core.Tests.Unit/DotnetAgents.CalDav.Core.Tests.Unit.csproj -c Release --filter-method '*TypeName.MethodName'
 ```
 
 - The integration project requires Docker. Its `RadicaleCollection` shares one digest-pinned official Radicale 3.7.8 Testcontainer and seeds Event and To-do Calendars.
-- Match CI in this order; `--results-directory TestResults` is required because the report command reads the root `TestResults/` tree:
+- Match CI in this order:
 
 ```bash
 dotnet build -c Release --no-restore
-dotnet test tests/DotnetAgents.CalDav.Core.Tests.Unit/DotnetAgents.CalDav.Core.Tests.Unit.csproj -c Release --no-build --settings coverage.runsettings --collect:"XPlat Code Coverage" --logger "trx;LogFilePrefix=pr-core" --results-directory TestResults
-dotnet test tests/DotnetAgents.CalDav.Mcp.Tests.Unit/DotnetAgents.CalDav.Mcp.Tests.Unit.csproj -c Release --no-build --settings coverage.runsettings --collect:"XPlat Code Coverage" --logger "trx;LogFilePrefix=pr-mcp" --results-directory TestResults
-dotnet test tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj -c Release --no-build --settings coverage.runsettings --collect:"XPlat Code Coverage" --logger "trx;LogFilePrefix=pr-integration" --results-directory TestResults
-dotnet reportgenerator -reports:"TestResults/**/coverage.cobertura.xml" -targetdir:"coverage-report" -reporttypes:Cobertura -assemblyfilters:"+DotnetAgents.CalDav.Core;+DotnetAgents.CalDav.Mcp;-*Tests*;-xunit*;-testhost*"
-bash scripts/verify-coverage.sh coverage-report 0.90 0.85
-RADICALE_CONFORMANCE_VARIANT=strict-preconditions dotnet test tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj -c Release --no-build --filter "FullyQualifiedName~RadicaleConformanceHarnessTests" --logger "trx;LogFilePrefix=strict-preconditions" --results-directory TestResults
-RADICALE_CONFORMANCE_VARIANT=alternate-time-zone dotnet test tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj -c Release --no-build --filter "FullyQualifiedName~RadicaleConformanceHarnessTests" --logger "trx;LogFilePrefix=alternate-time-zone" --results-directory TestResults
-bash scripts/verify-test-results.sh TestResults
+bash scripts/run-test-suite.sh
 dotnet tool run slopwatch analyze --config .slopwatch/slopwatch.json --fail-on warning
 ```
 
+- `run-test-suite.sh` creates a fresh temporary artifact directory, removes it after complete success, and prints and preserves it after failure. A caller-provided `--artifacts-dir` must be empty and remains caller-owned.
+- Coverage aggregation accepts exactly one current root-level Cobertura and OpenCover report for each test project; nested or historical reports are never merged.
 - CI runs for every pull request and enforces warnings as errors, method complexity at most 10, 90% line coverage, 85% branch coverage, both pinned Radicale profiles, and complete test results with no disabled evidence.
 
 ## Boundaries
