@@ -11,6 +11,7 @@ internal sealed class OtlpLoopbackReceiver : IAsyncDisposable
     private readonly CancellationTokenSource _shutdown = new();
     private readonly ConcurrentQueue<OtlpRequest> _requests = new();
     private readonly SemaphoreSlim _requestSignal = new(0);
+    private readonly TaskCompletionSource _shutdownSignal = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly bool _respond;
     private readonly Task _pump;
 
@@ -56,6 +57,7 @@ internal sealed class OtlpLoopbackReceiver : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await _shutdown.CancelAsync().ConfigureAwait(false);
+        _shutdownSignal.TrySetResult();
         _listener.Stop();
         try
         {
@@ -91,7 +93,7 @@ internal sealed class OtlpLoopbackReceiver : IAsyncDisposable
         _requestSignal.Release();
         if (!_respond)
         {
-            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+            await _shutdownSignal.Task.ConfigureAwait(false);
             return;
         }
         context.Response.StatusCode = (int)HttpStatusCode.OK;
