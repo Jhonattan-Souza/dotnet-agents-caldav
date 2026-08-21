@@ -338,7 +338,7 @@ public class CalDavClientTests
     }
 
     [Fact]
-    public async Task CreateCalendarResourceAsync_PreconditionFailureIsDefiniteConflict()
+    public async Task CreateCalendarResourceAsync_PreconditionFailureIsDestinationConflict()
     {
         var sut = CreateSut(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.PreconditionFailed)));
 
@@ -346,17 +346,19 @@ public class CalDavClientTests
             CreateCalendarResourceRequest("collision.ics"),
             CancellationToken.None);
 
-        result.Code.ShouldBe(CalendarResourceCreateCode.Conflict);
+        result.Code.ShouldBe(CalendarResourceCreateCode.DestinationConflict);
     }
 
-    [Fact]
-    public async Task CreateCalendarResourceAsync_NoUidConflictPreconditionIsDefiniteConflict()
+    [Theory]
+    [InlineData(HttpStatusCode.Forbidden)]
+    [InlineData(HttpStatusCode.Conflict)]
+    public async Task CreateCalendarResourceAsync_NoUidConflictPreconditionIsUidConflict(HttpStatusCode statusCode)
     {
         var requestCount = 0;
         var sut = CreateSut(new StubHttpMessageHandler(_ =>
         {
             requestCount++;
-            return new HttpResponseMessage(HttpStatusCode.Forbidden)
+            return new HttpResponseMessage(statusCode)
             {
                 Content = new StringContent(
                     "<d:error xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\"><c:no-uid-conflict><d:href>/private/existing.ics</d:href></c:no-uid-conflict></d:error>",
@@ -369,7 +371,7 @@ public class CalDavClientTests
             CreateCalendarResourceRequest("collision.ics"),
             CancellationToken.None);
 
-        result.Code.ShouldBe(CalendarResourceCreateCode.Conflict);
+        result.Code.ShouldBe(CalendarResourceCreateCode.UidConflict);
         result.ToString().ShouldNotContain("private");
         requestCount.ShouldBe(1);
     }

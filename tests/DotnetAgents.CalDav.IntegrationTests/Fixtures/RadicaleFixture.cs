@@ -21,6 +21,7 @@ public sealed class RadicaleFixture : IAsyncLifetime
     private const string EventCollectionName = "events";
     private const string ShoppingCollectionName = "shopping";
     private const string WorkCollectionName = "work";
+    private const string MixedCollectionName = "mixed";
 
     /// <summary>The href of the seeded To-do Calendar (e.g. <c>/caldavtest/tasks/</c>).</summary>
     public string TodoCalendarHref { get; private set; } = null!;
@@ -33,6 +34,9 @@ public sealed class RadicaleFixture : IAsyncLifetime
 
     /// <summary>The href of the seeded Work To-do Calendar.</summary>
     public string WorkCalendarHref { get; private set; } = null!;
+
+    /// <summary>The isolated Calendar that advertises both Event and To-do support.</summary>
+    public string MixedCalendarHref { get; private set; } = null!;
 
     /// <summary>The base URL of the Radicale container (e.g. <c>http://localhost:31234</c>).</summary>
     public string BaseUrl { get; private set; } = null!;
@@ -84,22 +88,27 @@ public sealed class RadicaleFixture : IAsyncLifetime
         EventCalendarHref = await CreateCalendarCollectionAsync(
             EventCollectionName,
             "Events",
-            "VEVENT",
+            ["VEVENT"],
             cancellationToken);
         TodoCalendarHref = await CreateCalendarCollectionAsync(
             TaskCollectionName,
             "Tasks",
-            "VTODO",
+            ["VTODO"],
             cancellationToken);
         ShoppingCalendarHref = await CreateCalendarCollectionAsync(
             ShoppingCollectionName,
             "Shopping",
-            "VTODO",
+            ["VTODO"],
             cancellationToken);
         WorkCalendarHref = await CreateCalendarCollectionAsync(
             WorkCollectionName,
             "Work",
-            "VTODO",
+            ["VTODO"],
+            cancellationToken);
+        MixedCalendarHref = await CreateCalendarCollectionAsync(
+            MixedCollectionName,
+            "Mixed",
+            ["VEVENT", "VTODO"],
             cancellationToken);
 
     }
@@ -150,12 +159,15 @@ public sealed class RadicaleFixture : IAsyncLifetime
     private async Task<string> CreateCalendarCollectionAsync(
         string collectionName,
         string displayName,
-        string componentName,
+        IReadOnlyList<string> componentNames,
         CancellationToken cancellationToken)
     {
-        // Extended MKCOL creates a single-component calendar collection through
+        // Extended MKCOL creates a component-constrained calendar collection through
         // Radicale's internal loopback; product calls still use the mapped host URL.
         var collectionPath = $"/{TestUsername}/{collectionName}/";
+        var components = string.Join(
+            Environment.NewLine,
+            componentNames.Select(componentName => $"                    <C:comp name=\"{componentName}\"/>"));
         var body = $$"""
             <?xml version="1.0" encoding="utf-8" ?>
             <D:mkcol xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
@@ -167,7 +179,7 @@ public sealed class RadicaleFixture : IAsyncLifetime
                   </D:resourcetype>
                   <D:displayname>{{displayName}}</D:displayname>
                   <C:supported-calendar-component-set>
-                    <C:comp name="{{componentName}}"/>
+            {{components}}
                   </C:supported-calendar-component-set>
                 </D:prop>
               </D:set>

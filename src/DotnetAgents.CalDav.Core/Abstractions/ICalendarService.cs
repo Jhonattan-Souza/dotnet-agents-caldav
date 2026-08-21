@@ -36,8 +36,13 @@ public interface ICalendarService
         CalendarExactCreateRequest request,
         CancellationToken cancellationToken);
 
+    /// <summary>Dispatches one exact-create intent returned by the immediately preceding review.</summary>
+    Task<CalendarExactResourceResult> ExactCreateResourceAsync(
+        CalendarReviewedExactCreate reviewedCreate,
+        CancellationToken cancellationToken);
+
     /// <summary>Validates an exact create without dispatching a write.</summary>
-    Task<CalendarExactResourceReviewResult> ReviewExactCreateResourceAsync(
+    Task<CalendarExactCreateReviewResult> ReviewExactCreateResourceAsync(
         CalendarExactCreateRequest request,
         CancellationToken cancellationToken);
 

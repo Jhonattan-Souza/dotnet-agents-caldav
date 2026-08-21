@@ -60,7 +60,7 @@ Add this MCP server to VS Code, Claude Desktop, Cursor, or any MCP client:
 - `calendar_resources.move` — Atomically move one reviewed Calendar Object Resource to a selected Calendar.
 - `calendar_resources.delete` — Delete an entire resource from an explicitly supplied revision reference (href, UID, kind, and exact strong ETag) after MCP MRTR review and confirmation; success requires verified absence.
 
-The 0.2.1 default catalog contains exactly these 17 tools in the order shown. It has no legacy task aliases or compatibility mode.
+The 0.2.2 default catalog contains exactly these 17 tools in the order shown. It has no legacy task aliases or compatibility mode.
 
 ### Exact Calendar resource tools
 
@@ -73,7 +73,7 @@ The four exact tools are enabled with `CALDAV_EXPOSE_EXACT_TOOLS=true`; this fla
 
 ## Supported servers
 
-The verified interoperability profile is the official Radicale 3.7.8 image pinned in `contracts/0.2.1/radicale-3.7.8-profile.json`. Other CalDAV servers are unverified profiles even when capability negotiation allows them to operate.
+The verified interoperability profile is the official Radicale 3.7.8 image pinned in `contracts/0.2.2/radicale-3.7.8-profile.json`. Other CalDAV servers are unverified profiles even when capability negotiation allows them to operate.
 
 ## Migrating from 0.1.x
 

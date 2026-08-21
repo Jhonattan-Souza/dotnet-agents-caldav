@@ -21,7 +21,7 @@ namespace DotnetAgents.CalDav.Core.Internal;
 /// HttpClient-based CalDAV client for Calendar Object Resources.
 /// Handles PROPFIND, REPORT, GET, PUT, DELETE verbs with XML/iCalendar encoding.
 /// </summary>
-internal sealed class CalDavClient : ICalendarClient
+internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport
 {
     private const int MaximumCalendarResourceBytes = 4 * 1024 * 1024;
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);

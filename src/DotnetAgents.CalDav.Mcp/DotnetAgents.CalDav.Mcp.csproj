@@ -38,10 +38,18 @@
     <None Include="../../contracts/0.2.1/compatibility-matrix.md" Pack="true" PackagePath="contracts/0.2.1/compatibility-matrix.md" />
     <None Include="../../contracts/0.2.1/requirement-evidence-catalog.md" Pack="true" PackagePath="contracts/0.2.1/requirement-evidence-catalog.md" />
     <None Include="../../contracts/0.2.1/release-evidence-map.json" Pack="true" PackagePath="contracts/0.2.1/release-evidence-map.json" />
+    <None Include="../../contracts/0.2.2/mcp-tool-catalog.json" Pack="true" PackagePath="contracts/0.2.2/mcp-tool-catalog.json" />
+    <None Include="../../contracts/0.2.2/mcp-server.schema.json" Pack="true" PackagePath="contracts/0.2.2/mcp-server.schema.json" />
+    <None Include="../../contracts/0.2.2/mcp-authority-manifest.json" Pack="true" PackagePath="contracts/0.2.2/mcp-authority-manifest.json" />
+    <None Include="../../contracts/0.2.2/radicale-3.7.8-profile.json" Pack="true" PackagePath="contracts/0.2.2/radicale-3.7.8-profile.json" />
+    <None Include="../../contracts/0.2.2/compatibility-matrix.md" Pack="true" PackagePath="contracts/0.2.2/compatibility-matrix.md" />
+    <None Include="../../contracts/0.2.2/requirement-evidence-catalog.md" Pack="true" PackagePath="contracts/0.2.2/requirement-evidence-catalog.md" />
+    <None Include="../../contracts/0.2.2/release-evidence-map.json" Pack="true" PackagePath="contracts/0.2.2/release-evidence-map.json" />
     <None Include="../../docs/migrating-0.1.x-to-0.2.0.md" Pack="true" PackagePath="docs/migrating-0.1.x-to-0.2.0.md" />
     <None Include="../../docs/migrating-0.2.0-to-0.2.1.md" Pack="true" PackagePath="docs/migrating-0.2.0-to-0.2.1.md" />
+    <None Include="../../docs/migrating-0.2.1-to-0.2.2.md" Pack="true" PackagePath="docs/migrating-0.2.1-to-0.2.2.md" />
     <None Include="../../skills/caldav-calendars/SKILL.md" Pack="true" PackagePath="skills/caldav-calendars/SKILL.md" />
-    <EmbeddedResource Include="../../contracts/0.2.1/mcp-tool-catalog.json" LogicalName="DotnetAgents.CalDav.Mcp.CalendarToolCatalog.json" />
+    <EmbeddedResource Include="../../contracts/0.2.2/mcp-tool-catalog.json" LogicalName="DotnetAgents.CalDav.Mcp.CalendarToolCatalog.json" />
     <None Include="$(McpServerMetadataPath)" Link=".mcp/server.json" Pack="true" PackagePath=".mcp/server.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       <TargetPath>.mcp/server.json</TargetPath>

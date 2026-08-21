@@ -412,6 +412,148 @@ public sealed class CalendarMcpStdioIntegrationTests
     }
 
     [Fact]
+    public async Task CreateTools_UseAuthoritativeConditionalPutAgainstPopulatedMixedCalendar()
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        var mixedCalendarHref = $"{_fixture.BaseUrl}{_fixture.MixedCalendarHref}";
+        var seededHrefs = new List<string>(65);
+        for (var index = 0; index < 48; index++)
+        {
+            seededHrefs.Add(await PutResourceAsync(
+                _fixture.MixedCalendarHref,
+                $"seed-todo-{suffix}-{index}.ics",
+                Todo($"seed-todo-{suffix}-{index}", $"SUMMARY:Seed To-do {index}\r\n")));
+        }
+        for (var index = 0; index < 16; index++)
+        {
+            seededHrefs.Add(await PutResourceAsync(
+                _fixture.MixedCalendarHref,
+                $"seed-event-{suffix}-{index}.ics",
+                Event(
+                    $"seed-event-{suffix}-{index}",
+                    $"SUMMARY:Seed Event {index}\r\nDTSTART:20260818T{index:00}0000Z\r\n")));
+        }
+        var duplicateUid = $"seed-cross-kind-{suffix}";
+        seededHrefs.Add(await PutResourceAsync(
+            _fixture.MixedCalendarHref,
+            $"imported-cross-kind-{suffix}.ics",
+            Todo(duplicateUid, "SUMMARY:Imported cross-kind identity\r\n")));
+
+        var stderr = new ConcurrentQueue<string>();
+        await using var client = await CreateClientAsync(
+            stderr,
+            exposeExact: true,
+            calendarHrefs: mixedCalendarHref,
+            confirmMutations: true);
+        var destination = new Dictionary<string, object?>
+        {
+            ["mode"] = "selected",
+            ["calendar"] = new Dictionary<string, object?>
+            {
+                ["by"] = "href",
+                ["href"] = mixedCalendarHref
+            }
+        };
+        var eventUid = $"authoritative-event-{suffix}";
+        var todoUid = $"authoritative-todo-{suffix}";
+        var eventCreate = await client.CallToolAsync(
+            "events.create",
+            new Dictionary<string, object?>
+            {
+                ["destination"] = destination,
+                ["entity"] = new Dictionary<string, object?>
+                {
+                    ["kind"] = "event",
+                    ["uid"] = eventUid,
+                    ["fields"] = new Dictionary<string, object?>
+                    {
+                        ["summary"] = "Authoritative event",
+                        ["start"] = new Dictionary<string, object?>
+                        {
+                            ["kind"] = "utcDateTime",
+                            ["value"] = "2026-08-18T13:00:00Z"
+                        }
+                    }
+                }
+            },
+            cancellationToken: TestContext.Current.CancellationToken);
+        var todoCreate = await client.CallToolAsync(
+            "todos.create",
+            new Dictionary<string, object?>
+            {
+                ["destination"] = destination,
+                ["entity"] = new Dictionary<string, object?>
+                {
+                    ["kind"] = "todo",
+                    ["uid"] = todoUid,
+                    ["fields"] = new Dictionary<string, object?> { ["summary"] = "Authoritative To-do" }
+                }
+            },
+            cancellationToken: TestContext.Current.CancellationToken);
+        var uidCollision = await client.CallToolAsync(
+            "events.create",
+            new Dictionary<string, object?>
+            {
+                ["destination"] = destination,
+                ["entity"] = new Dictionary<string, object?>
+                {
+                    ["kind"] = "event",
+                    ["uid"] = duplicateUid,
+                    ["fields"] = new Dictionary<string, object?>
+                    {
+                        ["start"] = new Dictionary<string, object?>
+                        {
+                            ["kind"] = "utcDateTime",
+                            ["value"] = "2026-08-18T14:00:00Z"
+                        }
+                    }
+                }
+            },
+            cancellationToken: TestContext.Current.CancellationToken);
+        var exactHref = $"{mixedCalendarHref}authoritative-exact-{suffix}.ics";
+        var exactCreate = await client.CallToolAsync(
+            "calendar_resources.exact_create",
+            new Dictionary<string, object?>
+            {
+                ["destinationHref"] = exactHref,
+                ["utf8Resource"] = ExactEvent(
+                    $"authoritative-exact-{suffix}",
+                    "Authoritative exact",
+                    "X-TEST:conditional-put")
+            },
+            cancellationToken: TestContext.Current.CancellationToken);
+        var destinationCollision = await client.CallToolAsync(
+            "calendar_resources.exact_create",
+            new Dictionary<string, object?>
+            {
+                ["destinationHref"] = seededHrefs[0],
+                ["utf8Resource"] = ExactEvent(
+                    $"other-exact-{suffix}",
+                    "Must not overwrite",
+                    "X-TEST:destination-conflict")
+            },
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        var eventRevision = AssertCommittedCreate(eventCreate, "event", eventUid, mixedCalendarHref);
+        var todoRevision = AssertCommittedCreate(todoCreate, "todo", todoUid, mixedCalendarHref);
+        exactCreate.IsError.ShouldBe(false);
+        uidCollision.IsError.ShouldBe(true);
+        uidCollision.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("conflict");
+        uidCollision.StructuredContent.Value.GetProperty("mutationState").GetString().ShouldBe("not_committed");
+        destinationCollision.IsError.ShouldBe(true);
+        destinationCollision.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("destination_conflict");
+        destinationCollision.StructuredContent.Value.GetProperty("mutationState").GetString().ShouldBe("not_attempted");
+        Encoding.UTF8.GetString((await GetResourceAsync(seededHrefs[0])).Utf8).ShouldContain("Seed To-do 0");
+        stderr.ShouldBeEmpty();
+
+        await DeleteResourceAsync(eventRevision.Href);
+        await DeleteResourceAsync(todoRevision.Href);
+        await DeleteResourceAsync(exactHref);
+        foreach (var seededHref in seededHrefs)
+            await DeleteResourceAsync(seededHref);
+    }
+
+    [Fact]
     public async Task CalendarEntityCreate_CreatesEventAndTodoAndRejectsCallerUidCollisionOverRealStdioAndRadicale()
     {
         var stderr = new ConcurrentQueue<string>();
@@ -633,7 +775,7 @@ public sealed class CalendarMcpStdioIntegrationTests
         var eventRevision = AssertCommittedCreate(createdEvent, "event", "stdio-create-event", eventCalendarHref);
         var todoRevision = AssertCommittedCreate(createdTodo, "todo", "stdio-create-todo", todoCalendarHref);
         collision.IsError.ShouldBe(true);
-        collision.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("conflict");
+        collision.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("destination_conflict");
         collision.StructuredContent.Value.GetProperty("mutationState").GetString().ShouldBe("not_committed");
         var observedEvent = await GetResourceAsync(eventRevision.Href);
         var observedTodo = await GetResourceAsync(todoRevision.Href);
