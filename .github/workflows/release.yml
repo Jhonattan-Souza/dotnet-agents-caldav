@@ -27,6 +27,7 @@ jobs:
       PACKAGE_PROJECT_PATH: src/DotnetAgents.CalDav.Mcp/DotnetAgents.CalDav.Mcp.csproj
       MCP_SERVER_METADATA_PATH: ${{ github.workspace }}/.release-metadata/server.json
       RELEASE_TAG: ${{ inputs.release_tag }}
+      TESTINGPLATFORM_TELEMETRY_OPTOUT: "1"
 
     steps:
       - name: Checkout
@@ -34,6 +35,14 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ inputs.release_tag }}
+
+      - name: Create isolated test artifact directory
+        id: test-artifacts
+        shell: bash
+        run: |
+          TEST_ARTIFACTS_DIR=$(mktemp -d "$RUNNER_TEMP/caldav-tests.XXXXXX")
+          echo "TEST_ARTIFACTS_DIR=$TEST_ARTIFACTS_DIR" >> "$GITHUB_ENV"
+          echo "path=$TEST_ARTIFACTS_DIR" >> "$GITHUB_OUTPUT"
 
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v5
@@ -69,48 +78,24 @@ jobs:
           dotnet build -c Release --no-restore
           /p:McpServerMetadataPath="$MCP_SERVER_METADATA_PATH"
 
-      - name: Run tests with coverage serially
-        run: |
-          dotnet test tests/DotnetAgents.CalDav.Core.Tests.Unit/DotnetAgents.CalDav.Core.Tests.Unit.csproj -c Release --no-build --settings coverage.runsettings --collect:"XPlat Code Coverage" --logger "trx;LogFilePrefix=release-core" --results-directory TestResults
-          dotnet test tests/DotnetAgents.CalDav.Mcp.Tests.Unit/DotnetAgents.CalDav.Mcp.Tests.Unit.csproj -c Release --no-build --settings coverage.runsettings --collect:"XPlat Code Coverage" --logger "trx;LogFilePrefix=release-mcp" --results-directory TestResults
-          dotnet test tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj -c Release --no-build --settings coverage.runsettings --collect:"XPlat Code Coverage" --logger "trx;LogFilePrefix=release-integration" --results-directory TestResults
-
-      - name: Generate coverage report
-        run: >
-          dotnet reportgenerator
-          -reports:"TestResults/**/coverage.cobertura.xml"
-          -targetdir:"coverage-report"
-          -reporttypes:Cobertura
-          -assemblyfilters:"+DotnetAgents.CalDav.Core;+DotnetAgents.CalDav.Mcp;-*Tests*;-xunit*;-testhost*"
-
-      - name: Verify coverage thresholds
-        run: bash scripts/verify-coverage.sh coverage-report 0.90 0.85
-
-      - name: Run strict-preconditions Radicale conformance variant
-        run: >
-          RADICALE_CONFORMANCE_VARIANT=strict-preconditions
-          dotnet test tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj
-          -c Release
-          --no-build
-          --filter "FullyQualifiedName~RadicaleConformanceHarnessTests"
-          --logger "trx;LogFilePrefix=strict-preconditions"
-          --results-directory TestResults
-
-      - name: Run alternate-time-zone Radicale conformance variant
-        run: >
-          RADICALE_CONFORMANCE_VARIANT=alternate-time-zone
-          dotnet test tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj
-          -c Release
-          --no-build
-          --filter "FullyQualifiedName~RadicaleConformanceHarnessTests"
-          --logger "trx;LogFilePrefix=alternate-time-zone"
-          --results-directory TestResults
-
-      - name: Verify complete test results
-        run: bash scripts/verify-test-results.sh TestResults
+      - name: Run isolated test suite
+        run: bash scripts/run-test-suite.sh --artifacts-dir "$TEST_ARTIFACTS_DIR"
 
       - name: Run Slopwatch
         run: dotnet tool run slopwatch analyze --config .slopwatch/slopwatch.json --fail-on warning
+
+      - name: Upload test evidence
+        if: ${{ always() && steps.test-artifacts.outputs.path != '' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-test-evidence-${{ inputs.release_tag }}
+          path: ${{ steps.test-artifacts.outputs.path }}
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Clean isolated test artifacts
+        if: ${{ always() && steps.test-artifacts.outputs.path != '' }}
+        run: bash scripts/cleanup-test-artifacts.sh "$TEST_ARTIFACTS_DIR" "$RUNNER_TEMP"
 
       - name: Rebuild tag-versioned Release output
         run: >

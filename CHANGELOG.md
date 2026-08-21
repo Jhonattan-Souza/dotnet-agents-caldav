@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Migrated test execution from VSTest to Microsoft.Testing.Platform v2 and xUnit 4.
+- Isolated coverage and TRX evidence per run so historical or nested runner artifacts cannot affect quality gates.
+
 ## [0.2.2] - 2026-08-21
 
 ### Changed

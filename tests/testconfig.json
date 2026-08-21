@@ -1,0 +1,15 @@
+{
+  "platformOptions": {
+    "Coverlet": {
+      "exclude": "[*.Tests]*,[*.Benchmark]*,[*.Migrations]*,[*.IntegrationTests]*,[xunit.*]*,[Microsoft.Testing.*]*,[Microsoft.TestPlatform.*]*,[Microsoft.VisualStudio.TestPlatform.*]*,[testhost*]*",
+      "excludeByAttribute": "Obsolete,GeneratedCodeAttribute,CompilerGeneratedAttribute,ExcludeFromCodeCoverageAttribute",
+      "excludeByFile": "**/obj/**/*,**/*.g.cs,**/*.designer.cs,**/*.razor.g.cs,**/*.razor.css.g.cs,**/Migrations/**/*",
+      "excludeAssembliesWithoutSources": "MissingAll",
+      "format": "cobertura,opencover",
+      "includeTestAssembly": false,
+      "singleHit": false,
+      "skipAutoProps": true,
+      "useSourceLink": true
+    }
+  }
+}
