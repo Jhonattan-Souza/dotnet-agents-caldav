@@ -64,18 +64,21 @@ internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activi
     private static readonly SearchValues<char> ExceptionTypeCharacters =
         SearchValues.Create("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._+`");
 
+    public override void OnStart(Activity data) => data.TraceStateString = null;
+
     public override void OnEnd(Activity data)
     {
+        data.TraceStateString = null;
         data.SetStatus(data.Status);
-        foreach (var tag in data.TagObjects.Where(tag => !AllowedTagNames.Contains(tag.Key)).ToArray())
-            data.SetTag(tag.Key, null);
-
         if (data.Source.Name == OpenTelemetryHostConfiguration.McpInstrumentationName)
             SanitizeMcpActivity(data);
         else if (data.Source.Name == "System.Net.Http")
             SanitizeHttpActivity(data);
         else if (data.Source.Name == OpenTelemetryHostConfiguration.InstrumentationName)
             data.DisplayName = data.OperationName;
+
+        foreach (var tag in data.TagObjects.Where(tag => !AllowedTagNames.Contains(tag.Key)).ToArray())
+            data.SetTag(tag.Key, null);
 
         SanitizeTextTag(data, "error.type", MaximumExceptionTypeLength, ExceptionTypeCharacters);
     }
@@ -99,7 +102,9 @@ internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activi
 
     private static void SanitizeHttpActivity(Activity activity)
     {
-        var method = NormalizeHttpMethod(activity.GetTagItem("http.request.method") as string);
+        var method = NormalizeHttpMethod(
+            activity.GetTagItem("http.request.method_original") as string
+            ?? activity.GetTagItem("http.request.method") as string);
         activity.SetTag("http.request.method", method);
         activity.DisplayName = method;
     }

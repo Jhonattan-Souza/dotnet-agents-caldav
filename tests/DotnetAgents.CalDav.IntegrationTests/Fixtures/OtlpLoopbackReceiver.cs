@@ -11,10 +11,12 @@ internal sealed class OtlpLoopbackReceiver : IAsyncDisposable
     private readonly CancellationTokenSource _shutdown = new();
     private readonly ConcurrentQueue<OtlpRequest> _requests = new();
     private readonly SemaphoreSlim _requestSignal = new(0);
+    private readonly bool _respond;
     private readonly Task _pump;
 
-    private OtlpLoopbackReceiver(int port)
+    private OtlpLoopbackReceiver(int port, bool respond)
     {
+        _respond = respond;
         Endpoint = new Uri($"http://127.0.0.1:{port}", UriKind.Absolute);
         _listener.Prefixes.Add($"{Endpoint.GetLeftPart(UriPartial.Authority)}/");
         _listener.Start();
@@ -25,14 +27,17 @@ internal sealed class OtlpLoopbackReceiver : IAsyncDisposable
 
     internal IReadOnlyList<OtlpRequest> Requests => _requests.ToArray();
 
-    internal static OtlpLoopbackReceiver Start()
+    internal static OtlpLoopbackReceiver Start(bool respond = true)
     {
         using var reservation = new TcpListener(IPAddress.Loopback, 0);
         reservation.Start();
         var port = ((IPEndPoint)reservation.LocalEndpoint).Port;
         reservation.Stop();
-        return new OtlpLoopbackReceiver(port);
+        return new OtlpLoopbackReceiver(port, respond);
     }
+
+    internal Task<bool> WaitForRequestAsync(CancellationToken cancellationToken) =>
+        _requestSignal.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
 
     internal async Task WaitForPathsAsync(
         IReadOnlyCollection<string> requiredPaths,
@@ -84,6 +89,11 @@ internal sealed class OtlpLoopbackReceiver : IAsyncDisposable
         await context.Request.InputStream.CopyToAsync(body, cancellationToken).ConfigureAwait(false);
         _requests.Enqueue(new OtlpRequest(context.Request.Url?.AbsolutePath ?? string.Empty, body.ToArray()));
         _requestSignal.Release();
+        if (!_respond)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+            return;
+        }
         context.Response.StatusCode = (int)HttpStatusCode.OK;
         context.Response.ContentLength64 = 0;
         context.Response.Close();
@@ -153,7 +163,11 @@ internal static class OtlpProtobufReader
             foreach (var metric in MessageFields(scopeMetrics, 2))
             {
                 var fields = ReadFields(metric);
-                yield return new OtlpMetric(scopeName, ReadString(fields, 1), ReadString(fields, 3));
+                yield return new OtlpMetric(
+                    scopeName,
+                    ReadString(fields, 1),
+                    ReadString(fields, 3),
+                    ReadMetricDataPointAttributes(fields));
             }
         }
     }
@@ -168,7 +182,28 @@ internal static class OtlpProtobufReader
             ReadBytes(fields, 2),
             ReadBytes(fields, 4),
             ReadAttributes(fields, 9),
+            ReadString(fields, 3),
             fields.Count(field => field.Number == 11));
+    }
+
+    private static IReadOnlyList<IReadOnlyDictionary<string, object?>> ReadMetricDataPointAttributes(
+        IReadOnlyList<ProtoField> metricFields)
+    {
+        var attributes = new List<IReadOnlyDictionary<string, object?>>();
+        foreach (var data in metricFields.Where(field => field.Number is 5 or 7 or 9 or 10 or 11
+                     && field.Bytes is not null))
+        {
+            var attributeFieldNumber = data.Number switch
+            {
+                5 or 7 or 11 => 7,
+                9 => 9,
+                10 => 1,
+                _ => throw new InvalidDataException("Unsupported OTLP metric data kind.")
+            };
+            foreach (var point in MessageFields(data.Bytes!, 1))
+                attributes.Add(ReadAttributes(ReadFields(point), attributeFieldNumber));
+        }
+        return attributes;
     }
 
     private static OtlpLogRecord ReadLogRecord(string scopeName, byte[] payload)
@@ -297,6 +332,7 @@ internal sealed record OtlpSpan(
     byte[] SpanId,
     byte[] ParentSpanId,
     IReadOnlyDictionary<string, object?> Attributes,
+    string TraceState,
     int EventCount);
 
 internal sealed record OtlpLogRecord(
@@ -306,4 +342,8 @@ internal sealed record OtlpLogRecord(
     byte[] SpanId,
     IReadOnlyDictionary<string, object?> Attributes);
 
-internal sealed record OtlpMetric(string ScopeName, string Name, string Unit);
+internal sealed record OtlpMetric(
+    string ScopeName,
+    string Name,
+    string Unit,
+    IReadOnlyList<IReadOnlyDictionary<string, object?>> DataPointAttributes);

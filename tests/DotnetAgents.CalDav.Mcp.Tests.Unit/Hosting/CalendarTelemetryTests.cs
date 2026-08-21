@@ -7,6 +7,7 @@ using Xunit;
 
 namespace DotnetAgents.CalDav.Mcp.Tests.Unit.Hosting;
 
+[Collection("TelemetryActivityCollection")]
 public sealed class CalendarTelemetryTests
 {
     [Fact]
@@ -81,10 +82,13 @@ public sealed class CalendarTelemetryTests
         activity.SetTag("calendar.uid", "private-uid");
         activity.SetTag("exception.message", "secret body");
         activity.SetTag("error.type", "System.Net.Http.HttpRequestException");
+        activity.TraceStateString = "private=trace-state-secret";
         activity.SetStatus(ActivityStatusCode.Error, "secret tool result");
         activity.Stop();
 
-        new TelemetryActivityAllowlistProcessor().OnEnd(activity);
+        var processor = new TelemetryActivityAllowlistProcessor();
+        processor.OnStart(activity);
+        processor.OnEnd(activity);
 
         activity.DisplayName.ShouldBe("resources/read");
         activity.GetTagItem("mcp.method.name").ShouldBe("resources/read");
@@ -93,6 +97,7 @@ public sealed class CalendarTelemetryTests
         activity.GetTagItem("url.full").ShouldBeNull();
         activity.GetTagItem("calendar.uid").ShouldBeNull();
         activity.GetTagItem("exception.message").ShouldBeNull();
+        activity.TraceStateString.ShouldBeNull();
         activity.StatusDescription.ShouldBeNull();
     }
 
@@ -149,7 +154,8 @@ public sealed class CalendarTelemetryTests
         using var source = new ActivitySource("System.Net.Http");
         using var activity = source.StartActivity("GET https://calendar.example/private.ics");
         activity.ShouldNotBeNull();
-        activity.SetTag("http.request.method", method);
+        activity.SetTag("http.request.method", "_OTHER");
+        activity.SetTag("http.request.method_original", method);
         activity.SetTag("http.response.status_code", 207);
         activity.SetTag("url.full", "https://calendar.example/private.ics?token=secret");
         activity.Stop();
@@ -159,6 +165,7 @@ public sealed class CalendarTelemetryTests
         activity.DisplayName.ShouldBe(expectedDisplayName);
         activity.GetTagItem("http.request.method").ShouldBe(expectedDisplayName);
         activity.GetTagItem("http.response.status_code").ShouldBe(207);
+        activity.GetTagItem("http.request.method_original").ShouldBeNull();
         activity.GetTagItem("url.full").ShouldBeNull();
     }
 
@@ -274,3 +281,6 @@ public sealed class CalendarTelemetryTests
         return listener;
     }
 }
+
+[CollectionDefinition("TelemetryActivityCollection", DisableParallelization = true)]
+public sealed class TelemetryActivityCollection;

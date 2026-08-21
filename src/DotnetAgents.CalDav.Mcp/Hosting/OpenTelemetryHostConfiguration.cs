@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using OpenTelemetry.Exporter;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -13,6 +14,7 @@ internal static class OpenTelemetryHostConfiguration
     internal const string DefaultServiceName = "dotnet-agents-caldav";
     internal const string InstrumentationName = "DotnetAgents.CalDav";
     internal const string McpInstrumentationName = "Experimental.ModelContextProtocol";
+    internal const int ExporterTimeoutMilliseconds = 250;
 
     internal static bool IsEnabled(Func<string, string?>? environmentProvider = null)
     {
@@ -47,25 +49,25 @@ internal static class OpenTelemetryHostConfiguration
                 .AddSource(McpInstrumentationName, InstrumentationName)
                 .AddHttpClientInstrumentation(options => options.RecordException = false)
                 .AddProcessor(new TelemetryActivityAllowlistProcessor())
-                .AddOtlpExporter())
+                .AddOtlpExporter(ConfigureExporter))
             .WithMetrics(metrics => metrics
                 .AddMeter(McpInstrumentationName, InstrumentationName)
                 .AddView("mcp.server.operation.duration", new MetricStreamConfiguration
                 {
-                    TagKeys = ["mcp.method.name", "gen_ai.tool.name", "rpc.response.status_code"]
+                    TagKeys = ["rpc.response.status_code"]
                 })
                 .AddView("mcp.server.session.duration", new MetricStreamConfiguration
                 {
                     TagKeys = ["mcp.protocol.version", "network.protocol.name", "network.transport"]
                 })
-                .AddOtlpExporter());
+                .AddOtlpExporter(ConfigureExporter));
 
         builder.Logging.SetMinimumLevel(LogLevel.Debug);
         builder.Logging.AddFilter<OpenTelemetryLoggerProvider>(IsSafeLog);
         builder.Logging.AddOpenTelemetry(logging => logging
             .SetResourceBuilder(resource)
             .AddProcessor(new TelemetryLogAllowlistProcessor())
-            .AddOtlpExporter());
+            .AddOtlpExporter(ConfigureExporter));
     }
 
     internal static bool IsSafeLog(string? category, LogLevel level) =>
@@ -73,4 +75,9 @@ internal static class OpenTelemetryHostConfiguration
             ? level >= LogLevel.Debug
             : category?.StartsWith("ModelContextProtocol", StringComparison.Ordinal) == true
                 && level >= LogLevel.Information;
+
+    private static void ConfigureExporter(OtlpExporterOptions options) =>
+        options.TimeoutMilliseconds = Math.Min(
+            options.TimeoutMilliseconds,
+            ExporterTimeoutMilliseconds);
 }

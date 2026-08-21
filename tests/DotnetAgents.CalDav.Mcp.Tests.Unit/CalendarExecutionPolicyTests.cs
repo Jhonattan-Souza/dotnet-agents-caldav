@@ -11,6 +11,7 @@ using Xunit;
 
 namespace DotnetAgents.CalDav.Mcp.Tests.Unit;
 
+[Collection("TelemetryActivityCollection")]
 public sealed class CalendarExecutionPolicyTests
 {
     [Fact]
@@ -50,7 +51,7 @@ public sealed class CalendarExecutionPolicyTests
             StructuredContent = JsonSerializer.SerializeToElement(new
             {
                 code = "entity_revision_conflict",
-                category = "concurrency",
+                category = "limitsAndAdmission",
                 phase = "reconcile",
                 mutationState = "not_committed"
             })
@@ -67,7 +68,7 @@ public sealed class CalendarExecutionPolicyTests
         operation.GetTagItem("caldav.entity.kind").ShouldBe("todo");
         operation.GetTagItem("caldav.outcome").ShouldBe("error");
         operation.GetTagItem("caldav.error.code").ShouldBe("entity_revision_conflict");
-        operation.GetTagItem("caldav.error.category").ShouldBe("concurrency");
+        operation.GetTagItem("caldav.error.category").ShouldBe("limitsAndAdmission");
         operation.GetTagItem("caldav.mutation.state").ShouldBe("not_committed");
         operation.Status.ShouldBe(ActivityStatusCode.Error);
     }

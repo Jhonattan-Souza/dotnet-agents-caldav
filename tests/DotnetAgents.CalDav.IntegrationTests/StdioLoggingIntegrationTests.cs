@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Reflection;
+using System.Text.Json;
 using DotnetAgents.CalDav.IntegrationTests.Fixtures;
 using Shouldly;
 using Xunit;
@@ -116,19 +117,55 @@ public sealed class StdioLoggingIntegrationTests
         process.StartInfo.Environment["OTEL_EXPORTER_OTLP_PROTOCOL"] = "http/protobuf";
 
         process.Start();
-        var stdoutTask = process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
         var stderrTask = process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
+        var response = await CallCalendarsListAsync(process);
+        response.GetProperty("result").GetProperty("isError").GetBoolean().ShouldBeFalse();
         var beforeClose = DateTimeOffset.UtcNow;
         process.StandardInput.Close();
 
         await WaitForExitWithTimeoutAsync(process, TestContext.Current.CancellationToken);
 
         var elapsed = DateTimeOffset.UtcNow - beforeClose;
-        var stdout = await stdoutTask;
+        var stdout = await process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
         var stderr = await stderrTask;
         process.ExitCode.ShouldBe(0, $"stdout: {stdout}\nstderr: {stderr}");
         elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(2),
             $"Unreachable OTLP endpoint delayed stdin-EOF shutdown. stdout: {stdout}\nstderr: {stderr}");
+        stdout.ShouldBeEmpty();
+        stderr.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task McpProcess_WithHangingOtlpCollector_PreservesToolResultAndTwoSecondShutdown()
+    {
+        await using var receiver = OtlpLoopbackReceiver.Start(respond: false);
+        using var process = CreateProcess();
+        _fixture.ConfigureCalDavEnvironment(process.StartInfo.Environment);
+        process.StartInfo.Environment["OTEL_EXPORTER_OTLP_ENDPOINT"] =
+            receiver.Endpoint.GetLeftPart(UriPartial.Authority);
+        process.StartInfo.Environment["OTEL_EXPORTER_OTLP_PROTOCOL"] = "http/protobuf";
+        process.StartInfo.Environment["OTEL_BSP_SCHEDULE_DELAY"] = "50";
+        process.StartInfo.Environment["OTEL_BLRP_SCHEDULE_DELAY"] = "50";
+        process.StartInfo.Environment["OTEL_METRIC_EXPORT_INTERVAL"] = "50";
+        process.StartInfo.Environment["OTEL_EXPORTER_OTLP_TIMEOUT"] = "10000";
+
+        process.Start();
+        var stderrTask = process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
+        var response = await CallCalendarsListAsync(process);
+        response.GetProperty("result").GetProperty("isError").GetBoolean().ShouldBeFalse();
+        (await receiver.WaitForRequestAsync(TestContext.Current.CancellationToken)).ShouldBeTrue();
+
+        var beforeClose = DateTimeOffset.UtcNow;
+        process.StandardInput.Close();
+        await WaitForExitWithTimeoutAsync(process, TestContext.Current.CancellationToken);
+
+        var elapsed = DateTimeOffset.UtcNow - beforeClose;
+        var stdout = await process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
+        var stderr = await stderrTask;
+        process.ExitCode.ShouldBe(0, $"stdout: {stdout}\nstderr: {stderr}");
+        elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(2),
+            $"A collector that accepted but did not answer delayed stdin-EOF shutdown. " +
+            $"stdout: {stdout}\nstderr: {stderr}");
         stdout.ShouldBeEmpty();
         stderr.ShouldBeEmpty();
     }
@@ -170,6 +207,32 @@ public sealed class StdioLoggingIntegrationTests
             process.Kill(entireProcessTree: true);
             throw;
         }
+    }
+
+    private static async Task<JsonElement> CallCalendarsListAsync(Process process)
+    {
+        await process.StandardInput.WriteLineAsync(
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2026-07-28\",\"capabilities\":{},\"clientInfo\":{\"name\":\"otlp-failure-test\",\"version\":\"1\"}}}");
+        await process.StandardInput.FlushAsync(TestContext.Current.CancellationToken);
+        _ = await ReadResponseAsync(process, 1);
+        await process.StandardInput.WriteLineAsync(
+            "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}");
+        await process.StandardInput.WriteLineAsync(
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"calendars.list\",\"arguments\":{}}}");
+        await process.StandardInput.FlushAsync(TestContext.Current.CancellationToken);
+        return await ReadResponseAsync(process, 2);
+    }
+
+    private static async Task<JsonElement> ReadResponseAsync(Process process, int expectedId)
+    {
+        while (await process.StandardOutput.ReadLineAsync(TestContext.Current.CancellationToken) is { } line)
+        {
+            using var document = JsonDocument.Parse(line);
+            var message = document.RootElement;
+            if (message.TryGetProperty("id", out var id) && id.GetInt32() == expectedId)
+                return message.Clone();
+        }
+        throw new EndOfStreamException($"MCP process ended before response {expectedId}.");
     }
 
     private static Process CreateProcess()
