@@ -7,10 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added opt-in OTLP traces, MCP metrics, and trace-correlated safe logs for the stdio server, including CalDAV aggregate-phase and outbound HTTP attempt waterfalls.
+- Added automated loopback OTLP coverage for trace parentage, metrics, log correlation, redaction, disabled defaults, collector failure isolation, and stdin-EOF shutdown.
+
 ### Changed
 
 - Migrated test execution from VSTest to Microsoft.Testing.Platform v2 and xUnit 4.
 - Isolated coverage and TRX evidence per run so historical or nested runner artifacts cannot affect quality gates.
+
+### Security
+
+- Telemetry export now applies explicit span, metric, log, and resource allowlists that exclude CalDAV identifiers, credentials, payloads, URLs, OTLP headers, and exception details.
 
 ## [0.2.2] - 2026-08-21
 
