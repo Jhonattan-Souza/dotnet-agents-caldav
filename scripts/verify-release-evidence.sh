@@ -4,59 +4,6 @@ set -euo pipefail
 catalog=${1:-contracts/0.2.0/requirement-evidence-catalog.md}
 evidence_map=${2:-contracts/0.2.0/release-evidence-map.json}
 results_directory=${3:-TestResults}
-contract_version=$(jq -r '.contractVersion' "$evidence_map")
-
-if [[ $contract_version == "0.2.2" ]]; then
-  grep -q '^# Requirement-to-evidence catalog: authoritative Create contract 0.2.2$' "$catalog" || {
-    echo "Authoritative Create 0.2.2 evidence catalog heading is missing." >&2
-    exit 69
-  }
-  [[ $(jq -r '.issue' "$evidence_map") == "80" ]] || {
-    echo "Authoritative Create evidence map must identify issue 80." >&2
-    exit 69
-  }
-  jq -e '.collisionContract == {href:"destination_conflict", uid:"conflict", rejectedMutationState:"not_committed"}' \
-    "$evidence_map" >/dev/null || {
-    echo "Authoritative Create collision contract is incomplete." >&2
-    exit 69
-  }
-  [[ $(jq -r '.generatedUidMaximumAttempts' "$evidence_map") == "3" ]] || {
-    echo "Authoritative Create retry bound must be three attempts." >&2
-    exit 69
-  }
-  jq -e '.createLimitDimensions == ["elapsed_time"]' "$evidence_map" >/dev/null || {
-    echo "Authoritative Create elapsed-time limit dimension is missing." >&2
-    exit 69
-  }
-  [[ -d $results_directory ]] || {
-    echo "Test result directory does not exist: $results_directory" >&2
-    exit 70
-  }
-  mapfile -d '' create_results < <(find "$results_directory" -type f -name '*.trx' -print0)
-  [[ ${#create_results[@]} -gt 0 ]] || {
-    echo "No TRX evidence exists under $results_directory." >&2
-    exit 70
-  }
-  while IFS= read -r evidence_name; do
-    matches=$(grep -F "$evidence_name" "${create_results[@]}" | grep '<UnitTestResult ' || true)
-    if [[ -z $matches ]] || grep -qv 'outcome="Passed"' <<< "$matches"; then
-      echo "0.2.2 Create evidence did not execute passing evidence matching: $evidence_name" >&2
-      exit 72
-    fi
-  done < <(jq -r '.requiredEvidence[]' "$evidence_map")
-  while IFS=$'\t' read -r requirement_id evidence_name; do
-    grep -q "$requirement_id" "$catalog" || {
-      echo "0.2.2 evidence catalog is missing requirement $requirement_id." >&2
-      exit 69
-    }
-    grep -q "$evidence_name" "$catalog" || {
-      echo "0.2.2 evidence catalog does not name mapped evidence $evidence_name." >&2
-      exit 69
-    }
-  done < <(jq -r '.requirementEvidence[] | [.requirement, .evidence] | @tsv' "$evidence_map")
-  echo "Verified authoritative Create 0.2.2 evidence map and every required test family passed."
-  exit 0
-fi
 
 if ! jq -e 'has("requirements")' "$evidence_map" >/dev/null; then
   [[ $(jq -r '.contractVersion' "$evidence_map") == "0.2.1" ]] || {

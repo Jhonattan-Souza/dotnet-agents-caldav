@@ -40,7 +40,7 @@ public sealed class ContractCatalogTests
     {
         var catalog = ReadJson("mcp-tool-catalog.json");
 
-        catalog["contractVersion"]!.GetValue<string>().ShouldBe("0.2.2");
+        catalog.ShouldNotContainKey("contractVersion");
         catalog["protocolRevision"]!.GetValue<string>().ShouldBe("2026-07-28");
         catalog["discoveryOrder"]!.AsArray().Count.ShouldBe(17);
         catalog["exactTools"]!.AsArray().Count.ShouldBe(4);
@@ -481,7 +481,7 @@ public sealed class ContractCatalogTests
     {
         var instructions = File.ReadAllText(Path.Combine(RepositoryRoot(), "AGENTS.md"));
 
-        instructions.ShouldContain("default host exposes the 0.2.2 17-tool semantic catalog");
+        instructions.ShouldContain("default host exposes a 17-tool semantic catalog");
         instructions.ShouldContain("including `todos.complete`");
         instructions.ShouldContain("It contains no legacy aliases");
     }
@@ -490,7 +490,7 @@ public sealed class ContractCatalogTests
 
     private static JsonObject ReadJson(string fileName) => JsonNode.Parse(File.ReadAllText(
         fileName == "mcp-tool-catalog.json"
-            ? Path.Combine(RepositoryRoot(), "contracts", "0.2.2", fileName)
+            ? Path.Combine(RepositoryRoot(), "src", "DotnetAgents.CalDav.Mcp", "Contracts", fileName)
             : ContractPath(fileName)))!.AsObject();
 
     private static IReadOnlyList<string> FindOpenSchemaNodes(JsonNode node, string path = "$")

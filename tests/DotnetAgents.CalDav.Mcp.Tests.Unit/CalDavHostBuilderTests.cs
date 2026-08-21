@@ -558,7 +558,7 @@ public class CalDavHostBuilderTests
             .GetRequiredService<IOptions<ModelContextProtocol.Server.McpServerOptions>>()
             .Value.ToolCollection!.ToArray().ToDictionary(tool => tool.ProtocolTool.Name);
         var catalog = JsonNode.Parse(File.ReadAllText(Path.Combine(
-            RepositoryRoot(), "contracts", "0.2.2", "mcp-tool-catalog.json")))!.AsObject();
+            RepositoryRoot(), "src", "DotnetAgents.CalDav.Mcp", "Contracts", "mcp-tool-catalog.json")))!.AsObject();
 
         registered.Count.ShouldBe(21);
         foreach (var expected in catalog["tools"]!.AsArray())
