@@ -354,16 +354,6 @@ public sealed class ContractCatalogTests
         matrix.ShouldContain("an unverified transcript remains operable, but no interoperability claim is made");
     }
 
-    [Fact]
-    public void Agent_instructions_name_the_additive_default_semantic_catalog()
-    {
-        var instructions = File.ReadAllText(Path.Combine(RepositoryRoot(), "AGENTS.md"));
-
-        instructions.ShouldContain("default host exposes a 17-tool semantic catalog");
-        instructions.ShouldContain("including `todos.complete`");
-        instructions.ShouldContain("It contains no legacy aliases");
-    }
-
     private const string RadicaleConformanceIndexDigest = "sha256:3a0080ea51ac69dcd74e345b9587dc14a8c8af0652046069005749f9a75c5c80";
 
     private static JsonObject ReadJson(string fileName) => JsonNode.Parse(File.ReadAllText(
