@@ -49,7 +49,7 @@ The fixed classification of a Calendar Entity as exactly Event or To-do.
 _Avoid_: Component type, mutable type
 
 **Entity UID**:
-The durable logical identity of a Calendar Entity, unchanged by moving or rescheduling it.
+The durable logical identity of a Calendar Entity, unchanged by moving or rescheduling it. Within one Calendar it is unique across Entity Kinds; a recurrence master and its overrides share one Entity UID within one Calendar Object Resource.
 _Avoid_: Resource address, summary
 
 **Entity Tag**:

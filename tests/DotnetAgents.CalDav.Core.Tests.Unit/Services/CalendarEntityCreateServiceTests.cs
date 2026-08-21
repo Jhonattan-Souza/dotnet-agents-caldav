@@ -1116,11 +1116,9 @@ public sealed class CalendarEntityCreateServiceTests
     }
 
     [Theory]
-    [InlineData("caller/uid", false)]
-    [InlineData("caller\\uid", true)]
-    public async Task CreateEventAsync_CrossKindUidCollisionBlocksBeforePutEvenWhenCandidateIsOpaque(
-        string uid,
-        bool opaqueCandidate)
+    [InlineData("caller/uid")]
+    [InlineData("caller\\uid")]
+    public async Task CreateEventAsync_CrossKindUidCollisionIsDecidedByConditionalPut(string uid)
     {
         const string calendarHref = "https://cal.example/shared/";
         const string existingHref = "https://cal.example/shared/imported.ics";
@@ -1145,13 +1143,10 @@ public sealed class CalendarEntityCreateServiceTests
                 null,
                 Arg.Any<CancellationToken>())
             .Returns([existingHref]);
-        var encodedUid = uid.Replace("\\", "\\\\", StringComparison.Ordinal);
-        var duplicate = opaqueCandidate ? "SUMMARY:one\r\nSUMMARY:two\r\n" : string.Empty;
-        var imported = Encoding.UTF8.GetBytes(
-            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Imported//EN\r\nBEGIN:VTODO\r\n"
-            + $"UID:{encodedUid}\r\nDTSTAMP:20260816T120000Z\r\n{duplicate}END:VTODO\r\nEND:VCALENDAR\r\n");
-        client.GetCalendarResourceAsync(existingHref, Arg.Any<CancellationToken>())
-            .Returns(CalendarResourceRead.Success(existingHref, "\"r1\"", imported));
+        client.CreateCalendarResourceAsync(
+                Arg.Any<CalendarResourceCreateRequest>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceCreateResult(CalendarResourceCreateCode.UidConflict, calendarHref + "new.ics"));
 
         var result = await sut.CreateEventAsync(
             new CalendarEventCreateRequest(
@@ -1163,25 +1158,16 @@ public sealed class CalendarEntityCreateServiceTests
 
         result.Code.ShouldBe(CalendarEntityCreateCode.Conflict);
         result.MutationState.ShouldBe(CalendarMutationState.NotCommitted);
-        await client.Received(1).QueryCalendarResourceHrefsAsync(
-            calendarHref,
-            CalendarEntityKind.Event,
-            null,
-            null,
-            Arg.Any<CancellationToken>());
-        await client.Received(1).QueryCalendarResourceHrefsAsync(
-            calendarHref,
-            CalendarEntityKind.Todo,
-            null,
-            null,
-            Arg.Any<CancellationToken>());
-        await client.DidNotReceive().CreateCalendarResourceAsync(
+        await client.DidNotReceive().QueryCalendarResourceHrefsAsync(
+            Arg.Any<string>(), Arg.Any<CalendarEntityKind>(), null, null, Arg.Any<CancellationToken>());
+        await client.DidNotReceive().GetCalendarResourceAsync(existingHref, Arg.Any<CancellationToken>());
+        await client.Received(1).CreateCalendarResourceAsync(
             Arg.Any<CalendarResourceCreateRequest>(),
             Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task CreateTodoAsync_CrossKindEventUidCollisionBlocksBeforePut()
+    public async Task CreateTodoAsync_CrossKindEventUidCollisionIsDecidedByConditionalPut()
     {
         const string calendarHref = "https://cal.example/shared/";
         const string existingHref = "https://cal.example/shared/imported-event.ics";
@@ -1207,8 +1193,10 @@ public sealed class CalendarEntityCreateServiceTests
                 null,
                 Arg.Any<CancellationToken>())
             .Returns([existingHref]);
-        client.GetCalendarResourceAsync(existingHref, Arg.Any<CancellationToken>())
-            .Returns(CalendarResourceRead.Success(existingHref, "\"r1\"", Event(uid, "Imported")));
+        client.CreateCalendarResourceAsync(
+                Arg.Any<CalendarResourceCreateRequest>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceCreateResult(CalendarResourceCreateCode.UidConflict, calendarHref + "new.ics"));
 
         var result = await sut.CreateTodoAsync(
             new CalendarTodoCreateRequest(
@@ -1219,19 +1207,10 @@ public sealed class CalendarEntityCreateServiceTests
 
         result.Code.ShouldBe(CalendarEntityCreateCode.Conflict);
         result.MutationState.ShouldBe(CalendarMutationState.NotCommitted);
-        await client.Received(1).QueryCalendarResourceHrefsAsync(
-            calendarHref,
-            CalendarEntityKind.Todo,
-            null,
-            null,
-            Arg.Any<CancellationToken>());
-        await client.Received(1).QueryCalendarResourceHrefsAsync(
-            calendarHref,
-            CalendarEntityKind.Event,
-            null,
-            null,
-            Arg.Any<CancellationToken>());
-        await client.DidNotReceive().CreateCalendarResourceAsync(
+        await client.DidNotReceive().QueryCalendarResourceHrefsAsync(
+            Arg.Any<string>(), Arg.Any<CalendarEntityKind>(), null, null, Arg.Any<CancellationToken>());
+        await client.DidNotReceive().GetCalendarResourceAsync(existingHref, Arg.Any<CancellationToken>());
+        await client.Received(1).CreateCalendarResourceAsync(
             Arg.Any<CalendarResourceCreateRequest>(),
             Arg.Any<CancellationToken>());
     }
@@ -1239,7 +1218,7 @@ public sealed class CalendarEntityCreateServiceTests
     [Theory]
     [InlineData(EntityKindSupport.NotAdvertised)]
     [InlineData(EntityKindSupport.Unknown)]
-    public async Task CreateEventAsync_OppositeKindUidPreflightIsFailClosedRegardlessOfDiscoveryEvidence(
+    public async Task CreateEventAsync_OppositeKindDiscoveryEvidenceDoesNotTriggerEnumeration(
         EntityKindSupport todoSupport)
     {
         const string calendarHref = "https://cal.example/events/";
@@ -1263,8 +1242,10 @@ public sealed class CalendarEntityCreateServiceTests
                 null,
                 Arg.Any<CancellationToken>())
             .Returns([existingHref]);
-        client.GetCalendarResourceAsync(existingHref, Arg.Any<CancellationToken>())
-            .Returns(CalendarResourceRead.Success(existingHref, "\"r1\"", Todo(uid, "Imported")));
+        client.CreateCalendarResourceAsync(
+                Arg.Any<CalendarResourceCreateRequest>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceCreateResult(CalendarResourceCreateCode.UidConflict, calendarHref + "new.ics"));
 
         var result = await sut.CreateEventAsync(
             new CalendarEventCreateRequest(
@@ -1276,19 +1257,16 @@ public sealed class CalendarEntityCreateServiceTests
 
         result.Code.ShouldBe(CalendarEntityCreateCode.Conflict);
         result.MutationState.ShouldBe(CalendarMutationState.NotCommitted);
-        await client.Received(1).QueryCalendarResourceHrefsAsync(
-            calendarHref,
-            CalendarEntityKind.Todo,
-            null,
-            null,
-            Arg.Any<CancellationToken>());
-        await client.DidNotReceive().CreateCalendarResourceAsync(
+        await client.DidNotReceive().QueryCalendarResourceHrefsAsync(
+            Arg.Any<string>(), Arg.Any<CalendarEntityKind>(), null, null, Arg.Any<CancellationToken>());
+        await client.DidNotReceive().GetCalendarResourceAsync(existingHref, Arg.Any<CancellationToken>());
+        await client.Received(1).CreateCalendarResourceAsync(
             Arg.Any<CalendarResourceCreateRequest>(),
             Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task CreateEventAsync_OppositeKindUidQueryFailureIsNotAttemptedAndNeverFallsThroughToPut()
+    public async Task CreateEventAsync_OppositeKindQueryFailureIsIrrelevantToAuthoritativePut()
     {
         const string calendarHref = "https://cal.example/events/";
         var client = Substitute.For<ICalendarClient>();
@@ -1308,6 +1286,10 @@ public sealed class CalendarEntityCreateServiceTests
                 null,
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromException<IReadOnlyList<string>>(new HttpRequestException("opposite query failed")));
+        client.CreateCalendarResourceAsync(
+                Arg.Any<CalendarResourceCreateRequest>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceCreateResult(CalendarResourceCreateCode.DestinationConflict, calendarHref + "new.ics"));
 
         var result = await sut.CreateEventAsync(
             new CalendarEventCreateRequest(
@@ -1317,9 +1299,11 @@ public sealed class CalendarEntityCreateServiceTests
                     Start: new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-17T13:00:00Z"))),
             CancellationToken.None);
 
-        result.Code.ShouldBe(CalendarEntityCreateCode.UpstreamUnavailable);
-        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
-        await client.DidNotReceive().CreateCalendarResourceAsync(
+        result.Code.ShouldBe(CalendarEntityCreateCode.DestinationConflict);
+        result.MutationState.ShouldBe(CalendarMutationState.NotCommitted);
+        await client.DidNotReceive().QueryCalendarResourceHrefsAsync(
+            Arg.Any<string>(), Arg.Any<CalendarEntityKind>(), null, null, Arg.Any<CancellationToken>());
+        await client.Received(1).CreateCalendarResourceAsync(
             Arg.Any<CalendarResourceCreateRequest>(),
             Arg.Any<CancellationToken>());
     }
@@ -1416,7 +1400,7 @@ public sealed class CalendarEntityCreateServiceTests
     }
 
     [Fact]
-    public async Task CreateEventAsync_UninspectableExistingUidSetBlocksBeforePut()
+    public async Task CreateEventAsync_UninspectableUnrelatedResourceDoesNotBlockPut()
     {
         const string calendarHref = "https://cal.example/events/";
         const string existingHref = "https://cal.example/events/existing.ics";
@@ -1432,6 +1416,10 @@ public sealed class CalendarEntityCreateServiceTests
             .Returns([existingHref]);
         client.GetCalendarResourceAsync(existingHref, Arg.Any<CancellationToken>())
             .Returns(new CalendarResourceRead(CalendarResourceReadCode.ConcurrencyUnavailable));
+        client.CreateCalendarResourceAsync(
+                Arg.Any<CalendarResourceCreateRequest>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceCreateResult(CalendarResourceCreateCode.UpstreamForbidden, calendarHref + "new.ics"));
 
         var result = await sut.CreateEventAsync(
             new CalendarEventCreateRequest(
@@ -1443,24 +1431,18 @@ public sealed class CalendarEntityCreateServiceTests
                         "2026-08-17T13:00:00Z"))),
             CancellationToken.None);
 
-        result.Code.ShouldBe(CalendarEntityCreateCode.ConcurrencyUnavailable);
-        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
-        await client.DidNotReceive().CreateCalendarResourceAsync(
+        result.Code.ShouldBe(CalendarEntityCreateCode.UpstreamForbidden);
+        result.MutationState.ShouldBe(CalendarMutationState.NotCommitted);
+        await client.DidNotReceive().QueryCalendarResourceHrefsAsync(
+            Arg.Any<string>(), Arg.Any<CalendarEntityKind>(), null, null, Arg.Any<CancellationToken>());
+        await client.DidNotReceive().GetCalendarResourceAsync(existingHref, Arg.Any<CancellationToken>());
+        await client.Received(1).CreateCalendarResourceAsync(
             Arg.Any<CalendarResourceCreateRequest>(),
             Arg.Any<CancellationToken>());
     }
 
-    [Theory]
-    [InlineData("matching", CalendarEntityCreateCode.Conflict)]
-    [InlineData("opaque", CalendarEntityCreateCode.OpaqueResource)]
-    [InlineData("payload", CalendarEntityCreateCode.PayloadTooLarge)]
-    [InlineData("protocol", CalendarEntityCreateCode.UpstreamProtocolError)]
-    [InlineData("invalid", CalendarEntityCreateCode.UpstreamProtocolError)]
-    [InlineData("outside", CalendarEntityCreateCode.UpstreamProtocolError)]
-    [InlineData("gone", CalendarEntityCreateCode.UpstreamForbidden)]
-    public async Task CreateEventAsync_MapsEveryUidPreflightReadOutcomeBeforeConditionalPut(
-        string scenario,
-        CalendarEntityCreateCode expectedCode)
+    [Fact]
+    public async Task CreateEventAsync_IgnoresCandidateReadOutcomesAndUsesConditionalPut()
     {
         const string calendarHref = "https://cal.example/events/";
         const string existingHref = "https://cal.example/events/existing.ics";
@@ -1474,16 +1456,8 @@ public sealed class CalendarEntityCreateServiceTests
                 null,
                 Arg.Any<CancellationToken>())
             .Returns([existingHref]);
-        client.GetCalendarResourceAsync(existingHref, Arg.Any<CancellationToken>()).Returns(scenario switch
-        {
-            "matching" => CalendarResourceRead.Success(existingHref, "\"r1\"", Event("candidate", "Existing")),
-            "opaque" => CalendarResourceRead.Success(existingHref, "\"r1\"", Encoding.UTF8.GetBytes("not-calendar")),
-            "payload" => new CalendarResourceRead(CalendarResourceReadCode.PayloadTooLarge),
-            "protocol" => new CalendarResourceRead(CalendarResourceReadCode.UpstreamProtocolError),
-            "invalid" => new CalendarResourceRead(CalendarResourceReadCode.InvalidInput),
-            "outside" => new CalendarResourceRead(CalendarResourceReadCode.OutsideScope),
-            _ => new CalendarResourceRead(CalendarResourceReadCode.NotFound)
-        });
+        client.GetCalendarResourceAsync(existingHref, Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceRead(CalendarResourceReadCode.UpstreamProtocolError));
         client.CreateCalendarResourceAsync(
                 Arg.Any<CalendarResourceCreateRequest>(),
                 Arg.Any<CancellationToken>())
@@ -1501,8 +1475,11 @@ public sealed class CalendarEntityCreateServiceTests
                         "2026-08-17T13:00:00Z"))),
             CancellationToken.None);
 
-        result.Code.ShouldBe(expectedCode);
-        await client.Received(scenario == "gone" ? 1 : 0).CreateCalendarResourceAsync(
+        result.Code.ShouldBe(CalendarEntityCreateCode.UpstreamForbidden);
+        await client.DidNotReceive().QueryCalendarResourceHrefsAsync(
+            Arg.Any<string>(), Arg.Any<CalendarEntityKind>(), null, null, Arg.Any<CancellationToken>());
+        await client.DidNotReceive().GetCalendarResourceAsync(existingHref, Arg.Any<CancellationToken>());
+        await client.Received(1).CreateCalendarResourceAsync(
             Arg.Any<CalendarResourceCreateRequest>(),
             Arg.Any<CancellationToken>());
     }
@@ -1533,7 +1510,7 @@ public sealed class CalendarEntityCreateServiceTests
     }
 
     [Fact]
-    public async Task CreateEventAsync_MoreThanFiveThousandUidCandidatesExhaustsLimitWithoutFetchOrPut()
+    public async Task CreateEventAsync_DoesNotEnumerateFiveThousandExistingResourcesBeforeConditionalPut()
     {
         const string calendarHref = "https://cal.example/events/";
         var client = Substitute.For<ICalendarClient>();
@@ -1548,6 +1525,12 @@ public sealed class CalendarEntityCreateServiceTests
             .Returns(Enumerable.Range(0, 5_001)
                 .Select(index => $"{calendarHref}{index}.ics")
                 .ToArray());
+        client.CreateCalendarResourceAsync(
+                Arg.Any<CalendarResourceCreateRequest>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call => new CalendarResourceCreateResult(
+                CalendarResourceCreateCode.Conflict,
+                call.Arg<CalendarResourceCreateRequest>().ResourceHref));
 
         var result = await sut.CreateEventAsync(
             new CalendarEventCreateRequest(
@@ -1559,13 +1542,18 @@ public sealed class CalendarEntityCreateServiceTests
                         "2026-08-17T13:00:00Z"))),
             CancellationToken.None);
 
-        result.Code.ShouldBe(CalendarEntityCreateCode.LimitExhausted);
-        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
-        result.Limits!.ResourcesInspected.ShouldBe(5_001);
+        result.Code.ShouldBe(CalendarEntityCreateCode.Conflict);
+        result.MutationState.ShouldBe(CalendarMutationState.NotCommitted);
+        await client.DidNotReceive().QueryCalendarResourceHrefsAsync(
+            Arg.Any<string>(),
+            Arg.Any<CalendarEntityKind>(),
+            Arg.Any<DateTimeOffset?>(),
+            Arg.Any<DateTimeOffset?>(),
+            Arg.Any<CancellationToken>());
         await client.DidNotReceive().GetCalendarResourceAsync(
             Arg.Any<string>(),
             Arg.Any<CancellationToken>());
-        await client.DidNotReceive().CreateCalendarResourceAsync(
+        await client.Received(1).CreateCalendarResourceAsync(
             Arg.Any<CalendarResourceCreateRequest>(),
             Arg.Any<CancellationToken>());
     }
@@ -1975,7 +1963,7 @@ public sealed class CalendarEntityCreateServiceTests
     }
 
     [Fact]
-    public async Task CreateTodoAsync_CallerUidFoundDuringPreflightReturnsConflictWithoutPut()
+    public async Task CreateTodoAsync_CallerUidConflictComesFromConditionalPut()
     {
         const string calendarHref = "https://cal.example/todos/";
         const string existingHref = "https://cal.example/todos/existing.ics";
@@ -1991,6 +1979,10 @@ public sealed class CalendarEntityCreateServiceTests
             .Returns([existingHref]);
         client.GetCalendarResourceAsync(existingHref, Arg.Any<CancellationToken>()).Returns(
             CalendarResourceRead.Success(existingHref, "\"existing-r1\"", Todo("caller-todo", "Already stored")));
+        client.CreateCalendarResourceAsync(
+                Arg.Any<CalendarResourceCreateRequest>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceCreateResult(CalendarResourceCreateCode.UidConflict, calendarHref + "new.ics"));
 
         var result = await sut.CreateTodoAsync(
             new CalendarTodoCreateRequest(
@@ -2001,7 +1993,10 @@ public sealed class CalendarEntityCreateServiceTests
 
         result.Code.ShouldBe(CalendarEntityCreateCode.Conflict);
         result.MutationState.ShouldBe(CalendarMutationState.NotCommitted);
-        await client.DidNotReceive().CreateCalendarResourceAsync(
+        await client.DidNotReceive().QueryCalendarResourceHrefsAsync(
+            Arg.Any<string>(), Arg.Any<CalendarEntityKind>(), null, null, Arg.Any<CancellationToken>());
+        await client.DidNotReceive().GetCalendarResourceAsync(existingHref, Arg.Any<CancellationToken>());
+        await client.Received(1).CreateCalendarResourceAsync(
             Arg.Any<CalendarResourceCreateRequest>(),
             Arg.Any<CancellationToken>());
     }
@@ -2612,6 +2607,7 @@ public sealed class CalendarEntityCreateServiceTests
 
         result.Code.ShouldBe(CalendarEntityCreateCode.LimitExhausted);
         result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        result.Limits!.Dimension.ShouldBe(CalendarEntityCreateLimitDimension.ElapsedTime);
         await client.DidNotReceive().CreateCalendarResourceAsync(
             Arg.Any<CalendarResourceCreateRequest>(),
             Arg.Any<CancellationToken>());

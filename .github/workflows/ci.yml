@@ -35,7 +35,7 @@ jobs:
         run: |
           dotnet test tests/DotnetAgents.CalDav.Core.Tests.Unit/DotnetAgents.CalDav.Core.Tests.Unit.csproj -c Release --no-build --settings coverage.runsettings --collect:"XPlat Code Coverage" --logger "trx;LogFilePrefix=pr-core" --results-directory TestResults
           dotnet test tests/DotnetAgents.CalDav.Mcp.Tests.Unit/DotnetAgents.CalDav.Mcp.Tests.Unit.csproj -c Release --no-build --settings coverage.runsettings --collect:"XPlat Code Coverage" --logger "trx;LogFilePrefix=pr-mcp" --results-directory TestResults
-          dotnet test tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj -c Release --no-build --settings coverage.runsettings --collect:"XPlat Code Coverage" --logger "trx;LogFilePrefix=pr-integration" --results-directory TestResults
+          dotnet test tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj -c Release --no-build --settings coverage.runsettings --collect:"XPlat Code Coverage" --logger "trx;LogFilePrefix=pr-integration" --results-directory TestResults -m:1 /nodeReuse:false
 
       - name: Generate coverage report
         run: dotnet reportgenerator -reports:"TestResults/**/coverage.cobertura.xml" -targetdir:"coverage-report" -reporttypes:Cobertura -assemblyfilters:"+DotnetAgents.CalDav.Core;+DotnetAgents.CalDav.Mcp;-*Tests*;-xunit*;-testhost*"
@@ -68,6 +68,7 @@ jobs:
           bash scripts/verify-test-results.sh TestResults
           bash scripts/verify-release-evidence.sh contracts/0.2.0/requirement-evidence-catalog.md contracts/0.2.0/release-evidence-map.json TestResults
           bash scripts/verify-release-evidence.sh contracts/0.2.1/requirement-evidence-catalog.md contracts/0.2.1/release-evidence-map.json TestResults
+          bash scripts/verify-release-evidence.sh contracts/0.2.2/requirement-evidence-catalog.md contracts/0.2.2/release-evidence-map.json TestResults
 
       - name: Run Slopwatch
         run: dotnet tool run slopwatch analyze --config .slopwatch/slopwatch.json --fail-on warning

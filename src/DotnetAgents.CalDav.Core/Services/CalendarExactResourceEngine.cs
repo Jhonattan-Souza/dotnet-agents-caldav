@@ -20,88 +20,6 @@ internal sealed class CalendarExactResourceEngine(
     private static readonly TimeSpan PreDispatchTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan ReconciliationTimeout = TimeSpan.FromSeconds(30);
 
-    public async Task<CalendarExactResourceResult> CreateAsync(
-        CalendarExactCreateRequest request,
-        CancellationToken cancellationToken)
-    {
-        var shapeFailure = ValidateCreateShape(request);
-        if (shapeFailure is not null)
-            return shapeFailure;
-        using var deadline = new CancellationTokenSource(PreDispatchTimeout, timeProvider);
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
-        try
-        {
-            return await CreateCoreAsync(request, linked.Token);
-        }
-        catch (OperationCanceledException) when (deadline.IsCancellationRequested
-            && !cancellationToken.IsCancellationRequested)
-        {
-            return Failure(CalendarExactResourceCode.LimitExhausted);
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            return Failure(CalendarExactResourceCode.UpstreamUnavailable, retryable: true);
-        }
-        catch (HttpRequestException exception)
-        {
-            return FromHttpFailure(exception.StatusCode);
-        }
-        catch (Exception exception) when (exception is IOException or TimeoutException)
-        {
-            return Failure(CalendarExactResourceCode.UpstreamUnavailable, retryable: true);
-        }
-        catch (Exception exception) when (exception is XmlException or CalendarDiscoveryProtocolException)
-        {
-            return Failure(CalendarExactResourceCode.UpstreamProtocolError);
-        }
-    }
-
-    public async Task<CalendarExactResourceReviewResult> ReviewCreateAsync(
-        CalendarExactCreateRequest request,
-        CancellationToken cancellationToken)
-    {
-        var shapeFailure = ValidateCreateShape(request);
-        if (shapeFailure is not null)
-            return new CalendarExactResourceReviewResult(shapeFailure, null, default);
-        try
-        {
-            var preparation = await PrepareCreateAsync(request, cancellationToken);
-            if (preparation.Failure is not null)
-                return new CalendarExactResourceReviewResult(preparation.Failure, null, default);
-            var identity = preparation.Identity!;
-            return new CalendarExactResourceReviewResult(
-                null,
-                new CalendarResourceRevisionReference(
-                    request.DestinationHref,
-                    identity.EntityUid,
-                    identity.EntityKind,
-                    "*"),
-                SHA256.HashData(request.AuthoritativeUtf8.Span));
-        }
-        catch (HttpRequestException exception)
-        {
-            return new CalendarExactResourceReviewResult(FromHttpFailure(exception.StatusCode), null, default);
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            return FailedReview(Failure(CalendarExactResourceCode.UpstreamUnavailable, retryable: true));
-        }
-        catch (Exception exception) when (exception is IOException or TimeoutException)
-        {
-            return new CalendarExactResourceReviewResult(
-                Failure(CalendarExactResourceCode.UpstreamUnavailable, retryable: true),
-                null,
-                default);
-        }
-        catch (Exception exception) when (exception is XmlException or CalendarDiscoveryProtocolException)
-        {
-            return new CalendarExactResourceReviewResult(
-                Failure(CalendarExactResourceCode.UpstreamProtocolError),
-                null,
-                default);
-        }
-    }
-
     public async Task<CalendarExactResourceResult> ReplaceAsync(
         CalendarExactReplaceRequest request,
         CancellationToken cancellationToken)
@@ -755,74 +673,6 @@ internal sealed class CalendarExactResourceEngine(
         ? Unknown()
         : PostWrite(CalendarExactResourceCode.CommittedButUnverified);
 
-    private async Task<CalendarExactResourceResult> CreateCoreAsync(
-        CalendarExactCreateRequest request,
-        CancellationToken cancellationToken)
-    {
-        var preparation = await PrepareCreateAsync(request, cancellationToken);
-        if (preparation.Failure is not null)
-            return preparation.Failure;
-        var destination = preparation.Calendar!;
-        var identity = preparation.Identity!;
-
-        var dispatch = await calendarClient.CreateCalendarResourceAsync(
-            new CalendarResourceCreateRequest(
-                destination.Href,
-                request.DestinationHref,
-                request.AuthoritativeUtf8),
-            cancellationToken);
-        return await VerifyCreateAsync(request, destination.Href, identity, dispatch);
-    }
-
-    private async Task<PreparedCreate> PrepareCreateAsync(
-        CalendarExactCreateRequest request,
-        CancellationToken cancellationToken)
-    {
-        var discovery = await DiscoverScopedAsync(cancellationToken);
-        if (discovery.Failure is not null)
-            return new PreparedCreate(null, null, discovery.Failure);
-        var destination = discovery.Calendars!.SingleOrDefault(calendar =>
-            IsDirectResourceOf(request.DestinationHref, calendar.Href));
-        if (destination is null)
-        {
-            return new PreparedCreate(
-                null,
-                null,
-                Failure(CalendarExactResourceCode.OutsideScope, CalendarExactResourcePhase.SelectionDiscoveryCapability));
-        }
-        if (!CalendarExactResourceValidator.TryReadIdentity(request.AuthoritativeUtf8.Span, out var identity))
-        {
-            return new PreparedCreate(
-                null,
-                null,
-                Failure(CalendarExactResourceCode.InvalidCalendarData, CalendarExactResourcePhase.CompleteResourceSemantics));
-        }
-        if (!Advertises(destination, identity.EntityKind))
-        {
-            return new PreparedCreate(
-                null,
-                null,
-                Failure(CalendarExactResourceCode.UnsupportedCapability, CalendarExactResourcePhase.SelectionDiscoveryCapability));
-        }
-        var target = await ReadTargetAsync(request.DestinationHref, cancellationToken);
-        if (target.Failure is not null)
-            return new PreparedCreate(null, null, target.Failure);
-        var existing = target.Read!;
-        if (existing.Code != CalendarResourceReadCode.NotFound)
-            return new PreparedCreate(null, null, ExistingDestinationFailure(existing.Code));
-        if (!CalendarExactResourceValidator.TryValidate(request.AuthoritativeUtf8.Span, out identity))
-        {
-            return new PreparedCreate(
-                null,
-                null,
-                Failure(CalendarExactResourceCode.InvalidCalendarData, CalendarExactResourcePhase.CompleteResourceSemantics));
-        }
-        var uidFailure = await FindUidConflictAsync(destination.Href, identity, null, cancellationToken);
-        return uidFailure is null
-            ? new PreparedCreate(destination, identity, null)
-            : new PreparedCreate(null, null, uidFailure);
-    }
-
     private async Task<CalendarExactResourceResult?> FindUidConflictAsync(
         string calendarHref,
         CalendarExactResourceIdentity identity,
@@ -884,21 +734,6 @@ internal sealed class CalendarExactResourceEngine(
         return null;
     }
 
-    private async Task<CalendarExactResourceResult> VerifyCreateAsync(
-        CalendarExactCreateRequest request,
-        string calendarHref,
-        CalendarExactResourceIdentity identity,
-        CalendarResourceCreateResult dispatch)
-    {
-        CalendarOperationProgress.SetPhase(CalendarOperationPhase.Reconcile);
-        if (dispatch.Code is not (CalendarResourceCreateCode.Dispatched or CalendarResourceCreateCode.PossiblyDispatched))
-            return FromCreateFailure(dispatch.Code);
-        var observed = await ObserveAsync(dispatch.ResourceHref);
-        if (observed is null)
-            return MissingObservation(dispatch.Code);
-        return ClassifyCreateObservation(request, calendarHref, identity, dispatch.Code, observed);
-    }
-
     private async Task<CalendarResourceRead?> ObserveAsync(string href)
     {
         using var verification = new CancellationTokenSource(ReconciliationTimeout, timeProvider);
@@ -917,63 +752,10 @@ internal sealed class CalendarExactResourceEngine(
         }
     }
 
-    private static CalendarExactResourceResult ClassifyCreateObservation(
-        CalendarExactCreateRequest request,
-        string calendarHref,
-        CalendarExactResourceIdentity identity,
-        CalendarResourceCreateCode dispatchCode,
-        CalendarResourceRead observed)
-    {
-        if (observed.Code == CalendarResourceReadCode.ConcurrencyUnavailable)
-        {
-            return ClassifyWeakObservation(
-                CalendarEntityCreateFidelity.IsExactEquivalent(
-                    request.AuthoritativeUtf8.Span,
-                    observed.AuthoritativeUtf8.Span),
-                dispatchCode == CalendarResourceCreateCode.PossiblyDispatched);
-        }
-        if (observed.Code != CalendarResourceReadCode.Success)
-        {
-            return dispatchCode == CalendarResourceCreateCode.PossiblyDispatched
-                ? Unknown()
-                : PostWrite(CalendarExactResourceCode.CommittedButUnverified);
-        }
-
-        var snapshot = CalendarResourceProjector.AttachSnapshot(calendarHref, observed).Snapshot!;
-        var sameIdentity = CalendarExactResourceValidator.TryValidate(snapshot.AuthoritativeUtf8.Span, out var observedIdentity)
-            && observedIdentity == identity;
-        if (sameIdentity
-            && CalendarEntityCreateFidelity.IsExactEquivalent(
-                request.AuthoritativeUtf8.Span,
-                snapshot.AuthoritativeUtf8.Span))
-        {
-            return CalendarExactResourceResult.Success(snapshot);
-        }
-        return dispatchCode == CalendarResourceCreateCode.PossiblyDispatched
-            ? Unknown(snapshot)
-            : PostWrite(CalendarExactResourceCode.FidelityFailure, snapshot);
-    }
-
     private static bool IsObservationFailure(Exception exception) => exception is HttpRequestException
         or IOException
         or TimeoutException
         or OperationCanceledException;
-
-    private static CalendarExactResourceResult MissingObservation(CalendarResourceCreateCode dispatchCode) =>
-        dispatchCode == CalendarResourceCreateCode.PossiblyDispatched
-            ? Unknown()
-            : PostWrite(CalendarExactResourceCode.CommittedButUnverified);
-
-    private CalendarExactResourceResult? ValidateCreateShape(CalendarExactCreateRequest request)
-    {
-        if (request.AuthoritativeUtf8.IsEmpty)
-            return Failure(CalendarExactResourceCode.InvalidInput, CalendarExactResourcePhase.SchemaLexicalDiscriminator);
-        if (request.AuthoritativeUtf8.Length > MaximumResourceBytes)
-            return Failure(CalendarExactResourceCode.PayloadTooLarge, CalendarExactResourcePhase.SchemaLexicalDiscriminator);
-        if (!TryValidateResourceHrefSyntax(request.DestinationHref))
-            return Failure(CalendarExactResourceCode.InvalidInput, CalendarExactResourcePhase.OriginScopeAuthorization);
-        return ValidateOriginAndScope(request.DestinationHref);
-    }
 
     private static bool TryValidateResourceHrefSyntax(string href) =>
         Uri.TryCreate(href, UriKind.Absolute, out var resource) && HasSafeShape(resource, href);
@@ -1062,19 +844,6 @@ internal sealed class CalendarExactResourceEngine(
         },
         phase);
 
-    private static CalendarExactResourceResult FromCreateFailure(CalendarResourceCreateCode code) => code switch
-    {
-        CalendarResourceCreateCode.Conflict => Rejected(CalendarExactResourceCode.DestinationConflict),
-        CalendarResourceCreateCode.UnsupportedCapability => Rejected(CalendarExactResourceCode.UnsupportedCapability),
-        CalendarResourceCreateCode.PayloadTooLarge => Rejected(CalendarExactResourceCode.PayloadTooLarge),
-        CalendarResourceCreateCode.NotFound => Rejected(CalendarExactResourceCode.NotFound),
-        CalendarResourceCreateCode.UpstreamUnauthorized => Rejected(CalendarExactResourceCode.UpstreamUnauthorized),
-        CalendarResourceCreateCode.UpstreamForbidden => Rejected(CalendarExactResourceCode.UpstreamForbidden),
-        CalendarResourceCreateCode.UpstreamRateLimited => Rejected(CalendarExactResourceCode.UpstreamRateLimited, retryable: true),
-        CalendarResourceCreateCode.UpstreamUnavailable => Rejected(CalendarExactResourceCode.UpstreamUnavailable),
-        _ => Rejected(CalendarExactResourceCode.UpstreamProtocolError)
-    };
-
     private static CalendarExactResourceResult FromHttpFailure(
         System.Net.HttpStatusCode? statusCode,
         CalendarExactResourcePhase phase = CalendarExactResourcePhase.Execution) => Failure(
@@ -1140,7 +909,13 @@ internal sealed class CalendarExactResourceEngine(
     private static CalendarExactResourceResult Failure(
         CalendarExactResourceCode code,
         CalendarExactResourcePhase phase = CalendarExactResourcePhase.Execution,
-        bool retryable = false) => new(code, CalendarMutationState.NotAttempted, Retryable: retryable, Phase: phase);
+        bool retryable = false,
+        CalendarEntityCreateExecutionLimits? limits = null) => new(
+            code,
+            CalendarMutationState.NotAttempted,
+            Retryable: retryable,
+            Phase: phase,
+            Limits: limits);
 
     private static CalendarExactResourceResult Rejected(
         CalendarExactResourceCode code,
@@ -1195,11 +970,6 @@ internal sealed class CalendarExactResourceEngine(
     private sealed record ScopedSnapshot(
         string? CalendarHref,
         CalendarResourceSnapshot? Snapshot,
-        CalendarExactResourceResult? Failure);
-
-    private sealed record PreparedCreate(
-        CalendarDescriptor? Calendar,
-        CalendarExactResourceIdentity? Identity,
         CalendarExactResourceResult? Failure);
 
     private sealed record PreparedMoveDestination(

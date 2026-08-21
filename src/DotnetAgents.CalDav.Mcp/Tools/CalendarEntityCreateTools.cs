@@ -249,6 +249,8 @@ public sealed class CalendarEntityCreateTools
             ("opaque_resource", "capabilityAndProjection", "An existing Calendar resource cannot be projected safely.", "targetRevision"),
         CalendarEntityCreateCode.ConcurrencyUnavailable =>
             ("concurrency_unavailable", "state", "An existing Calendar revision has no strong Entity Tag.", "targetRevision"),
+        CalendarEntityCreateCode.DestinationConflict =>
+            ("destination_conflict", "state", "The destination Calendar resource already exists.", "execution"),
         CalendarEntityCreateCode.Conflict =>
             ("conflict", "state", "The requested Calendar Entity identity already exists.", "execution"),
         CalendarEntityCreateCode.LimitExhausted =>
@@ -380,5 +382,16 @@ public sealed record CalendarEntityCreateLimits(
         string? Dimension = null)
 {
     internal static CalendarEntityCreateLimits FromLimits(CalendarEntityCreateExecutionLimits limits) =>
-        new(limits.ResourcesInspected, limits.CalendarCount, limits.ByteCount);
+        new(
+            limits.ResourcesInspected,
+            limits.CalendarCount,
+            limits.ByteCount,
+            limits.Dimension switch
+            {
+                CalendarEntityCreateLimitDimension.ElapsedTime => "elapsed_time",
+                CalendarEntityCreateLimitDimension.ResourcesInspected => "resources_inspected",
+                CalendarEntityCreateLimitDimension.CalendarCount => "calendar_count",
+                CalendarEntityCreateLimitDimension.ByteCount => "byte_count",
+                _ => null
+            });
 }

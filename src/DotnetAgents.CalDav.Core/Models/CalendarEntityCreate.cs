@@ -286,6 +286,7 @@ public enum CalendarEntityCreateCode
     RecurrenceUnevaluable,
     OpaqueResource,
     ConcurrencyUnavailable,
+    DestinationConflict,
     Conflict,
     LimitExhausted,
     PayloadTooLarge,
@@ -316,7 +317,17 @@ public sealed record CalendarEntityCreateResult(
 public sealed record CalendarEntityCreateExecutionLimits(
     int? ResourcesInspected = null,
     int? CalendarCount = null,
-    int? ByteCount = null);
+    int? ByteCount = null,
+    CalendarEntityCreateLimitDimension? Dimension = null);
+
+/// <summary>The bounded-work dimension that stopped semantic or exact creation.</summary>
+public enum CalendarEntityCreateLimitDimension
+{
+    ElapsedTime,
+    ResourcesInspected,
+    CalendarCount,
+    ByteCount
+}
 
 /// <summary>One complete conditional-create request at the CalDAV transport boundary.</summary>
 public sealed record CalendarResourceCreateRequest(
@@ -328,6 +339,8 @@ public sealed record CalendarResourceCreateRequest(
 public enum CalendarResourceCreateCode
 {
     Dispatched,
+    DestinationConflict,
+    UidConflict,
     Conflict,
     PossiblyDispatched,
     InvalidInput,

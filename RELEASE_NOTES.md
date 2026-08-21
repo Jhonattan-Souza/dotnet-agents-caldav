@@ -1,5 +1,19 @@
 # Release Notes
 
+## Unreleased — contract 0.2.2
+
+Event, To-do, and opt-in Exact Create now delegate collision authority to the
+CalDAV server's conditional PUT. Creation no longer enumerates existing
+Calendar Object Resources. Destination href collisions return
+`destination_conflict`; UID collisions return `conflict`; rejected writes are
+`not_committed`. Generated UIDs retry at most three definite conflicts, while
+caller-supplied UIDs and exact destination hrefs remain fixed.
+
+Exact Create confirmation uses a dedicated reviewed binding and a fresh review
+before dispatch. Elapsed Create deadlines expose
+`limits.dimension: elapsed_time`. See
+[the 0.2.1 to 0.2.2 migration guide](docs/migrating-0.2.1-to-0.2.2.md).
+
 ## 0.2.1 — 2026-08-19
 
 Additive compact semantic To-do reads are available through `todos.query`.

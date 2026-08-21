@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Reflection;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Core.Models;
@@ -23,16 +24,20 @@ public sealed class ExactCalendarResourceTests
             "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Tests//EN\r\n"
             + "BEGIN:VEVENT\r\nUID:exact-create-1\r\nDTSTAMP:20260817T120000Z\r\n"
             + "DTSTART:20260818T120000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n");
-        var bindingRevision = new CalendarResourceRevisionReference(
+        var binding = new CalendarExactCreateReviewBinding(
             destinationHref,
             "exact-create-1",
             CalendarEntityKind.Event,
-            "*");
+            new byte[32],
+            "1");
         var service = Substitute.For<ICalendarService>();
         service.ReviewExactCreateResourceAsync(
                 Arg.Any<CalendarExactCreateRequest>(),
                 Arg.Any<CancellationToken>())
-            .Returns(new CalendarExactResourceReviewResult(null, bindingRevision, new byte[32]));
+            .Returns(new CalendarExactCreateReviewResult(
+                null,
+                binding,
+                CreateReviewedExactCreate(binding, utf8)));
         var timeProvider = new FixedTimeProvider(new DateTimeOffset(2026, 8, 17, 12, 0, 0, TimeSpan.Zero));
         var protector = new CalendarMutationRequestStateProtector(
             timeProvider,
@@ -67,7 +72,7 @@ public sealed class ExactCalendarResourceTests
                 && request.AuthoritativeUtf8.ToArray().SequenceEqual(utf8)),
             Arg.Any<CancellationToken>());
         await service.DidNotReceive().ExactCreateResourceAsync(
-            Arg.Any<CalendarExactCreateRequest>(),
+            Arg.Any<CalendarReviewedExactCreate>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -76,14 +81,15 @@ public sealed class ExactCalendarResourceTests
     {
         const string destinationHref = "https://cal.example/events/exact.ics";
         var utf8 = ExactEvent("exact-create-2");
-        var revision = new CalendarResourceRevisionReference(
-            destinationHref, "exact-create-2", CalendarEntityKind.Event, "*");
+        var binding = new CalendarExactCreateReviewBinding(
+            destinationHref, "exact-create-2", CalendarEntityKind.Event, new byte[32], "1");
+        var reviewed = CreateReviewedExactCreate(binding, utf8);
         var service = Substitute.For<ICalendarService>();
         service.ReviewExactCreateResourceAsync(
                 Arg.Any<CalendarExactCreateRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CalendarExactResourceReviewResult(null, revision, new byte[32]));
+            .Returns(new CalendarExactCreateReviewResult(null, binding, reviewed));
         service.ExactCreateResourceAsync(
-                Arg.Any<CalendarExactCreateRequest>(), Arg.Any<CancellationToken>())
+                Arg.Any<CalendarReviewedExactCreate>(), Arg.Any<CancellationToken>())
             .Returns(CalendarExactResourceResult.Success(CreateSnapshot("\"r1\"")));
         var sut = CreateWriteTools(service);
         var arguments = CreateArguments(destinationHref, utf8);
@@ -101,7 +107,8 @@ public sealed class ExactCalendarResourceTests
         await service.Received(2).ReviewExactCreateResourceAsync(
             Arg.Any<CalendarExactCreateRequest>(), Arg.Any<CancellationToken>());
         await service.Received(1).ExactCreateResourceAsync(
-            Arg.Any<CalendarExactCreateRequest>(), Arg.Any<CancellationToken>());
+            Arg.Is<CalendarReviewedExactCreate>(value => ReferenceEquals(value, reviewed)),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -117,6 +124,140 @@ public sealed class ExactCalendarResourceTests
         await Should.ThrowAsync<InputRequiredException>(() => sut.ReplaceRawAsync(
             ReplaceArguments(revision, ExactEvent(revision.EntityUid)), null, null, true, CancellationToken.None));
 
+        await service.Received(1).ReviewExactReplaceResourceAsync(
+            Arg.Any<CalendarExactReplaceRequest>(), Arg.Any<CancellationToken>());
+        await service.DidNotReceive().ExactReplaceResourceAsync(
+            Arg.Any<CalendarExactReplaceRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ExactReplaceRawAsync_AcceptedBoundContinuationExecutesOnce()
+    {
+        var revision = ExactRevision();
+        var review = new CalendarExactResourceReviewResult(null, revision, new byte[32]);
+        var service = Substitute.For<ICalendarService>();
+        service.ReviewExactReplaceResourceAsync(
+                Arg.Any<CalendarExactReplaceRequest>(), Arg.Any<CancellationToken>())
+            .Returns(review);
+        service.ExactReplaceResourceAsync(
+                Arg.Any<CalendarExactReplaceRequest>(), Arg.Any<CancellationToken>())
+            .Returns(CalendarExactResourceResult.Success(CreateSnapshot("\"r2\"")));
+        var sut = CreateWriteTools(service);
+        var arguments = ReplaceArguments(revision, ExactEvent(revision.EntityUid));
+        var first = await Should.ThrowAsync<InputRequiredException>(() => sut.ReplaceRawAsync(
+            arguments, null, null, true, CancellationToken.None));
+
+        var result = await sut.ReplaceRawAsync(
+            arguments,
+            first.Result.RequestState,
+            AcceptedConfirmation(),
+            true,
+            CancellationToken.None);
+
+        result.IsError.ShouldBe(false);
+        await service.Received(2).ReviewExactReplaceResourceAsync(
+            Arg.Any<CalendarExactReplaceRequest>(), Arg.Any<CancellationToken>());
+        await service.Received(1).ExactReplaceResourceAsync(
+            Arg.Any<CalendarExactReplaceRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ExactReplaceRawAsync_ContinuationTerminalOutcomeSkipsExecution()
+    {
+        var revision = ExactRevision();
+        var initialReview = new CalendarExactResourceReviewResult(null, revision, new byte[32]);
+        var terminalReview = new CalendarExactResourceReviewResult(
+            new CalendarExactResourceResult(
+                CalendarExactResourceCode.Conflict,
+                CalendarMutationState.NotCommitted),
+            null,
+            default);
+        var service = Substitute.For<ICalendarService>();
+        service.ReviewExactReplaceResourceAsync(
+                Arg.Any<CalendarExactReplaceRequest>(), Arg.Any<CancellationToken>())
+            .Returns(initialReview, terminalReview);
+        var sut = CreateWriteTools(service);
+        var arguments = ReplaceArguments(revision, ExactEvent(revision.EntityUid));
+        var first = await Should.ThrowAsync<InputRequiredException>(() => sut.ReplaceRawAsync(
+            arguments, null, null, true, CancellationToken.None));
+
+        var result = await sut.ReplaceRawAsync(
+            arguments,
+            first.Result.RequestState,
+            AcceptedConfirmation(),
+            true,
+            CancellationToken.None);
+
+        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("conflict");
+        await service.DidNotReceive().ExactReplaceResourceAsync(
+            Arg.Any<CalendarExactReplaceRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("decline", "confirmation_declined")]
+    [InlineData("missing-response", "confirmation_mismatch")]
+    [InlineData("malformed", "confirmation_mismatch")]
+    [InlineData("no-mrtr", "unsupported_capability")]
+    public async Task ExactReplaceRawAsync_NonExecutableContinuationsRemainReadOnly(
+        string scenario,
+        string expectedCode)
+    {
+        var revision = ExactRevision();
+        var service = Substitute.For<ICalendarService>();
+        service.ReviewExactReplaceResourceAsync(
+                Arg.Any<CalendarExactReplaceRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CalendarExactResourceReviewResult(null, revision, new byte[32]));
+        var sut = CreateWriteTools(service);
+        var arguments = ReplaceArguments(revision, ExactEvent(revision.EntityUid));
+        var first = await Should.ThrowAsync<InputRequiredException>(() => sut.ReplaceRawAsync(
+            arguments, null, null, true, CancellationToken.None));
+        var responses = scenario switch
+        {
+            "decline" => Confirmation("decline", null),
+            "missing-response" => null,
+            "malformed" => Confirmation("accept", null),
+            _ => AcceptedConfirmation()
+        };
+
+        var result = await sut.ReplaceRawAsync(
+            arguments,
+            first.Result.RequestState,
+            responses,
+            scenario != "no-mrtr",
+            CancellationToken.None);
+
+        var structured = result.StructuredContent!.Value;
+        (expectedCode == "confirmation_declined"
+                ? structured.GetProperty("outcome")
+                : structured.GetProperty("code"))
+            .GetString().ShouldBe(expectedCode);
+        await service.DidNotReceive().ExactReplaceResourceAsync(
+            Arg.Any<CalendarExactReplaceRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ExactReplaceRawAsync_ExpiredProtectedStateNeverRevalidatesOrWrites()
+    {
+        var revision = ExactRevision();
+        var time = new MutableTimeProvider(DateTimeOffset.Parse("2026-08-17T12:00:00Z"));
+        var service = Substitute.For<ICalendarService>();
+        service.ReviewExactReplaceResourceAsync(
+                Arg.Any<CalendarExactReplaceRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CalendarExactResourceReviewResult(null, revision, new byte[32]));
+        var sut = CreateWriteTools(service, time);
+        var arguments = ReplaceArguments(revision, ExactEvent(revision.EntityUid));
+        var first = await Should.ThrowAsync<InputRequiredException>(() => sut.ReplaceRawAsync(
+            arguments, null, null, true, CancellationToken.None));
+        time.Advance(TimeSpan.FromMinutes(11));
+
+        var result = await sut.ReplaceRawAsync(
+            arguments,
+            first.Result.RequestState,
+            AcceptedConfirmation(),
+            true,
+            CancellationToken.None);
+
+        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("confirmation_expired");
         await service.Received(1).ReviewExactReplaceResourceAsync(
             Arg.Any<CalendarExactReplaceRequest>(), Arg.Any<CancellationToken>());
         await service.DidNotReceive().ExactReplaceResourceAsync(
@@ -214,10 +355,10 @@ public sealed class ExactCalendarResourceTests
         var service = Substitute.For<ICalendarService>();
         service.ReviewExactCreateResourceAsync(
                 Arg.Any<CalendarExactCreateRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CalendarExactResourceReviewResult(new CalendarExactResourceResult(
+            .Returns(new CalendarExactCreateReviewResult(new CalendarExactResourceResult(
                 code,
                 CalendarMutationState.NotAttempted,
-                Phase: CalendarExactResourcePhase.CompleteResourceSemantics), null, default));
+                Phase: CalendarExactResourcePhase.CompleteResourceSemantics), null, null));
 
         var result = await CreateWriteTools(service).CreateRawAsync(
             CreateArguments(destinationHref, ExactEvent("failure")),
@@ -232,6 +373,32 @@ public sealed class ExactCalendarResourceTests
     }
 
     [Fact]
+    public async Task ExactCreateRawAsync_MapsTypedElapsedTimeLimitEvidence()
+    {
+        var service = Substitute.For<ICalendarService>();
+        service.ReviewExactCreateResourceAsync(
+                Arg.Any<CalendarExactCreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CalendarExactCreateReviewResult(
+                new CalendarExactResourceResult(
+                    CalendarExactResourceCode.LimitExhausted,
+                    CalendarMutationState.NotAttempted,
+                    Limits: new CalendarEntityCreateExecutionLimits(
+                        Dimension: CalendarEntityCreateLimitDimension.ElapsedTime)),
+                null,
+                null));
+
+        var result = await CreateWriteTools(service).CreateRawAsync(
+            CreateArguments("https://cal.example/events/deadline.ics", ExactEvent("deadline")),
+            null,
+            null,
+            false,
+            CancellationToken.None);
+
+        result.StructuredContent!.Value.GetProperty("limits").GetProperty("dimension")
+            .GetString().ShouldBe("elapsed_time");
+    }
+
+    [Fact]
     public async Task ExactWriteError_RedactsAuthoritativeAndRawSnapshotContent()
     {
         const string destinationHref = "https://cal.example/events/redacted.ics";
@@ -239,14 +406,14 @@ public sealed class ExactCalendarResourceTests
         var service = Substitute.For<ICalendarService>();
         service.ReviewExactCreateResourceAsync(
                 Arg.Any<CalendarExactCreateRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CalendarExactResourceReviewResult(
+            .Returns(new CalendarExactCreateReviewResult(
                 new CalendarExactResourceResult(
                     CalendarExactResourceCode.Conflict,
                     CalendarMutationState.NotCommitted,
                     snapshot,
                     Phase: CalendarExactResourcePhase.TargetRevision),
                 null,
-                default));
+                null));
 
         var result = await CreateWriteTools(service).CreateRawAsync(
             CreateArguments(destinationHref, ExactEvent("redacted")),
@@ -280,10 +447,10 @@ public sealed class ExactCalendarResourceTests
         var service = Substitute.For<ICalendarService>();
         service.ReviewExactCreateResourceAsync(
                 Arg.Any<CalendarExactCreateRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CalendarExactResourceReviewResult(new CalendarExactResourceResult(
+            .Returns(new CalendarExactCreateReviewResult(new CalendarExactResourceResult(
                 CalendarExactResourceCode.Conflict,
                 CalendarMutationState.Unknown,
-                Phase: phase), null, default));
+                Phase: phase), null, null));
 
         var result = await CreateWriteTools(service).CreateRawAsync(
             CreateArguments(destinationHref, ExactEvent("phase")), null, null, false, CancellationToken.None);
@@ -323,12 +490,10 @@ public sealed class ExactCalendarResourceTests
         string expectedOutcome)
     {
         const string destinationHref = "https://cal.example/events/confirm.ics";
-        var revision = new CalendarResourceRevisionReference(
-            destinationHref, "confirm", CalendarEntityKind.Event, "*");
         var service = Substitute.For<ICalendarService>();
         service.ReviewExactCreateResourceAsync(
                 Arg.Any<CalendarExactCreateRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CalendarExactResourceReviewResult(null, revision, new byte[32]));
+            .Returns(SuccessfulCreateReview(destinationHref, "confirm"));
         var sut = CreateWriteTools(service);
         var arguments = CreateArguments(destinationHref, ExactEvent("confirm"));
         var first = await Should.ThrowAsync<InputRequiredException>(() => sut.CreateRawAsync(
@@ -347,7 +512,7 @@ public sealed class ExactCalendarResourceTests
         else
             structured.GetProperty("code").GetString().ShouldBe(expectedOutcome);
         await service.DidNotReceive().ExactCreateResourceAsync(
-            Arg.Any<CalendarExactCreateRequest>(), Arg.Any<CancellationToken>());
+            Arg.Any<CalendarReviewedExactCreate>(), Arg.Any<CancellationToken>());
     }
 
     [Theory]
@@ -362,12 +527,10 @@ public sealed class ExactCalendarResourceTests
     public async Task ExactCreateRawAsync_MalformedConfirmationEnvelopeNeverWrites(string scenario)
     {
         const string destinationHref = "https://cal.example/events/envelope.ics";
-        var revision = new CalendarResourceRevisionReference(
-            destinationHref, "envelope", CalendarEntityKind.Event, "*");
         var service = Substitute.For<ICalendarService>();
         service.ReviewExactCreateResourceAsync(
                 Arg.Any<CalendarExactCreateRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CalendarExactResourceReviewResult(null, revision, new byte[32]));
+            .Returns(SuccessfulCreateReview(destinationHref, "envelope"));
         var sut = CreateWriteTools(service);
         var arguments = CreateArguments(destinationHref, ExactEvent("envelope"));
         var first = await Should.ThrowAsync<InputRequiredException>(() => sut.CreateRawAsync(
@@ -383,19 +546,17 @@ public sealed class ExactCalendarResourceTests
 
         result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("confirmation_mismatch");
         await service.DidNotReceive().ExactCreateResourceAsync(
-            Arg.Any<CalendarExactCreateRequest>(), Arg.Any<CancellationToken>());
+            Arg.Any<CalendarReviewedExactCreate>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task ExactCreateRawAsync_ChangedArgumentsInvalidateProtectedStateBeforeReview()
     {
         const string destinationHref = "https://cal.example/events/bound.ics";
-        var revision = new CalendarResourceRevisionReference(
-            destinationHref, "bound", CalendarEntityKind.Event, "*");
         var service = Substitute.For<ICalendarService>();
         service.ReviewExactCreateResourceAsync(
                 Arg.Any<CalendarExactCreateRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CalendarExactResourceReviewResult(null, revision, new byte[32]));
+            .Returns(SuccessfulCreateReview(destinationHref, "bound"));
         var sut = CreateWriteTools(service);
         var arguments = CreateArguments(destinationHref, ExactEvent("bound"));
         var first = await Should.ThrowAsync<InputRequiredException>(() => sut.CreateRawAsync(
@@ -415,14 +576,12 @@ public sealed class ExactCalendarResourceTests
     public async Task ExactCreateRawAsync_ChangedReviewIntentInvalidatesConfirmation()
     {
         const string destinationHref = "https://cal.example/events/intent.ics";
-        var revision = new CalendarResourceRevisionReference(
-            destinationHref, "intent", CalendarEntityKind.Event, "*");
         var service = Substitute.For<ICalendarService>();
         service.ReviewExactCreateResourceAsync(
                 Arg.Any<CalendarExactCreateRequest>(), Arg.Any<CancellationToken>())
             .Returns(
-                new CalendarExactResourceReviewResult(null, revision, new byte[32]),
-                new CalendarExactResourceReviewResult(null, revision, Enumerable.Repeat((byte)1, 32).ToArray()));
+                SuccessfulCreateReview(destinationHref, "intent"),
+                SuccessfulCreateReview(destinationHref, "intent", Enumerable.Repeat((byte)1, 32).ToArray()));
         var sut = CreateWriteTools(service);
         var arguments = CreateArguments(destinationHref, ExactEvent("intent"));
         var first = await Should.ThrowAsync<InputRequiredException>(() => sut.CreateRawAsync(
@@ -433,7 +592,74 @@ public sealed class ExactCalendarResourceTests
 
         result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("confirmation_mismatch");
         await service.DidNotReceive().ExactCreateResourceAsync(
+            Arg.Any<CalendarReviewedExactCreate>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ExactCreateRawAsync_CredentialChangeInvalidatesProtectedStateBeforeFreshReview()
+    {
+        const string destinationHref = "https://cal.example/events/credential-bound.ics";
+        var service = Substitute.For<ICalendarService>();
+        service.ReviewExactCreateResourceAsync(
+                Arg.Any<CalendarExactCreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(SuccessfulCreateReview(destinationHref, "credential-bound"));
+        var time = new FixedTimeProvider(new DateTimeOffset(2026, 8, 17, 12, 0, 0, TimeSpan.Zero));
+        var keyMaterial = Enumerable.Range(0, 64).Select(value => (byte)value).ToArray();
+        var original = CreateWriteTools(service, time, keyMaterial, "secret");
+        var changedCredentials = CreateWriteTools(service, time, keyMaterial, "different-secret");
+        var arguments = CreateArguments(destinationHref, ExactEvent("credential-bound"));
+        var first = await Should.ThrowAsync<InputRequiredException>(() => original.CreateRawAsync(
+            arguments, null, null, true, CancellationToken.None));
+
+        var result = await changedCredentials.CreateRawAsync(
+            arguments,
+            first.Result.RequestState,
+            AcceptedConfirmation(),
+            true,
+            CancellationToken.None);
+
+        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("confirmation_mismatch");
+        await service.Received(1).ReviewExactCreateResourceAsync(
             Arg.Any<CalendarExactCreateRequest>(), Arg.Any<CancellationToken>());
+        await service.DidNotReceive().ExactCreateResourceAsync(
+            Arg.Any<CalendarReviewedExactCreate>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ExactCreateRawAsync_FreshReviewFindsOccupiedDestinationWithoutPut()
+    {
+        const string destinationHref = "https://cal.example/events/fresh-conflict.ics";
+        var service = Substitute.For<ICalendarService>();
+        service.ReviewExactCreateResourceAsync(
+                Arg.Any<CalendarExactCreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(
+                SuccessfulCreateReview(destinationHref, "fresh-conflict"),
+                new CalendarExactCreateReviewResult(
+                    new CalendarExactResourceResult(
+                        CalendarExactResourceCode.DestinationConflict,
+                        CalendarMutationState.NotAttempted,
+                        Phase: CalendarExactResourcePhase.TargetRevision),
+                    null,
+                    null));
+        var sut = CreateWriteTools(service);
+        var arguments = CreateArguments(destinationHref, ExactEvent("fresh-conflict"));
+        var first = await Should.ThrowAsync<InputRequiredException>(() => sut.CreateRawAsync(
+            arguments, null, null, true, CancellationToken.None));
+
+        var result = await sut.CreateRawAsync(
+            arguments,
+            first.Result.RequestState,
+            AcceptedConfirmation(),
+            true,
+            CancellationToken.None);
+
+        var structured = result.StructuredContent!.Value;
+        structured.GetProperty("code").GetString().ShouldBe("destination_conflict");
+        structured.GetProperty("mutationState").GetString().ShouldBe("not_attempted");
+        await service.Received(2).ReviewExactCreateResourceAsync(
+            Arg.Any<CalendarExactCreateRequest>(), Arg.Any<CancellationToken>());
+        await service.DidNotReceive().ExactCreateResourceAsync(
+            Arg.Any<CalendarReviewedExactCreate>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -443,15 +669,14 @@ public sealed class ExactCalendarResourceTests
         var service = Substitute.For<ICalendarService>();
         service.ReviewExactCreateResourceAsync(
                 Arg.Any<CalendarExactCreateRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CalendarExactResourceReviewResult(null, new CalendarResourceRevisionReference(
-                destinationHref, "no-mrtr", CalendarEntityKind.Event, "*"), new byte[32]));
+            .Returns(SuccessfulCreateReview(destinationHref, "no-mrtr"));
 
         var result = await CreateWriteTools(service).CreateRawAsync(
             CreateArguments(destinationHref, ExactEvent("no-mrtr")), null, null, false, CancellationToken.None);
 
         result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("unsupported_capability");
         await service.DidNotReceive().ExactCreateResourceAsync(
-            Arg.Any<CalendarExactCreateRequest>(), Arg.Any<CancellationToken>());
+            Arg.Any<CalendarReviewedExactCreate>(), Arg.Any<CancellationToken>());
     }
 
     [Theory]
@@ -482,15 +707,10 @@ public sealed class ExactCalendarResourceTests
     {
         const string destinationHref = "https://cal.example/events/escaped.ics";
         var resource = EscapeExpandedExactEvent(4 * 1024 * 1024);
-        var bindingRevision = new CalendarResourceRevisionReference(
-            destinationHref,
-            "escaped",
-            CalendarEntityKind.Event,
-            "*");
         var service = Substitute.For<ICalendarService>();
         service.ReviewExactCreateResourceAsync(
                 Arg.Any<CalendarExactCreateRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CalendarExactResourceReviewResult(null, bindingRevision, new byte[32]));
+            .Returns(SuccessfulCreateReview(destinationHref, "escaped"));
 
         await Should.ThrowAsync<InputRequiredException>(() => CreateWriteTools(service).CreateRawAsync(
             CreateArguments(destinationHref, resource),
@@ -512,13 +732,13 @@ public sealed class ExactCalendarResourceTests
         var service = Substitute.For<ICalendarService>();
         service.ReviewExactCreateResourceAsync(
                 Arg.Any<CalendarExactCreateRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CalendarExactResourceReviewResult(
+            .Returns(new CalendarExactCreateReviewResult(
                 new CalendarExactResourceResult(
                     CalendarExactResourceCode.PayloadTooLarge,
                     CalendarMutationState.NotAttempted,
                     Phase: CalendarExactResourcePhase.SchemaLexicalDiscriminator),
                 null,
-                default));
+                null));
 
         var result = await CreateWriteTools(service).CreateRawAsync(
             CreateArguments(destinationHref, resource),
@@ -713,7 +933,7 @@ public sealed class ExactCalendarResourceTests
         var service = Substitute.For<ICalendarService>();
         service.ReviewExactCreateResourceAsync(
                 Arg.Any<CalendarExactCreateRequest>(), Arg.Any<CancellationToken>())
-            .Returns(failure);
+            .Returns(new CalendarExactCreateReviewResult(failure.Outcome, null, null));
         service.ReviewExactReplaceResourceAsync(
                 Arg.Any<CalendarExactReplaceRequest>(), Arg.Any<CancellationToken>())
             .Returns(failure);
@@ -759,7 +979,9 @@ public sealed class ExactCalendarResourceTests
         var service = Substitute.For<ICalendarService>();
         service.ReviewExactCreateResourceAsync(
                 Arg.Any<CalendarExactCreateRequest>(), Arg.Any<CancellationToken>())
-            .Returns(review);
+            .Returns(SuccessfulCreateReview(
+                destinationHref,
+                reviewedRevision.EntityUid));
         service.ReviewExactReplaceResourceAsync(
                 Arg.Any<CalendarExactReplaceRequest>(), Arg.Any<CancellationToken>())
             .Returns(review);
@@ -831,11 +1053,9 @@ public sealed class ExactCalendarResourceTests
         var service = Substitute.For<ICalendarService>();
         service.ReviewExactCreateResourceAsync(
                 Arg.Any<CalendarExactCreateRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CalendarExactResourceReviewResult(
-                null,
-                scenario == "missing-revision" ? null : new CalendarResourceRevisionReference(
-                    destinationHref, "evidence", CalendarEntityKind.Event, "*"),
-                scenario == "short-digest" ? new byte[31] : new byte[32]));
+            .Returns(scenario == "missing-revision"
+                ? new CalendarExactCreateReviewResult(null, null, null)
+                : MalformedCreateReview(destinationHref, "evidence", new byte[31]));
 
         var result = await CreateWriteTools(service).CreateRawAsync(
             CreateArguments(destinationHref, ExactEvent("evidence")), null, null, true, CancellationToken.None);
@@ -851,8 +1071,7 @@ public sealed class ExactCalendarResourceTests
         var service = Substitute.For<ICalendarService>();
         service.ReviewExactCreateResourceAsync(
                 Arg.Any<CalendarExactCreateRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CalendarExactResourceReviewResult(null, new CalendarResourceRevisionReference(
-                destinationHref, "expired", CalendarEntityKind.Event, "*"), new byte[32]));
+            .Returns(SuccessfulCreateReview(destinationHref, "expired"));
         var sut = CreateWriteTools(service, time);
         var arguments = CreateArguments(destinationHref, ExactEvent("expired"));
         var first = await Should.ThrowAsync<InputRequiredException>(() => sut.CreateRawAsync(
@@ -873,7 +1092,7 @@ public sealed class ExactCalendarResourceTests
         var service = Substitute.For<ICalendarService>();
         service.ReviewExactCreateResourceAsync(
                 Arg.Any<CalendarExactCreateRequest>(), Arg.Any<CancellationToken>())
-            .Returns<Task<CalendarExactResourceReviewResult>>(_ => throw new InvalidOperationException("secret"));
+            .Returns<Task<CalendarExactCreateReviewResult>>(_ => throw new InvalidOperationException("secret"));
 
         var result = await CreateWriteTools(service).CreateRawAsync(
             CreateArguments("https://cal.example/events/failure.ics", ExactEvent("failure")),
@@ -900,14 +1119,14 @@ public sealed class ExactCalendarResourceTests
         var service = Substitute.For<ICalendarService>();
         service.ReviewExactCreateResourceAsync(
                 Arg.Any<CalendarExactCreateRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CalendarExactResourceReviewResult(new CalendarExactResourceResult(
+            .Returns(new CalendarExactCreateReviewResult(new CalendarExactResourceResult(
                 code,
                 code == CalendarExactResourceCode.Conflict
                     ? CalendarMutationState.NotCommitted
                     : code == CalendarExactResourceCode.Success
                         ? CalendarMutationState.Committed
                         : CalendarMutationState.NotAttempted,
-                code == CalendarExactResourceCode.NoChange ? null : snapshot), null, default));
+                code == CalendarExactResourceCode.NoChange ? null : snapshot), null, null));
 
         var result = await CreateWriteTools(service).CreateRawAsync(
             CreateArguments(destinationHref, ExactEvent("outcome")), null, null, true, CancellationToken.None);
@@ -992,8 +1211,7 @@ public sealed class ExactCalendarResourceTests
         var service = Substitute.For<ICalendarService>();
         service.ReviewExactCreateResourceAsync(
                 Arg.Any<CalendarExactCreateRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CalendarExactResourceReviewResult(null, new CalendarResourceRevisionReference(
-                destinationHref, "continuation", CalendarEntityKind.Event, "*"), new byte[32]));
+            .Returns(SuccessfulCreateReview(destinationHref, "continuation"));
         var sut = CreateWriteTools(service);
         var arguments = CreateArguments(destinationHref, ExactEvent("continuation"));
         var first = await Should.ThrowAsync<InputRequiredException>(() => sut.CreateRawAsync(
@@ -1014,10 +1232,9 @@ public sealed class ExactCalendarResourceTests
         var service = Substitute.For<ICalendarService>();
         service.ReviewExactCreateResourceAsync(
                 Arg.Any<CalendarExactCreateRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CalendarExactResourceReviewResult(null, new CalendarResourceRevisionReference(
-                destinationHref, "indeterminate", CalendarEntityKind.Event, "*"), new byte[32]));
+            .Returns(SuccessfulCreateReview(destinationHref, "indeterminate"));
         service.ExactCreateResourceAsync(
-                Arg.Any<CalendarExactCreateRequest>(), Arg.Any<CancellationToken>())
+                Arg.Any<CalendarReviewedExactCreate>(), Arg.Any<CancellationToken>())
             .Returns<Task<CalendarExactResourceResult>>(_ => throw new InvalidOperationException("after dispatch"));
         var sut = CreateWriteTools(service);
         var arguments = CreateArguments(destinationHref, ExactEvent("indeterminate"));
@@ -1213,6 +1430,49 @@ public sealed class ExactCalendarResourceTests
             []);
     }
 
+    private static CalendarExactCreateReviewResult SuccessfulCreateReview(
+        string destinationHref,
+        string uid,
+        byte[]? intentDigest = null) => CreateReview(
+            destinationHref,
+            uid,
+            intentDigest ?? new byte[32]);
+
+    private static CalendarExactCreateReviewResult MalformedCreateReview(
+        string destinationHref,
+        string uid,
+        byte[] intentDigest) => CreateReview(destinationHref, uid, intentDigest);
+
+    private static CalendarExactCreateReviewResult CreateReview(
+        string destinationHref,
+        string uid,
+        byte[] intentDigest)
+    {
+        var binding = new CalendarExactCreateReviewBinding(
+            destinationHref,
+            uid,
+            CalendarEntityKind.Event,
+            intentDigest,
+            "1");
+        return new CalendarExactCreateReviewResult(
+            null,
+            binding,
+            CreateReviewedExactCreate(binding, ReadOnlyMemory<byte>.Empty));
+    }
+
+    private static CalendarReviewedExactCreate CreateReviewedExactCreate(
+        CalendarExactCreateReviewBinding binding,
+        ReadOnlyMemory<byte> authoritativeUtf8)
+    {
+        var separator = binding.DestinationHref.LastIndexOf('/');
+        return (CalendarReviewedExactCreate)Activator.CreateInstance(
+            typeof(CalendarReviewedExactCreate),
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            binder: null,
+            args: [binding.DestinationHref[..(separator + 1)], binding, authoritativeUtf8],
+            culture: null)!;
+    }
+
     private static ExactCalendarResourceWriteTools CreateWriteTools(
         ICalendarService service,
         TimeProvider? suppliedTime = null,
@@ -1234,6 +1494,28 @@ public sealed class ExactCalendarResourceTests
             protector,
             timeProvider,
             suppliedAdmission ?? new CalendarMutationAdmission(timeProvider));
+    }
+
+    private static ExactCalendarResourceWriteTools CreateWriteTools(
+        ICalendarService service,
+        TimeProvider timeProvider,
+        byte[] keyMaterial,
+        string password)
+    {
+        var protector = new CalendarMutationRequestStateProtector(
+            timeProvider,
+            Options.Create(new CalDavOptions
+            {
+                BaseUrl = "https://cal.example",
+                Username = "user",
+                Password = password
+            }),
+            keyMaterial);
+        return new ExactCalendarResourceWriteTools(
+            service,
+            protector,
+            timeProvider,
+            new CalendarMutationAdmission(timeProvider));
     }
 
     private static CalendarResourceRevisionReference ExactRevision() => new(
@@ -1385,10 +1667,12 @@ public sealed class ExactCalendarResourceTests
         CalendarResourceRevisionReference revision,
         string? destinationHref)
     {
-        var destination = destinationHref is null ? string.Empty : $", destination {destinationHref}";
         var kind = revision.EntityKind == CalendarEntityKind.Event ? "event" : "todo";
-        var message = $"Confirm calendar_resources.exact_{operation} for href {revision.Href}{destination}, "
-            + $"UID {revision.EntityUid}, kind {kind}, and expected ETag {revision.EntityTag}.";
+        var message = operation == "create"
+            ? $"Confirm calendar_resources.exact_create for destination {destinationHref}, UID {revision.EntityUid}, and kind {kind}."
+            : $"Confirm calendar_resources.exact_{operation} for href {revision.Href}"
+                + (destinationHref is null ? string.Empty : $", destination {destinationHref}")
+                + $", UID {revision.EntityUid}, kind {kind}, and expected ETag {revision.EntityTag}.";
         return JsonSerializer.SerializeToUtf8Bytes(new
         {
             Message = message,

@@ -133,15 +133,17 @@ internal sealed class CalendarResourceCreateProtocol(HttpClient httpClient, Uri 
         var davError = response.StatusCode >= HttpStatusCode.BadRequest
             ? await DavMutationErrorReader.ReadAsync(response.Content, cancellationToken)
             : DavMutationErrorKind.None;
-        if (response.StatusCode == HttpStatusCode.Forbidden
+        if (response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Conflict
             && davError.HasFlag(DavMutationErrorKind.NoUidConflict))
         {
-            return new CalendarResourceCreateResult(CalendarResourceCreateCode.Conflict, resourceHref);
+            return new CalendarResourceCreateResult(CalendarResourceCreateCode.UidConflict, resourceHref);
         }
         if (davError.HasFlag(DavMutationErrorKind.UnsupportedCapability))
             return new CalendarResourceCreateResult(CalendarResourceCreateCode.UnsupportedCapability, resourceHref);
 
-        return MapResponse(response.StatusCode, resourceHref);
+        return response.StatusCode == HttpStatusCode.PreconditionFailed
+            ? new CalendarResourceCreateResult(CalendarResourceCreateCode.DestinationConflict, resourceHref)
+            : MapResponse(response.StatusCode, resourceHref);
     }
 
     private static CalendarResourceCreateResult MapResponse(HttpStatusCode statusCode, string resourceHref) =>

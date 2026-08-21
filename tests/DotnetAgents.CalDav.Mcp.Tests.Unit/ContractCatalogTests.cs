@@ -40,11 +40,22 @@ public sealed class ContractCatalogTests
     {
         var catalog = ReadJson("mcp-tool-catalog.json");
 
-        catalog["contractVersion"]!.GetValue<string>().ShouldBe("0.2.1");
+        catalog["contractVersion"]!.GetValue<string>().ShouldBe("0.2.2");
         catalog["protocolRevision"]!.GetValue<string>().ShouldBe("2026-07-28");
         catalog["discoveryOrder"]!.AsArray().Count.ShouldBe(17);
         catalog["exactTools"]!.AsArray().Count.ShouldBe(4);
         catalog["tools"]!.AsArray().Count.ShouldBe(21);
+        var createSemantics = catalog["createSemantics"]!.AsObject();
+        createSemantics["authoritativeOperation"]!.GetValue<string>().ShouldBe("conditional_put");
+        createSemantics["preflightEnumeration"]!.GetValue<bool>().ShouldBeFalse();
+        createSemantics["hrefConflictCode"]!.GetValue<string>().ShouldBe("destination_conflict");
+        createSemantics["uidConflictCode"]!.GetValue<string>().ShouldBe("conflict");
+        createSemantics["rejectedMutationState"]!.GetValue<string>().ShouldBe("not_committed");
+        createSemantics["generatedUidMaximumAttempts"]!.GetValue<int>().ShouldBe(3);
+        createSemantics["exactReviewBindingFields"]!.AsArray()
+            .Select(item => item!.GetValue<string>()).ShouldBe([
+                "destinationHref", "entityUid", "entityKind", "intentDigest", "policyVersion"
+            ]);
 
         var calendarReference = catalog["$defs"]!["calendarReference"]!.AsObject();
         var referenceBranches = calendarReference["oneOf"]!.AsArray();
@@ -470,7 +481,7 @@ public sealed class ContractCatalogTests
     {
         var instructions = File.ReadAllText(Path.Combine(RepositoryRoot(), "AGENTS.md"));
 
-        instructions.ShouldContain("default host exposes the additive 0.2.1 17-tool semantic catalog");
+        instructions.ShouldContain("default host exposes the 0.2.2 17-tool semantic catalog");
         instructions.ShouldContain("including `todos.complete`");
         instructions.ShouldContain("It contains no legacy aliases");
     }
@@ -479,7 +490,7 @@ public sealed class ContractCatalogTests
 
     private static JsonObject ReadJson(string fileName) => JsonNode.Parse(File.ReadAllText(
         fileName == "mcp-tool-catalog.json"
-            ? Path.Combine(RepositoryRoot(), "contracts", "0.2.1", fileName)
+            ? Path.Combine(RepositoryRoot(), "contracts", "0.2.2", fileName)
             : ContractPath(fileName)))!.AsObject();
 
     private static IReadOnlyList<string> FindOpenSchemaNodes(JsonNode node, string path = "$")

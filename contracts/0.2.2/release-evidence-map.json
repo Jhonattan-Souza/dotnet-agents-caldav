@@ -1,0 +1,45 @@
+{
+  "contractVersion": "0.2.2",
+  "issue": 80,
+  "requiredEvidence": [
+    "CalendarCreationModuleTests.ClosedCreateCommandsUseOnlyTheConstantWorkTransportPort",
+    "CalendarEntityCreateServiceTests.CreateEventAsync_DoesNotEnumerateFiveThousandExistingResourcesBeforeConditionalPut",
+    "CalendarExactResourceServiceTests.ExactCreateResourceAsync_DoesNotEnumerateUidCandidatesBeforeConditionalPut",
+    "CalDavClientTests.CreateCalendarResourceAsync_PreconditionFailureIsDestinationConflict",
+    "CalDavClientTests.CreateCalendarResourceAsync_NoUidConflictPreconditionIsUidConflict",
+    "CalendarEntityCreateServiceTests.CreateEventAsync_CallerUidCollisionReturnsConflictAfterExactlyOnePut",
+    "CalendarEntityCreateServiceTests.CreateTodoAsync_ThreeGeneratedUidCollisionsUseFreshIdentitiesWithoutAFourthPut",
+    "CalendarEntityCreateServiceTests.CreateEventAsync_PossiblyDispatchedThenAbsentIsIndeterminateAndNeverRetried",
+    "CalendarEntityCreateServiceTests.CreateEventAsync_CallerCancellationBeforeDispatchPropagatesWithoutWriting",
+    "CalendarEntityCreateServiceTests.CreateTodoAsync_RefetchDroppingStructuredMultiplicityReturnsCommittedFidelityFailure",
+    "CalendarExactResourceServiceTests.ExactCreateResourceAsync_ReviewedIntentOwnsImmutableAuthoritativeBytes",
+    "ExactCalendarResourceTests.ExactCreateRawAsync_ReviewsWithoutWritingThenRequiresMrtrInput",
+    "ExactCalendarResourceTests.ExactCreateRawAsync_AcceptedBoundContinuationExecutesOnce",
+    "ExactCalendarResourceTests.ExactCreateRawAsync_CredentialChangeInvalidatesProtectedStateBeforeFreshReview",
+    "ExactCalendarResourceTests.ExactCreateRawAsync_FreshReviewFindsOccupiedDestinationWithoutPut",
+    "ExactCalendarResourceTests.ExactCreateRawAsync_ExpiredProtectedStateNeverRevalidatesOrWrites",
+    "CalendarExactResourceServiceTests.ExactCreateResourceAsync_ReviewedDispatchDeadlineReportsElapsedTimeDimension",
+    "ExactCalendarResourceTests.ExactCreateRawAsync_MapsTypedElapsedTimeLimitEvidence",
+    "CalendarMcpStdioIntegrationTests.CreateTools_UseAuthoritativeConditionalPutAgainstPopulatedMixedCalendar",
+    "RadicaleConformanceHarnessTests"
+  ],
+  "requirementEvidence": [
+    { "requirement": "CREATE-AUTH-001", "evidence": "CalendarEntityCreateServiceTests.CreateEventAsync_DoesNotEnumerateFiveThousandExistingResourcesBeforeConditionalPut" },
+    { "requirement": "CREATE-CONFLICT-002", "evidence": "CalDavClientTests.CreateCalendarResourceAsync_NoUidConflictPreconditionIsUidConflict" },
+    { "requirement": "CREATE-RETRY-003", "evidence": "CalendarEntityCreateServiceTests.CreateTodoAsync_ThreeGeneratedUidCollisionsUseFreshIdentitiesWithoutAFourthPut" },
+    { "requirement": "CREATE-MRTR-004", "evidence": "ExactCalendarResourceTests.ExactCreateRawAsync_AcceptedBoundContinuationExecutesOnce" },
+    { "requirement": "CREATE-LIMIT-005", "evidence": "CalendarExactResourceServiceTests.ExactCreateResourceAsync_ReviewedDispatchDeadlineReportsElapsedTimeDimension" },
+    { "requirement": "CREATE-RADICALE-006", "evidence": "CalendarMcpStdioIntegrationTests.CreateTools_UseAuthoritativeConditionalPutAgainstPopulatedMixedCalendar" },
+    { "requirement": "CREATE-IMMUTABLE-007", "evidence": "CalendarExactResourceServiceTests.ExactCreateResourceAsync_ReviewedIntentOwnsImmutableAuthoritativeBytes" },
+    { "requirement": "CREATE-MRTR-008", "evidence": "ExactCalendarResourceTests.ExactCreateRawAsync_CredentialChangeInvalidatesProtectedStateBeforeFreshReview" },
+    { "requirement": "CREATE-TRUTH-009", "evidence": "CalendarEntityCreateServiceTests.CreateEventAsync_PossiblyDispatchedThenAbsentIsIndeterminateAndNeverRetried" },
+    { "requirement": "CREATE-MODULE-010", "evidence": "CalendarCreationModuleTests.ClosedCreateCommandsUseOnlyTheConstantWorkTransportPort" }
+  ],
+  "collisionContract": {
+    "href": "destination_conflict",
+    "uid": "conflict",
+    "rejectedMutationState": "not_committed"
+  },
+  "generatedUidMaximumAttempts": 3,
+  "createLimitDimensions": ["elapsed_time"]
+}

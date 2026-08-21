@@ -25,13 +25,15 @@ dotnet test tests/DotnetAgents.CalDav.Core.Tests.Unit/DotnetAgents.CalDav.Core.T
 dotnet build -c Release --no-restore
 dotnet test tests/DotnetAgents.CalDav.Core.Tests.Unit/DotnetAgents.CalDav.Core.Tests.Unit.csproj -c Release --no-build --settings coverage.runsettings --collect:"XPlat Code Coverage" --logger "trx;LogFilePrefix=pr-core" --results-directory TestResults
 dotnet test tests/DotnetAgents.CalDav.Mcp.Tests.Unit/DotnetAgents.CalDav.Mcp.Tests.Unit.csproj -c Release --no-build --settings coverage.runsettings --collect:"XPlat Code Coverage" --logger "trx;LogFilePrefix=pr-mcp" --results-directory TestResults
-dotnet test tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj -c Release --no-build --settings coverage.runsettings --collect:"XPlat Code Coverage" --logger "trx;LogFilePrefix=pr-integration" --results-directory TestResults
+dotnet test tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj -c Release --no-build --settings coverage.runsettings --collect:"XPlat Code Coverage" --logger "trx;LogFilePrefix=pr-integration" --results-directory TestResults -m:1 /nodeReuse:false
 dotnet reportgenerator -reports:"TestResults/**/coverage.cobertura.xml" -targetdir:"coverage-report" -reporttypes:Cobertura -assemblyfilters:"+DotnetAgents.CalDav.Core;+DotnetAgents.CalDav.Mcp;-*Tests*;-xunit*;-testhost*"
 bash scripts/verify-coverage.sh coverage-report 0.90 0.85
 RADICALE_CONFORMANCE_VARIANT=strict-preconditions dotnet test tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj -c Release --no-build --filter "FullyQualifiedName~RadicaleConformanceHarnessTests" --logger "trx;LogFilePrefix=strict-preconditions" --results-directory TestResults
 RADICALE_CONFORMANCE_VARIANT=alternate-time-zone dotnet test tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj -c Release --no-build --filter "FullyQualifiedName~RadicaleConformanceHarnessTests" --logger "trx;LogFilePrefix=alternate-time-zone" --results-directory TestResults
 bash scripts/verify-test-results.sh TestResults
 bash scripts/verify-release-evidence.sh contracts/0.2.0/requirement-evidence-catalog.md contracts/0.2.0/release-evidence-map.json TestResults
+bash scripts/verify-release-evidence.sh contracts/0.2.1/requirement-evidence-catalog.md contracts/0.2.1/release-evidence-map.json TestResults
+bash scripts/verify-release-evidence.sh contracts/0.2.2/requirement-evidence-catalog.md contracts/0.2.2/release-evidence-map.json TestResults
 dotnet tool run slopwatch analyze --config .slopwatch/slopwatch.json --fail-on warning
 ```
 
@@ -41,7 +43,7 @@ dotnet tool run slopwatch analyze --config .slopwatch/slopwatch.json --fail-on w
 
 - Runtime flow is `MCP tools -> ICalendarService -> CalendarService -> CalDavClient -> HttpClient`; `CalendarService` stays thin. WebDAV request/response logic belongs under `Core/Internal/Xml`, and iCalendar mapping belongs under `Core/Internal/Ical`.
 - `Program.cs` maps `CALDAV_*` environment variables, then delegates startup to `CalDavMcpRunner` and `CalDavHostBuilder`; keep startup testable through those types rather than adding logic to top-level statements.
-- The default host exposes the additive 0.2.1 17-tool semantic catalog, including `todos.complete` and the new `todos.query` surface. It contains no legacy aliases. `CALDAV_EXPOSE_EXACT_TOOLS=true` independently enables the four exact Calendar resource tools.
+- The default host exposes the 0.2.2 17-tool semantic catalog, including `todos.complete` and `todos.query`. It contains no legacy aliases. Create collisions are decided by conditional PUT without collection enumeration. `CALDAV_EXPOSE_EXACT_TOOLS=true` independently enables the four exact Calendar resource tools.
 - `.opencode/opencode.jsonc` launches the published NuGet tool through `dnx`; it does not run the current checkout. Do not treat that configuration as source-level end-to-end validation.
 
 ## Invariants

@@ -55,13 +55,32 @@ internal sealed class CalendarMutationRequestStateProtector
         string operation,
         CalendarResourceRevisionReference revision,
         ReadOnlySpan<byte> requestBinding,
+        ReadOnlySpan<byte> intentDigest) => ProtectCore(
+            operation,
+            BindRevision(revision),
+            requestBinding,
+            intentDigest);
+
+    public string ProtectExactCreate(
+        string operation,
+        ReadOnlySpan<byte> requestBinding,
+        CalendarExactCreateReviewBinding binding) => ProtectCore(
+            operation,
+            Bind(requestBinding),
+            requestBinding,
+            SerializeExactCreateBinding(binding));
+
+    private string ProtectCore(
+        string operation,
+        string targetBinding,
+        ReadOnlySpan<byte> requestBinding,
         ReadOnlySpan<byte> intentDigest)
     {
         var payload = JsonSerializer.SerializeToUtf8Bytes(new MutationPayload(
             2,
             _timeProvider.GetUtcNow().Add(Lifetime).ToUnixTimeSeconds(),
             operation,
-            BindRevision(revision),
+            targetBinding,
             Bind(requestBinding),
             Bind(intentDigest),
             _credentialContext));
@@ -107,6 +126,33 @@ internal sealed class CalendarMutationRequestStateProtector
         CalendarResourceRevisionReference revision,
         ReadOnlySpan<byte> requestBinding,
         out string intentBinding,
+        out bool expired) => TryUnprotectCore(
+            state,
+            operation,
+            BindRevision(revision),
+            requestBinding,
+            out intentBinding,
+            out expired);
+
+    public bool TryUnprotectExactCreate(
+        string state,
+        string operation,
+        ReadOnlySpan<byte> requestBinding,
+        out string intentBinding,
+        out bool expired) => TryUnprotectCore(
+            state,
+            operation,
+            Bind(requestBinding),
+            requestBinding,
+            out intentBinding,
+            out expired);
+
+    private bool TryUnprotectCore(
+        string state,
+        string operation,
+        string targetBinding,
+        ReadOnlySpan<byte> requestBinding,
+        out string intentBinding,
         out bool expired)
     {
         intentBinding = string.Empty;
@@ -126,7 +172,7 @@ internal sealed class CalendarMutationRequestStateProtector
             if (decoded is null
                 || decoded.Version != 2
                 || !string.Equals(decoded.Operation, operation, StringComparison.Ordinal)
-                || !HasFixedTimeMatch(decoded.RevisionBinding, BindRevision(revision))
+                || !HasFixedTimeMatch(decoded.RevisionBinding, targetBinding)
                 || !HasFixedTimeMatch(decoded.RequestBinding, Bind(requestBinding))
                 || string.IsNullOrEmpty(decoded.IntentBinding)
                 || !HasFixedTimeMatch(decoded.CredentialContext, _credentialContext))
@@ -155,6 +201,19 @@ internal sealed class CalendarMutationRequestStateProtector
 
     public bool MatchesIntent(string intentBinding, ReadOnlySpan<byte> intentDigest) =>
         HasFixedTimeMatch(intentBinding, Bind(intentDigest));
+
+    public bool MatchesExactCreateBinding(
+        string intentBinding,
+        CalendarExactCreateReviewBinding binding) =>
+        HasFixedTimeMatch(intentBinding, Bind(SerializeExactCreateBinding(binding)));
+
+    private static byte[] SerializeExactCreateBinding(CalendarExactCreateReviewBinding binding) =>
+        JsonSerializer.SerializeToUtf8Bytes(new ExactCreateBinding(
+            binding.DestinationHref,
+            binding.EntityUid,
+            binding.EntityKind == CalendarEntityKind.Event ? "event" : "todo",
+            Convert.ToHexStringLower(binding.IntentDigest.Span),
+            binding.PolicyVersion));
 
     private static bool HasFixedTimeMatch(string left, string right) => CryptographicOperations.FixedTimeEquals(
         Encoding.UTF8.GetBytes(left),
@@ -199,4 +258,11 @@ internal sealed class CalendarMutationRequestStateProtector
     private sealed record CredentialBinding(string BaseUrl, string Username, string Password);
 
     private sealed record RevisionBinding(string Href, string EntityUid, string EntityKind, string EntityTag);
+
+    private sealed record ExactCreateBinding(
+        string DestinationHref,
+        string EntityUid,
+        string EntityKind,
+        string IntentDigest,
+        string PolicyVersion);
 }

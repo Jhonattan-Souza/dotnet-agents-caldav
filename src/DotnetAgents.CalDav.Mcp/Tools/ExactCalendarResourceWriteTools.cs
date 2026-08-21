@@ -134,18 +134,129 @@ public sealed class ExactCalendarResourceWriteTools
         using var lease = await _admission.AcquireAsync(cancellationToken).ConfigureAwait(false);
         if (lease is null)
             return BusyError();
-        var binding = BindCreate(request);
-        return await ConfirmAsync(
-            CreateOperation,
-            CreateStateRevision(request, binding),
-            binding,
-            request.DestinationHref,
+        return await ConfirmCreateAsync(
+            request,
             requestState,
             inputResponses,
             mrtrSupported,
-            token => _calendarService.ReviewExactCreateResourceAsync(request, token),
-            token => _calendarService.ExactCreateResourceAsync(request, token),
             cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<CallToolResult> ConfirmCreateAsync(
+        CalendarExactCreateRequest request,
+        string? requestState,
+        IDictionary<string, InputResponse>? inputResponses,
+        bool mrtrSupported,
+        CancellationToken cancellationToken)
+    {
+        using var deadline = new CancellationTokenSource(ConfirmationDeadline, _timeProvider);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
+        try
+        {
+            return await ConfirmCreateWithinDeadlineAsync(
+                request,
+                requestState,
+                inputResponses,
+                mrtrSupported,
+                linked.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested
+            && !cancellationToken.IsCancellationRequested)
+        {
+            return Error("limit_exhausted", "limitsAndAdmission", "The exact write review exceeded its time limit.", false,
+                "execution", "not_attempted", limits: new CalendarEntityCreateLimits(Dimension: "elapsed_time"));
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return Error("upstream_unavailable", "upstream", "The exact write review is unavailable.", true,
+                "selectionDiscoveryCapability", "not_attempted");
+        }
+        catch (Exception exception) when (exception is not (InputRequiredException or OperationCanceledException))
+        {
+            return Error("upstream_protocol_error", "upstream", "The exact write could not be completed.", false,
+                "execution", "not_attempted");
+        }
+    }
+
+    private async Task<CallToolResult> ConfirmCreateWithinDeadlineAsync(
+        CalendarExactCreateRequest request,
+        string? requestState,
+        IDictionary<string, InputResponse>? inputResponses,
+        bool mrtrSupported,
+        CancellationToken cancellationToken)
+    {
+        if (requestState is null && inputResponses is null)
+            return await BeginCreateConfirmationAsync(request, mrtrSupported, cancellationToken).ConfigureAwait(false);
+        var requestBinding = BindCreate(request);
+        var confirmation = ReadCreateConfirmation(requestBinding, requestState, inputResponses);
+        if (confirmation.Decision == ConfirmationDecision.Declined)
+            return ConfirmationDeclined();
+        if (confirmation.Decision != ConfirmationDecision.Confirmed)
+            return ConfirmationError(confirmation.Decision == ConfirmationDecision.Expired);
+        if (!mrtrSupported)
+            return UnsupportedMrtrError();
+        var continuationReview = await _calendarService
+            .ReviewExactCreateResourceAsync(request, cancellationToken)
+            .ConfigureAwait(false);
+        if (continuationReview.Outcome is not null)
+            return ToToolResult(continuationReview.Outcome);
+        if (!HasValidCreateReview(continuationReview)
+            || !_stateProtector.MatchesExactCreateBinding(
+                confirmation.IntentBinding!,
+                continuationReview.Binding!))
+        {
+            return ConfirmationError(expired: false);
+        }
+        return await ExecuteMutationAsync(
+            token => _calendarService.ExactCreateResourceAsync(continuationReview.ReviewedCreate!, token),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<CallToolResult> BeginCreateConfirmationAsync(
+        CalendarExactCreateRequest request,
+        bool mrtrSupported,
+        CancellationToken cancellationToken)
+    {
+        var review = await _calendarService
+            .ReviewExactCreateResourceAsync(request, cancellationToken)
+            .ConfigureAwait(false);
+        if (review.Outcome is not null)
+            return ToToolResult(review.Outcome);
+        if (!HasValidCreateReview(review))
+            return ProtocolError();
+        if (!mrtrSupported)
+            return UnsupportedMrtrError();
+        var confirmationMessage = ConfirmationMessage(review.Binding!);
+        if (!IsConfirmationPreviewWithinBudget(confirmationMessage))
+            return ConfirmationPreviewPayloadError();
+        var state = _stateProtector.ProtectExactCreate(
+            CreateOperation,
+            BindCreate(request),
+            review.Binding!);
+        throw new InputRequiredException(CreateConfirmationRequests(confirmationMessage), state);
+    }
+
+    private Confirmation ReadCreateConfirmation(
+        ReadOnlySpan<byte> requestBinding,
+        string? requestState,
+        IDictionary<string, InputResponse>? inputResponses)
+    {
+        if (!TryGetConfirmationResponse(requestState, inputResponses, out var response))
+            return new Confirmation(ConfirmationDecision.Mismatch, null);
+        if (!_stateProtector.TryUnprotectExactCreate(
+                requestState!,
+                CreateOperation,
+                requestBinding,
+                out var intentBinding,
+                out var expired))
+        {
+            return new Confirmation(expired ? ConfirmationDecision.Expired : ConfirmationDecision.Mismatch, null);
+        }
+        if (!TryReadConfirmation(response, out var confirmed))
+            return new Confirmation(ConfirmationDecision.Mismatch, null);
+        return new Confirmation(
+            confirmed ? ConfirmationDecision.Confirmed : ConfirmationDecision.Declined,
+            intentBinding);
     }
 
     internal async Task<CallToolResult> ReplaceRawAsync(
@@ -401,6 +512,10 @@ public sealed class ExactCalendarResourceWriteTools
             + $"kind {Kind(revision.EntityKind)}, and expected ETag {revision.EntityTag}.";
     }
 
+    private static string ConfirmationMessage(CalendarExactCreateReviewBinding binding) =>
+        $"Confirm {CreateOperation} for destination {binding.DestinationHref}, UID {binding.EntityUid}, "
+        + $"and kind {Kind(binding.EntityKind)}.";
+
     internal static bool IsConfirmationPreviewWithinBudget(string message) =>
         GetConfirmationPreviewByteCount(message) <= CalendarQueryToolSupport.MaximumHumanReadableBytes;
 
@@ -469,16 +584,14 @@ public sealed class ExactCalendarResourceWriteTools
         return SHA256.HashData(combined);
     }
 
-    private static CalendarResourceRevisionReference CreateStateRevision(
-        CalendarExactCreateRequest request,
-        ReadOnlySpan<byte> binding) => new(
-            request.DestinationHref,
-            Convert.ToHexStringLower(binding),
-            CalendarEntityKind.Event,
-            "*");
-
     private static bool HasValidReview(CalendarExactResourceReviewResult review) =>
         review.BindingRevision is not null && review.IntentDigest.Length == SHA256.HashSizeInBytes;
+
+    private static bool HasValidCreateReview(CalendarExactCreateReviewResult review) =>
+        review.Binding is not null
+        && review.ReviewedCreate is not null
+        && ReferenceEquals(review.Binding, review.ReviewedCreate.Binding)
+        && review.Binding.IntentDigest.Length == SHA256.HashSizeInBytes;
 
     private static int MeasureArguments(IDictionary<string, JsonElement>? arguments) =>
         CalendarQueryToolSupport.MeasureArguments(arguments, arguments ?? new Dictionary<string, JsonElement>());
@@ -608,7 +721,8 @@ public sealed class ExactCalendarResourceWriteTools
             Phase(result.Phase),
             MutationState(result.MutationState),
             result.Snapshot is null ? null : ExactConflictSnapshotResult.FromSnapshot(result.Snapshot),
-            result.RetryAfterMilliseconds);
+            result.RetryAfterMilliseconds,
+            result.Limits is null ? null : CalendarEntityCreateLimits.FromLimits(result.Limits));
     }
 
     private static ExactErrorDescription Describe(CalendarExactResourceCode code) => code switch
@@ -694,7 +808,8 @@ public sealed class ExactCalendarResourceWriteTools
         string phase,
         string mutationState,
         ExactConflictSnapshotResult? currentSnapshot = null,
-        int? retryAfterMs = null) => new()
+        int? retryAfterMs = null,
+        CalendarEntityCreateLimits? limits = null) => new()
     {
         IsError = true,
         StructuredContent = JsonSerializer.SerializeToElement(new ExactCalendarResourceErrorResult(
@@ -705,7 +820,8 @@ public sealed class ExactCalendarResourceWriteTools
             phase,
             mutationState,
             currentSnapshot,
-            retryAfterMs)),
+            retryAfterMs,
+            limits)),
         Content = [new TextContentBlock { Text = "Exact Calendar Object Resource write failed." }]
     };
 
@@ -754,7 +870,9 @@ public sealed class ExactCalendarResourceWriteTools
         [property: JsonPropertyName("currentSnapshot"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
             ExactConflictSnapshotResult? CurrentSnapshot,
         [property: JsonPropertyName("retryAfterMs"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-            int? RetryAfterMs);
+            int? RetryAfterMs,
+        [property: JsonPropertyName("limits"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+            CalendarEntityCreateLimits? Limits);
 
     private sealed record ExactConflictSnapshotResult(
         [property: JsonPropertyName("calendar")] CalendarHref Calendar,

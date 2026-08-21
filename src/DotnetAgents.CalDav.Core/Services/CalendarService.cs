@@ -1,5 +1,6 @@
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Configuration;
+using DotnetAgents.CalDav.Core.Internal;
 using DotnetAgents.CalDav.Core.Internal.Ical;
 using DotnetAgents.CalDav.Core.Models;
 using Microsoft.Extensions.Logging;
@@ -120,12 +121,30 @@ internal sealed class CalendarService : ICalendarService
     /// <inheritdoc />
     public async Task<CalendarExactResourceResult> ExactCreateResourceAsync(
         CalendarExactCreateRequest request,
-        CancellationToken cancellationToken) => await ExactResourceEngine().CreateAsync(request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var module = CreationModule();
+        var review = await module.ReviewExactAsync(new ExactCreateIntent(request), cancellationToken);
+        if (review.Outcome is not null)
+            return review.Outcome;
+        return RequireExact(await module.CreateAsync(
+            new CalendarCreationCommand.Exact(review.ReviewedCreate!),
+            cancellationToken));
+    }
 
     /// <inheritdoc />
-    public async Task<CalendarExactResourceReviewResult> ReviewExactCreateResourceAsync(
+    public async Task<CalendarExactResourceResult> ExactCreateResourceAsync(
+        CalendarReviewedExactCreate reviewedCreate,
+        CancellationToken cancellationToken) => RequireExact(await CreationModule().CreateAsync(
+            new CalendarCreationCommand.Exact(reviewedCreate),
+            cancellationToken));
+
+    /// <inheritdoc />
+    public async Task<CalendarExactCreateReviewResult> ReviewExactCreateResourceAsync(
         CalendarExactCreateRequest request,
-        CancellationToken cancellationToken) => await ExactResourceEngine().ReviewCreateAsync(request, cancellationToken);
+        CancellationToken cancellationToken) => await CreationModule().ReviewExactAsync(
+            new ExactCreateIntent(request),
+            cancellationToken);
 
     /// <inheritdoc />
     public async Task<CalendarExactResourceResult> ExactReplaceResourceAsync(
@@ -175,12 +194,16 @@ internal sealed class CalendarService : ICalendarService
     /// <inheritdoc />
     public async Task<CalendarEntityCreateResult> CreateEventAsync(
         CalendarEventCreateRequest request,
-        CancellationToken cancellationToken) => await CreateEntityEngine().CreateEventAsync(request, cancellationToken);
+        CancellationToken cancellationToken) => RequireSemantic(await CreationModule().CreateAsync(
+            new CalendarCreationCommand.Event(request),
+            cancellationToken));
 
     /// <inheritdoc />
     public async Task<CalendarEntityCreateResult> CreateTodoAsync(
         CalendarTodoCreateRequest request,
-        CancellationToken cancellationToken) => await CreateEntityEngine().CreateTodoAsync(request, cancellationToken);
+        CancellationToken cancellationToken) => RequireSemantic(await CreationModule().CreateAsync(
+            new CalendarCreationCommand.Todo(request),
+            cancellationToken));
 
     /// <inheritdoc />
     public async Task<CalendarEntityPatchResult> PatchEventAsync(
@@ -251,13 +274,25 @@ internal sealed class CalendarService : ICalendarService
             GetResourceAsync,
             _timeProvider).DeleteAsync(revision, cancellationToken);
 
-    private CalendarEntityCreateEngine CreateEntityEngine() => new(
-        _calendarClient,
+    private CalendarCreationModule CreationModule() => new(
+        _calendarClient as ICalendarCreateTransport ?? new CalendarClientCreateTransport(_calendarClient),
         _options.Value,
         _timeProvider,
         _identityGenerator,
         ApplyScope,
         ResolveDefaultCalendar);
+
+    private static CalendarEntityCreateResult RequireSemantic(CalendarCreationOutcome outcome) => outcome switch
+    {
+        CalendarCreationOutcome.Semantic semantic => semantic.Result,
+        _ => throw new InvalidOperationException("Semantic Create returned an Exact outcome.")
+    };
+
+    private static CalendarExactResourceResult RequireExact(CalendarCreationOutcome outcome) => outcome switch
+    {
+        CalendarCreationOutcome.Exact exact => exact.Result,
+        _ => throw new InvalidOperationException("Exact Create returned a Semantic outcome.")
+    };
 
     private CalendarEntityPatchEngine PatchEntityEngine() => new(
         _calendarClient,
