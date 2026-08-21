@@ -19,25 +19,51 @@ internal static class CalendarExecutionPolicy
         {
             var services = request.Services!;
             var admission = services.GetRequiredService<CalendarOperationAdmission>();
-            var mutation = IsMutation(request.Params?.Name);
+            var requestedToolName = request.Params?.Name;
+            var toolName = CalendarTelemetry.NormalizeToolName(requestedToolName);
+            var mutation = IsMutation(requestedToolName);
+            using var telemetry = CalendarTelemetry.StartOperation(
+                toolName,
+                EntityKind(requestedToolName));
             var report = request.Params?.ProgressToken is { } token
                 ? (Func<ProgressNotificationValue, CancellationToken, Task>)((progress, progressCancellationToken) =>
                     request.Server.NotifyProgressAsync(token, progress, options: null, progressCancellationToken))
                 : null;
-            await using var execution = await AcquireWithProgressAsync(
-                services.GetRequiredService<TimeProvider>(),
-                admission,
-                mutation,
-                report,
-                cancellationToken).ConfigureAwait(false);
-            if (execution.Lease is null)
-                return CreateBusyResult(mutation);
-            using var progress = execution.AttachProgress();
-            return await ExecuteWithinBudgetAsync(
-                services.GetRequiredService<TimeProvider>(),
-                mutation,
-                token => next(request, token),
-                cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await using var execution = await AcquireWithProgressAsync(
+                    services.GetRequiredService<TimeProvider>(),
+                    admission,
+                    mutation,
+                    report,
+                    cancellationToken,
+                    telemetry is null ? null : telemetry.StartPhase).ConfigureAwait(false);
+                if (execution.Lease is null)
+                {
+                    var busy = CreateBusyResult(mutation);
+                    CompleteTelemetry(telemetry, busy);
+                    return busy;
+                }
+                telemetry?.StartPhase(CalendarOperationPhase.Discovery);
+                using var progress = execution.AttachProgress();
+                var result = await ExecuteWithinBudgetAsync(
+                    services.GetRequiredService<TimeProvider>(),
+                    mutation,
+                    token => next(request, token),
+                    cancellationToken).ConfigureAwait(false);
+                CompleteTelemetry(telemetry, result);
+                return result;
+            }
+            catch (OperationCanceledException)
+            {
+                telemetry?.Complete("cancelled");
+                throw;
+            }
+            catch (Exception exception)
+            {
+                telemetry?.Fail(exception);
+                throw;
+            }
         };
 
     private static async ValueTask<CallToolResult> ExecuteWithinBudgetAsync(
@@ -67,9 +93,15 @@ internal static class CalendarExecutionPolicy
         CalendarOperationAdmission admission,
         bool mutation,
         Func<ProgressNotificationValue, CancellationToken, Task>? report,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<CalendarOperationPhase>? phaseObserver = null)
     {
-        var execution = new CalendarExecutionLease(timeProvider, admission, report, cancellationToken);
+        var execution = new CalendarExecutionLease(
+            timeProvider,
+            admission,
+            report,
+            cancellationToken,
+            phaseObserver);
         try
         {
             execution.Lease = await admission.AcquireAsync(mutation, cancellationToken).ConfigureAwait(false);
@@ -90,6 +122,56 @@ internal static class CalendarExecutionPolicy
         or "calendar_occurrences.restore_cancellation" or "calendar_resources.move"
         or "calendar_resources.delete" or "calendar_resources.exact_create"
         or "calendar_resources.exact_replace" or "calendar_resources.exact_move";
+
+    private static CalendarTelemetryEntityKind? EntityKind(string? toolName) => toolName switch
+    {
+        "events.create" or "events.patch" => CalendarTelemetryEntityKind.Event,
+        "todos.query" or "todos.create" or "todos.patch" or "todos.complete" =>
+            CalendarTelemetryEntityKind.Todo,
+        _ => null
+    };
+
+    private static void CompleteTelemetry(CalendarTelemetryOperation? telemetry, CallToolResult result)
+    {
+        if (telemetry is null)
+            return;
+
+        var structured = result.StructuredContent;
+        var errorCode = SafeDimension(structured, "code");
+        var errorCategory = SafeDimension(structured, "category");
+        var mutationState = SafeMutationState(structured);
+        telemetry.Complete(
+            result.IsError == true ? "error" : "success",
+            errorCode,
+            errorCategory,
+            mutationState);
+    }
+
+    private static string? SafeDimension(JsonElement? structured, string propertyName)
+    {
+        if (structured is not { ValueKind: JsonValueKind.Object } value
+            || !value.TryGetProperty(propertyName, out var property)
+            || property.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        var candidate = property.GetString();
+        return candidate is { Length: > 0 and <= 64 }
+            && candidate.All(character => character is >= 'a' and <= 'z' or >= '0' and <= '9' or '_')
+                ? candidate
+                : null;
+    }
+
+    private static string? SafeMutationState(JsonElement? structured) =>
+        SafeDimension(structured, "mutationState") switch
+        {
+            "not_attempted" => "not_attempted",
+            "not_committed" => "not_committed",
+            "committed" => "committed",
+            "unknown" => "unknown",
+            _ => null
+        };
 
     internal static async Task ReportProgressAsync(
         TimeProvider timeProvider,
@@ -198,12 +280,13 @@ internal sealed class CalendarExecutionLease : IAsyncDisposable
         TimeProvider timeProvider,
         CalendarOperationAdmission admission,
         Func<ProgressNotificationValue, CancellationToken, Task>? report,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<CalendarOperationPhase>? phaseObserver = null)
     {
         _timeProvider = timeProvider;
         _admission = admission;
         _report = report;
-        _progressState = CalendarOperationProgress.CreateState();
+        _progressState = CalendarOperationProgress.CreateState(phaseObserver);
         _progressCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
     }
 

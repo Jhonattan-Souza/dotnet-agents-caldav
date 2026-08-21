@@ -21,11 +21,15 @@ public sealed class CalDavHostBuilder
     /// before calling <see cref="HostApplicationBuilder.Build"/>.
     /// </summary>
     /// <param name="exposeExactTools">Whether to expose the protected exact resource tools.</param>
-    public static HostApplicationBuilder CreateBuilder(bool exposeExactTools = false)
+    /// <param name="environmentProvider">Optional environment-variable source used by startup tests.</param>
+    public static HostApplicationBuilder CreateBuilder(
+        bool exposeExactTools = false,
+        Func<string, string?>? environmentProvider = null)
     {
         var builder = Host.CreateApplicationBuilder();
 
         builder.Logging.ClearProviders();
+        OpenTelemetryHostConfiguration.Configure(builder, environmentProvider);
 
         var mcpBuilder = builder.Services.AddMcpServer(options => options.ProtocolVersion = "2026-07-28")
             .WithStdioServerTransport()

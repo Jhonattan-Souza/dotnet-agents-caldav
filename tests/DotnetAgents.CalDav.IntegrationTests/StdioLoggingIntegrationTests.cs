@@ -107,6 +107,32 @@ public sealed class StdioLoggingIntegrationTests
             $"stdout must remain empty for JSON-RPC, but contained:\n{stdout}");
     }
 
+    [Fact]
+    public async Task McpProcess_WithUnreachableOtlpEndpoint_StaysCleanAndExitsWithinTwoSeconds()
+    {
+        using var process = CreateProcess();
+        _fixture.ConfigureCalDavEnvironment(process.StartInfo.Environment);
+        process.StartInfo.Environment["OTEL_EXPORTER_OTLP_ENDPOINT"] = "http://127.0.0.1:1";
+        process.StartInfo.Environment["OTEL_EXPORTER_OTLP_PROTOCOL"] = "http/protobuf";
+
+        process.Start();
+        var stdoutTask = process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
+        var stderrTask = process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
+        var beforeClose = DateTimeOffset.UtcNow;
+        process.StandardInput.Close();
+
+        await WaitForExitWithTimeoutAsync(process, TestContext.Current.CancellationToken);
+
+        var elapsed = DateTimeOffset.UtcNow - beforeClose;
+        var stdout = await stdoutTask;
+        var stderr = await stderrTask;
+        process.ExitCode.ShouldBe(0, $"stdout: {stdout}\nstderr: {stderr}");
+        elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(2),
+            $"Unreachable OTLP endpoint delayed stdin-EOF shutdown. stdout: {stdout}\nstderr: {stderr}");
+        stdout.ShouldBeEmpty();
+        stderr.ShouldBeEmpty();
+    }
+
     /// <summary>
     /// Resolves the path to the MCP server DLL relative to the test assembly,
     /// walking up from the test bin/ to the src project bin/.

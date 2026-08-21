@@ -37,6 +37,11 @@ Add this MCP server to VS Code, Claude Desktop, Cursor, or any MCP client:
 | `CALDAV_DEFAULT_TODO_CALENDAR_NAME` | No | Display name of the default Calendar for To-do operations |
 | `CALDAV_DEFAULT_EVENT_CALENDAR_NAME` | No | Display name of the default Calendar for Event operations |
 | `CALDAV_EXPOSE_EXACT_TOOLS` | No | Set to `true` to expose protected exact Calendar Object Resource tools |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | No | Non-empty OTLP endpoint that opts into telemetry export; no exporter is registered when omitted |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | No | Standard OTLP protocol such as `http/protobuf` or `grpc` |
+| `OTEL_EXPORTER_OTLP_HEADERS` | No | Secret OTLP authentication or routing headers; never included in exported telemetry |
+| `OTEL_SERVICE_NAME` | No | Service name override; defaults to `dotnet-agents-caldav` |
+| `OTEL_SDK_DISABLED` | No | Set to `true` to disable the SDK even when an endpoint is configured |
 
 ## Available tools
 
@@ -70,6 +75,30 @@ The 0.2.2 default catalog contains exactly these 17 tools in the order shown. It
 - `calendar_resources.exact_move` — Atomically move a strong-tagged resource to an explicit href after MRTR confirmation.
 
 The four exact tools are enabled with `CALDAV_EXPOSE_EXACT_TOOLS=true`; this flag controls the deterministic stdio catalog without contacting the server. The configured CalDAV credentials are the stdio authorization context, 401/403 responses become typed call failures, and exact writes require client support for MCP Multi Round-Trip Requests.
+
+## Optional OpenTelemetry observability
+
+Telemetry is disabled by default: the process registers no exporter and makes no collector connection unless `OTEL_EXPORTER_OTLP_ENDPOINT` is non-empty and `OTEL_SDK_DISABLED` is not `true`. The MCP SDK and .NET runtime provide MCP and outbound HTTP signals; this server adds the in-process provider/export pipeline, CalDAV operation and aggregate-phase spans, correlated safe logs, and an export allowlist. It does not add Aspire libraries, an AppHost, health endpoints, console/file exporters, or a hosted backend.
+
+For local troubleshooting, run the standalone Aspire Dashboard on loopback only:
+
+```bash
+docker run --rm --detach \
+  --name caldav-otel-dashboard \
+  --publish 127.0.0.1:18888:18888 \
+  --publish 127.0.0.1:4318:18890 \
+  mcr.microsoft.com/dotnet/aspire-dashboard:13.4.2@sha256:76d05882595dd43e708d6ef3e269d98ca763694c0c822bbe98edc99790eaad1b
+```
+
+Keep the generated browser token enabled, open `http://127.0.0.1:18888`, and launch the current-checkout MCP process through a real stdio client with:
+
+```text
+OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
+OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+OTEL_SERVICE_NAME=dotnet-agents-caldav
+```
+
+Exported spans show the MCP request, `caldav.operation`, the applicable `discovery`, `fetch`, `filter`, `expand`, and `reconcile` phases, and individual HTTP attempts. The allowlist excludes credentials, OTLP headers, URLs/hrefs, Calendar Names, UIDs, Entity Tags, cursors, iCalendar/XML/HTTP bodies, MCP payloads/results, and exception messages or stack traces. Collector failure cannot change tool results or write telemetry diagnostics to stdout/stderr.
 
 ## Supported servers
 

@@ -5,6 +5,7 @@ using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using Shouldly;
+using System.Diagnostics;
 using System.Text.Json;
 using Xunit;
 
@@ -12,6 +13,65 @@ namespace DotnetAgents.CalDav.Mcp.Tests.Unit;
 
 public sealed class CalendarExecutionPolicyTests
 {
+    [Fact]
+    public async Task PublicToolFilter_EmitsParentedOperationPhaseAndSafeResultDimensions()
+    {
+        var stopped = new List<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == "DotnetAgents.CalDav",
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) =>
+                ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = stopped.Add
+        };
+        ActivitySource.AddActivityListener(listener);
+        using var mcpActivity = new Activity("tools/call").Start();
+        var services = new ServiceCollection()
+            .AddSingleton(TimeProvider.System)
+            .AddSingleton<CalendarOperationAdmission>()
+            .BuildServiceProvider();
+        await using var transport = new StreamServerTransport(
+            new MemoryStream(),
+            new MemoryStream(),
+            "execution-policy-telemetry-test",
+            Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
+        await using var server = McpServer.Create(
+            transport,
+            new McpServerOptions(),
+            Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance,
+            services);
+        var context = new RequestContext<CallToolRequestParams>(
+            server,
+            new JsonRpcRequest { Id = new RequestId(1L), Method = "tools/call" },
+            new CallToolRequestParams { Name = "todos.complete" });
+        var result = new CallToolResult
+        {
+            IsError = true,
+            StructuredContent = JsonSerializer.SerializeToElement(new
+            {
+                code = "entity_revision_conflict",
+                category = "concurrency",
+                phase = "reconcile",
+                mutationState = "not_committed"
+            })
+        };
+
+        var filtered = CalendarExecutionPolicy.CallTool((_, _) => ValueTask.FromResult(result));
+        await filtered(context, TestContext.Current.CancellationToken);
+
+        var operation = stopped.Single(activity => activity.OperationName == "caldav.operation");
+        var discovery = stopped.Single(activity => activity.OperationName == "caldav.phase.discovery");
+        operation.ParentId.ShouldBe(mcpActivity.Id);
+        discovery.ParentId.ShouldBe(operation.Id);
+        operation.GetTagItem("caldav.tool.name").ShouldBe("todos.complete");
+        operation.GetTagItem("caldav.entity.kind").ShouldBe("todo");
+        operation.GetTagItem("caldav.outcome").ShouldBe("error");
+        operation.GetTagItem("caldav.error.code").ShouldBe("entity_revision_conflict");
+        operation.GetTagItem("caldav.error.category").ShouldBe("concurrency");
+        operation.GetTagItem("caldav.mutation.state").ShouldBe("not_committed");
+        operation.Status.ShouldBe(ActivityStatusCode.Error);
+    }
+
     [Theory]
     [InlineData("calendars.list")]
     [InlineData("calendar_entities.query")]

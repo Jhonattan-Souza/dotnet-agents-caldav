@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Globalization;
 using System.Buffers;
 using System.IO.Compression;
@@ -25,7 +24,6 @@ internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport
 {
     private const int MaximumCalendarResourceBytes = 4 * 1024 * 1024;
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
-    private static readonly ActivitySource ActivitySource = new("DotnetAgents.CalDav", "0.2.0");
     private static readonly HttpMethod PropFindMethod = new("PROPFIND");
     private static readonly HttpMethod ReportMethod = new("REPORT");
 
@@ -56,7 +54,6 @@ internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport
     public async Task<IReadOnlyList<CalendarDescriptor>> GetCalendarsAsync(CancellationToken cancellationToken)
     {
         CalendarOperationProgress.SetPhase(CalendarOperationPhase.Discovery);
-        using var activity = ActivitySource.StartActivity("caldav.get_calendars", ActivityKind.Client);
 
         var homeSetHref = await DiscoverCalendarHomeSetAsync(cancellationToken, failOnNotFound: true);
         if (homeSetHref is null)

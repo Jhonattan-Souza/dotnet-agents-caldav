@@ -39,7 +39,7 @@ public class McpMetadataTests
     }
 
     [Fact]
-    public void McpServerJson_DeclaresOnlyFrozenCalendarEnvironmentVariables()
+    public void McpServerJson_DeclaresCalendarAndOptionalOpenTelemetryEnvironmentVariables()
     {
         var serverJsonPath = Path.Combine(GetMcpProjectDir(), ".mcp", "server.json");
         File.Exists(serverJsonPath).ShouldBeTrue(".mcp/server.json must exist for this test");
@@ -72,8 +72,16 @@ public class McpMetadataTests
             "CALDAV_CALENDAR_HREFS",
             "CALDAV_DEFAULT_TODO_CALENDAR_NAME",
             "CALDAV_DEFAULT_EVENT_CALENDAR_NAME",
-            "CALDAV_EXPOSE_EXACT_TOOLS"
+            "CALDAV_EXPOSE_EXACT_TOOLS",
+            "OTEL_EXPORTER_OTLP_ENDPOINT",
+            "OTEL_EXPORTER_OTLP_PROTOCOL",
+            "OTEL_EXPORTER_OTLP_HEADERS",
+            "OTEL_SERVICE_NAME",
+            "OTEL_SDK_DISABLED"
         ]);
+        envVars.EnumerateArray()
+            .Single(item => item.GetProperty("name").GetString() == "OTEL_EXPORTER_OTLP_HEADERS")
+            .GetProperty("isSecret").GetBoolean().ShouldBeTrue();
         var description = root.GetProperty("description").GetString()!;
         description.ShouldContain("Calendars");
         description.ShouldContain("Events");

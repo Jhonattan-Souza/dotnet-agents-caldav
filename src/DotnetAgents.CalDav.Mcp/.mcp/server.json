@@ -49,6 +49,32 @@
           "name": "CALDAV_EXPOSE_EXACT_TOOLS",
           "description": "Set to true to expose protected exact Calendar Object Resource tools (optional)",
           "isRequired": false
+        },
+        {
+          "name": "OTEL_EXPORTER_OTLP_ENDPOINT",
+          "description": "OTLP collector endpoint; a non-empty value opts into telemetry export",
+          "isRequired": false
+        },
+        {
+          "name": "OTEL_EXPORTER_OTLP_PROTOCOL",
+          "description": "Standard OTLP transport protocol, such as http/protobuf or grpc (optional)",
+          "isRequired": false
+        },
+        {
+          "name": "OTEL_EXPORTER_OTLP_HEADERS",
+          "description": "Optional OTLP authentication or routing headers",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "OTEL_SERVICE_NAME",
+          "description": "Telemetry service name override; defaults to dotnet-agents-caldav",
+          "isRequired": false
+        },
+        {
+          "name": "OTEL_SDK_DISABLED",
+          "description": "Set to true to disable the OpenTelemetry SDK even when an endpoint is configured",
+          "isRequired": false
         }
       ]
     }
