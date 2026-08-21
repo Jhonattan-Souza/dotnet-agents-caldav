@@ -13,7 +13,7 @@ Add this MCP server to VS Code, Claude Desktop, Cursor, or any MCP client:
   "mcpServers": {
     "caldav-calendars": {
       "command": "dnx",
-      "args": ["--yes", "dotnet-agents-caldav@0.2.1"],
+      "args": ["--yes", "dotnet-agents-caldav@0.2.2"],
       "env": {
         "CALDAV_URL": "https://caldav.example.com",
         "CALDAV_USERNAME": "user",
@@ -60,7 +60,7 @@ Add this MCP server to VS Code, Claude Desktop, Cursor, or any MCP client:
 - `calendar_resources.move` — Atomically move one reviewed Calendar Object Resource to a selected Calendar.
 - `calendar_resources.delete` — Delete an entire resource from an explicitly supplied revision reference (href, UID, kind, and exact strong ETag) after MCP MRTR review and confirmation; success requires verified absence.
 
-The default catalog contains exactly these 17 tools in the order shown. It has no legacy task aliases or compatibility mode.
+The 0.2.2 default catalog contains exactly these 17 tools in the order shown. It has no legacy task aliases or compatibility mode.
 
 ### Exact Calendar resource tools
 
@@ -73,7 +73,13 @@ The four exact tools are enabled with `CALDAV_EXPOSE_EXACT_TOOLS=true`; this fla
 
 ## Supported servers
 
-The verified interoperability profile is the official Radicale 3.7.8 image pinned in the [Radicale 3.7.8 profile](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/main/contracts/0.2.1/radicale-3.7.8-profile.json). Other CalDAV servers are unverified profiles even when capability negotiation allows them to operate.
+The verified interoperability profile is the official Radicale 3.7.8 image pinned in the [Radicale 3.7.8 profile](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/v0.2.2/contracts/0.2.2/radicale-3.7.8-profile.json). Other CalDAV servers are unverified profiles even when capability negotiation allows them to operate.
+
+## Migrating from 0.2.1
+
+Version 0.2.2 changes Create collision handling while keeping tool names and
+input shapes stable. Read [Migrating from 0.2.1 to 0.2.2](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/v0.2.2/docs/migrating-0.2.1-to-0.2.2.md)
+before upgrading.
 
 ## Migrating from 0.1.x
 
