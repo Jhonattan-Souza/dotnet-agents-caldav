@@ -500,6 +500,7 @@ docs/*
 !docs/adr/
 !docs/adr/0001-compact-todo-query.md
 !docs/migrating-0.2.0-to-0.2.1.md
+!docs/performance-load-test-2026-08-21.md
 .docs
 .agents
 skills-lock.json
