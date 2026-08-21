@@ -73,11 +73,11 @@ The four exact tools are enabled with `CALDAV_EXPOSE_EXACT_TOOLS=true`; this fla
 
 ## Supported servers
 
-The verified interoperability profile is the official Radicale 3.7.8 image pinned in `contracts/0.2.1/radicale-3.7.8-profile.json`. Other CalDAV servers are unverified profiles even when capability negotiation allows them to operate.
+The verified interoperability profile is the official Radicale 3.7.8 image pinned in the [Radicale 3.7.8 profile](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/main/contracts/0.2.1/radicale-3.7.8-profile.json). Other CalDAV servers are unverified profiles even when capability negotiation allows them to operate.
 
 ## Migrating from 0.1.x
 
-Version 0.2.0 deliberately replaces the task-specific 0.1.x contract. Read [Migrating from 0.1.x to 0.2.0](docs/migrating-0.1.x-to-0.2.0.md) for the complete tool and environment mapping, revision-bound write recipes, MRTR deployment checks, and rollback to pinned version 0.1.4. Upgrade and rollback do not migrate or rewrite CalDAV data.
+Version 0.2.0 deliberately replaces the task-specific 0.1.x contract. Read [Migrating from 0.1.x to 0.2.0](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/main/docs/migrating-0.1.x-to-0.2.0.md) for the complete tool and environment mapping, revision-bound write recipes, MRTR deployment checks, and rollback to pinned version 0.1.4. Upgrade and rollback do not migrate or rewrite CalDAV data.
 
 ## Architecture
 
@@ -112,5 +112,7 @@ Slopwatch:
 ```bash
 slopwatch analyze --config .slopwatch/slopwatch.json --fail-on warning
 ```
+
+The behavior gates, final-package smoke test, and package-content policy are documented in [Release validation](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/main/docs/release-process.md).
 
 The 0.2.0 contract is deliberately incompatible with the removed 0.1.x task-specific tools and environment names.

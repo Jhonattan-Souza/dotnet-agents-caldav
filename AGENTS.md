@@ -31,12 +31,10 @@ bash scripts/verify-coverage.sh coverage-report 0.90 0.85
 RADICALE_CONFORMANCE_VARIANT=strict-preconditions dotnet test tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj -c Release --no-build --filter "FullyQualifiedName~RadicaleConformanceHarnessTests" --logger "trx;LogFilePrefix=strict-preconditions" --results-directory TestResults
 RADICALE_CONFORMANCE_VARIANT=alternate-time-zone dotnet test tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj -c Release --no-build --filter "FullyQualifiedName~RadicaleConformanceHarnessTests" --logger "trx;LogFilePrefix=alternate-time-zone" --results-directory TestResults
 bash scripts/verify-test-results.sh TestResults
-bash scripts/verify-release-evidence.sh contracts/0.2.0/requirement-evidence-catalog.md contracts/0.2.0/release-evidence-map.json TestResults
-bash scripts/verify-release-evidence.sh contracts/0.2.1/requirement-evidence-catalog.md contracts/0.2.1/release-evidence-map.json TestResults
 dotnet tool run slopwatch analyze --config .slopwatch/slopwatch.json --fail-on warning
 ```
 
-- CI runs for every pull request and enforces warnings as errors, method complexity at most 10, 90% line coverage, 85% branch coverage, both pinned Radicale profiles, and complete mapped TRX evidence.
+- CI runs for every pull request and enforces warnings as errors, method complexity at most 10, 90% line coverage, 85% branch coverage, both pinned Radicale profiles, and complete test results with no disabled evidence.
 
 ## Boundaries
 

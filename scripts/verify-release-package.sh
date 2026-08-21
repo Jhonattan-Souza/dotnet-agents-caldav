@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 3 ]]; then
-  echo "usage: $0 <package-version> <package-directory> <generated-server-metadata>" >&2
+if [[ $# -ne 2 ]]; then
+  echo "usage: $0 <package-version> <package-directory>" >&2
   exit 2
 fi
 
 package_version=$1
 package_directory=$2
-generated_metadata=$3
 script_directory=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repository_root=$(cd -- "$script_directory/.." && pwd)
 temporary_directory=$(mktemp -d)
 trap 'rm -rf -- "$temporary_directory"' EXIT
+package_id=dotnet-agents-caldav
+tool_path=tools/net10.0/any
 
 mapfile -t packages < <(find "$package_directory" -maxdepth 1 -type f -name '*.nupkg' ! -name '*.snupkg' -print)
 mapfile -t symbols < <(find "$package_directory" -maxdepth 1 -type f -name '*.snupkg' -print)
@@ -24,7 +25,7 @@ fi
 package=${packages[0]}
 symbol_package=${symbols[0]}
 
-verify_version() {
+verify_identity() {
   local archive=$1
   local nuspec
   mapfile -t nuspecs < <(unzip -Z1 "$archive" | grep -E '\.nuspec$')
@@ -33,57 +34,98 @@ verify_version() {
     return 1
   fi
   nuspec=${nuspecs[0]}
-  local actual_version
+  local actual_id actual_version
+  actual_id=$(unzip -p "$archive" "$nuspec" | sed -n 's:.*<id>\([^<]*\)</id>.*:\1:p' | head -n 1)
   actual_version=$(unzip -p "$archive" "$nuspec" | sed -n 's:.*<version>\([^<]*\)</version>.*:\1:p' | head -n 1)
+  if [[ "$actual_id" != "$package_id" ]]; then
+    echo "package ID mismatch in $archive: expected $package_id, got $actual_id" >&2
+    return 1
+  fi
   if [[ "$actual_version" != "$package_version" ]]; then
     echo "package version mismatch in $archive: expected $package_version, got $actual_version" >&2
     return 1
   fi
 }
 
-verify_entry() {
+require_entry() {
   local archive=$1
   local entry=$2
-  local expected=$3
-  local extracted="$temporary_directory/${entry//\//_}"
-  if ! unzip -p "$archive" "$entry" > "$extracted"; then
+  if ! unzip -Z1 "$archive" | grep -Fxq "$entry"; then
     echo "missing required package entry: $entry" >&2
-    return 1
-  fi
-  if ! cmp -s -- "$expected" "$extracted"; then
-    echo "package content mismatch: $entry" >&2
     return 1
   fi
 }
 
-verify_version "$package"
-verify_version "$symbol_package"
-unzip -Z1 "$symbol_package" | grep -q 'tools/net10.0/any/DotnetAgents.CalDav.Core.pdb'
-unzip -Z1 "$symbol_package" | grep -q 'tools/net10.0/any/DotnetAgents.CalDav.Mcp.pdb'
+verify_identity "$package"
+verify_identity "$symbol_package"
 
-verify_entry "$package" '.mcp/server.json' "$generated_metadata"
-verify_entry "$package" 'tools/net10.0/any/.mcp/server.json' "$generated_metadata"
+for entry in \
+  "$tool_path/DotnetToolSettings.xml" \
+  "$tool_path/DotnetAgents.CalDav.Core.dll" \
+  "$tool_path/DotnetAgents.CalDav.Core.pdb" \
+  "$tool_path/DotnetAgents.CalDav.Mcp.deps.json" \
+  "$tool_path/DotnetAgents.CalDav.Mcp.dll" \
+  "$tool_path/DotnetAgents.CalDav.Mcp.pdb" \
+  "$tool_path/DotnetAgents.CalDav.Mcp.runtimeconfig.json" \
+  "$tool_path/.mcp/server.json" \
+  'README.md' \
+  '.mcp/server.json'; do
+  require_entry "$package" "$entry"
+done
+require_entry "$symbol_package" "$tool_path/DotnetAgents.CalDav.Core.pdb"
+require_entry "$symbol_package" "$tool_path/DotnetAgents.CalDav.Mcp.pdb"
 
-while IFS='|' read -r entry source; do
-  verify_entry "$package" "$entry" "$repository_root/$source"
-done <<'EOF'
-README.md|README.md
-CHANGELOG.md|CHANGELOG.md
-RELEASE_NOTES.md|RELEASE_NOTES.md
-contracts/0.2.0/mcp-tool-catalog.json|contracts/0.2.0/mcp-tool-catalog.json
-contracts/0.2.0/mcp-server.schema.json|contracts/0.2.0/mcp-server.schema.json
-contracts/0.2.0/mcp-authority-manifest.json|contracts/0.2.0/mcp-authority-manifest.json
-contracts/0.2.0/release-evidence-map.json|contracts/0.2.0/release-evidence-map.json
-contracts/0.2.1/mcp-tool-catalog.json|contracts/0.2.1/mcp-tool-catalog.json
-contracts/0.2.1/mcp-server.schema.json|contracts/0.2.1/mcp-server.schema.json
-contracts/0.2.1/mcp-authority-manifest.json|contracts/0.2.1/mcp-authority-manifest.json
-contracts/0.2.1/radicale-3.7.8-profile.json|contracts/0.2.1/radicale-3.7.8-profile.json
-contracts/0.2.1/compatibility-matrix.md|contracts/0.2.1/compatibility-matrix.md
-contracts/0.2.1/requirement-evidence-catalog.md|contracts/0.2.1/requirement-evidence-catalog.md
-contracts/0.2.1/release-evidence-map.json|contracts/0.2.1/release-evidence-map.json
-docs/migrating-0.1.x-to-0.2.0.md|docs/migrating-0.1.x-to-0.2.0.md
-docs/migrating-0.2.0-to-0.2.1.md|docs/migrating-0.2.0-to-0.2.1.md
-skills/caldav-calendars/SKILL.md|skills/caldav-calendars/SKILL.md
-EOF
+while IFS= read -r entry; do
+  case "$entry" in
+    _rels/*|package/*|tools/*|dotnet-agents-caldav.nuspec|'[Content_Types].xml'|README.md|.mcp/server.json)
+      ;;
+    *)
+      echo "unexpected non-runtime package entry: $entry" >&2
+      exit 1
+      ;;
+  esac
+done < <(unzip -Z1 "$package")
+
+root_metadata="$temporary_directory/root-server.json"
+tool_metadata="$temporary_directory/tool-server.json"
+unzip -p "$package" '.mcp/server.json' > "$root_metadata"
+unzip -p "$package" "$tool_path/.mcp/server.json" > "$tool_metadata"
+cmp -s -- "$root_metadata" "$tool_metadata" || {
+  echo "root and tool-path MCP metadata differ" >&2
+  exit 1
+}
+jq -e --arg version "$package_version" --arg package_id "$package_id" '
+  .version == $version and
+  (.packages | length) == 1 and
+  .packages[0].identifier == $package_id and
+  .packages[0].version == $version and
+  .packages[0].runtimeHint == "dnx" and
+  .packages[0].transport.type == "stdio"
+' "$root_metadata" >/dev/null || {
+  echo "packed MCP metadata does not identify the requested release" >&2
+  exit 1
+}
+
+tool_directory="$temporary_directory/tool"
+dotnet tool install "$package_id" \
+  --tool-path "$tool_directory" \
+  --source "$package_directory" \
+  --version "$package_version" \
+  --no-http-cache
+
+installed_executable="$tool_directory/dotnet-agents-caldav"
+[[ -x "$installed_executable" ]] || {
+  echo "installed MCP executable is missing or not executable: $installed_executable" >&2
+  exit 1
+}
+
+DOTNET_AGENTS_CALDAV_PACKAGE_SMOKE_EXECUTABLE="$installed_executable" \
+  dotnet test \
+    "$repository_root/tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj" \
+    -c Release \
+    --no-build \
+    --no-restore \
+    --filter "Category=PackageSmoke" \
+    --logger "console;verbosity=minimal"
 
 echo "verified final release packages for version $package_version"

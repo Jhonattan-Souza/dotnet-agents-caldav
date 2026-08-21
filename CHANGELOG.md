@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Create operations now use one authoritative conditional PUT instead of enumerating Calendar resources for UID preflight.
 - Destination href collisions return `destination_conflict`; UID collisions remain `conflict`, both with `not_committed` mutation state.
 - Exact Create MRTR now binds a dedicated reviewed create intent rather than a synthetic `"*"` revision.
+- Release validation now relies on behavioral tests plus installation and MCP discovery from the final local NuGet artifact.
+
+### Removed
+
+- Retired executable requirement-to-TRX maps, catalogs, and gates; Git history preserves the former audit snapshots.
+- Removed contracts, migration guides, changelog, release notes, and the bundled skill from the NuGet payload; these remain available in the repository or GitHub Releases.
 
 ## [0.2.1] - 2026-08-19
 

@@ -26,7 +26,7 @@
   <!-- Version Management -->
   <PropertyGroup>
     <VersionPrefix>0.0.0-local</VersionPrefix>
-    <PackageReleaseNotes>See RELEASE_NOTES.md</PackageReleaseNotes>
+    <PackageReleaseNotes>See https://github.com/Jhonattan-Souza/dotnet-agents-caldav/releases</PackageReleaseNotes>
   </PropertyGroup>
 
   <!-- SourceLink Configuration -->
