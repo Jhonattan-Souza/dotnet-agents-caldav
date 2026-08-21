@@ -81,17 +81,9 @@ public sealed class PackageArtifactTests
             entries.ShouldContain("contracts/0.2.1/compatibility-matrix.md");
             entries.ShouldContain("contracts/0.2.1/requirement-evidence-catalog.md");
             entries.ShouldContain("contracts/0.2.1/release-evidence-map.json");
-            entries.ShouldContain("contracts/0.2.2/mcp-tool-catalog.json");
-            entries.ShouldContain("contracts/0.2.2/mcp-server.schema.json");
-            entries.ShouldContain("contracts/0.2.2/mcp-authority-manifest.json");
-            entries.ShouldContain("contracts/0.2.2/radicale-3.7.8-profile.json");
-            entries.ShouldContain("contracts/0.2.2/compatibility-matrix.md");
-            entries.ShouldContain("contracts/0.2.2/requirement-evidence-catalog.md");
-            entries.ShouldContain("contracts/0.2.2/release-evidence-map.json");
             entries.ShouldContain("skills/caldav-calendars/SKILL.md");
             entries.ShouldContain("docs/migrating-0.1.x-to-0.2.0.md");
             entries.ShouldContain("docs/migrating-0.2.0-to-0.2.1.md");
-            entries.ShouldContain("docs/migrating-0.2.1-to-0.2.2.md");
             entries.ShouldContain("CHANGELOG.md");
             entries.ShouldContain("RELEASE_NOTES.md");
         }

@@ -33,7 +33,6 @@ RADICALE_CONFORMANCE_VARIANT=alternate-time-zone dotnet test tests/DotnetAgents.
 bash scripts/verify-test-results.sh TestResults
 bash scripts/verify-release-evidence.sh contracts/0.2.0/requirement-evidence-catalog.md contracts/0.2.0/release-evidence-map.json TestResults
 bash scripts/verify-release-evidence.sh contracts/0.2.1/requirement-evidence-catalog.md contracts/0.2.1/release-evidence-map.json TestResults
-bash scripts/verify-release-evidence.sh contracts/0.2.2/requirement-evidence-catalog.md contracts/0.2.2/release-evidence-map.json TestResults
 dotnet tool run slopwatch analyze --config .slopwatch/slopwatch.json --fail-on warning
 ```
 
@@ -43,7 +42,7 @@ dotnet tool run slopwatch analyze --config .slopwatch/slopwatch.json --fail-on w
 
 - Runtime flow is `MCP tools -> ICalendarService -> CalendarService -> CalDavClient -> HttpClient`; `CalendarService` stays thin. WebDAV request/response logic belongs under `Core/Internal/Xml`, and iCalendar mapping belongs under `Core/Internal/Ical`.
 - `Program.cs` maps `CALDAV_*` environment variables, then delegates startup to `CalDavMcpRunner` and `CalDavHostBuilder`; keep startup testable through those types rather than adding logic to top-level statements.
-- The default host exposes the 0.2.2 17-tool semantic catalog, including `todos.complete` and `todos.query`. It contains no legacy aliases. Create collisions are decided by conditional PUT without collection enumeration. `CALDAV_EXPOSE_EXACT_TOOLS=true` independently enables the four exact Calendar resource tools.
+- The default host exposes a 17-tool semantic catalog, including `todos.complete` and `todos.query`. It contains no legacy aliases. Create collisions are decided by conditional PUT without collection enumeration. `CALDAV_EXPOSE_EXACT_TOOLS=true` independently enables the four exact Calendar resource tools.
 - `.opencode/opencode.jsonc` launches the published NuGet tool through `dnx`; it does not run the current checkout. Do not treat that configuration as source-level end-to-end validation.
 
 ## Invariants
@@ -58,4 +57,5 @@ dotnet tool run slopwatch analyze --config .slopwatch/slopwatch.json --fail-on w
 ## Packaging
 
 - `src/DotnetAgents.CalDav.Mcp/.mcp/server.json` is packed metadata. Keep its source versions at `0.0.0`; the `v*` release workflow replaces both versions from the tag.
+- Feature pull requests update the live catalog under `src/DotnetAgents.CalDav.Mcp/Contracts` and the `Unreleased` changelog. Create versioned contract snapshots, migration guides, and release notes only during an explicitly scoped release preparation after the selected features have merged.
 - When environment variables or packaged MCP metadata change, update `.mcp/server.json` and `McpMetadataTests` alongside the runtime mapping. The NuGet package is produced only from `src/DotnetAgents.CalDav.Mcp/DotnetAgents.CalDav.Mcp.csproj`.

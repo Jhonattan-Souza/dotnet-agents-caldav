@@ -1,6 +1,5 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "contractVersion": "0.2.2",
   "protocolRevision": "2026-07-28",
   "createSemantics": {
     "authoritativeOperation": "conditional_put",

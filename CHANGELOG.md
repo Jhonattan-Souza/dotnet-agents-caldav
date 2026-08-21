@@ -12,7 +12,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Create operations now use one authoritative conditional PUT instead of enumerating Calendar resources for UID preflight.
 - Destination href collisions return `destination_conflict`; UID collisions remain `conflict`, both with `not_committed` mutation state.
 - Exact Create MRTR now binds a dedicated reviewed create intent rather than a synthetic `"*"` revision.
-- Added the 0.2.2 contract, migration guidance, and requirement-to-evidence artifacts.
 
 ## [0.2.1] - 2026-08-19
 
