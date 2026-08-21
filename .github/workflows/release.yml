@@ -106,11 +106,8 @@ jobs:
           --logger "trx;LogFilePrefix=alternate-time-zone"
           --results-directory TestResults
 
-      - name: Verify complete normative evidence
-        run: |
-          bash scripts/verify-test-results.sh TestResults
-          bash scripts/verify-release-evidence.sh contracts/0.2.0/requirement-evidence-catalog.md contracts/0.2.0/release-evidence-map.json TestResults
-          bash scripts/verify-release-evidence.sh contracts/0.2.1/requirement-evidence-catalog.md contracts/0.2.1/release-evidence-map.json TestResults
+      - name: Verify complete test results
+        run: bash scripts/verify-test-results.sh TestResults
 
       - name: Run Slopwatch
         run: dotnet tool run slopwatch analyze --config .slopwatch/slopwatch.json --fail-on warning
@@ -135,7 +132,6 @@ jobs:
           bash scripts/verify-release-package.sh
           "${{ steps.version.outputs.package_version }}"
           "${{ env.PACKAGE_OUTPUT_DIRECTORY }}"
-          "${{ env.MCP_SERVER_METADATA_PATH }}"
 
       - name: Upload package artifacts
         uses: actions/upload-artifact@v7

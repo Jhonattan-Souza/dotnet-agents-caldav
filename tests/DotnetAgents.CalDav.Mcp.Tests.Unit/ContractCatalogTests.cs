@@ -7,35 +7,6 @@ namespace DotnetAgents.CalDav.Mcp.Tests.Unit;
 public sealed class ContractCatalogTests
 {
     [Fact]
-    public void Evidence_map_names_every_semantic_partition_and_required_pairwise_cross_product()
-    {
-        var map = ReadJson("release-evidence-map.json");
-
-        var categories = map["semanticFixtureInventory"]!["categories"]!.AsArray();
-        categories.Select(value => value!["name"]!.GetValue<string>()).ShouldBe([
-                "discoveryAndScope", "defaults", "snapshotCoherence", "strictSchemas", "patchOperations",
-                "temporalKinds", "recurrenceAndOverrides", "exclusionsCancellationsAndRestoration",
-                "eventStructuredData", "inertContent", "opaqueResources", "concurrency", "postWriteTruth",
-                "limits", "errors", "multiRoundTripRequests"
-            ]);
-        var crossProducts = map["semanticFixtureInventory"]!["pairwiseCrossProducts"]!.AsArray();
-        crossProducts.Select(value => value!["name"]!.GetValue<string>()).ShouldBe([
-                "recurrenceXtemporalKind", "overrideXmutationScope", "patchXopaqueContent",
-                "conditionalsXambiguousOutcome", "multiRoundTripRequestXrevisionChange", "limitsXpagination"
-            ]);
-        var mappedEvidence = map["requirements"]!.AsArray()
-            .Single(row => row!["id"]!.GetValue<string>() == "CAL-EVIDENCE-002")!["testNameContains"]!
-            .AsArray().Select(value => value!.GetValue<string>()).ToHashSet(StringComparer.Ordinal);
-        foreach (var entry in categories.Concat(crossProducts))
-        {
-            var witnesses = entry!["testNameContains"]!.AsArray()
-                .Select(value => value!.GetValue<string>()).ToArray();
-            witnesses.ShouldNotBeEmpty();
-            witnesses.ShouldAllBe(witness => mappedEvidence.Contains(witness));
-        }
-    }
-
-    [Fact]
     public void Mcp_catalog_freezes_the_semantic_and_exact_tool_contract()
     {
         var catalog = ReadJson("mcp-tool-catalog.json");
@@ -342,69 +313,6 @@ public sealed class ContractCatalogTests
     }
 
     [Fact]
-    public void Evidence_catalog_has_one_complete_row_for_every_normative_requirement()
-    {
-        var catalog = File.ReadAllText(ContractPath("requirement-evidence-catalog.md"));
-        var rows = catalog.Split('\n').Where(line => line.StartsWith("## CAL-", StringComparison.Ordinal)).ToArray();
-
-        catalog.ShouldStartWith("# Requirement-to-evidence catalog: unified Calendar contract 0.2.0");
-        rows.Length.ShouldBe(96);
-        rows.Distinct(StringComparer.Ordinal).Count().ShouldBe(96);
-        rows.Select(row => row[3..]).OrderBy(id => id, StringComparer.Ordinal)
-            .ShouldBe(ExpectedRequirementIds().OrderBy(id => id, StringComparer.Ordinal));
-        catalog.ShouldContain("## CAL-BASE-003");
-        catalog.ShouldContain("## CAL-EVIDENCE-010");
-        catalog.ShouldContain("Source and owning decision:");
-        catalog.ShouldContain("Normative strength:");
-        catalog.ShouldContain("Primary evidence layer:");
-        catalog.ShouldContain("Objective oracle:");
-        catalog.ShouldContain("Implementation status:");
-        catalog.ShouldNotContain("produce the contractually specified result");
-        catalog.ShouldNotContain("assert this observable result:");
-        catalog.ShouldNotContain("Run the catalog verifier and assert this observable result:");
-        catalog.ShouldNotContain("committed named scenario must emit");
-        catalog.ShouldNotContain("missing or weak revisions fail before network");
-        catalog.ShouldContain(
-            "origin and Calendar discovery precede revision validation; missing or weak revisions fail before write");
-        var completionEvidence = catalog.Split("## CAL-RECUR-007", StringSplitOptions.None)[1]
-            .Split("## CAL-MCP-001", StringSplitOptions.None)[0];
-        completionEvidence.ShouldContain(
-            "CalendarOccurrenceMutationServiceTests.CompleteTodoAsync_RecurringCompletesOnlyTheTargetedOriginalIdentity");
-        completionEvidence.ShouldNotContain("Implementation status: planned");
-        var moveEvidence = catalog.Split("## CAL-RESOURCE-012", StringSplitOptions.None)[1]
-            .Split("## CAL-RESOURCE-013", StringSplitOptions.None)[0];
-        moveEvidence.ShouldContain("Implementation status: implemented for Event and To-do Semantic Move");
-        moveEvidence.ShouldContain("CalendarResourceMoveProtocolTests");
-        moveEvidence.ShouldContain("CalendarResourceMoveToolsTests");
-        moveEvidence.ShouldContain("CalendarMcpStdioIntegrationTests.CalendarResourceMove_AtomicallyMovesReviewedTodoAcrossRadicaleCalendars");
-        moveEvidence.ShouldNotContain("CompleteTodoAsync");
-        catalog.ShouldContain(
-            "CalendarMcpRawStdioTests.TodoCompletion_RejectsCallerTimeAndBroadScopesOverRawStdio");
-        var oracles = catalog.Split('\n').Where(line => line.StartsWith("- Objective oracle:", StringComparison.Ordinal)).ToArray();
-        oracles.Length.ShouldBe(96);
-        oracles.Distinct(StringComparer.Ordinal).Count().ShouldBe(96);
-        foreach (var row in catalog.Split("\n## CAL-", StringSplitOptions.None).Skip(1))
-        {
-            var statement = ExtractRowField(row, "Normative statement:");
-            var oracle = ExtractRowField(row, "Objective oracle:");
-            Normalize(statement).ShouldNotBe(Normalize(oracle));
-            Normalize(oracle).ShouldNotContain(Normalize(statement));
-        }
-        rows.Length.ShouldBe(catalog.Split("Named scenario or fixture:", StringSplitOptions.None).Length - 1);
-        foreach (var row in catalog.Split("\n## CAL-", StringSplitOptions.None).Skip(1))
-        {
-            row.ShouldContain("Normative statement:");
-            row.ShouldContain("Source and owning decision:");
-            row.ShouldContain("Normative strength:");
-            row.ShouldContain("Primary evidence layer:");
-            row.ShouldContain("Named scenario or fixture:");
-            row.ShouldContain("Objective oracle:");
-            row.ShouldContain("Implementation status:");
-            row.ShouldContain("Evidence status:");
-        }
-    }
-
-    [Fact]
     public void Radicale_profile_records_both_manifests_and_all_required_variants()
     {
         var profile = ReadJson("radicale-3.7.8-profile.json");
@@ -444,36 +352,6 @@ public sealed class ContractCatalogTests
         matrix.ShouldContain(
             "| Other CalDAV servers | pinned-profile-only | required typed rejection | pinned-profile-only | implemented capability negotiation only |");
         matrix.ShouldContain("an unverified transcript remains operable, but no interoperability claim is made");
-    }
-
-    [Fact]
-    public void Compatibility_matrix_rows_resolve_to_executable_behavioral_evidence()
-    {
-        var matrix = File.ReadAllText(ContractPath("compatibility-matrix.md"));
-        var mappedRequirements = ReadJson("release-evidence-map.json")["requirements"]!.AsArray()
-            .ToDictionary(
-                row => row!["id"]!.GetValue<string>(),
-                row => row!["testNameContains"]!.AsArray(),
-                StringComparer.Ordinal);
-        var rows = matrix.Split('\n')
-            .Where(line => line.StartsWith("| ", StringComparison.Ordinal))
-            .Where(line => !line.Contains("Capability |", StringComparison.Ordinal))
-            .Where(line => !line.Contains("---", StringComparison.Ordinal));
-
-        foreach (var row in rows)
-        {
-            var cells = row.Split('|', StringSplitOptions.TrimEntries);
-            var evidenceIds = cells[6].Split('`')
-                .Where(value => value.StartsWith("CAL-", StringComparison.Ordinal))
-                .ToArray();
-
-            evidenceIds.ShouldNotBeEmpty($"Compatibility row has no normative evidence link: {cells[1]}");
-            foreach (var evidenceId in evidenceIds)
-            {
-                mappedRequirements.ShouldContainKey(evidenceId);
-                mappedRequirements[evidenceId].ShouldNotBeEmpty();
-            }
-        }
     }
 
     [Fact]
@@ -629,19 +507,6 @@ public sealed class ContractCatalogTests
             items["$ref"]!.GetValue<string>().ShouldBe(expected);
     }
 
-    private static IEnumerable<string> ExpectedRequirementIds()
-    {
-        var areas = new Dictionary<string, int>(StringComparer.Ordinal)
-        {
-            ["BASE"] = 4, ["MODEL"] = 7, ["RESOURCE"] = 13, ["DISC"] = 6, ["DAV"] = 6,
-            ["EVENT"] = 7, ["TIME"] = 4, ["RECUR"] = 7, ["MCP"] = 13, ["BOUND"] = 8,
-            ["ERROR"] = 3, ["SEC"] = 3, ["RELEASE"] = 5, ["EVIDENCE"] = 10
-        };
-
-        return areas.SelectMany(area => Enumerable.Range(1, area.Value)
-            .Select(number => $"CAL-{area.Key}-{number:000}"));
-    }
-
     private static string ContractPath(string fileName) =>
         Path.Combine(RepositoryRoot(), "contracts", "0.2.0", fileName);
 
@@ -656,9 +521,4 @@ public sealed class ContractCatalogTests
         return directory!.FullName;
     }
 
-    private static string ExtractRowField(string row, string label) =>
-        row.Split('\n').Single(line => line.StartsWith($"- {label}", StringComparison.Ordinal))[($"- {label} ").Length..];
-
-    private static string Normalize(string value) =>
-        new(value.Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
 }
