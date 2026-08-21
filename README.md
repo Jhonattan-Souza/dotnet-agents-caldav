@@ -78,7 +78,7 @@ The four exact tools are enabled with `CALDAV_EXPOSE_EXACT_TOOLS=true`; this fla
 
 ## Optional OpenTelemetry observability
 
-Telemetry is disabled by default: the process registers no exporter and makes no collector connection unless `OTEL_EXPORTER_OTLP_ENDPOINT` is non-empty and `OTEL_SDK_DISABLED` is not `true`. The MCP SDK and .NET runtime provide MCP and outbound HTTP signals; this server adds the in-process provider/export pipeline, CalDAV operation and aggregate-phase spans, correlated safe logs, and an export allowlist. It does not add Aspire libraries, an AppHost, health endpoints, console/file exporters, or a hosted backend.
+Telemetry is disabled by default: the process registers no exporter and makes no collector connection unless `OTEL_EXPORTER_OTLP_ENDPOINT` is non-empty and `OTEL_SDK_DISABLED` is not `true`. The MCP SDK and .NET runtime provide MCP and outbound HTTP signals; this server adds the in-process provider/export pipeline, CalDAV operation and aggregate-phase spans, correlated safe logs, and an export allowlist. It does not add Aspire libraries, an AppHost, health endpoints, console/file exporters, or a hosted backend. Each OTLP export call is capped at 250 milliseconds so an accepting but unresponsive collector cannot hold the stdio child process past its shutdown bound.
 
 For local troubleshooting, run the standalone Aspire Dashboard on loopback only:
 

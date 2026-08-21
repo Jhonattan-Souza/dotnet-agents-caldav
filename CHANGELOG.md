@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- Telemetry export now applies explicit span, metric, log, and resource allowlists that exclude CalDAV identifiers, credentials, payloads, URLs, OTLP headers, and exception details.
+- Telemetry export now applies explicit span, metric, log, and resource allowlists that exclude CalDAV identifiers, credentials, payloads, URLs, OTLP headers, trace state, client-controlled metric labels, and exception details.
 
 ## [0.2.2] - 2026-08-21
 

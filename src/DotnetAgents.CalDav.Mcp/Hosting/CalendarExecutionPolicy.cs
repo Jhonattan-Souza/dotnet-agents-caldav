@@ -158,7 +158,7 @@ internal static class CalendarExecutionPolicy
 
         var candidate = property.GetString();
         return candidate is { Length: > 0 and <= 64 }
-            && candidate.All(character => character is >= 'a' and <= 'z' or >= '0' and <= '9' or '_')
+            && candidate.All(character => char.IsAsciiLetterOrDigit(character) || character == '_')
                 ? candidate
                 : null;
     }
