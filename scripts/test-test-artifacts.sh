@@ -29,8 +29,8 @@ seed_main_artifacts() {
     printf '<coverage />\n' > "$directory/$prefix.coverage.opencover.260821000000001.xml"
   done
 
-  write_successful_trx "$directory/main-core.trx" 2081
-  write_successful_trx "$directory/main-mcp.trx" 924
+  write_successful_trx "$directory/main-core.trx" 2097
+  write_successful_trx "$directory/main-mcp.trx" 899
   write_successful_trx "$directory/main-integration.trx" 100
 }
 
