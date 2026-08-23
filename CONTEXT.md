@@ -76,6 +76,18 @@ _Avoid_: Patch, merge
 An atomic relocation of a Calendar Object Resource that preserves its Entity UID and complete semantics while producing a new resource address and revision.
 _Avoid_: Copy and delete, Entity conversion
 
+**Semantic Move**:
+A Calendar Object Resource Move whose fidelity is equality of the complete lossless semantic representation, allowing only grammar-proven lexical normalization.
+_Avoid_: Byte-preserving Move, parsed-field Move
+
+**Exact Move**:
+A Calendar Object Resource Move on the separate exact surface whose fidelity is authoritative-byte equality, including for Opaque Calendar Object Resources.
+_Avoid_: Semantic Move, normalized Move
+
+**Exact Move Review Binding**:
+Authenticated, non-executable evidence of a reviewed Exact Move intent that can be checked during a later MRTR confirmation.
+_Avoid_: Move plan, executable state
+
 **Mutation State**:
 The evidence-backed classification of whether a requested mutation was attempted and committed: not attempted, not committed, committed, or unknown.
 _Avoid_: Success flag, HTTP status

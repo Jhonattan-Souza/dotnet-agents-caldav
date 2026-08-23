@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bounded `calendar_entities.query` Start requests now reject a missing or invalid Temporal Evaluation Context before discovery; unbounded Starts reject an unused caller override.
 - Replaced Occurrence cursor-bound query replay, MCP-owned page assembly, and duplicate deadlines with one typed module Start and a cursor-only Continue that performs no CalDAV, parsing, projection, or recurrence expansion.
 - Made Semantic Move Calendar-size independent with one server-authoritative conditional MOVE, a content-insensitive destination presence probe, and bounded bilateral reconciliation under an explicit verified server profile.
+- Made Exact Move Calendar-size independent across MRTR: the initial call returns a protected typed review binding, while confirmation performs one fresh preparation and consumes one internal one-use MOVE plan without a third preflight or UID scan.
+- Unified Semantic and Exact Move dispatch and reconciliation truth while retaining complete-lossless Semantic fidelity, authoritative-byte Exact fidelity, and same-Calendar opaque-resource Exact rename support.
 - Reclassified exact destination occupancy as `destination_conflict` while server `CALDAV:no-uid-conflict`, stale source revision, and unclassified dispatch conflicts return non-disclosing `conflict` results.
 - Reused one immutable, authorization-bound CalDAV discovery result inside each MCP tool call while keeping MRTR continuations fresh and Capability State separate.
 - Kept successful query retrieval on 50-resource `calendar-multiget` batches with zero GETs, and made missing, duplicate, unsafe, unrequested, incomplete, or inconsistently tagged multiget results atomic protocol failures instead of fallback triggers.
@@ -43,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Continuation Cursors now authenticate the tool, snapshot position, fixed expiry, credentials, and relevant configuration without exposing those values; retained snapshots contain projected result bytes rather than authoritative iCalendar content.
 - Added fail-closed Move interoperability gating and removed destination enumeration, parsing, and scan-derived collision disclosures.
+- Bound Exact Move confirmation state to the authenticated request, strong source revision, fixed-size intent digest, credentials, normalized effective configuration, timeout, and policy version without retaining or exposing those values.
 - Telemetry export now applies explicit span, metric, log, and resource allowlists that exclude CalDAV identifiers, credentials, payloads, URLs, OTLP headers, trace state, client-controlled metric labels, and exception details.
 - Telemetry outcome, Mutation State, error, phase, purpose, observation, and recovery dimensions now use closed vocabularies; exported HTTP attempts contain no exception events or request targets.
 

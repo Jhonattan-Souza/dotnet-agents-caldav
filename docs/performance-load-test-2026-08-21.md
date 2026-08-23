@@ -86,6 +86,13 @@ No successful mutation produced a fidelity failure or an unknown Mutation State.
 | Exact move confirmed, dedicated repro | 3,649 ms | 8 PROPFIND, 1,206 GET, 4 REPORT, 1 MOVE | Review plus execution repeat the scan |
 | Exact move, full MRTR workflow | 5,631 ms across two calls | 12 PROPFIND, 1,808 GET, 6 REPORT, 1 MOVE | Three destination scans |
 
+The server-authoritative implementation follow-up is recorded in
+[`performance-server-authoritative-move-2026-08-23.md`](performance-server-authoritative-move-2026-08-23.md).
+For Exact Move it replaces the `3N + 8` involved-resource observation and
+six-REPORT shape with six constant involved-resource observations, zero REPORT,
+and one MOVE at destination sizes 1, 50, and 600. The historical timings above
+remain the before measurement.
+
 The query request count matches the batching policy. The first two REPORTs collect Event and To-do candidates; 24 multiget REPORTs retrieve 1,200 resources in batches of 50. After the archive Calendar and lifecycle resource existed, candidate selection plus 25 multiget batches produced 28 REPORTs.
 
 ## Findings and recommendations
