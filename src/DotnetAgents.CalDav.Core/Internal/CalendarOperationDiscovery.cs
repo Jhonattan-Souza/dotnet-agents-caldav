@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
+using System.Runtime.CompilerServices;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Core.Models;
@@ -12,25 +13,46 @@ internal sealed class CalendarOperationDiscovery : ICalendarClient, ICalendarCre
 {
     private readonly ICalendarClient _transport;
     private readonly IOptions<CalDavOptions> _options;
-    private readonly ConcurrentDictionary<CalendarDiscoveryKey, Lazy<Task<CalendarOperationDiscoveryResult>>> _results = new();
+    private readonly Func<IReadOnlyList<CalendarDescriptor>, CalendarDiscoveryResult> _applyScope;
+    private readonly Func<CalendarEntityKind, IReadOnlyList<CalendarDescriptor>, IReadOnlyList<CalendarDescriptor>, CalendarSelectionResult>
+        _resolveDefault;
+    private readonly ConcurrentDictionary<CalendarDiscoveryKey, DiscoveryAcquisition> _results = new();
 
-    public CalendarOperationDiscovery(ICalendarClient transport, IOptions<CalDavOptions> options)
+    public CalendarOperationDiscovery(
+        ICalendarClient transport,
+        IOptions<CalDavOptions> options,
+        Func<IReadOnlyList<CalendarDescriptor>, CalendarDiscoveryResult> applyScope,
+        Func<CalendarEntityKind, IReadOnlyList<CalendarDescriptor>, IReadOnlyList<CalendarDescriptor>, CalendarSelectionResult>
+            resolveDefault)
     {
         _transport = transport;
         _options = options;
+        _applyScope = applyScope;
+        _resolveDefault = resolveDefault;
     }
 
     public void RediscoverCapabilities() => _transport.RediscoverCapabilities();
 
     public async Task<IReadOnlyList<CalendarDescriptor>> GetCalendarsAsync(CancellationToken cancellationToken)
     {
+        return (await GetResultAsync(cancellationToken).ConfigureAwait(false)).Discovery.Items;
+    }
+
+    public async Task<CalendarDiscoveryResult> GetScopedResultAsync(CancellationToken cancellationToken) =>
+        (await GetResultAsync(cancellationToken).ConfigureAwait(false)).Discovery;
+
+    public CalendarSelectionResult ResolveDefault(CalendarEntityKind entityKind)
+    {
         var key = CalendarDiscoveryKey.Create(_options.Value);
-        var acquisition = _results.GetOrAdd(
-            key,
-            _ => new Lazy<Task<CalendarOperationDiscoveryResult>>(
-                () => AcquireAsync(key, cancellationToken),
-                LazyThreadSafetyMode.ExecutionAndPublication));
-        return (await acquisition.Value.ConfigureAwait(false)).Calendars;
+        if (!_results.TryGetValue(key, out var acquisition))
+            throw new InvalidOperationException("Calendar discovery must complete before default selection.");
+        var result = acquisition.GetCompletedResult();
+        return entityKind switch
+        {
+            CalendarEntityKind.Event => result.EventDefault,
+            CalendarEntityKind.Todo => result.TodoDefault,
+            _ => CalendarSelectionResult.Failure(CalendarSelectionCode.NotFound)
+        };
     }
 
     public Task<IReadOnlyList<string>> QueryCalendarResourceHrefsAsync(
@@ -86,9 +108,25 @@ internal sealed class CalendarOperationDiscovery : ICalendarClient, ICalendarCre
         CancellationToken cancellationToken)
     {
         var calendars = await _transport.GetCalendarsAsync(cancellationToken).ConfigureAwait(false);
+        var scoped = _applyScope(calendars);
+        var frozenItems = scoped.Items.Select(Freeze).ToImmutableArray();
+        var frozenDiscovery = new CalendarDiscoveryResult(
+            frozenItems,
+            scoped.Diagnostics.ToImmutableArray());
         return new CalendarOperationDiscoveryResult(
             key,
-            calendars.Select(Freeze).ToImmutableArray());
+            frozenDiscovery,
+            _resolveDefault(CalendarEntityKind.Event, calendars, frozenItems),
+            _resolveDefault(CalendarEntityKind.Todo, calendars, frozenItems));
+    }
+
+    private Task<CalendarOperationDiscoveryResult> GetResultAsync(CancellationToken cancellationToken)
+    {
+        var key = CalendarDiscoveryKey.Create(_options.Value);
+        var acquisition = _results.GetOrAdd(
+            key,
+            _ => new DiscoveryAcquisition(token => AcquireAsync(key, token)));
+        return acquisition.WaitAsync(cancellationToken);
     }
 
     private static CalendarDescriptor Freeze(CalendarDescriptor calendar) => calendar with
@@ -97,16 +135,62 @@ internal sealed class CalendarOperationDiscovery : ICalendarClient, ICalendarCre
         TodoEvidence = calendar.TodoEvidence.ToArray(),
         UnavailableProperties = calendar.UnavailableProperties.ToArray()
     };
+
+    private sealed class DiscoveryAcquisition
+    {
+        private readonly CancellationTokenSource _operationCancellation = new();
+        private readonly Lazy<Task<CalendarOperationDiscoveryResult>> _result;
+        private int _activeConsumers;
+        private int _disposed;
+
+        public DiscoveryAcquisition(Func<CancellationToken, Task<CalendarOperationDiscoveryResult>> acquire)
+        {
+            _result = new Lazy<Task<CalendarOperationDiscoveryResult>>(
+                () => acquire(_operationCancellation.Token),
+                LazyThreadSafetyMode.ExecutionAndPublication);
+        }
+
+        public async Task<CalendarOperationDiscoveryResult> WaitAsync(CancellationToken consumerCancellation)
+        {
+            Interlocked.Increment(ref _activeConsumers);
+            var result = _result.Value;
+            try
+            {
+                return await result.WaitAsync(consumerCancellation).ConfigureAwait(false);
+            }
+            finally
+            {
+                if (Interlocked.Decrement(ref _activeConsumers) == 0)
+                {
+                    if (!result.IsCompleted)
+                        await _operationCancellation.CancelAsync().ConfigureAwait(false);
+                    if (Interlocked.Exchange(ref _disposed, 1) == 0)
+                        _operationCancellation.Dispose();
+                }
+            }
+        }
+
+        public CalendarOperationDiscoveryResult GetCompletedResult()
+        {
+            var result = _result.IsValueCreated ? _result.Value : null;
+            return result is { IsCompletedSuccessfully: true }
+                ? result.Result
+                : throw new InvalidOperationException("Calendar discovery must complete before default selection.");
+        }
+    }
 }
 
 internal sealed record CalendarOperationDiscoveryResult(
     CalendarDiscoveryKey Key,
-    ImmutableArray<CalendarDescriptor> Calendars);
+    CalendarDiscoveryResult Discovery,
+    CalendarSelectionResult EventDefault,
+    CalendarSelectionResult TodoDefault);
 
 internal readonly record struct CalendarDiscoveryKey(
     string Origin,
     string PrincipalIdentity,
-    string CalendarHome,
+    long CredentialGeneration,
+    string DiscoveryEndpoint,
     string CalendarScope,
     string DefaultEventCalendarName,
     string DefaultTodoCalendarName,
@@ -123,10 +207,23 @@ internal readonly record struct CalendarDiscoveryKey(
         return new CalendarDiscoveryKey(
             origin,
             options.Username,
+            CalendarCredentialGeneration.Get(options.Password),
             endpoint.AbsoluteUri,
             scope,
             options.DefaultEventCalendarName?.Trim() ?? string.Empty,
             options.DefaultTodoCalendarName?.Trim() ?? string.Empty,
             options.RequestTimeout.Ticks);
     }
+}
+
+internal static class CalendarCredentialGeneration
+{
+    private static readonly ConditionalWeakTable<string, Generation> Generations = new();
+    private static long _next;
+
+    public static long Get(string credential) => Generations.GetValue(
+        credential,
+        _ => new Generation(Interlocked.Increment(ref _next))).Value;
+
+    private sealed record Generation(long Value);
 }

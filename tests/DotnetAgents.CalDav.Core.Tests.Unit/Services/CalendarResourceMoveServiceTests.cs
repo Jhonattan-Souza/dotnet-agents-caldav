@@ -56,6 +56,7 @@ public sealed class CalendarResourceMoveServiceTests
         await client.Received(1).MoveCalendarResourceAsync(
             new CalendarResourceMoveDispatchRequest(sourceHref, destinationHref, entityTag),
             Arg.Any<CancellationToken>());
+        await client.Received(1).GetCalendarsAsync(Arg.Any<CancellationToken>());
         await client.DidNotReceive().CreateCalendarResourceAsync(
             Arg.Any<CalendarResourceCreateRequest>(),
             Arg.Any<CancellationToken>());
