@@ -2827,7 +2827,7 @@
         "idempotentHint": false,
         "openWorldHint": true
       },
-      "description": "Confirm and move one revision-bound resource to an explicitly provided absolute destination href."
+      "description": "Review, confirm, and atomically move one strong-revision-bound complete resource to an explicitly provided absolute destination href with constant work and authoritative-byte verification."
     }
   ],
   "$defs": {

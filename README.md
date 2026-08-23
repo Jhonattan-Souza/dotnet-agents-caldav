@@ -75,9 +75,9 @@ The 0.2.2 default catalog contains exactly these 17 tools in the order shown. It
 - `calendar_resources.exact_get` — Opt-in byte-preserving exact read through a protected MCP blob resource link.
 - `calendar_resources.exact_create` — Create a complete caller-authored Calendar Object Resource from Unicode text or canonical base64 bytes at an explicit href after MRTR confirmation.
 - `calendar_resources.exact_replace` — Replace a strong-tagged resource with complete caller-authored Unicode text or canonical base64 bytes after MRTR confirmation.
-- `calendar_resources.exact_move` — Atomically move a strong-tagged resource to an explicit href after MRTR confirmation.
+- `calendar_resources.exact_move` — Review and atomically move a strong-tagged complete resource to an explicit href with constant-work MRTR and authoritative-byte verification; requires the verified interoperability profile.
 
-The four exact tools are enabled with `CALDAV_EXPOSE_EXACT_TOOLS=true`; this flag controls the deterministic stdio catalog without contacting the server. The configured CalDAV credentials are the stdio authorization context, 401/403 responses become typed call failures, and exact writes require client support for MCP Multi Round-Trip Requests.
+The four exact tools are enabled with `CALDAV_EXPOSE_EXACT_TOOLS=true`; this flag controls the deterministic stdio catalog without contacting the server. The configured CalDAV credentials are the stdio authorization context, 401/403 responses become typed call failures, and exact writes require client support for MCP Multi Round-Trip Requests. Exact Move uses headers-only GET absence probes, never scans destination members, never retries MOVE, and keeps its executable one-use plan inside Core.
 
 ## Optional OpenTelemetry observability
 
@@ -105,7 +105,7 @@ Exported spans show the MCP request, `caldav.operation`, the applicable `discove
 
 ## Supported servers
 
-The verified interoperability profile is the official Radicale 3.7.8 image pinned in the [Radicale 3.7.8 profile](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/v0.2.2/contracts/0.2.2/radicale-3.7.8-profile.json). Set `CALDAV_INTEROPERABILITY_PROFILE=radicale-3.7.8` only for that runtime. Semantic Move fails closed with `unsupported_capability` when the profile is omitted because atomic `If-Match`, `Overwrite: F`, and `CALDAV:no-uid-conflict` enforcement cannot be inferred from stored resources or generic DAV discovery. No collection-scan compatibility fallback is provided. Other CalDAV servers remain unverified profiles even when capability negotiation allows other operations.
+The verified interoperability profile is the official Radicale 3.7.8 image pinned in the [Radicale 3.7.8 profile](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/v0.2.2/contracts/0.2.2/radicale-3.7.8-profile.json). Set `CALDAV_INTEROPERABILITY_PROFILE=radicale-3.7.8` only for that runtime. Server-authoritative Semantic and Exact Move fail closed with `unsupported_capability` when the profile is omitted because atomic `If-Match`, `Overwrite: F`, and `CALDAV:no-uid-conflict` enforcement cannot be inferred from stored resources or generic DAV discovery. No collection-scan compatibility fallback is provided. Other CalDAV servers remain unverified profiles even when capability negotiation allows other operations.
 
 ## Migrating from 0.2.1
 

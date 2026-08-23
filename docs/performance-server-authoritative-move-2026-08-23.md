@@ -1,6 +1,8 @@
-# Server-authoritative Semantic Move evidence
+# Server-authoritative Move focused evidence
 
 Date: 2026-08-23
+
+## Semantic Move evidence
 
 Baseline revision: `6a9a8883e9e8e2ae92fb762b4073e8b8e615971d`
 
@@ -87,7 +89,138 @@ Both use zero multiget requests. Corpus construction, cardinality verification,
 representative non-interference reads, and cleanup occur outside the timed Move
 trace.
 
-## Reproduction
+## Exact Move focused follow-up
+
+Baseline revision: `334234903c66e7e3572687eb7b990de61161f378`
+
+Changed implementation revision: `766898ab6e5fad5890c61427a77a07d570ef42b9`
+
+Exact Move now performs two constant-work MRTR preparations rather than three
+destination UID scans. The initial call returns only a protected non-executable
+review binding. The confirmed call acquires fresh authorization and discovery,
+revalidates the strong source revision and direct destination absence, compares
+the prior intent, consumes one internal plan, dispatches one MOVE, and performs
+bilateral reconciliation. Exact destination fidelity compares authoritative
+bytes, including for Opaque resources and same-Calendar renames.
+
+Both Exact revisions used the runtime and host recorded above. The committed
+changed-revision witness sources were copied byte-for-byte into the detached
+baseline worktree. Their SHA-256 values are
+`8bdeff6e6f88d755095a1f169c03fbf1c30efdc63d0c4d26b35b0250316d3a85`
+for `ExactMoveMrtrWorkEvidenceTests.cs` and
+`7cf833b9b4df51c81b08a7938a370d9b5bb5c2ca7b3d694a83c3f17be29622b1`
+for `ExactMoveMrtrRadicaleSizeEvidenceTests.cs`.
+
+The deterministic witness drives the real `CalDavClient` and
+`CalendarService` through the complete two-round `ICalendarService` MRTR seam.
+It supplies two scoped VTODO Calendars, one strong-tagged source, one absent
+destination, and 1, 50, or 600 strong-tagged unrelated valid VTODO resources.
+The baseline mode answers all six kind REPORTs and all `3N` candidate GETs, so
+the former scans are measured rather than derived. The changed mode must issue
+no REPORT or unrelated-resource GET.
+
+### Exact Move deterministic HTTP observations
+
+| Destination resources | Revision | Duration ms | Requests | PROPFIND | REPORT | Source GET | Destination GET | Unrelated GET | MOVE |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | baseline | 186.355 | 22 | 4 | 6 | 4 | 4 | 3 | 1 |
+| 1 | changed | 3.870 | 11 | 4 | 0 | 3 | 3 | 0 | 1 |
+| 50 | baseline | 43.976 | 169 | 4 | 6 | 4 | 4 | 150 | 1 |
+| 50 | changed | 180.810 | 11 | 4 | 0 | 3 | 3 | 0 | 1 |
+| 600 | baseline | 460.386 | 1,819 | 4 | 6 | 4 | 4 | 1,800 | 1 |
+| 600 | changed | 2.841 | 11 | 4 | 0 | 3 | 3 | 0 | 1 |
+
+The deterministic baseline is `3N + 19` requests: four discovery PROPFINDs,
+six REPORTs, `3N + 8` involved or candidate GETs, and one MOVE. The changed
+trace is 11 requests at every size: four discovery PROPFINDs, six involved-
+resource GETs, and one MOVE. The discovery counts separately prove one fresh
+acquisition in each MRTR call. Both modes use zero multiget and zero HEAD.
+
+### Exact Move pinned-Radicale observations
+
+The dedicated Radicale witness seeds and verifies 1, then 50, then 600
+unrelated destination VTODO resources. At each size it observes the
+server-authored source bytes and strong Entity Tag outside the timed trace,
+moves a fresh source, proves byte-exact destination content and source absence,
+checks representative unrelated resources, deletes the moved target, and
+finally deletes both temporary Calendars. It uses the same literal Radicale,
+Python, vobject, UTC, variant, architecture, index digest, and platform digest
+recorded above.
+
+| Destination resources | Revision | Duration ms | Requests | PROPFIND | REPORT | Source GET | Destination GET | Unrelated GET | MOVE |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | baseline | 329.3614 | 28 | 10 | 6 | 4 | 4 | 3 | 1 |
+| 1 | changed | 300.2858 | 17 | 10 | 0 | 3 | 3 | 0 | 1 |
+| 50 | baseline | 433.4922 | 175 | 10 | 6 | 4 | 4 | 150 | 1 |
+| 50 | changed | 60.5085 | 17 | 10 | 0 | 3 | 3 | 0 | 1 |
+| 600 | baseline | 3535.6835 | 1,825 | 10 | 6 | 4 | 4 | 1,800 | 1 |
+| 600 | changed | 195.7318 | 17 | 10 | 0 | 3 | 3 | 0 | 1 |
+
+The Radicale baseline is `3N + 25` requests and the changed trace is exactly 17
+requests. The extra six PROPFINDs are Radicale's discovery shape. Corpus setup,
+cardinality verification, representative non-interference reads, and cleanup
+are outside the timer and classified trace. Durations are supporting local
+observations only; request and involved-resource counts are the regression
+contract.
+
+### Exact Move reproduction
+
+The anchored observations were run sequentially. The committed witnesses were
+copied into a detached baseline and built there:
+
+```bash
+git worktree add --detach /tmp/dotnet-agents-caldav-issue115-baseline 334234903c66e7e3572687eb7b990de61161f378
+cp tests/DotnetAgents.CalDav.Core.Tests.Unit/Services/ExactMoveMrtrWorkEvidenceTests.cs /tmp/dotnet-agents-caldav-issue115-baseline/tests/DotnetAgents.CalDav.Core.Tests.Unit/Services/
+cp tests/DotnetAgents.CalDav.IntegrationTests/ExactMoveMrtrRadicaleSizeEvidenceTests.cs /tmp/dotnet-agents-caldav-issue115-baseline/tests/DotnetAgents.CalDav.IntegrationTests/
+dotnet restore
+dotnet build tests/DotnetAgents.CalDav.Core.Tests.Unit/DotnetAgents.CalDav.Core.Tests.Unit.csproj -c Release --no-restore
+dotnet build tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj -c Release --no-restore
+```
+
+From the baseline worktree:
+
+```bash
+CALDAV_MOVE_EVIDENCE_MODE=legacy-scan dotnet test \
+  --project tests/DotnetAgents.CalDav.Core.Tests.Unit/DotnetAgents.CalDav.Core.Tests.Unit.csproj \
+  -c Release --no-build --no-restore \
+  --filter-class '*ExactMoveMrtrWorkEvidenceTests' \
+  --results-directory /tmp/issue115-evidence-766898a/baseline-core \
+  --report-trx --report-trx-filename baseline-core.trx \
+  --minimum-expected-tests 4 --fail-skips on --zero-tests-policy strict --no-ansi
+CALDAV_MOVE_EVIDENCE_MODE=legacy-scan RADICALE_CONFORMANCE_VARIANT=baseline dotnet test \
+  --project tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj \
+  -c Release --no-build --no-restore \
+  --filter-class '*ExactMoveMrtrRadicaleSizeEvidenceTests' \
+  --results-directory /tmp/issue115-evidence-766898a/baseline-radicale \
+  --report-trx --report-trx-filename baseline-radicale.trx \
+  --minimum-expected-tests 2 --fail-skips on --zero-tests-policy strict --no-ansi
+```
+
+From changed implementation revision `766898ab6e5fad5890c61427a77a07d570ef42b9`:
+
+```bash
+CALDAV_MOVE_EVIDENCE_MODE=server-authoritative dotnet test \
+  --project tests/DotnetAgents.CalDav.Core.Tests.Unit/DotnetAgents.CalDav.Core.Tests.Unit.csproj \
+  -c Release --no-build --no-restore \
+  --filter-class '*ExactMoveMrtrWorkEvidenceTests' \
+  --results-directory /tmp/issue115-evidence-766898a/current-core \
+  --report-trx --report-trx-filename current-core.trx \
+  --minimum-expected-tests 4 --fail-skips on --zero-tests-policy strict --no-ansi
+CALDAV_MOVE_EVIDENCE_MODE=server-authoritative RADICALE_CONFORMANCE_VARIANT=baseline dotnet test \
+  --project tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj \
+  -c Release --no-build --no-restore \
+  --filter-class '*ExactMoveMrtrRadicaleSizeEvidenceTests' \
+  --results-directory /tmp/issue115-evidence-766898a/current-radicale \
+  --report-trx --report-trx-filename current-radicale.trx \
+  --minimum-expected-tests 2 --fail-skips on --zero-tests-policy strict --no-ansi
+```
+
+All four Exact runs passed. Each Core run executed four tests and each Radicale
+run executed two. The four TRX files remain retained under
+`/tmp/issue115-evidence-766898a`; the Radicale witness performs exact cleanup in
+`finally`, and fixture disposal removes the disposable container.
+
+## Semantic Move reproduction
 
 The observations were produced sequentially. After checking out the changed
 revision, a detached baseline was created and the two committed witness files
@@ -173,6 +306,10 @@ the disposable container.
   bilateral truth, exact phase reporting, pre-dispatch precedence, cancellation
   isolation, semantic normalization/divergence, and the narrow
   `discover/read-source/probe/dispatch/observe` trace.
+- `CalendarExactMoveServiceTests` proves two fresh MRTR preparations, one-use
+  plan consumption, scoped transport authorization, Opaque exact fidelity,
+  ordinary-failure precedence, dispatch-boundary ambiguity, and the shared
+  complete bilateral truth matrix.
 - `RadicaleConformanceHarnessTests` retains the occupied-href, same-kind and
   cross-kind UID conflict, stale revision, and probe-to-MOVE race matrix.
 - `OpenTelemetryStdioIntegrationTests` retains the real stdio/OTLP outcome and
@@ -181,8 +318,9 @@ the disposable container.
 
 ## Scope boundary
 
-This change removes scan work only from Semantic Move. Exact Move's MRTR
-planning and the remaining Exact-only scan are assigned to issue `#115`. The
-architectural rationale is recorded in [ADR 0006](adr/0006-server-authoritative-semantic-move.md),
-and the canonical requirement mapping is in
+Issues `#114` and `#115` remove scan work from Semantic and Exact Move while
+preserving their distinct fidelity rules. Global performance evidence
+consolidation remains assigned to issue `#116`. The architectural rationale is
+recorded in [ADR 0006](adr/0006-server-authoritative-semantic-move.md), and the
+canonical requirement mapping is in
 [requirement-to-evidence.md](requirement-to-evidence.md).

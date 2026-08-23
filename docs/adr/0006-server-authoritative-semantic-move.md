@@ -1,4 +1,4 @@
-# ADR 0006: Server-authoritative semantic Move module
+# ADR 0006: Server-authoritative Move modules
 
 Status: Accepted
 
@@ -13,6 +13,12 @@ failure details, and still could not close the race between inspection and the
 mutation. Move policy was also spread across a broad query-capable client and
 post-conflict inspection paths.
 
+Exact Move repeated that scan three times across its MRTR review and confirmed
+execution, exposed review and execution as separate public phases, and could
+not rename an Opaque Calendar Object Resource within one Calendar. Exact Move
+still requires a stricter fidelity rule than Semantic Move: authoritative bytes
+must remain equal even when semantic normalization would be harmless.
+
 CalDAV already owns the atomic decision. A conforming MOVE can bind the source
 with a strong `If-Match`, prohibit destination replacement with `Overwrite: F`,
 and report `CALDAV:no-uid-conflict`. Dispatch uncertainty still requires
@@ -21,7 +27,15 @@ committed the mutation.
 
 ## Decision
 
-Concentrate semantic Move in the internal sealed `CalendarMoveModule`. Its
+Concentrate Semantic Move in the internal sealed `CalendarMoveModule` and Exact
+Move review/confirmation in the internal sealed `CalendarExactMoveModule`.
+Both construct the same closed-fidelity, internal one-use plan and delegate its
+single dispatch plus bilateral truth to `CalendarMoveDispatcher`. Semantic mode
+uses the complete lossless semantic comparator; Exact mode uses authoritative
+byte equality and accepts validated Opaque resources. The plan is consumed
+before wire access and is never exposed through Core or MCP contracts.
+
+The Semantic Move module's
 `ICalendarMoveTransport` port exposes only operation-scoped discovery with
 precomputed default-selection truth, one authoritative source read, one
 content-insensitive destination presence probe, one conditional MOVE dispatch,
@@ -72,23 +86,33 @@ rejection.
 
 The capability contract is explicit and fail closed. The only enabled profile
 is `radicale-3.7.8`, which denotes the repository's digest-pinned Radicale 3.7.8
-runtime evidence. Omission or any other value leaves Semantic Move disabled;
+runtime evidence. Omission or any other value leaves both Move modes disabled;
 generic DAV discovery is not treated as proof of atomic UID enforcement.
+
+Exact Move MRTR returns only a protected `CalendarExactMoveReviewBinding` from
+the initial call. A confirmed call performs fresh authorization, discovery,
+capability, strong-revision, and exact-destination-absence checks before it
+compares the prior intent binding and consumes one plan. There is no public
+executable plan, third preparation, destination-member query, or compatibility
+scan. Same-Calendar rename is allowed, including for Opaque resources. The
+binding authenticates the normalized request, source intent digest, policy,
+credentials, effective origin and scope, verified profile, and timeout without
+retaining or exposing those values.
 
 ## Consequences
 
-Semantic Move work is constant with respect to destination size and unrelated
-resources are neither retrieved nor parsed. One operation-scoped discovery
-result preserves Calendar Scope and configured-default selection truth without
+Semantic and Exact Move work is constant with respect to destination size and
+unrelated resources are neither retrieved nor parsed. One operation-scoped
+discovery result preserves Calendar Scope and configured-default selection truth without
 reapplying policy in the module. Conditional Create remains unchanged, and the
-Exact Move MRTR plan redesign and Exact-only scan cleanup remain owned by issue
-`#115`.
+former broad Exact scan/query entry point is removed.
 
 The permanent deterministic and digest-pinned Radicale witnesses materialize
 destination sizes 1, 50, and 600. They prove zero changed-revision REPORT,
 multiget, and unrelated GET work, exactly one MOVE, and constant involved-
-resource reconciliation; recorded durations are supporting observations only,
-not an SLA.
+resource reconciliation. Exact Move witnesses prove two fresh MRTR discoveries,
+six involved-resource observations, zero REPORT, and one MOVE. Recorded
+durations are supporting observations, not an SLA.
 
 Operation telemetry exports only closed dispatch, collision, reconciliation,
 logical outcome, and Mutation State classifications. The export allowlist still
