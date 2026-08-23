@@ -90,7 +90,7 @@ run_main_project \
   tests/DotnetAgents.CalDav.Mcp.Tests.Unit/DotnetAgents.CalDav.Mcp.Tests.Unit.csproj \
   main-mcp \
   main-mcp.trx \
-  910
+  924
 run_main_project \
   tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj \
   main-integration \
