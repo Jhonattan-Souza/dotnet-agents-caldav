@@ -605,6 +605,57 @@ public sealed class CalendarTelemetryTests
         record.SpanId.ShouldBe(spanId);
     }
 
+    [Fact]
+    public void QueryTelemetryAllowlistKeepsOnlyClosedModesAndBoundedWorkCounts()
+    {
+        using var listener = ListenTo(CalendarTelemetry.InstrumentationName);
+        using var source = new ActivitySource(CalendarTelemetry.InstrumentationName);
+        using var activity = source.StartActivity("caldav.query");
+        activity.ShouldNotBeNull();
+        activity.SetTag("caldav.query.mode", "start");
+        activity.SetTag("caldav.query.fetch_mode", "multiget");
+        activity.SetTag("caldav.query.snapshot_lookup_count", 1L);
+        activity.SetTag("caldav.query.serialization_count", 0L);
+        activity.SetTag("caldav.query.candidate_count", -1L);
+        activity.SetTag("caldav.query.admission_envelope_serialization_count", 1L);
+        activity.SetTag("caldav.query.final_materialization_count", 1L);
+        activity.SetTag("caldav.query.phase", "private_phase");
+        activity.SetTag("caldav.query.cursor", "private-cursor");
+        activity.SetTag("caldav.query.href", "https://cal.example/private.ics");
+        activity.Stop();
+
+        new TelemetryActivityAllowlistProcessor().OnEnd(activity);
+
+        activity.GetTagItem("caldav.query.mode").ShouldBe("start");
+        activity.GetTagItem("caldav.query.fetch_mode").ShouldBe("multiget");
+        activity.GetTagItem("caldav.query.snapshot_lookup_count").ShouldBe(1L);
+        activity.GetTagItem("caldav.query.serialization_count").ShouldBe(0L);
+        activity.GetTagItem("caldav.query.candidate_count").ShouldBeNull();
+        activity.GetTagItem("caldav.query.admission_envelope_serialization_count").ShouldBeNull();
+        activity.GetTagItem("caldav.query.final_materialization_count").ShouldBeNull();
+        activity.GetTagItem("caldav.query.phase").ShouldBeNull();
+        activity.GetTagItem("caldav.query.cursor").ShouldBeNull();
+        activity.GetTagItem("caldav.query.href").ShouldBeNull();
+    }
+
+    [Fact]
+    public void QueryDimensionsAreRemovedFromNonCalendarInstrumentation()
+    {
+        using var listener = ListenTo(OpenTelemetryHostConfiguration.McpInstrumentationName);
+        using var source = new ActivitySource(OpenTelemetryHostConfiguration.McpInstrumentationName);
+        using var activity = source.StartActivity("tools/call");
+        activity.ShouldNotBeNull();
+        activity.SetTag("mcp.method.name", "tools/call");
+        activity.SetTag("caldav.query.phase", "fetch");
+        activity.SetTag("caldav.query.snapshot_count", 1L);
+        activity.Stop();
+
+        new TelemetryActivityAllowlistProcessor().OnEnd(activity);
+
+        activity.GetTagItem("caldav.query.phase").ShouldBeNull();
+        activity.GetTagItem("caldav.query.snapshot_count").ShouldBeNull();
+    }
+
     private static ActivityListener ListenTo(string sourceName)
     {
         var listener = new ActivityListener

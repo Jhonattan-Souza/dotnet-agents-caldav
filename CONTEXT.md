@@ -92,6 +92,14 @@ _Avoid_: Timeout, page size, server capacity
 The failure to produce a complete truthful operation result because one dimension of its Execution Budget was consumed.
 _Avoid_: Partial success, empty result, timeout
 
+**Query Result Snapshot**:
+An immutable, authorization-bound view of one completely evaluated query result from which every result page is derived without repeating remote or semantic work.
+_Avoid_: CalDAV cache, live result set, offset page
+
+**Continuation Cursor**:
+An opaque authenticated position in one Query Result Snapshot whose validity cannot outlive that snapshot.
+_Avoid_: Page number, durable result identifier, CalDAV sync token
+
 **Event**:
 A Calendar Entity representing a scheduled activity or state over a date or time interval.
 

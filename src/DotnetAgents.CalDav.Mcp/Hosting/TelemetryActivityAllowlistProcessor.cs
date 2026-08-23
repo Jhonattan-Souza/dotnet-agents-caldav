@@ -22,6 +22,16 @@ internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activi
         "caldav.http.observation",
         "caldav.transport.recovered",
         "caldav.transport.retry_count",
+        "caldav.query.mode",
+        "caldav.query.fetch_mode",
+        "caldav.query.phase",
+        "caldav.query.candidate_count",
+        "caldav.query.multiget_resource_count",
+        "caldav.query.snapshot_count",
+        "caldav.query.evaluation_count",
+        "caldav.query.serialization_count",
+        "caldav.query.snapshot_lookup_count",
+        "caldav.query.page_admission_count",
         "error.type",
         "gen_ai.operation.name",
         "gen_ai.tool.name",
@@ -67,6 +77,16 @@ internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activi
         "PUT",
         "REPORT"
     };
+    private static readonly string[] QueryCounterNames =
+    [
+        "caldav.query.candidate_count",
+        "caldav.query.multiget_resource_count",
+        "caldav.query.snapshot_count",
+        "caldav.query.evaluation_count",
+        "caldav.query.serialization_count",
+        "caldav.query.snapshot_lookup_count",
+        "caldav.query.page_admission_count"
+    ];
     private static readonly SearchValues<char> ProtocolVersionCharacters =
         SearchValues.Create("0123456789-");
 
@@ -89,6 +109,8 @@ internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activi
             data.DisplayName = data.OperationName;
             SanitizeCalendarActivity(data);
         }
+        if (data.Source.Name != OpenTelemetryHostConfiguration.InstrumentationName)
+            RemoveQueryTags(data);
 
         foreach (var tag in data.TagObjects.Where(tag => !AllowedTagNames.Contains(tag.Key)).ToArray())
             data.SetTag(tag.Key, null);
@@ -195,6 +217,12 @@ internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activi
             activity.GetTagItem("caldav.error.category") as string));
         activity.SetTag("caldav.error.phase", CalendarTelemetryVocabulary.ErrorPhase(
             activity.GetTagItem("caldav.error.phase") as string));
+        activity.SetTag("caldav.query.mode", ClosedQueryMode(activity.GetTagItem("caldav.query.mode")));
+        activity.SetTag("caldav.query.fetch_mode", ClosedQueryFetchMode(
+            activity.GetTagItem("caldav.query.fetch_mode")));
+        activity.SetTag("caldav.query.phase", ClosedQueryPhase(activity.GetTagItem("caldav.query.phase")));
+        foreach (var name in QueryCounterNames)
+            activity.SetTag(name, NonNegativeCounter(activity.GetTagItem(name)));
         ApplyRetryAggregation(activity);
     }
 
@@ -241,6 +269,44 @@ internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activi
     };
 
     private static bool? BooleanTag(object? value) => value is bool boolean ? boolean : null;
+
+    private static long? NonNegativeCounter(object? value)
+    {
+        var numeric = NumericTag(value);
+        return numeric is >= 0 and <= 100_000_000 ? numeric : null;
+    }
+
+    private static string? ClosedQueryMode(object? value) => (value as string) switch
+    {
+        "start" => "start",
+        "continue" => "continue",
+        _ => null
+    };
+
+    private static string? ClosedQueryFetchMode(object? value) => (value as string) switch
+    {
+        "multiget" => "multiget",
+        _ => null
+    };
+
+    private static string? ClosedQueryPhase(object? value) => (value as string) switch
+    {
+        "discovery" => "discovery",
+        "candidate" => "candidate",
+        "fetch" => "fetch",
+        "evaluation" => "evaluation",
+        "serialization" => "serialization",
+        "reservation" => "reservation",
+        "snapshot_lookup" => "snapshot_lookup",
+        "page_admission" => "page_admission",
+        _ => null
+    };
+
+    private static void RemoveQueryTags(Activity activity)
+    {
+        foreach (var tag in activity.TagObjects.Where(tag => tag.Key.StartsWith("caldav.query.", StringComparison.Ordinal)).ToArray())
+            activity.SetTag(tag.Key, null);
+    }
 
     private static string? ClosedOutcome(object? value) => (value as string) switch
     {

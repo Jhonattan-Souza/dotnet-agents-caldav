@@ -164,7 +164,6 @@ public sealed class CalendarExecutionPolicyTests
 
     [Theory]
     [InlineData("calendars.list")]
-    [InlineData("calendar_entities.query")]
     [InlineData("calendar_occurrences.query")]
     [InlineData("calendar_resources.get")]
     [InlineData("calendar_resources.exact_get")]
@@ -234,6 +233,28 @@ public sealed class CalendarExecutionPolicyTests
         below.IsError.ShouldBe(false);
         AssertElapsedTimeDeadline(at, mutation: false);
         AssertElapsedTimeDeadline(above, mutation: false);
+    }
+
+    [Fact]
+    public async Task MigratedEntityQueryHasNoHostDeadlineOrLegacyPhase()
+    {
+        var stopped = new List<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == CalendarTelemetry.InstrumentationName,
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) =>
+                ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = stopped.Add
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        var result = await InvokeAfterElapsedAsync(
+            "calendar_entities.query",
+            TimeSpan.FromSeconds(31),
+            completeOperation: true);
+
+        result.IsError.ShouldBe(false);
+        stopped.ShouldNotContain(activity => activity.OperationName.StartsWith("caldav.phase.", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -644,7 +665,7 @@ public sealed class CalendarExecutionPolicyTests
         var pending = filtered(context, callerCancellation.Token).AsTask();
         await operationStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
         context.Services!.GetRequiredService<TimeProvider>().ShouldBeSameAs(time);
-        time.TimerCount.ShouldBe(1);
+        time.TimerCount.ShouldBe(toolName == "calendar_entities.query" ? 0 : 1);
         time.Advance(elapsed);
         if (completeOperation)
         {

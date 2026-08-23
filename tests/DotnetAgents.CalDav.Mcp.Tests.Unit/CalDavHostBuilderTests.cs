@@ -283,12 +283,19 @@ public class CalDavHostBuilderTests
 
         var inputSchema = JsonNode.Parse(tool!.ProtocolTool.InputSchema.GetRawText())!.AsObject();
         var outputSchema = JsonNode.Parse(tool.ProtocolTool.OutputSchema!.Value.GetRawText())!.AsObject();
-        inputSchema["additionalProperties"]!.GetValue<bool>().ShouldBeFalse();
-        inputSchema["required"]!.AsArray().Select(item => item!.GetValue<string>())
+        var inputBranches = inputSchema["oneOf"]!.AsArray();
+        inputBranches.Count.ShouldBe(2);
+        inputBranches.All(branch => !branch!["additionalProperties"]!.GetValue<bool>()).ShouldBeTrue();
+        inputBranches[0]!["required"]!.AsArray().Select(item => item!.GetValue<string>())
             .ShouldBe(["scope", "entityKinds"]);
+        inputBranches[1]!["required"]!.AsArray().Select(item => item!.GetValue<string>())
+            .ShouldBe(["cursor"]);
+        inputBranches[1]!["properties"]!["cursor"]!["maxLength"]!.GetValue<int>().ShouldBe(2048);
         outputSchema["oneOf"]!.AsArray().Count.ShouldBe(2);
         outputSchema["$defs"]!.AsObject().ShouldContainKey("entityQuerySuccess");
-        outputSchema["$defs"]!.AsObject().ShouldContainKey("errorOutcome");
+        outputSchema["$defs"]!["entityQueryPagination"]!["properties"]!["mode"]!["const"]!
+            .GetValue<string>().ShouldBe("query_result_snapshot");
+        outputSchema["$defs"]!.AsObject().ShouldContainKey("entityQueryErrorOutcome");
         tool.ProtocolTool.Meta!["cache"]!["ttlMs"]!.GetValue<int>().ShouldBe(5000);
         tool.ProtocolTool.Meta!["cache"]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
     }

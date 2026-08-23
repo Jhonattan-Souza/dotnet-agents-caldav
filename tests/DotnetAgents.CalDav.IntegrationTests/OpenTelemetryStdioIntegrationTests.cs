@@ -24,6 +24,117 @@ public sealed class OpenTelemetryStdioIntegrationTests
     }
 
     [Fact]
+    public async Task CalendarEntityStartContinue_ExportsSafeModulePhasesAndZeroContinuationWireWork()
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        var firstUid = $"private-query-first-{suffix}";
+        var secondUid = $"private-query-second-{suffix}";
+        var privateSummary = $"Private query snapshot {suffix}";
+        var firstHref = await PutResourceAsync(
+            _fixture.TodoCalendarHref,
+            $"query-first-{suffix}.ics",
+            SnapshotTodo(firstUid, $"{privateSummary} first"));
+        var secondHref = await PutResourceAsync(
+            _fixture.TodoCalendarHref,
+            $"query-second-{suffix}.ics",
+            SnapshotTodo(secondUid, $"{privateSummary} second"));
+        await using var receiver = OtlpLoopbackReceiver.Start();
+        var stderr = new ConcurrentQueue<string>();
+        string cursor;
+        try
+        {
+            await using (var client = await CreateClientAsync(
+                             receiver.Endpoint,
+                             stderr,
+                             calendarHrefs: $"{_fixture.BaseUrl}{_fixture.TodoCalendarHref}"))
+            {
+                var start = await client.CallToolAsync(
+                    "calendar_entities.query",
+                    new Dictionary<string, object?>
+                    {
+                        ["scope"] = new Dictionary<string, object?>
+                        {
+                            ["mode"] = "selected",
+                            ["calendar"] = new Dictionary<string, object?>
+                            {
+                                ["by"] = "href",
+                                ["href"] = $"{_fixture.BaseUrl}{_fixture.TodoCalendarHref}"
+                            }
+                        },
+                        ["entityKinds"] = new[] { "todo" },
+                        ["pageSize"] = 1
+                    },
+                    cancellationToken: TestContext.Current.CancellationToken);
+                start.IsError.ShouldBe(false, start.StructuredContent?.ToString());
+                var structured = start.StructuredContent!.Value;
+                structured.GetProperty("pagination").GetProperty("mode").GetString()
+                    .ShouldBe("query_result_snapshot");
+                cursor = structured.GetProperty("pagination").GetProperty("nextCursor").GetString()
+                    .ShouldNotBeNull();
+
+                var continuation = await client.CallToolAsync(
+                    "calendar_entities.query",
+                    new Dictionary<string, object?> { ["cursor"] = cursor, ["pageSize"] = 1 },
+                    cancellationToken: TestContext.Current.CancellationToken);
+                continuation.IsError.ShouldBe(false, continuation.StructuredContent?.ToString());
+                continuation.StructuredContent!.Value.GetProperty("pagination").GetProperty("mode").GetString()
+                    .ShouldBe("query_result_snapshot");
+            }
+
+            await receiver.WaitForPathsAsync(["/v1/traces"], TestContext.Current.CancellationToken);
+            var deadline = TimeProvider.System.GetUtcNow() + TimeSpan.FromSeconds(15);
+            OtlpSpan[] operations;
+            do
+            {
+                operations = OtlpProtobufReader.ReadSpans(receiver.Requests).Where(span =>
+                    span.Name == "caldav.operation"
+                    && Equals(span.Attributes.GetValueOrDefault("caldav.tool.name"), "calendar_entities.query"))
+                    .ToArray();
+                if (operations.Length == 2)
+                    break;
+                if (!await receiver.WaitForRequestAsync(TestContext.Current.CancellationToken))
+                    break;
+            } while (TimeProvider.System.GetUtcNow() < deadline);
+
+            operations.Length.ShouldBe(2);
+            var startOperation = operations.Single(span =>
+                Equals(span.Attributes.GetValueOrDefault("caldav.query.mode"), "start"));
+            var continueOperation = operations.Single(span =>
+                Equals(span.Attributes.GetValueOrDefault("caldav.query.mode"), "continue"));
+            var spans = OtlpProtobufReader.ReadSpans(receiver.Requests);
+            var startTrace = spans.Where(span => span.TraceId.SequenceEqual(startOperation.TraceId)).ToArray();
+            var continueTrace = spans.Where(span => span.TraceId.SequenceEqual(continueOperation.TraceId)).ToArray();
+            startTrace.ShouldContain(span => span.ScopeName == "DotnetAgents.CalDav.Http");
+            continueTrace.ShouldNotContain(span => span.ScopeName == "DotnetAgents.CalDav.Http");
+            continueTrace.Where(span => span.Name.StartsWith("caldav.query.phase.", StringComparison.Ordinal))
+                .ShouldAllBe(span => span.ParentSpanId.SequenceEqual(continueOperation.SpanId));
+            continueTrace.Where(span => span.Name.StartsWith("caldav.query.phase.", StringComparison.Ordinal))
+                .Select(span => span.Attributes.GetValueOrDefault("caldav.query.phase"))
+                .OrderBy(value => value)
+                .ShouldBe(new object?[] { "page_admission", "snapshot_lookup" });
+            continueOperation.Attributes.Where(attribute =>
+                    attribute.Key.StartsWith("caldav.query.", StringComparison.Ordinal))
+                .Select(attribute => attribute.Key)
+                .Order(StringComparer.Ordinal)
+                .ShouldBe([
+                    "caldav.query.mode",
+                    "caldav.query.page_admission_count",
+                    "caldav.query.snapshot_lookup_count"
+                ]);
+            OtlpProtobufReader.ContainsUtf8(receiver.Requests, cursor).ShouldBeFalse();
+            foreach (var privateValue in new[] { firstUid, secondUid, privateSummary, firstHref, secondHref })
+                OtlpProtobufReader.ContainsUtf8(receiver.Requests, privateValue).ShouldBeFalse();
+            spans.ShouldAllBe(span => span.EventCount == 0);
+            stderr.ShouldBeEmpty();
+        }
+        finally
+        {
+            await DeleteResourceAsync(firstHref, entityTag: null);
+            await DeleteResourceAsync(secondHref, entityTag: null);
+        }
+    }
+
+    [Fact]
     public async Task OptIn_ExportsSafeParentedWaterfallLogsAndMcpMetricsOverLoopbackOtlp()
     {
         var suffix = Guid.NewGuid().ToString("N");
@@ -910,6 +1021,11 @@ public sealed class OpenTelemetryStdioIntegrationTests
         "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Telemetry Privacy Test//EN\r\n"
         + $"BEGIN:VTODO\r\nUID:{uid}\r\nDTSTAMP:20260821T120000Z\r\n"
         + "SUMMARY:Private reviewed MRTR resource\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+
+    private static string SnapshotTodo(string uid, string summary) =>
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Query Snapshot Telemetry//EN\r\n"
+        + $"BEGIN:VTODO\r\nUID:{uid}\r\nDTSTAMP:20260823T120000Z\r\n"
+        + $"SUMMARY:{summary}\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
 
     private static string ExactEvent(string uid, string summary) =>
         "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Telemetry Exact Review//EN\r\n"

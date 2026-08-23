@@ -48,7 +48,7 @@ Add this MCP server to VS Code, Claude Desktop, Cursor, or any MCP client:
 ### Semantic Calendar tools
 
 - `calendars.list` — Discover the configured Calendar Scope.
-- `calendar_entities.query` — Query bounded persisted Event and To-do snapshots across default, selected, or explicit-all Calendar Scope.
+- `calendar_entities.query` — Start a bounded persisted Event and To-do query across Calendar Scope, or continue its immutable Query Result Snapshot without repeating CalDAV work.
 - `calendar_occurrences.query` — Expand Event and To-do occurrences locally within a required half-open UTC window, using an explicit IANA evaluation time zone only when floating or date-only values require it.
 - `todos.query` — Read compact normalized To-do results in an explicit Calendar Scope; routine open-task reads use this surface instead of parsing full snapshots.
 - `calendar_resources.get` — Read an authoritative semantic-or-opaque snapshot by confirmed absolute href.
@@ -118,7 +118,9 @@ Version 0.2.0 deliberately replaces the task-specific 0.1.x contract. Read [Migr
 
 Layered design:
 
-`MCP tools` → `ICalendarService` → thin service facade → `CalDavClient` → `HttpClient`; lossless iCalendar projection and bounded recurrence evaluation stay in Core's iCalendar modules.
+Calendar Entity reads use `MCP adapter` → `ICalendarQueryModule` → narrow CalDAV query transport → `CalDavClient`; unrelated operations retain the `ICalendarService` path. Lossless iCalendar projection and bounded recurrence evaluation stay in Core's iCalendar modules.
+
+A Calendar Entity Start completes discovery, authoritative retrieval, evaluation, ordering, and projection before returning its first page. A Continue authenticates its opaque cursor and reads only the bounded process-local Query Result Snapshot. Snapshots expire ten minutes after the first page, are never extended by replay, and are not CalDAV caches or mutation authority.
 
 Each MCP tool call owns one immutable, authorization-bound discovery coordinator. Same-key source, destination, query, and reconciliation consumers share its complete in-scope result; a new call, including an MRTR continuation, performs fresh discovery. This is an operation-local lifetime only: credentials, resource snapshots, query results, Entity Tags, and process-lifetime Capability State are never retained in the discovery result, and there is no process-wide or TTL discovery cache.
 

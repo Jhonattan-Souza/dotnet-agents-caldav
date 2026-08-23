@@ -141,11 +141,11 @@ public sealed class CalendarMcpStdioIntegrationTests
         structured.GetProperty("items").GetArrayLength().ShouldBe(1);
         structured.GetProperty("items")[0].GetProperty("resourceRevision").GetProperty("entityTag").GetString()
             .ShouldStartWith("\"");
-        structured.GetProperty("pagination").GetProperty("mode").GetString().ShouldBe("non_snapshot");
+        structured.GetProperty("pagination").GetProperty("mode").GetString().ShouldBe("query_result_snapshot");
         structured.GetProperty("diagnostics").ValueKind.ShouldBe(System.Text.Json.JsonValueKind.Array);
         advertised.OutputSchema.ShouldNotBeNull();
         advertised.OutputSchema.Value.GetProperty("oneOf").GetArrayLength().ShouldBe(2);
-        advertised.InputSchema.GetProperty("additionalProperties").GetBoolean().ShouldBeFalse();
+        advertised.InputSchema.GetProperty("oneOf").GetArrayLength().ShouldBe(2);
         failure.IsError.ShouldBe(true);
         var error = failure.StructuredContent!.Value;
         error.EnumerateObject().Select(property => property.Name)

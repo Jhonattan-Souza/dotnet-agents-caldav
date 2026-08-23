@@ -63,7 +63,7 @@ internal static class CalendarTelemetryVocabulary
     private static readonly HashSet<string> ErrorCodes = new(StringComparer.Ordinal)
     {
         "ambiguous", "busy", "committed_but_concurrency_unavailable", "committed_but_unverified",
-        "completion_state_conflict", "concurrency_unavailable", "confirmation_expired",
+        "completion_state_conflict", "concurrency_unavailable", "confirmation_expired", "cursor_expired",
         "confirmation_mismatch", "conflict", "destination_conflict", "entity_kind_mismatch",
         "fidelity_failure", "indeterminate", "invalid_calendar_data", "invalid_input",
         "limit_exhausted", "not_found", "opaque_resource", "outside_scope", "payload_too_large",
@@ -78,7 +78,7 @@ internal static class CalendarTelemetryVocabulary
     private static readonly HashSet<string> ErrorPhases = new(StringComparer.Ordinal)
     {
         "admissionAndPayload", "completeResourceSemantics", "execution", "mrtr",
-        "originScopeAuthorization", "postWriteVerificationOrReconciliation",
+        "originScopeAuthorization", "pagination", "postWriteVerificationOrReconciliation",
         "schemaLexicalDiscriminator", "selectionDiscoveryCapability", "targetRevision",
         "transportAuthorization"
     };

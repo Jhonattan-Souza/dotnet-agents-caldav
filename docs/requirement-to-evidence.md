@@ -43,6 +43,35 @@ payload markers, trace state, exception details, and client-controlled labels.
 `CAL-OBS-006` and `CAL-OBS-008` remain query-owned and are added by the query
 retrieval work rather than this general telemetry branch.
 
+## Calendar Entity deep query module and snapshots
+
+| Requirement | Implementation evidence | Verification evidence |
+| --- | --- | --- |
+| `CAL-QUERY-001` | Public Core `ICalendarQueryModule.QueryEntitiesAsync` accepts a closed request and returns `QueryReply<CalendarEntityQueryItem>` without MCP or CalDAV types. Occurrence and To-do methods remain scoped to their owning tickets. | `CalendarQueryModuleTests`; `CalendarEntityToolsTests.QueryRawAsync_PassesThroughTheModuleBuiltStructuredPageWithoutReprojection` |
+| `CAL-QUERY-002` | `CalendarEntityTools` performs raw/schema conversion only; `CalendarEntityQueryStartExecutor` owns the single query deadline and every later budget. The host deadline is disabled only for the migrated tool. | `CalendarExecutionPolicyTests.MigratedEntityQueryHasNoHostDeadlineOrLegacyPhase`; module limit and byte tests |
+| `CAL-QUERY-003` | `ICalendarService` and `CalendarService` no longer expose Calendar Entity query; the MCP adapter depends directly on `ICalendarQueryModule`. | Structural search gate; `CalDavHostBuilderTests.BuildHost_ActivatesCalendarEntityToolsThroughTheSdkConstructionPath` |
+| `CAL-QUERY-004` | Internal `ICalendarQueryTransport` has exactly discovery, candidate REPORT, multiget, and direct GET operations; #108 never calls GET. Production and scripted adapters implement it. | `CalendarQueryModuleTests` scripted adapter counters and `RepeatedStartsOnOneModuleAcquireFreshProductionDiscovery` |
+| `CAL-QUERY-005` | Start and Continue executors have distinct constructors; Continue has no transport or evaluator dependency. | Structural constructor assertions and `ContinueReadsTheImmutableResultWithoutRepeatingCalDavWork` |
+| `CAL-QUERY-006` | One concrete singleton `CalendarQuerySnapshotStore` exposes narrow reader/writer capabilities; there is no store interface or registry. | `CalendarQuerySnapshotStoreTests` |
+| `CAL-QUERY-007` | The public request and reply families are closed records over Calendar Entity results; no query-plan extension seam is exposed. | Public API/package structural tests |
+| `CAL-QUERY-008` | Calendar Entity query is removed from the legacy service path; MCP prefix assembly, host query deadline, and legacy query progress are bypassed. | `CalendarExecutionPolicyTests`; `CalendarEntityToolsTests` |
+| `CAL-QUERY-009` | Start completes retrieval/evaluation/projection; Continue authenticates and admits a retained page only. | Scripted transport work counters; real stdio/Radicale Start-to-Continue witness |
+| `CAL-QUERY-010` | Live schema defines mutually exclusive closed Start and Continue branches with page sizes 1-200 and a 2,048-character cursor limit. | `CalDavHostBuilderTests.BuildHost_AdvertisesFrozenEntityQuerySchemasAndPrivateCacheHint`; `QueryRawAsync_EnforcesTheExactCursorCharacterBoundary` |
+| `CAL-QUERY-011` | Snapshot expiry is fixed ten minutes from first-page construction; a new Start creates fresh discovery and state. | `SnapshotLifetimeStartsWhenTheFirstPageIsBuilt`; `RepeatedStartsOnOneModuleAcquireFreshProductionDiscovery` |
+| `CAL-QUERY-012` | AES-GCM cursors bind tool, snapshot, position, expiry, and keyed credential/configuration context with deterministic replay. | `CalendarQueryCursorCodecTests`; `CursorReplayVariablePagesAndAuthenticationAreDeterministic` |
+| `CAL-QUERY-013` | Entity pages repeat frozen diagnostics and return `query_result_snapshot` with nullable `nextCursor`. | Live catalog; page-codec tests; stdio Start-to-Continue witness |
+| `CAL-QUERY-014` | Filtering precedes a global ordinal Calendar href then Resource href sort. | `CanonicalCalendarTraversalMakesFailurePrecedenceIndependentOfKindOrder` and ordered page assertions |
+| `CAL-QUERY-015` | Stored items have one encoded representation; page planning uses cumulative exact bytes and one fixed-envelope serialization before one final materialization. | `CalendarEntityQueryPageCodecTests` 1/50/200 work oracle and exact boundary; actual SDK 4 MiB edge test |
+| `CAL-QUERY-016` | Per-snapshot policy is 5,000 items/32 MiB; store policy is 16 snapshots/128 MiB with provisional reservation before a cursor is returned. | `CalendarQuerySnapshotPolicyTests`; independent store slot/byte boundary tests |
+| `CAL-QUERY-017` | Per-snapshot overflow returns `limit_exhausted`; aggregate exhaustion returns retryable `busy` using the nearest committed or reserved expiry. | Snapshot policy and active-reservation store tests |
+| `CAL-QUERY-018` | The store retains only projected encoded items and bounded diagnostics; no authoritative resource bytes or duplicated `JsonElement` representation are retained. | Stored-type structural test and retained-byte accounting tests |
+| `CAL-QUERY-019` | Lease rollback and timer disposal clear snapshots, reservations, and bytes on cancellation, publication failure, expiry, and process disposal; query telemetry is closed and identifier-free. | `CallerCancellationAfterReservationPublishesAndRetainsNothing`; `SnapshotPublicationFailureIsTypedAndRollsBackEveryStoreCounter`; expiry/disposal and telemetry privacy tests |
+
+The dated [before/after observation](performance-query-snapshots-2026-08-23.md)
+records the baseline request/serialization shape and the focused zero-work
+continuation, exact-byte, capacity, real stdio, pinned-Radicale, and OTLP
+acceptance boundaries.
+
 ## Shared performance evidence
 
 | Requirement | Evidence |

@@ -2433,7 +2433,7 @@
         "idempotentHint": true,
         "openWorldHint": true
       },
-      "description": "Query persisted Event or To-do resource snapshots within an explicit Calendar Scope."
+      "description": "Start one bounded Calendar Entity query or continue its immutable Query Result Snapshot without repeating CalDAV or semantic work."
     },
     {
       "name": "calendar_occurrences.query",
@@ -3309,10 +3309,6 @@
     "entityQueryInput": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "scope",
-        "entityKinds"
-      ],
       "properties": {
         "scope": {
           "$ref": "#/$defs/todoScope"
@@ -3320,6 +3316,7 @@
         "entityKinds": {
           "type": "array",
           "minItems": 1,
+          "maxItems": 2,
           "uniqueItems": true,
           "items": {
             "enum": [
@@ -3334,38 +3331,97 @@
         "to": {
           "$ref": "#/$defs/utcTemporalValue"
         },
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
         "pageSize": {
           "type": "integer",
           "minimum": 1,
           "maximum": 200
-        },
-        "cursor": {
-          "type": "string"
         }
       },
-      "allOf": [
+      "oneOf": [
         {
-          "if": {
-            "required": [
-              "from"
-            ]
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "scope",
+            "entityKinds"
+          ],
+          "properties": {
+            "scope": {
+              "$ref": "#/$defs/todoScope"
+            },
+            "entityKinds": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 2,
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "event",
+                  "todo"
+                ]
+              }
+            },
+            "from": {
+              "$ref": "#/$defs/utcTemporalValue"
+            },
+            "to": {
+              "$ref": "#/$defs/utcTemporalValue"
+            },
+            "pageSize": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
           },
-          "then": {
-            "required": [
-              "to"
-            ]
-          }
+          "allOf": [
+            {
+              "if": {
+                "required": [
+                  "from"
+                ]
+              },
+              "then": {
+                "required": [
+                  "to"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "to"
+                ]
+              },
+              "then": {
+                "required": [
+                  "from"
+                ]
+              }
+            }
+          ]
         },
         {
-          "if": {
-            "required": [
-              "to"
-            ]
-          },
-          "then": {
-            "required": [
-              "from"
-            ]
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "cursor"
+          ],
+          "properties": {
+            "cursor": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            "pageSize": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
           }
         }
       ]
@@ -4374,7 +4430,84 @@
           }
         },
         "pagination": {
-          "$ref": "#/$defs/pagination"
+          "$ref": "#/$defs/entityQueryPagination"
+        }
+      }
+    },
+    "entityQueryErrorOutcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "category",
+        "message",
+        "retryable",
+        "phase"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "invalid_input",
+            "cursor_expired",
+            "limit_exhausted",
+            "busy",
+            "payload_too_large",
+            "upstream_protocol_error",
+            "unsupported_capability",
+            "concurrency_unavailable",
+            "temporal_unresolved",
+            "recurrence_unevaluable",
+            "upstream_unavailable",
+            "upstream_unauthorized",
+            "upstream_forbidden",
+            "upstream_rate_limited",
+            "not_found",
+            "ambiguous",
+            "outside_scope"
+          ]
+        },
+        "category": {
+          "enum": [
+            "input",
+            "state",
+            "limitsAndAdmission",
+            "upstream",
+            "capabilityAndProjection",
+            "selection"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "phase": {
+          "enum": [
+            "schemaLexicalDiscriminator",
+            "pagination",
+            "execution",
+            "admissionAndPayload",
+            "selectionDiscoveryCapability",
+            "targetRevision",
+            "completeResourceSemantics",
+            "originScopeAuthorization"
+          ]
+        },
+        "limits": {
+          "$ref": "#/$defs/executionLimits"
+        },
+        "retryAfterMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 600000
+        },
+        "authorizedCandidates": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/authorizedCandidate"
+          }
         }
       }
     },
@@ -4494,6 +4627,7 @@
             "upstream_unavailable",
             "upstream_protocol_error",
             "confirmation_expired",
+            "cursor_expired",
             "confirmation_mismatch",
             "fidelity_failure",
             "committed_but_unverified",
@@ -4524,6 +4658,7 @@
             "transportAuthorization",
             "admissionAndPayload",
             "schemaLexicalDiscriminator",
+            "pagination",
             "originScopeAuthorization",
             "selectionDiscoveryCapability",
             "targetRevision",
@@ -7915,6 +8050,26 @@
         }
       }
     },
+    "entityQueryPagination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "nextCursor"
+      ],
+      "properties": {
+        "mode": {
+          "const": "query_result_snapshot"
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 2048
+        }
+      }
+    },
     "capabilityEvidence": {
       "type": "object",
       "additionalProperties": false,
@@ -8433,7 +8588,7 @@
           "$ref": "#/$defs/entityQuerySuccess"
         },
         {
-          "$ref": "#/$defs/errorOutcome"
+          "$ref": "#/$defs/entityQueryErrorOutcome"
         }
       ]
     },
@@ -8504,6 +8659,14 @@
           "minimum": 0
         },
         "byteCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "itemCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "snapshotCount": {
           "type": "integer",
           "minimum": 0
         },
