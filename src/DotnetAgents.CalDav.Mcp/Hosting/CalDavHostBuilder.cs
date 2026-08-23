@@ -75,9 +75,7 @@ public sealed class CalDavHostBuilder
         builder.Services.AddSingleton<CalendarMutationRequestStateProtector>();
         builder.Services.AddSingleton<CalendarEntityCursorProtector>();
         builder.Services.AddTransient(serviceProvider => new CalendarEntityTools(
-            serviceProvider.GetRequiredService<DotnetAgents.CalDav.Core.Abstractions.ICalendarService>(),
-            serviceProvider.GetRequiredService<CalendarEntityCursorProtector>(),
-            serviceProvider.GetRequiredService<TimeProvider>()));
+            serviceProvider.GetRequiredService<DotnetAgents.CalDav.Core.Abstractions.ICalendarQueryModule>()));
         builder.Services.AddTransient(serviceProvider => new CalendarOccurrenceTools(
             serviceProvider.GetRequiredService<DotnetAgents.CalDav.Core.Abstractions.ICalendarService>(),
             serviceProvider.GetRequiredService<CalendarEntityCursorProtector>(),

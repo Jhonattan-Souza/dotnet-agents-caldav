@@ -35,20 +35,21 @@ internal static class CalendarExecutionPolicy
                     services.GetRequiredService<TimeProvider>(),
                     admission,
                     mutation,
-                    report,
+                    LegacyProgressReport(requestedToolName, report),
                     cancellationToken,
-                    telemetry is null ? null : telemetry.StartPhase).ConfigureAwait(false);
+                    LegacyPhaseObserver(requestedToolName, telemetry)).ConfigureAwait(false);
                 if (execution.Lease is null)
                 {
                     var busy = CreateBusyResult(mutation);
                     CompleteTelemetry(telemetry, busy);
                     return busy;
                 }
-                telemetry?.StartPhase(CalendarOperationPhase.Discovery);
-                using var progress = execution.AttachProgress();
+                StartLegacyDiscoveryPhase(requestedToolName, telemetry);
+                using var progress = AttachLegacyProgress(requestedToolName, execution);
                 var result = await ExecuteWithinBudgetAsync(
                     services.GetRequiredService<TimeProvider>(),
                     mutation,
+                    requestedToolName,
                     token => next(request, token),
                     cancellationToken).ConfigureAwait(false);
                 CompleteTelemetry(telemetry, result);
@@ -60,6 +61,26 @@ internal static class CalendarExecutionPolicy
                 throw;
             }
         };
+
+    private static Func<ProgressNotificationValue, CancellationToken, Task>? LegacyProgressReport(
+        string? toolName,
+        Func<ProgressNotificationValue, CancellationToken, Task>? report) =>
+        toolName == "calendar_entities.query" ? null : report;
+
+    private static Action<CalendarOperationPhase>? LegacyPhaseObserver(
+        string? toolName,
+        CalendarTelemetryOperation? telemetry) => toolName == "calendar_entities.query" || telemetry is null
+            ? null
+            : telemetry.StartPhase;
+
+    private static void StartLegacyDiscoveryPhase(string? toolName, CalendarTelemetryOperation? telemetry)
+    {
+        if (toolName != "calendar_entities.query")
+            telemetry?.StartPhase(CalendarOperationPhase.Discovery);
+    }
+
+    private static IDisposable? AttachLegacyProgress(string? toolName, CalendarExecutionLease execution) =>
+        toolName == "calendar_entities.query" ? null : execution.AttachProgress();
 
     private static void CompleteExceptionTelemetry(
         CalendarTelemetryOperation? telemetry,
@@ -90,9 +111,12 @@ internal static class CalendarExecutionPolicy
     private static async ValueTask<CallToolResult> ExecuteWithinBudgetAsync(
         TimeProvider timeProvider,
         bool mutation,
+        string? toolName,
         Func<CancellationToken, ValueTask<CallToolResult>> next,
         CancellationToken callerCancellationToken)
     {
+        if (toolName == "calendar_entities.query")
+            return await next(callerCancellationToken).ConfigureAwait(false);
         var budget = mutation ? MutationExecutionBudget : ReadExecutionBudget;
         using var deadline = new CancellationTokenSource(budget, timeProvider);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(

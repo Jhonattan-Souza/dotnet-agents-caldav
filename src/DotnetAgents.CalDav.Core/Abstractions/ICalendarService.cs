@@ -13,11 +13,6 @@ public interface ICalendarService
         CalendarEntityKind entityKind,
         CancellationToken cancellationToken);
 
-    /// <summary>Queries persisted Event and To-do snapshots within an explicit Calendar Scope.</summary>
-    Task<CalendarEntityQueryResult> QueryEntitiesAsync(
-        CalendarEntityQuery query,
-        CancellationToken cancellationToken);
-
     /// <summary>Queries bounded derived Event and To-do Occurrences.</summary>
     Task<CalendarOccurrenceQueryResult> QueryOccurrencesAsync(
         CalendarOccurrenceQuery query,

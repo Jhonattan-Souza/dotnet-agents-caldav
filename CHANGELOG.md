@@ -9,12 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added immutable ten-minute Query Result Snapshot pagination for `calendar_entities.query`, including authenticated replayable Continuation Cursors, variable page sizes, and typed `cursor_expired` and `busy` failures.
+- Added a typed `ICalendarQueryModule`, a narrow CalDAV query transport, exact linear page-byte admission, bounded process-local snapshot retention, and privacy-safe query phases and aggregate work counters.
 - Added opt-in OTLP traces, MCP metrics, and trace-correlated safe logs for the stdio server, including CalDAV aggregate-phase and outbound HTTP attempt waterfalls.
 - Added automated loopback OTLP coverage for trace parentage, metrics, log correlation, redaction, disabled defaults, collector failure isolation, and stdin-EOF shutdown.
 - Added truthful Operation outcome and Mutation State telemetry, explicit expected-absence observations, and per-wire-attempt retry recovery evidence through the built MCP stdio server.
 
 ### Changed
 
+- Replaced Calendar Entity cursor re-execution and MCP-owned page assembly with one complete Start execution and zero-CalDAV, zero-semantic-work Continue execution.
+- Changed `calendar_entities.query` input to a strict Start-or-Continue union and its pagination mode from `non_snapshot` to `query_result_snapshot`.
 - Reused one immutable, authorization-bound CalDAV discovery result inside each MCP tool call while keeping MRTR continuations fresh and Capability State separate.
 - Migrated test execution from VSTest to Microsoft.Testing.Platform v2 and xUnit 4.
 - Isolated coverage and TRX evidence per run so historical or nested runner artifacts cannot affect quality gates.
@@ -22,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Continuation Cursors now authenticate the tool, snapshot position, fixed expiry, credentials, and relevant configuration without exposing those values; retained snapshots contain projected result bytes rather than authoritative iCalendar content.
 - Telemetry export now applies explicit span, metric, log, and resource allowlists that exclude CalDAV identifiers, credentials, payloads, URLs, OTLP headers, trace state, client-controlled metric labels, and exception details.
 - Telemetry outcome, Mutation State, error, phase, purpose, observation, and recovery dimensions now use closed vocabularies; exported HTTP attempts contain no exception events or request targets.
 

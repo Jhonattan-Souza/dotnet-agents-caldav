@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using DotnetAgents.CalDav.Core.Models;
 using DotnetAgents.CalDav.Mcp.Hosting;
 using Shouldly;
 using Xunit;
@@ -7,6 +8,31 @@ namespace DotnetAgents.CalDav.Mcp.Tests.Unit;
 
 public sealed class ContractCatalogTests
 {
+    [Fact]
+    public void Calendar_entity_query_catalog_equals_the_closed_typed_failure_vocabulary()
+    {
+        var error = ReadJson("mcp-tool-catalog.json")["$defs"]!["entityQueryErrorOutcome"]!["properties"]!;
+
+        Enum.GetValues<QueryFailureCode>().Length.ShouldBe(EnumValues(error["code"]!).Length);
+        EnumValues(error["code"]!).ShouldBe([
+            "invalid_input", "cursor_expired", "limit_exhausted", "busy", "payload_too_large",
+            "upstream_protocol_error", "unsupported_capability", "concurrency_unavailable",
+            "temporal_unresolved", "recurrence_unevaluable", "upstream_unavailable",
+            "upstream_unauthorized", "upstream_forbidden", "upstream_rate_limited", "not_found",
+            "ambiguous", "outside_scope"
+        ]);
+        Enum.GetValues<QueryFailureCategory>().Length.ShouldBe(EnumValues(error["category"]!).Length);
+        EnumValues(error["category"]!).ShouldBe([
+            "input", "state", "limitsAndAdmission", "upstream", "capabilityAndProjection", "selection"
+        ]);
+        Enum.GetValues<QueryFailurePhase>().Length.ShouldBe(EnumValues(error["phase"]!).Length);
+        EnumValues(error["phase"]!).ShouldBe([
+            "schemaLexicalDiscriminator", "pagination", "execution", "admissionAndPayload",
+            "selectionDiscoveryCapability", "targetRevision", "completeResourceSemantics",
+            "originScopeAuthorization"
+        ]);
+    }
+
     [Fact]
     public void Telemetry_failure_vocabulary_covers_every_public_contract_dimension()
     {
@@ -215,7 +241,7 @@ public sealed class ContractCatalogTests
         catalog["$defs"]!["relation"]!["required"]!.ToJsonString().ShouldContain("parameters");
         catalog["$defs"]!["requestStatus"]!["required"]!.ToJsonString().ShouldContain("parameters");
         catalog["$defs"]!["errorOutcome"]!["properties"]!["category"]!["enum"]!.AsArray().Count.ShouldBe(8);
-        catalog["$defs"]!["errorOutcome"]!["properties"]!["phase"]!["enum"]!.AsArray().Count.ShouldBe(10);
+        catalog["$defs"]!["errorOutcome"]!["properties"]!["phase"]!["enum"]!.AsArray().Count.ShouldBe(11);
         catalog["$defs"]!["errorOutcome"]!["properties"]!["code"]!["enum"]!.ToJsonString()
             .ShouldContain("completion_state_conflict");
         FindOpenSchemaNodes(catalog).ShouldBeEmpty();
