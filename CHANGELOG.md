@@ -32,6 +32,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Isolated coverage and TRX evidence per run so historical or nested runner artifacts cannot affect quality gates.
 - Classified MRTR input requests and cooperative cancellation as expected control flow while preserving committed failures and exhausted retries as errors.
 
+### Removed
+
+- Removed the three legacy service query engines, their result, cursor, page, deadline, and query-progress contracts, and the remaining Occurrence and To-do query members from `ICalendarService`; all query members are now absent and all three query tools use only `ICalendarQueryModule`.
+- Removed the shallow query-resource transport pass-through; the one production query transport now composes operation discovery with `CalDavClient`'s internal resource reads.
+
 ### Security
 
 - Continuation Cursors now authenticate the tool, snapshot position, fixed expiry, credentials, and relevant configuration without exposing those values; retained snapshots contain projected result bytes rather than authoritative iCalendar content.

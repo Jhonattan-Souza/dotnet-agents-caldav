@@ -9,6 +9,56 @@ namespace DotnetAgents.CalDav.Mcp.Tests.Unit;
 public sealed class ContractCatalogTests
 {
     [Fact]
+    public void Requirement_catalog_explicitly_supersedes_the_old_temporal_rule()
+    {
+        var evidence = File.ReadAllText(Path.Combine(RepositoryRoot(), "docs", "requirement-to-evidence.md"));
+
+        evidence.ShouldContain("`CAL-TIME-002` (superseded)");
+        evidence.ShouldContain("ADR 0005 and the configured Temporal Evaluation Context replace");
+        evidence.ShouldContain("explicitly supersede `CAL-TIME-002`");
+        evidence.ShouldNotContain("later Occurrence and To-do", Case.Insensitive);
+        evidence.ShouldNotContain("To-do module cutover", Case.Insensitive);
+    }
+
+    [Fact]
+    public void Query_catalog_has_one_closed_start_continue_schema_and_one_snapshot_pagination_contract()
+    {
+        var catalog = ReadJson("mcp-tool-catalog.json");
+        var definitions = catalog["$defs"]!;
+        var queryContracts = new Dictionary<string, (string Input, string Success)>(StringComparer.Ordinal)
+        {
+            ["calendar_entities.query"] = ("entityQueryInput", "entityQuerySuccess"),
+            ["calendar_occurrences.query"] = ("occurrenceQueryInput", "occurrenceQuerySuccess"),
+            ["todos.query"] = ("todoQueryInput", "todoQuerySuccess")
+        };
+
+        foreach (var contract in queryContracts)
+        {
+            FindTool(catalog, contract.Key)["inputSchema"]!["$ref"]!.GetValue<string>()
+                .ShouldBe($"#/$defs/{contract.Value.Input}");
+            var branches = definitions[contract.Value.Input]!["oneOf"]!.AsArray();
+            branches.Count.ShouldBe(2);
+            branches[0]!["properties"]!.AsObject().ShouldNotContainKey("cursor");
+            branches[1]!["required"]!.AsArray().Select(value => value!.GetValue<string>())
+                .ShouldBe(["cursor"]);
+            branches[1]!["properties"]!.AsObject().Select(property => property.Key)
+                .ShouldBe(["cursor", "pageSize"]);
+            definitions[contract.Value.Success]!["properties"]!["pagination"]!["$ref"]!
+                .GetValue<string>().ShouldBe("#/$defs/entityQueryPagination");
+        }
+
+        definitions["entityQueryPagination"]!["properties"]!["mode"]!["const"]!
+            .GetValue<string>().ShouldBe("query_result_snapshot");
+
+        var evaluationZone = catalog["environment"]!.AsArray()
+            .Single(item => item!["name"]!.GetValue<string>() == "CALDAV_EVALUATION_TIME_ZONE")!;
+        var description = evaluationZone["description"]!.GetValue<string>();
+        description.ShouldContain("bounded Calendar Entity Starts and every Occurrence or To-do Start");
+        description.ShouldNotContain("later", Case.Insensitive);
+        description.ShouldNotContain("cutover", Case.Insensitive);
+    }
+
+    [Fact]
     public void Calendar_entity_query_catalog_equals_the_closed_typed_failure_vocabulary()
     {
         var error = ReadJson("mcp-tool-catalog.json")["$defs"]!["entityQueryErrorOutcome"]!["properties"]!;
@@ -149,7 +199,8 @@ public sealed class ContractCatalogTests
         occurrenceQuerySuccess["properties"]!.AsObject().ShouldContainKey("temporalEvaluationContext");
         catalog["environment"]!.AsArray()
             .Single(item => item!["name"]!.GetValue<string>() == "CALDAV_EVALUATION_TIME_ZONE")!
-            ["description"]!.GetValue<string>().ShouldContain("bounded Calendar Entity and Occurrence Start");
+            ["description"]!.GetValue<string>().ShouldContain(
+                "bounded Calendar Entity Starts and every Occurrence or To-do Start");
         var calendarListInput = catalog["$defs"]!["calendarScopeInput"]!.AsObject();
         calendarListInput["required"].ShouldBeNull();
         calendarListInput["properties"].ShouldBeNull();

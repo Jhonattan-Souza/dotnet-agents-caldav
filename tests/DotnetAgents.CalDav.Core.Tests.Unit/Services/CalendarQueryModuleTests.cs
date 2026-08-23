@@ -16,6 +16,7 @@ using Xunit;
 
 namespace DotnetAgents.CalDav.Core.Tests.Unit.Services;
 
+[Collection("ActivityListener")]
 public sealed class CalendarQueryModuleTests
 {
     private static readonly DateTimeOffset Now = new(2026, 8, 23, 12, 0, 0, TimeSpan.Zero);
@@ -602,26 +603,89 @@ public sealed class CalendarQueryModuleTests
         expired.Error.Code.ShouldBe(QueryFailureCode.CursorExpired);
     }
 
-    [Fact]
-    public async Task ElapsedTimeBudgetReturnsTypedLimitEvenWhenTransportDoesNotObserveCancellation()
+    [Theory]
+    [InlineData(QueryFamily.Entity)]
+    [InlineData(QueryFamily.Occurrence)]
+    [InlineData(QueryFamily.Todo)]
+    public async Task EveryStartUsesTheSameElapsedTimeBoundaryAndClassification(QueryFamily family)
     {
         const string calendarHref = "https://cal.example/calendars/work/";
+        using var listener = ListenToQuery([]);
+        using var source = new ActivitySource(CalendarQueryTelemetry.InstrumentationName, "0.1.0");
         var time = new MutableTimeProvider(Now);
         var transport = new ScriptedCalendarQueryTransport(
-            [Calendar(calendarHref)],
+            [Calendar(calendarHref) with { TodoSupport = EntityKindSupport.Advertised }],
             () => [calendarHref + "a.ics"],
             beforeCandidateReply: () => time.AdvanceWithoutTimers(TimeSpan.FromSeconds(30)));
         await using var provider = CreateProvider(transport, time);
+        var module = provider.GetRequiredService<ICalendarQueryModule>();
+        QueryFailure failure;
+        Activity queryActivity;
 
-        var failure = (await provider.GetRequiredService<ICalendarQueryModule>().QueryEntitiesAsync(
-            new CalendarEntityQueryRequest.Start(Query()),
-            CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Failure>();
+        using (var operation = source.StartActivity("caldav.operation", ActivityKind.Internal))
+        {
+            queryActivity = operation!;
+            switch (family)
+            {
+                case QueryFamily.Entity:
+                    failure = (await module.QueryEntitiesAsync(
+                        new CalendarEntityQueryRequest.Start(Query()),
+                        CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Failure>().Error;
+                    break;
+                case QueryFamily.Occurrence:
+                    failure = (await module.QueryOccurrencesAsync(
+                        new CalendarOccurrenceQueryRequest.Start(new CalendarOccurrenceQuery(
+                            CalendarEntityScope.All,
+                            Now,
+                            Now.AddDays(1),
+                            "UTC")),
+                        CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarOccurrenceQueryItem>.Failure>().Error;
+                    break;
+                case QueryFamily.Todo:
+                    failure = (await module.QueryTodosAsync(
+                        new CalendarTodoQueryRequest.Start(
+                            new CalendarTodoQuery(CalendarEntityScope.All, EvaluationTimeZone: "UTC"),
+                            [CalendarTodoProjectionField.Summary]),
+                        CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarTodoQueryPageItem>.Failure>().Error;
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(family));
+            }
+        }
+
+        failure.Code.ShouldBe(QueryFailureCode.LimitExhausted);
+        failure.Message.ShouldContain("elapsed_time");
+        failure.Limits!.Dimension.ShouldBe(QueryLimitDimension.ElapsedTime);
+        CalendarQueryPolicy.ExecutionTimeout.ShouldBe(TimeSpan.FromSeconds(30));
+        var limitMilliseconds = checked((long)CalendarQueryPolicy.ExecutionTimeout.TotalMilliseconds);
+        failure.Limits.Observed.ShouldBe(limitMilliseconds);
+        failure.Limits.Limit.ShouldBe(limitMilliseconds);
+        Counter(queryActivity, "evaluation_count").ShouldBe(0);
+        Counter(queryActivity, "serialization_count").ShouldBe(0);
+        Counter(queryActivity, "page_admission_count").ShouldBe(0);
+        provider.GetRequiredService<CalendarQuerySnapshotStore>().ActiveReservationCount.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task OccurrenceStartChecksTheSharedDeadlineAfterSynchronousEvaluation()
+    {
+        const string calendarHref = "https://cal.example/calendars/work/";
+        var time = new AdvanceOnThirdUtcReadTimeProvider(Now);
+        var transport = new ScriptedCalendarQueryTransport(
+            [Calendar(calendarHref)],
+            () => [calendarHref + "a.ics"]);
+        await using var provider = CreateProvider(transport, time);
+
+        var failure = (await provider.GetRequiredService<ICalendarQueryModule>().QueryOccurrencesAsync(
+            new CalendarOccurrenceQueryRequest.Start(new CalendarOccurrenceQuery(
+                CalendarEntityScope.All,
+                Now,
+                Now.AddDays(2),
+                "UTC")),
+            CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarOccurrenceQueryItem>.Failure>();
 
         failure.Error.Code.ShouldBe(QueryFailureCode.LimitExhausted);
-        failure.Error.Message.ShouldContain("elapsed_time");
         failure.Error.Limits!.Dimension.ShouldBe(QueryLimitDimension.ElapsedTime);
-        failure.Error.Limits.Observed.ShouldBe(30_000);
-        failure.Error.Limits.Limit.ShouldBe(30_000);
         provider.GetRequiredService<CalendarQuerySnapshotStore>().ActiveReservationCount.ShouldBe(0);
     }
 
@@ -846,17 +910,24 @@ public sealed class CalendarQueryModuleTests
     public async Task DefaultSelectionUsesOneScopedCoordinatorAcquisition()
     {
         const string allowedHref = "https://cal.example/calendars/allowed/";
-        const string privateHref = "https://cal.example/calendars/private/";
-        var client = QueryClient(allowedHref, static () => []);
-        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
-            Calendar(allowedHref),
-            Calendar(privateHref) with { DisplayName = "Private" }
-        ]);
-        await using var provider = CreateProvider(client, new MutableTimeProvider(Now), options =>
+        var calendar = Calendar(allowedHref);
+        var discoveryCount = 0;
+        var transport = new DelegateTransport(discover: _ =>
         {
-            options.CalendarHrefs = allowedHref;
-            options.DefaultEventCalendarName = "Private";
+            discoveryCount++;
+            return Task.FromResult(new CalendarQueryDiscovery(
+                new CalendarDiscoveryResult([calendar], []),
+                CalendarSelectionResult.Failure(CalendarSelectionCode.OutsideScope, [calendar]),
+                CalendarSelectionResult.Failure(CalendarSelectionCode.NotFound, [calendar])));
         });
+        await using var provider = CreateProvider(
+            transport,
+            new MutableTimeProvider(Now),
+            configureOptions: options =>
+            {
+                options.CalendarHrefs = allowedHref;
+                options.DefaultEventCalendarName = "Private";
+            });
 
         var failure = (await provider.GetRequiredService<ICalendarQueryModule>().QueryEntitiesAsync(
             new CalendarEntityQueryRequest.Start(
@@ -865,38 +936,31 @@ public sealed class CalendarQueryModuleTests
 
         failure.Error.Code.ShouldBe(QueryFailureCode.OutsideScope);
         failure.Error.AuthorizedCandidates.ShouldHaveSingleItem().CalendarHref.ShouldBe(allowedHref);
-        await client.Received(1).GetCalendarsAsync(Arg.Any<CancellationToken>());
-        await client.DidNotReceive().QueryCalendarResourceHrefsAsync(
-            Arg.Any<string>(),
-            Arg.Any<CalendarEntityKind>(),
-            Arg.Any<DateTimeOffset?>(),
-            Arg.Any<DateTimeOffset?>(),
-            Arg.Any<CancellationToken>());
+        discoveryCount.ShouldBe(1);
     }
 
     [Fact]
-    public async Task RepeatedStartsOnOneModuleAcquireFreshProductionDiscovery()
+    public async Task RepeatedStartsOnOneModuleAcquireFreshDiscovery()
     {
         const string firstCalendar = "https://cal.example/calendars/first/";
         const string secondCalendar = "https://cal.example/calendars/second/";
         var current = firstCalendar;
-        var client = Substitute.For<ICalendarClient, ICalendarQueryResourceTransport>();
-        var queryTransport = (ICalendarQueryResourceTransport)client;
-        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(_ => [Calendar(current)]);
-        client.QueryCalendarResourceHrefsAsync(
-                Arg.Any<string>(),
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns(call => new[] { call.ArgAt<string>(0) + "item.ics" });
-        queryTransport.MultigetAsync(
-                Arg.Any<string>(),
-                Arg.Any<IReadOnlyList<string>>(),
-                Arg.Any<CancellationToken>())
-            .Returns(call => call.ArgAt<IReadOnlyList<string>>(1)
-                .Select(href => CalendarResourceRead.Success(href, "\"r1\"", Event(href))).ToArray());
-        await using var provider = CreateProvider(client, new MutableTimeProvider(Now));
+        var discoveryCount = 0;
+        var transport = new DelegateTransport(
+            discover: _ =>
+            {
+                discoveryCount++;
+                var calendar = Calendar(current);
+                return Task.FromResult(new CalendarQueryDiscovery(
+                    new CalendarDiscoveryResult([calendar], []),
+                    CalendarSelectionResult.Success(calendar),
+                    CalendarSelectionResult.Failure(CalendarSelectionCode.NotFound)));
+            },
+            candidates: (calendarHref, _, _, _, _) =>
+                Task.FromResult<IReadOnlyList<string>>([calendarHref + "item.ics"]),
+            multiget: (_, hrefs, _) => Task.FromResult<IReadOnlyList<CalendarResourceRead>>(hrefs
+                .Select(href => CalendarResourceRead.Success(href, "\"r1\"", Event(href))).ToArray()));
+        await using var provider = CreateProvider(transport, new MutableTimeProvider(Now));
         var module = provider.GetRequiredService<ICalendarQueryModule>();
 
         var first = (await module.QueryEntitiesAsync(
@@ -909,7 +973,7 @@ public sealed class CalendarQueryModuleTests
 
         Href(first).ShouldBe(firstCalendar + "item.ics");
         Href(second).ShouldBe(secondCalendar + "item.ics");
-        await client.Received(2).GetCalendarsAsync(Arg.Any<CancellationToken>());
+        discoveryCount.ShouldBe(2);
     }
 
     [Theory]
@@ -1259,9 +1323,11 @@ public sealed class CalendarQueryModuleTests
     {
         const string allowed = "https://cal.example/calendars/allowed/";
         const string selected = "https://cal.example/calendars/selected/";
-        var client = QueryClient(allowed, static () => []);
-        await using var provider = CreateProvider(client, new MutableTimeProvider(Now), options =>
-            options.CalendarHrefs = allowed);
+        var transport = QueryClient(allowed, static () => []);
+        await using var provider = CreateProvider(
+            transport,
+            new MutableTimeProvider(Now),
+            configureOptions: options => options.CalendarHrefs = allowed);
 
         var failure = (await provider.GetRequiredService<ICalendarQueryModule>().QueryEntitiesAsync(
             new CalendarEntityQueryRequest.Start(new CalendarEntityQuery(
@@ -1270,7 +1336,7 @@ public sealed class CalendarQueryModuleTests
             CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Failure>();
 
         failure.Error.Code.ShouldBe(QueryFailureCode.OutsideScope);
-        await client.DidNotReceive().GetCalendarsAsync(Arg.Any<CancellationToken>());
+        transport.DiscoveryCount.ShouldBe(0);
     }
 
     [Fact]
@@ -1810,26 +1876,6 @@ public sealed class CalendarQueryModuleTests
     }
 
     private static ServiceProvider CreateProvider(
-        ICalendarClient client,
-        TimeProvider timeProvider,
-        Action<CalDavOptions>? configure = null)
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddCalDavCalendars(options =>
-        {
-            options.BaseUrl = "https://cal.example";
-            options.Username = "user";
-            options.Password = "password";
-            options.EvaluationTimeZone = "UTC";
-            configure?.Invoke(options);
-        });
-        services.AddSingleton(client);
-        services.AddSingleton(timeProvider);
-        return services.BuildServiceProvider();
-    }
-
-    private static ServiceProvider CreateProvider(
         ICalendarQueryTransport transport,
         TimeProvider timeProvider,
         Action<IServiceCollection>? configure = null,
@@ -1852,36 +1898,9 @@ public sealed class CalendarQueryModuleTests
         return services.BuildServiceProvider();
     }
 
-    private static ICalendarClient QueryClient(string calendarHref, Func<IReadOnlyList<string>> hrefs)
-    {
-        var client = Substitute.For<ICalendarClient, ICalendarQueryResourceTransport>();
-        var queryTransport = (ICalendarQueryResourceTransport)client;
-        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
-            new CalendarDescriptor
-            {
-                Href = calendarHref,
-                DisplayName = "Work",
-                DisplayNameProvenance = DisplayNameProvenance.DavDisplayName,
-                EventSupport = EntityKindSupport.Advertised,
-                TodoSupport = EntityKindSupport.NotAdvertised
-            }
-        ]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns(_ => hrefs());
-        queryTransport.MultigetAsync(
-                calendarHref,
-                Arg.Any<IReadOnlyList<string>>(),
-                Arg.Any<CancellationToken>())
-            .Returns(call => call.ArgAt<IReadOnlyList<string>>(1)
-                .Select(href => CalendarResourceRead.Success(href, "\"r1\"", Event(href)))
-                .ToArray());
-        return client;
-    }
+    private static ScriptedCalendarQueryTransport QueryClient(
+        string calendarHref,
+        Func<IReadOnlyList<string>> hrefs) => new([Calendar(calendarHref)], hrefs);
 
     private static ReadOnlyMemory<byte> Event(string href) => Encoding.UTF8.GetBytes(
         "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Query Module Tests//EN\r\n"
@@ -2154,6 +2173,13 @@ public sealed class CalendarQueryModuleTests
             CancellationToken cancellationToken) => throw new InvalidOperationException("Direct GET is forbidden until issue #109.");
     }
 
+    public enum QueryFamily
+    {
+        Entity,
+        Occurrence,
+        Todo
+    }
+
     private sealed class SecondTimerThrowsTimeProvider : TimeProvider
     {
         private int _timerCount;
@@ -2167,6 +2193,24 @@ public sealed class CalendarQueryModuleTests
             TimeSpan period) => Interlocked.Increment(ref _timerCount) == 2
                 ? throw new InvalidOperationException("scripted snapshot timer failure")
                 : new NoOpTimer();
+    }
+
+    private sealed class AdvanceOnThirdUtcReadTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        private int _readCount;
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            if (Interlocked.Increment(ref _readCount) == 3)
+                utcNow = utcNow.Add(CalendarQueryPolicy.ExecutionTimeout);
+            return utcNow;
+        }
+
+        public override ITimer CreateTimer(
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime,
+            TimeSpan period) => new NoOpTimer();
     }
 
     private sealed class NoOpTimer : ITimer

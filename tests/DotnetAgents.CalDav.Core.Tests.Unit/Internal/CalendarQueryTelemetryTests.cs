@@ -5,6 +5,7 @@ using Xunit;
 
 namespace DotnetAgents.CalDav.Core.Tests.Unit.Internal;
 
+[Collection("ActivityListener")]
 public sealed class CalendarQueryTelemetryTests
 {
     [Theory]

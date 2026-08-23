@@ -200,7 +200,7 @@ public sealed class CalendarCreateTimeZoneSerializerTests
         string expectedEndUtc,
         string expectedEndLocal)
     {
-        result.Code.ShouldBe(CalendarOccurrenceQueryCode.Success);
+        result.Code.ShouldBe(CalendarOccurrenceEvaluationCode.Success);
         result.Items.Count.ShouldBe(1);
         result.Items[0].Timing.EvaluatedStartUtc!.Value.ShouldBe(expectedStartUtc);
         result.Items[0].Timing.EvaluatedEndUtc!.Value.ShouldBe(expectedEndUtc);

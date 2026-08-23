@@ -25,20 +25,6 @@ internal interface ICalendarQueryTransport
         CancellationToken cancellationToken);
 }
 
-/// <summary>Production-only CalDAV reads required by the deep query transport.</summary>
-internal interface ICalendarQueryResourceTransport
-{
-    Task<IReadOnlyList<CalendarResourceRead>> MultigetAsync(
-        string calendarHref,
-        IReadOnlyList<string> resourceHrefs,
-        CancellationToken cancellationToken);
-
-    Task<CalendarResourceRead> DirectGetAsync(
-        string calendarHref,
-        string resourceHref,
-        CancellationToken cancellationToken);
-}
-
 /// <summary>Closed authoritative result of one bounded Calendar multiget attempt.</summary>
 internal abstract record CalendarMultigetResult
 {

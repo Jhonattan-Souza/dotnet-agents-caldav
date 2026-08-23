@@ -20,7 +20,7 @@ namespace DotnetAgents.CalDav.Core.Internal;
 /// HttpClient-based CalDAV client for Calendar Object Resources.
 /// Handles PROPFIND, REPORT, GET, PUT, DELETE verbs with XML/iCalendar encoding.
 /// </summary>
-internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport, ICalendarQueryResourceTransport
+internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport
 {
     private const int MaximumCalendarResourceBytes = 4 * 1024 * 1024;
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
@@ -221,15 +221,7 @@ internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport, 
         return await ReadCalendarResourceResponseAsync(resourceUri, response, cancellationToken).ConfigureAwait(false);
     }
 
-    async Task<IReadOnlyList<CalendarResourceRead>> ICalendarQueryResourceTransport.MultigetAsync(
-        string calendarHref,
-        IReadOnlyList<string> resourceHrefs,
-        CancellationToken cancellationToken) => await GetCalendarResourcesForQueryAsync(
-            calendarHref,
-            resourceHrefs,
-            cancellationToken).ConfigureAwait(false);
-
-    async Task<CalendarResourceRead> ICalendarQueryResourceTransport.DirectGetAsync(
+    internal async Task<CalendarResourceRead> GetCalendarResourceDirectlyForQueryAsync(
         string calendarHref,
         string resourceHref,
         CancellationToken cancellationToken)
@@ -289,7 +281,7 @@ internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport, 
         return CalendarResourceRead.Success(resourceUri.AbsoluteUri, entityTag, content);
     }
 
-    private async Task<IReadOnlyList<CalendarResourceRead>> GetCalendarResourcesForQueryAsync(
+    internal async Task<IReadOnlyList<CalendarResourceRead>> GetCalendarResourcesForQueryAsync(
         string calendarHref,
         IReadOnlyList<string> hrefs,
         CancellationToken cancellationToken)

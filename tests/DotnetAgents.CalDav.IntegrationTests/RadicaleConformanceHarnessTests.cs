@@ -158,55 +158,82 @@ public sealed class RadicaleConformanceHarnessTests(RadicaleConformanceFixture f
             "leap", "DTSTART:20240229T100000Z\r\nDURATION:PT1H\r\nRRULE:FREQ=YEARLY;COUNT=3\r\n"));
         var range = await PutAndGetAsync(calendarHref, "range.ics", RangeEvent());
         await using var provider = CreateProvider(fixture.BaseUrl, calendarHref);
-        var service = provider.GetRequiredService<ICalendarService>();
+        var queryModule = provider.GetRequiredService<ICalendarQueryModule>();
         var scope = CalendarEntityScope.Selected(new CalendarReference(Href: calendarHref));
 
-        var boundary = await service.QueryOccurrencesAsync(new CalendarOccurrenceQuery(
+        var boundary = await QueryOccurrencesPageAsync(queryModule, new CalendarOccurrenceQuery(
             scope,
             DateTimeOffset.Parse("2026-08-16T10:00:00Z"),
-            DateTimeOffset.Parse("2026-08-16T11:00:00Z")), TestContext.Current.CancellationToken);
-        var dst = await service.QueryOccurrencesAsync(new CalendarOccurrenceQuery(
+            DateTimeOffset.Parse("2026-08-16T11:00:00Z"),
+            "UTC"));
+        var dst = await QueryOccurrencesPageAsync(queryModule, new CalendarOccurrenceQuery(
             scope,
             DateTimeOffset.Parse("2026-03-08T14:30:00Z"),
-            DateTimeOffset.Parse("2026-03-08T14:45:00Z")), TestContext.Current.CancellationToken);
-        var leap = await service.QueryOccurrencesAsync(new CalendarOccurrenceQuery(
+            DateTimeOffset.Parse("2026-03-08T14:45:00Z"),
+            "UTC"));
+        var leap = await QueryOccurrencesPageAsync(queryModule, new CalendarOccurrenceQuery(
             scope,
             DateTimeOffset.Parse("2028-02-29T10:30:00Z"),
-            DateTimeOffset.Parse("2028-02-29T10:45:00Z")), TestContext.Current.CancellationToken);
-        var moved = await service.QueryOccurrencesAsync(new CalendarOccurrenceQuery(
+            DateTimeOffset.Parse("2028-02-29T10:45:00Z"),
+            "UTC"));
+        var moved = await QueryOccurrencesPageAsync(queryModule, new CalendarOccurrenceQuery(
             scope,
             DateTimeOffset.Parse("2026-08-17T13:30:00Z"),
-            DateTimeOffset.Parse("2026-08-17T13:45:00Z")), TestContext.Current.CancellationToken);
+            DateTimeOffset.Parse("2026-08-17T13:45:00Z"),
+            "UTC"));
 
-        boundary.Items.ShouldHaveSingleItem().Snapshot.Projection.EntityUid.ShouldBe("boundary-from");
-        boundary.Items[0].Snapshot.AuthoritativeUtf8.ToArray().ShouldBe(boundaryFrom.Utf8);
-        dst.Items.ShouldHaveSingleItem().Timing.EvaluatedStartUtc!.Value.ShouldBe("2026-03-08T14:00:00Z");
-        leap.Items.ShouldHaveSingleItem().RecurrenceIdentity.Value.ShouldBe("2028-02-29T10:00:00Z");
-        var movedOccurrence = moved.Items.ShouldHaveSingleItem();
-        movedOccurrence.RecurrenceIdentity.Value.ShouldBe("2026-08-17T09:00:00Z");
-        movedOccurrence.Timing.EffectiveStart.Value.ShouldBe("2026-08-17T13:00:00Z");
-        movedOccurrence.Snapshot.AuthoritativeUtf8.ToArray().ShouldBe(range.Utf8);
+        var boundaryOccurrence = boundary.Value.Items.ShouldHaveSingleItem().Value;
+        boundaryOccurrence.GetProperty("snapshot").GetProperty("projection").GetProperty("uid")
+            .GetString().ShouldBe("boundary-from");
+        boundaryOccurrence.GetProperty("snapshot").GetProperty("resourceRevision").GetProperty("entityTag")
+            .GetString().ShouldBe(boundaryFrom.EntityTag);
+        OccurrenceTemporalValue(dst, "timing", "evaluatedStartUtc").ShouldBe("2026-03-08T14:00:00Z");
+        OccurrenceTemporalValue(leap, "recurrenceIdentity", "value").ShouldBe("2028-02-29T10:00:00Z");
+        OccurrenceTemporalValue(moved, "recurrenceIdentity", "value").ShouldBe("2026-08-17T09:00:00Z");
+        OccurrenceTemporalValue(moved, "timing", "effectiveStart").ShouldBe("2026-08-17T13:00:00Z");
+        moved.Value.Items.ShouldHaveSingleItem().Value.GetProperty("snapshot").GetProperty("resourceRevision")
+            .GetProperty("entityTag").GetString().ShouldBe(range.EntityTag);
 
         var unresolved = await PutAndGetAsync(calendarHref, "unresolved.ics", Event(
             "unresolved", "DTSTART;TZID=Private/Unknown:20260816T100000\r\nDURATION:PT1H\r\n"));
-        var unresolvedResult = await service.QueryOccurrencesAsync(new CalendarOccurrenceQuery(
-            scope,
-            DateTimeOffset.Parse("2026-08-16T00:00:00Z"),
-            DateTimeOffset.Parse("2026-08-17T00:00:00Z")), TestContext.Current.CancellationToken);
-        unresolvedResult.Code.ShouldBe(CalendarOccurrenceQueryCode.TemporalUnresolved);
-        unresolvedResult.Items.ShouldBeEmpty();
+        var unresolvedResult = (await queryModule.QueryOccurrencesAsync(
+            new CalendarOccurrenceQueryRequest.Start(new CalendarOccurrenceQuery(
+                scope,
+                DateTimeOffset.Parse("2026-08-16T00:00:00Z"),
+                DateTimeOffset.Parse("2026-08-17T00:00:00Z"),
+                "UTC")),
+            TestContext.Current.CancellationToken)).ShouldBeOfType<QueryReply<CalendarOccurrenceQueryItem>.Failure>();
+        unresolvedResult.Error.Code.ShouldBe(QueryFailureCode.TemporalUnresolved);
         await DeleteAsync(unresolved, TestContext.Current.CancellationToken);
 
         var unevaluable = await PutAndGetAsync(calendarHref, "unevaluable.ics", Event(
             "unevaluable", "DTSTART:20260816T100000Z\r\nDURATION:PT1H\r\n"
             + "RRULE:FREQ=DAILY;COUNT=2\r\nRRULE:FREQ=WEEKLY;COUNT=2\r\n"));
-        var unevaluableResult = await service.QueryOccurrencesAsync(new CalendarOccurrenceQuery(
-            scope,
-            DateTimeOffset.Parse("2026-08-16T00:00:00Z"),
-            DateTimeOffset.Parse("2026-08-17T00:00:00Z")), TestContext.Current.CancellationToken);
-        unevaluableResult.Code.ShouldBe(CalendarOccurrenceQueryCode.RecurrenceUnevaluable);
-        unevaluableResult.Items.ShouldBeEmpty();
+        var unevaluableResult = (await queryModule.QueryOccurrencesAsync(
+            new CalendarOccurrenceQueryRequest.Start(new CalendarOccurrenceQuery(
+                scope,
+                DateTimeOffset.Parse("2026-08-16T00:00:00Z"),
+                DateTimeOffset.Parse("2026-08-17T00:00:00Z"),
+                "UTC")),
+            TestContext.Current.CancellationToken)).ShouldBeOfType<QueryReply<CalendarOccurrenceQueryItem>.Failure>();
+        unevaluableResult.Error.Code.ShouldBe(QueryFailureCode.RecurrenceUnevaluable);
         await DeleteAsync(unevaluable, TestContext.Current.CancellationToken);
+    }
+
+    private static async Task<QueryReply<CalendarOccurrenceQueryItem>.Page> QueryOccurrencesPageAsync(
+        ICalendarQueryModule queryModule,
+        CalendarOccurrenceQuery query) => (await queryModule.QueryOccurrencesAsync(
+            new CalendarOccurrenceQueryRequest.Start(query, PageSize: 200),
+            TestContext.Current.CancellationToken)).ShouldBeOfType<QueryReply<CalendarOccurrenceQueryItem>.Page>();
+
+    private static string? OccurrenceTemporalValue(
+        QueryReply<CalendarOccurrenceQueryItem>.Page page,
+        params string[] path)
+    {
+        var temporal = page.Value.Items.ShouldHaveSingleItem().Value;
+        foreach (var property in path)
+            temporal = temporal.GetProperty(property);
+        return temporal.GetProperty("value").GetString();
     }
 
     [Fact]

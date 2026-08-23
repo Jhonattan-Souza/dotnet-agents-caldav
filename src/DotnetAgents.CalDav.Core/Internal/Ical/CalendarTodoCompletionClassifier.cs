@@ -8,7 +8,7 @@ internal static class CalendarTodoCompletionClassifier
 {
     private static readonly string[] KnownStatuses = ["NEEDS-ACTION", "IN-PROCESS", "COMPLETED", "CANCELLED"];
 
-    public static CalendarTodoCompletionClassification Classify(CalendarResourceSnapshot snapshot)
+    public static EvaluatedTodoCompletion Classify(CalendarResourceSnapshot snapshot)
     {
         try
         {
@@ -27,7 +27,7 @@ internal static class CalendarTodoCompletionClassifier
         }
     }
 
-    internal static CalendarTodoCompletionClassification Classify(
+    internal static EvaluatedTodoCompletion Classify(
         CalendarResourceSnapshot snapshot,
         CalendarTemporalValue recurrenceIdentity)
     {
@@ -48,7 +48,7 @@ internal static class CalendarTodoCompletionClassifier
         }
     }
 
-    internal static CalendarTodoCompletionClassification Classify(
+    internal static EvaluatedTodoCompletion Classify(
         CalendarContentDocument document,
         IReadOnlyList<CalendarComponentPathSegment> componentPath)
     {
@@ -151,7 +151,7 @@ internal static class CalendarTodoCompletionClassifier
         return matches.FirstOrDefault();
     }
 
-    private static CalendarTodoCompletionClassification Indeterminate(
+    private static EvaluatedTodoCompletion Indeterminate(
         string? status,
         CalendarTemporalValue? completedAt,
         int? percentComplete,

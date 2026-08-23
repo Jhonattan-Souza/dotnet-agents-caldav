@@ -3,24 +3,18 @@ using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json;
-using System.Xml;
 using DotnetAgents.CalDav.Core.Internal;
 using DotnetAgents.CalDav.Core.Models;
-using Polly.CircuitBreaker;
-using Polly.Timeout;
 
 namespace DotnetAgents.CalDav.Core.Services;
 
 internal sealed class CalendarTodoQueryStartExecutor(
-    TimeProvider timeProvider,
+    CalendarQueryPolicy queryPolicy,
     CalendarQuerySnapshotWriter snapshotWriter,
     CalendarTodoQueryPageCodec pageCodec,
     CalendarQueryAcquisitionExecutor acquisitionExecutor,
     CalendarTemporalContextResolver temporalContextResolver)
 {
-    private static readonly TimeSpan ExecutionTimeout = TimeSpan.FromSeconds(30);
-    private static readonly TimeSpan SnapshotLifetime = TimeSpan.FromMinutes(10);
-
     internal async Task<QueryReply<CalendarTodoQueryPageItem>> ExecuteAsync(
         CalendarTodoQueryRequest.Start request,
         CancellationToken cancellationToken)
@@ -33,58 +27,19 @@ internal sealed class CalendarTodoQueryStartExecutor(
             "To-do"));
         if (temporal.Error is not null)
             return Failure(temporal.Error);
-        var startedAt = timeProvider.GetUtcNow();
-        using var deadline = new CancellationTokenSource(ExecutionTimeout, timeProvider);
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
-        try
-        {
-            var completed = await CompleteAsync(request, temporal.Context!, linked.Token).ConfigureAwait(false);
-            ThrowIfDeadlineExpired(startedAt, linked.Token);
-            if (completed.Error is not null)
-                return Failure(completed.Error);
-            return PublishFirstPage(completed, request.PageSize, linked.Token);
-        }
-        catch (CalendarDiscoveryLimitException exception)
-        {
-            return Failure(CalendarQueryFailures.Limit(
-                "The To-do query exceeded the Calendar limit.",
-                new QueryExecutionLimits(CalendarCount: exception.CalendarCount)));
-        }
-        catch (HttpRequestException exception)
-        {
-            return Failure(CalendarQueryFailures.FromHttp(exception.StatusCode));
-        }
-        catch (OperationCanceledException) when (deadline.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
-        {
-            return Failure(CalendarQueryFailures.ElapsedLimit());
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            return Failure(CalendarQueryFailures.UpstreamUnavailable());
-        }
-        catch (Exception exception) when (exception is TimeoutException or TimeoutRejectedException
-                                           or BrokenCircuitException)
-        {
-            return Failure(CalendarQueryFailures.UpstreamUnavailable());
-        }
-        catch (Exception exception) when (exception is XmlException or CalendarDiscoveryProtocolException)
-        {
-            return Failure(CalendarQueryFailures.Protocol());
-        }
-        catch (CalendarDiscoveryUnsupportedCapabilityException)
-        {
-            return Failure(CalendarQueryFailures.UnsupportedCapability());
-        }
-        catch (CalendarTodoQueryDeadlineException)
-        {
-            return Failure(CalendarQueryFailures.ElapsedLimit());
-        }
+        return await queryPolicy.ExecuteStartAsync<CompletedCalendarTodoQuery, CalendarTodoQueryPageItem>(
+            cancellationToken,
+            "The To-do query exceeded the Calendar limit.",
+            execution => CompleteAsync(request, temporal.Context!, execution),
+            (completed, token) => completed.Error is not null
+                ? Failure(completed.Error)
+                : PublishFirstPage(completed, request.PageSize, token)).ConfigureAwait(false);
     }
 
     private async Task<CompletedCalendarTodoQuery> CompleteAsync(
         CalendarTodoQueryRequest.Start request,
         TemporalEvaluationContext temporalContext,
-        CancellationToken cancellationToken)
+        CalendarQueryPolicy.CalendarQueryExecution execution)
     {
         var acquired = await acquisitionExecutor.ExecuteAsync(
             new CalendarQueryAcquisitionRequest(
@@ -92,7 +47,8 @@ internal sealed class CalendarTodoQueryStartExecutor(
                 [CalendarEntityKind.Todo],
                 null,
                 null),
-            cancellationToken).ConfigureAwait(false);
+            execution.Token).ConfigureAwait(false);
+        execution.ThrowIfDeadlineExpired();
         if (acquired.Error is not null)
             return CompletedCalendarTodoQuery.Failure(acquired.Error);
         CalendarTodoEvaluationResult evaluated;
@@ -102,7 +58,7 @@ internal sealed class CalendarTodoQueryStartExecutor(
                 acquired.Resources,
                 request.Query with { EvaluationTimeZone = temporalContext.TimeZone },
                 request.Projection,
-                cancellationToken);
+                execution.Token);
         }
         if (evaluated.Error is not null)
             return CompletedCalendarTodoQuery.Failure(evaluated.Error);
@@ -132,7 +88,7 @@ internal sealed class CalendarTodoQueryStartExecutor(
     {
         var snapshot = new CalendarQuerySnapshot(
             Guid.NewGuid(),
-            timeProvider.GetUtcNow().Add(SnapshotLifetime),
+            queryPolicy.GetSnapshotExpiry(),
             completed.Items,
             completed.DiagnosticsUtf8,
             completed.RetainedBytes,
@@ -192,16 +148,7 @@ internal sealed class CalendarTodoQueryStartExecutor(
             && to > from
             && to - from <= TimeSpan.FromDays(366);
 
-    private void ThrowIfDeadlineExpired(DateTimeOffset startedAt, CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        if (timeProvider.GetUtcNow() >= startedAt.Add(ExecutionTimeout))
-            throw new CalendarTodoQueryDeadlineException();
-    }
-
     private static QueryReply<CalendarTodoQueryPageItem>.Failure Failure(QueryFailure failure) => new(failure);
-
-    private sealed class CalendarTodoQueryDeadlineException : Exception;
 }
 
 internal sealed class CalendarTodoQueryContinueExecutor(

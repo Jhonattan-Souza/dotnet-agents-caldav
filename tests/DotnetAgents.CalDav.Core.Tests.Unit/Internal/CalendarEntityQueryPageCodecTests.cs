@@ -9,6 +9,7 @@ using Xunit;
 
 namespace DotnetAgents.CalDav.Core.Tests.Unit.Internal;
 
+[Collection("ActivityListener")]
 public sealed class CalendarEntityQueryPageCodecTests
 {
     private static readonly DateTimeOffset Now = new(2026, 8, 23, 12, 0, 0, TimeSpan.Zero);

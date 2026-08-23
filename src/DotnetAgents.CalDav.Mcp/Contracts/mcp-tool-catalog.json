@@ -2361,7 +2361,7 @@
     {
       "name": "CALDAV_EVALUATION_TIME_ZONE",
       "required": false,
-      "description": "Explicit IANA zone for bounded Calendar Entity and Occurrence Start Temporal Evaluation Context; shared policy for the To-do query-module cutover"
+      "description": "Explicit IANA zone for bounded Calendar Entity Starts and every Occurrence or To-do Start under the configured Temporal Evaluation Context"
     },
     {
       "name": "CALDAV_EXPOSE_EXACT_TOOLS",
