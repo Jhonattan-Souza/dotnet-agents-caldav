@@ -95,6 +95,25 @@ internal static class CalendarTelemetryVocabulary
 
     internal static IReadOnlySet<string> KnownErrorPhases => ErrorPhases;
 
+    internal static string? MoveDispatch(string? value) => value switch
+    {
+        "not_attempted" or "rejected" or "dispatched" or "possibly_dispatched" => value,
+        _ => null
+    };
+
+    internal static string? MoveCollision(string? value) => value switch
+    {
+        "none" or "source_revision" or "destination_href" or "uid" or "unclassified" => value,
+        _ => null
+    };
+
+    internal static string? MoveReconciliation(string? value) => value switch
+    {
+        "not_run" or "faithful_destination_source_absent" or "divergent_destination_source_absent"
+            or "observation_unavailable" or "unchanged_source_destination_absent" or "indeterminate" => value,
+        _ => null
+    };
+
     internal static string? ErrorType(object? value)
     {
         if (value is not string text)
@@ -139,7 +158,8 @@ internal sealed class CalendarTelemetryOperation : IDisposable
         string? errorCategory = null,
         string? mutationState = null,
         string? errorPhase = null,
-        bool? retryable = null)
+        bool? retryable = null,
+        CalendarMoveTelemetrySnapshot? moveTelemetry = null)
     {
         if (!_operation.IsAllDataRequested)
             return;
@@ -153,6 +173,9 @@ internal sealed class CalendarTelemetryOperation : IDisposable
         _operation.SetTag("caldav.error.phase", errorPhase);
         _operation.SetTag("caldav.error.retryable", retryable);
         _operation.SetTag("caldav.mutation.state", mutationState);
+        _operation.SetTag("caldav.move.dispatch", MoveDispatch(moveTelemetry?.Dispatch));
+        _operation.SetTag("caldav.move.collision", MoveCollision(moveTelemetry?.Collision));
+        _operation.SetTag("caldav.move.reconciliation", MoveReconciliation(moveTelemetry?.Reconciliation));
         if (string.Equals(outcome, "error", StringComparison.Ordinal))
         {
             _operation.SetTag("error.type", errorCode is null ? null : $"caldav.{errorCode}");
@@ -203,5 +226,38 @@ internal sealed class CalendarTelemetryOperation : IDisposable
         HttpRequestException or IOException => "connection_error",
         CalendarDiscoveryProtocolException => "protocol_error",
         _ => "internal_error"
+    };
+
+    private static string? MoveDispatch(CalendarMoveDispatchClassification? classification) => classification switch
+    {
+        CalendarMoveDispatchClassification.NotAttempted => "not_attempted",
+        CalendarMoveDispatchClassification.Rejected => "rejected",
+        CalendarMoveDispatchClassification.Dispatched => "dispatched",
+        CalendarMoveDispatchClassification.PossiblyDispatched => "possibly_dispatched",
+        _ => null
+    };
+
+    private static string? MoveCollision(CalendarMoveCollisionClassification? classification) => classification switch
+    {
+        CalendarMoveCollisionClassification.None => "none",
+        CalendarMoveCollisionClassification.SourceRevision => "source_revision",
+        CalendarMoveCollisionClassification.DestinationHref => "destination_href",
+        CalendarMoveCollisionClassification.Uid => "uid",
+        CalendarMoveCollisionClassification.Unclassified => "unclassified",
+        _ => null
+    };
+
+    private static string? MoveReconciliation(CalendarMoveReconciliationClassification? classification) => classification switch
+    {
+        CalendarMoveReconciliationClassification.NotRun => "not_run",
+        CalendarMoveReconciliationClassification.FaithfulDestinationSourceAbsent =>
+            "faithful_destination_source_absent",
+        CalendarMoveReconciliationClassification.DivergentDestinationSourceAbsent =>
+            "divergent_destination_source_absent",
+        CalendarMoveReconciliationClassification.ObservationUnavailable => "observation_unavailable",
+        CalendarMoveReconciliationClassification.UnchangedSourceDestinationAbsent =>
+            "unchanged_source_destination_absent",
+        CalendarMoveReconciliationClassification.Indeterminate => "indeterminate",
+        _ => null
     };
 }

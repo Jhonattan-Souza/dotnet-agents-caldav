@@ -154,6 +154,29 @@ The dated [temporal before/after observation](performance-temporal-context-2026-
 records the zero-I/O admission change, focused temporal corpus, stdio/Radicale
 boundary, privacy assertions, and cleanup.
 
+## Server-authoritative semantic Move
+
+| Requirement | Implementation evidence | Verification evidence |
+| --- | --- | --- |
+| `CAL-RESOURCE-014` | `CalendarMoveModule` issues one `CalendarResourceMoveDispatchRequest`; `CalendarResourceMoveProtocol` sends the exact strong `If-Match`, `Overwrite: F`, and absolute `Destination` headers without a request body or retry. | `CalendarResourceMoveProtocolTests.MoveAsync_SendsOneExactConditionalNoOverwriteMove`, `CalendarMoveModuleTests.Dispatched_BilateralMatrixPreservesCommitTruth`, and the pinned Radicale conformance witness. |
+| `CAL-RESOURCE-015` | `ICalendarMoveTransport` has one content-insensitive destination presence operation and no REPORT, multiget, enumeration, or unrelated-resource member. `CalendarOperationDiscovery` fails closed if the underlying client lacks that port. | `CalendarResourceMoveServiceTests.MoveResourceAsync_PreservesHeadersOnlyProbeThroughOperationDiscovery`, `MoveResourceAsync_FailsClosedWhenHeadersOnlyPresenceCapabilityIsUnavailable`, and `CalendarMoveModuleTests.DestinationCardinalityDoesNotChangeMoveWork` at 1, 50, and 600 resources. |
+| `CAL-RESOURCE-016` | Exact destination occupancy maps to `destination_conflict`; `CALDAV:no-uid-conflict`, generic 409/412, and stale source revision map to `conflict` with closed collision evidence. No post-conflict scan runs. | `CalendarResourceMoveProtocolTests.MoveAsync_MapsBoundedNoUidConflictDavErrorToConflict`, `MoveResourceAsync_MapsGeneratedDestinationPreflightFailure`, and the pinned href/same-kind/cross-kind UID/stale/race matrix. |
+| `CAL-RESOURCE-017` | `CalendarMoveModule` fixes the order as input, origin/scope, one scoped discovery/default outcome, capability, source semantics/revision, exact-href probe, MOVE, then reconciliation. | `CalendarMoveModuleTests` asserts the deterministic `discover`, `read-source`, `probe-destination`, `dispatch`, and bilateral observation trace; service tests cover every pre-dispatch phase. |
+| `CAL-RESOURCE-018` | Semantic fidelity compares the complete authoritative source and destination bytes while all former scan counts and scan-derived weak/oversize outcomes are absent from the Move result and MCP response. | `CalendarMoveModuleTests.Dispatched_BilateralMatrixPreservesCommitTruth`, `PossiblyDispatched_BilateralMatrixDoesNotOverclaimCommit`, and `CalendarResourceMoveToolsTests` contract assertions. |
+| `CAL-RESOURCE-019` | `CALDAV_INTEROPERABILITY_PROFILE=radicale-3.7.8` is the only accepted enabling value; omission and unknown, differently cased, or padded values fail closed before source or presence work. | `CalDavOptionsTests`, `CalDavEnvironmentMapperTests`, `McpMetadataTests`, `CalendarMoveModuleTests.UnverifiedProfileFailsClosedBeforeSourceOrPresenceWork`, README, live catalog, and packaged `.mcp/server.json`. |
+| `CAL-RESOURCE-022` | Pre-dispatch work and bilateral reconciliation have separate 30-second bounds. No MOVE retry exists, and caller cancellation after possible dispatch cannot stop reconciliation. | `CalendarMoveModuleTests.CallerCancellationAfterPossibleDispatchCannotStopReconciliation`, protocol single-attempt tests, service deadline/cancellation tests, and stdio OTLP cancellation evidence. |
+| `CAL-RESOURCE-023` | Destination and source reconciliation reads start together under one independent bounded token and are awaited bilaterally. | `CalendarMoveModuleTests` trace/count matrix and `CalendarMoveModuleTests.ReconciliationStartsBothReadsBeforeEitherCompletes`. |
+| `CAL-RESOURCE-024` | The `Dispatched` classifier distinguishes faithful commit, committed fidelity failure, committed-but-unverified observations, and contradictory unknown state. | `CalendarMoveModuleTests.Dispatched_BilateralMatrixPreservesCommitTruth`. |
+| `CAL-RESOURCE-025` | The `PossiblyDispatched` classifier claims committed only for faithful destination plus absent source; absent destination plus unchanged strong source is retryable `not_committed`; every divergent, incomplete, unavailable, or contradictory cell is unknown. | `CalendarMoveModuleTests.PossiblyDispatched_BilateralMatrixDoesNotOverclaimCommit` and `OpenTelemetryStdioIntegrationTests.SemanticMovePossiblyDispatched_ExportsReconciledTruthOverStdio`. |
+| `CAL-RESOURCE-026` | Definite rejection is `not_committed`; stale revision is `not_attempted`; uncertain contradictory dispatch is `indeterminate`/`unknown`. The module never retries or synthesizes a second plan. | Dispatch failure theories, stale/race pinned Radicale cases, and the three real stdio/OTLP Move witnesses. |
+
+The Move OTLP witnesses assert closed `caldav.move.dispatch`,
+`caldav.move.collision`, and `caldav.move.reconciliation` values alongside
+logical outcome and Mutation State. They preserve expected HTTP 404 attempts as
+`absence_probe`/`expected_absence`, require one MOVE, clean stdio, zero exception
+events, and absence of hrefs, UIDs, Entity Tags, conditional headers, Calendar
+content, credentials, and exception details.
+
 ## Shared performance evidence
 
 | Requirement | Evidence |

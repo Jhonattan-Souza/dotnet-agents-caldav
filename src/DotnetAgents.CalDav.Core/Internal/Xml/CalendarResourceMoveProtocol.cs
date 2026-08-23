@@ -141,7 +141,8 @@ internal sealed class CalendarResourceMoveProtocol(
             && davError.HasFlag(DavMutationErrorKind.NoUidConflict))
         {
             return new CalendarResourceMoveDispatchResult(
-                CalendarResourceMoveDispatchCode.DestinationConflict);
+                CalendarResourceMoveDispatchCode.Conflict,
+                CollisionKind: CalendarResourceMoveDispatchCollisionKind.Uid);
         }
         if (davError.HasFlag(DavMutationErrorKind.UnsupportedCapability))
             return new(CalendarResourceMoveDispatchCode.UnsupportedCapability);
@@ -156,7 +157,9 @@ internal sealed class CalendarResourceMoveProtocol(
         CalendarMutationHttpOutcome.PossiblyDispatched => new(CalendarResourceMoveDispatchCode.PossiblyDispatched),
         CalendarMutationHttpOutcome.NotFound => new(CalendarResourceMoveDispatchCode.NotFound),
         CalendarMutationHttpOutcome.Conflict =>
-            new(CalendarResourceMoveDispatchCode.Conflict),
+            new(
+                CalendarResourceMoveDispatchCode.Conflict,
+                CollisionKind: CalendarResourceMoveDispatchCollisionKind.Unclassified),
         CalendarMutationHttpOutcome.UpstreamUnauthorized => new(CalendarResourceMoveDispatchCode.UpstreamUnauthorized),
         CalendarMutationHttpOutcome.UpstreamForbidden => new(CalendarResourceMoveDispatchCode.UpstreamForbidden),
         CalendarMutationHttpOutcome.PayloadTooLarge => new(CalendarResourceMoveDispatchCode.PayloadTooLarge),

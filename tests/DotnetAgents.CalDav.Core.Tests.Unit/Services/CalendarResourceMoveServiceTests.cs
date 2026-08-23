@@ -1,6 +1,7 @@
 using System.Text;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Configuration;
+using DotnetAgents.CalDav.Core.Internal;
 using DotnetAgents.CalDav.Core.Internal.Xml;
 using DotnetAgents.CalDav.Core.Models;
 using DotnetAgents.CalDav.Core.Services;
@@ -15,6 +16,64 @@ namespace DotnetAgents.CalDav.Core.Tests.Unit.Services;
 public sealed class CalendarResourceMoveServiceTests
 {
     [Fact]
+    public async Task MoveResourceAsync_PreservesHeadersOnlyProbeThroughOperationDiscovery()
+    {
+        const string sourceHref = "https://cal.example/tasks/reviewed.ics";
+        const string destinationCalendarHref = "https://cal.example/archive/";
+        const string uid = "reviewed-move";
+        var destinationHref = CalendarResourceCreateProtocol.BuildResourceHref(destinationCalendarHref, uid);
+        var client = Substitute.For<ICalendarClient, ICalendarResourcePresenceTransport>();
+        var presence = (ICalendarResourcePresenceTransport)client;
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
+            TodoCalendar("https://cal.example/tasks/", "Tasks"),
+            TodoCalendar(destinationCalendarHref, "Archive")
+        ]);
+        client.GetCalendarResourceAsync(sourceHref, Arg.Any<CancellationToken>()).Returns(
+            Resource(sourceHref, "\"r1\"", uid),
+            new CalendarResourceRead(CalendarResourceReadCode.NotFound));
+        client.GetCalendarResourceAsync(destinationHref, Arg.Any<CancellationToken>()).Returns(
+            Resource(destinationHref, "\"r2\"", uid));
+        presence.ProbeCalendarResourcePresenceAsync(destinationHref, Arg.Any<CancellationToken>()).Returns(
+            new CalendarResourceRead(CalendarResourceReadCode.NotFound));
+        client.MoveCalendarResourceAsync(Arg.Any<CalendarResourceMoveDispatchRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceMoveDispatchResult(CalendarResourceMoveDispatchCode.Dispatched));
+        var sut = CreateService(client);
+
+        var result = await sut.MoveResourceAsync(Request(sourceHref), CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceMoveCode.Success);
+        await presence.Received(1).ProbeCalendarResourcePresenceAsync(
+            destinationHref,
+            Arg.Any<CancellationToken>());
+        await client.Received(1).GetCalendarResourceAsync(destinationHref, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task MoveResourceAsync_FailsClosedWhenHeadersOnlyPresenceCapabilityIsUnavailable()
+    {
+        const string sourceHref = "https://cal.example/tasks/reviewed.ics";
+        var client = Substitute.For<ICalendarClient>();
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
+            TodoCalendar("https://cal.example/tasks/", "Tasks"),
+            TodoCalendar("https://cal.example/archive/", "Archive")
+        ]);
+        client.GetCalendarResourceAsync(sourceHref, Arg.Any<CancellationToken>()).Returns(
+            Resource(sourceHref, "\"r1\"", "reviewed-move"));
+        var sut = CreateService(client);
+
+        var result = await sut.MoveResourceAsync(Request(sourceHref), CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceMoveCode.UnsupportedCapability);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        await client.DidNotReceive().GetCalendarResourceAsync(
+            Arg.Is<string>(href => href.StartsWith("https://cal.example/archive/", StringComparison.Ordinal)),
+            Arg.Any<CancellationToken>());
+        await client.DidNotReceive().MoveCalendarResourceAsync(
+            Arg.Any<CalendarResourceMoveDispatchRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task MoveResourceAsync_UsesAtomicMoveAndVerifiesDestinationAndSource()
     {
         const string sourceCalendarHref = "https://cal.example/tasks/";
@@ -23,7 +82,7 @@ public sealed class CalendarResourceMoveServiceTests
         const string entityUid = "reviewed-move";
         const string entityTag = "\"r1\"";
         var destinationHref = CalendarResourceCreateProtocol.BuildResourceHref(destinationCalendarHref, entityUid);
-        var client = Substitute.For<ICalendarClient>();
+        var client = MoveClient();
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
             TodoCalendar(sourceCalendarHref, "Tasks"),
             TodoCalendar(destinationCalendarHref, "Archive")
@@ -32,7 +91,6 @@ public sealed class CalendarResourceMoveServiceTests
             Resource(sourceHref, entityTag, entityUid),
             new CalendarResourceRead(CalendarResourceReadCode.NotFound));
         client.GetCalendarResourceAsync(destinationHref, Arg.Any<CancellationToken>()).Returns(
-            new CalendarResourceRead(CalendarResourceReadCode.NotFound),
             Resource(destinationHref, "\"r2\"", entityUid));
         client.MoveCalendarResourceAsync(Arg.Any<CalendarResourceMoveDispatchRequest>(), Arg.Any<CancellationToken>())
             .Returns(new CalendarResourceMoveDispatchResult(CalendarResourceMoveDispatchCode.Dispatched));
@@ -72,7 +130,7 @@ public sealed class CalendarResourceMoveServiceTests
         const string destinationCalendarHref = "https://cal.example/archive/";
         const string uid = "event-move";
         var destinationHref = CalendarResourceCreateProtocol.BuildResourceHref(destinationCalendarHref, uid);
-        var client = Substitute.For<ICalendarClient>();
+        var client = MoveClient();
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
             EventCalendar("https://cal.example/events/", "Events"),
             EventCalendar(destinationCalendarHref, "Archive")
@@ -81,7 +139,6 @@ public sealed class CalendarResourceMoveServiceTests
             EventResource(sourceHref, "\"r1\"", uid),
             new CalendarResourceRead(CalendarResourceReadCode.NotFound));
         client.GetCalendarResourceAsync(destinationHref, Arg.Any<CancellationToken>()).Returns(
-            new CalendarResourceRead(CalendarResourceReadCode.NotFound),
             EventResource(destinationHref, "\"r2\"", uid));
         client.MoveCalendarResourceAsync(Arg.Any<CalendarResourceMoveDispatchRequest>(), Arg.Any<CancellationToken>())
             .Returns(new CalendarResourceMoveDispatchResult(CalendarResourceMoveDispatchCode.Dispatched));
@@ -111,7 +168,6 @@ public sealed class CalendarResourceMoveServiceTests
             "https://cal.example/archive/",
             "reviewed-move");
         client.GetCalendarResourceAsync(destinationHref, Arg.Any<CancellationToken>()).Returns(
-            new CalendarResourceRead(CalendarResourceReadCode.NotFound),
             Resource(destinationHref, "\"r2\"", "reviewed-move"));
         client.GetCalendarResourceAsync(sourceHref, Arg.Any<CancellationToken>()).Returns(
             Resource(sourceHref, "\"r1\"", "reviewed-move"),
@@ -132,7 +188,7 @@ public sealed class CalendarResourceMoveServiceTests
     public async Task MoveResourceAsync_RejectsSameCalendarWithoutRenameOrDispatch()
     {
         const string sourceHref = "https://cal.example/tasks/reviewed.ics";
-        var client = Substitute.For<ICalendarClient>();
+        var client = MoveClient();
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
             TodoCalendar("https://cal.example/tasks/", "Tasks")
         ]);
@@ -154,8 +210,13 @@ public sealed class CalendarResourceMoveServiceTests
             Arg.Any<CancellationToken>());
     }
 
-    [Fact]
-    public async Task MoveResourceAsync_DestinationUidCollisionAtAnotherHrefDoesNotDispatch()
+    [Theory]
+    [InlineData(CalendarResourceReadCode.Success)]
+    [InlineData(CalendarResourceReadCode.ConcurrencyUnavailable)]
+    [InlineData(CalendarResourceReadCode.PayloadTooLarge)]
+    [InlineData(CalendarResourceReadCode.UpstreamProtocolError)]
+    public async Task MoveResourceAsync_UnrelatedDestinationResourceCannotAffectMove(
+        CalendarResourceReadCode unrelatedReadCode)
     {
         const string sourceCalendarHref = "https://cal.example/tasks/";
         const string destinationCalendarHref = "https://cal.example/archive/";
@@ -163,15 +224,16 @@ public sealed class CalendarResourceMoveServiceTests
         const string collisionHref = "https://cal.example/archive/existing.ics";
         const string entityUid = "reviewed-move";
         var generatedDestinationHref = CalendarResourceCreateProtocol.BuildResourceHref(destinationCalendarHref, entityUid);
-        var client = Substitute.For<ICalendarClient>();
+        var client = MoveClient();
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
             TodoCalendar(sourceCalendarHref, "Tasks"),
             TodoCalendar(destinationCalendarHref, "Archive")
         ]);
         client.GetCalendarResourceAsync(sourceHref, Arg.Any<CancellationToken>()).Returns(
-            Resource(sourceHref, "\"r1\"", entityUid));
-        client.GetCalendarResourceAsync(generatedDestinationHref, Arg.Any<CancellationToken>()).Returns(
+            Resource(sourceHref, "\"r1\"", entityUid),
             new CalendarResourceRead(CalendarResourceReadCode.NotFound));
+        client.GetCalendarResourceAsync(generatedDestinationHref, Arg.Any<CancellationToken>()).Returns(
+            Resource(generatedDestinationHref, "\"r2\"", entityUid));
         client.QueryCalendarResourceHrefsAsync(
                 destinationCalendarHref,
                 Arg.Any<CalendarEntityKind>(),
@@ -180,7 +242,13 @@ public sealed class CalendarResourceMoveServiceTests
                 Arg.Any<CancellationToken>())
             .Returns([collisionHref]);
         client.GetCalendarResourceAsync(collisionHref, Arg.Any<CancellationToken>()).Returns(
-            Resource(collisionHref, "\"existing\"", entityUid));
+            unrelatedReadCode == CalendarResourceReadCode.Success
+                ? CalendarResourceRead.Success(collisionHref, "\"opaque\"", Encoding.UTF8.GetBytes("not iCalendar"))
+                : new CalendarResourceRead(unrelatedReadCode));
+        client.MoveCalendarResourceAsync(
+                Arg.Any<CalendarResourceMoveDispatchRequest>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceMoveDispatchResult(CalendarResourceMoveDispatchCode.Dispatched));
         var sut = CreateService(client);
 
         var result = await sut.MoveResourceAsync(
@@ -193,77 +261,17 @@ public sealed class CalendarResourceMoveServiceTests
                 CalendarMoveDestination.Selected(new CalendarReference(Name: "Archive"))),
             CancellationToken.None);
 
-        result.Code.ShouldBe(CalendarResourceMoveCode.DestinationConflict);
-        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
-        await client.DidNotReceive().MoveCalendarResourceAsync(
-            Arg.Any<CalendarResourceMoveDispatchRequest>(),
+        result.Code.ShouldBe(CalendarResourceMoveCode.Success);
+        result.MutationState.ShouldBe(CalendarMutationState.Committed);
+        await client.DidNotReceive().QueryCalendarResourceHrefsAsync(
+            Arg.Any<string>(),
+            Arg.Any<CalendarEntityKind>(),
+            Arg.Any<DateTimeOffset?>(),
+            Arg.Any<DateTimeOffset?>(),
             Arg.Any<CancellationToken>());
-    }
-
-    [Theory]
-    [InlineData(CalendarResourceReadCode.ConcurrencyUnavailable, CalendarResourceMoveCode.ConcurrencyUnavailable)]
-    [InlineData(CalendarResourceReadCode.PayloadTooLarge, CalendarResourceMoveCode.PayloadTooLarge)]
-    [InlineData(CalendarResourceReadCode.UpstreamProtocolError, CalendarResourceMoveCode.UpstreamProtocolError)]
-    public async Task MoveResourceAsync_MapsDestinationUidCandidateReadFailure(
-        CalendarResourceReadCode readCode,
-        CalendarResourceMoveCode expectedCode)
-    {
-        const string sourceHref = "https://cal.example/tasks/reviewed.ics";
-        const string destinationCalendarHref = "https://cal.example/archive/";
-        const string candidateHref = "https://cal.example/archive/candidate.ics";
-        var client = ConfiguredClient(sourceHref, "reviewed-move");
-        var destinationHref = CalendarResourceCreateProtocol.BuildResourceHref(
-            destinationCalendarHref,
-            "reviewed-move");
-        client.GetCalendarResourceAsync(destinationHref, Arg.Any<CancellationToken>()).Returns(
-            new CalendarResourceRead(CalendarResourceReadCode.NotFound));
-        client.QueryCalendarResourceHrefsAsync(
-                destinationCalendarHref,
-                CalendarEntityKind.Todo,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([candidateHref]);
-        client.GetCalendarResourceAsync(candidateHref, Arg.Any<CancellationToken>()).Returns(
-            new CalendarResourceRead(readCode));
-        var sut = CreateService(client);
-
-        var result = await sut.MoveResourceAsync(Request(sourceHref), CancellationToken.None);
-
-        result.Code.ShouldBe(expectedCode);
-        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
-        await client.DidNotReceive().MoveCalendarResourceAsync(
-            Arg.Any<CalendarResourceMoveDispatchRequest>(),
+        await client.DidNotReceive().GetCalendarResourceAsync(
+            collisionHref,
             Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task MoveResourceAsync_OpaqueDestinationUidCandidateBlocksMove()
-    {
-        const string sourceHref = "https://cal.example/tasks/reviewed.ics";
-        const string destinationCalendarHref = "https://cal.example/archive/";
-        const string candidateHref = "https://cal.example/archive/candidate.ics";
-        var client = ConfiguredClient(sourceHref, "reviewed-move");
-        var destinationHref = CalendarResourceCreateProtocol.BuildResourceHref(
-            destinationCalendarHref,
-            "reviewed-move");
-        client.GetCalendarResourceAsync(destinationHref, Arg.Any<CancellationToken>()).Returns(
-            new CalendarResourceRead(CalendarResourceReadCode.NotFound));
-        client.QueryCalendarResourceHrefsAsync(
-                destinationCalendarHref,
-                Arg.Any<CalendarEntityKind>(),
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([candidateHref]);
-        client.GetCalendarResourceAsync(candidateHref, Arg.Any<CancellationToken>()).Returns(
-            CalendarResourceRead.Success(candidateHref, "\"opaque\"", Encoding.UTF8.GetBytes("not iCalendar")));
-        var sut = CreateService(client);
-
-        var result = await sut.MoveResourceAsync(Request(sourceHref), CancellationToken.None);
-
-        result.Code.ShouldBe(CalendarResourceMoveCode.OpaqueResource);
-        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
     }
 
     [Theory]
@@ -274,7 +282,7 @@ public sealed class CalendarResourceMoveServiceTests
         string entityTag,
         CalendarResourceMoveCode expectedCode)
     {
-        var client = Substitute.For<ICalendarClient>();
+        var client = MoveClient();
         var sut = CreateService(client);
 
         var result = await sut.MoveResourceAsync(
@@ -299,7 +307,7 @@ public sealed class CalendarResourceMoveServiceTests
     public async Task MoveResourceAsync_RejectsWeakRevisionAfterDestinationSelectionWithoutResourceRead()
     {
         const string sourceHref = "https://cal.example/tasks/reviewed.ics";
-        var client = Substitute.For<ICalendarClient>();
+        var client = MoveClient();
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
             TodoCalendar("https://cal.example/tasks/", "Tasks"),
             TodoCalendar("https://cal.example/archive/", "Archive")
@@ -328,7 +336,7 @@ public sealed class CalendarResourceMoveServiceTests
     public async Task MoveResourceAsync_RejectsMissingSourceBeforeDispatch()
     {
         const string sourceHref = "https://cal.example/tasks/missing.ics";
-        var client = Substitute.For<ICalendarClient>();
+        var client = MoveClient();
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
             TodoCalendar("https://cal.example/tasks/", "Tasks"),
             TodoCalendar("https://cal.example/archive/", "Archive")
@@ -356,7 +364,7 @@ public sealed class CalendarResourceMoveServiceTests
         {
             TodoSupport = support == "unknown" ? EntityKindSupport.Unknown : EntityKindSupport.NotAdvertised
         };
-        var client = Substitute.For<ICalendarClient>();
+        var client = MoveClient();
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
             TodoCalendar("https://cal.example/tasks/", "Tasks"),
             destination
@@ -376,10 +384,31 @@ public sealed class CalendarResourceMoveServiceTests
     }
 
     [Fact]
+    public async Task MoveResourceAsync_UnverifiedServerProfileFailsClosedBeforeSourceAccess()
+    {
+        const string sourceHref = "https://cal.example/tasks/reviewed.ics";
+        var client = ConfiguredClient(sourceHref, "reviewed-move");
+        var sut = CreateService(client, interoperabilityProfile: null);
+
+        var result = await sut.MoveResourceAsync(Request(sourceHref), CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceMoveCode.UnsupportedCapability);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        result.Phase.ShouldBe(CalendarResourceMovePhase.SelectionDiscoveryCapability);
+        await client.Received(1).GetCalendarsAsync(Arg.Any<CancellationToken>());
+        await client.DidNotReceive().GetCalendarResourceAsync(
+            Arg.Any<string>(),
+            Arg.Any<CancellationToken>());
+        await client.DidNotReceive().MoveCalendarResourceAsync(
+            Arg.Any<CalendarResourceMoveDispatchRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task MoveResourceAsync_AmbiguousDestinationNameDoesNotDispatch()
     {
         const string sourceHref = "https://cal.example/tasks/reviewed.ics";
-        var client = Substitute.For<ICalendarClient>();
+        var client = MoveClient();
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
             TodoCalendar("https://cal.example/tasks/", "Tasks"),
             TodoCalendar("https://cal.example/archive-a/", "Archive"),
@@ -405,7 +434,7 @@ public sealed class CalendarResourceMoveServiceTests
     public async Task MoveResourceAsync_DestinationSelectionFailurePrecedesSourceRevisionRead()
     {
         const string sourceHref = "https://cal.example/tasks/reviewed.ics";
-        var client = Substitute.For<ICalendarClient>();
+        var client = MoveClient();
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
             TodoCalendar("https://cal.example/tasks/", "Tasks")
         ]);
@@ -423,7 +452,7 @@ public sealed class CalendarResourceMoveServiceTests
     [Fact]
     public async Task MoveResourceAsync_SourceOutsideConfiguredScopeFailsBeforeNetwork()
     {
-        var client = Substitute.For<ICalendarClient>();
+        var client = MoveClient();
         var sut = CreateService(client);
 
         var result = await sut.MoveResourceAsync(
@@ -451,7 +480,7 @@ public sealed class CalendarResourceMoveServiceTests
     public async Task MoveResourceAsync_RejectsUnsafeSelectedCalendarHrefBeforeNetwork(
         string destinationCalendarHref)
     {
-        var client = Substitute.For<ICalendarClient>();
+        var client = MoveClient();
         var sut = CreateService(client);
         var request = Request("https://cal.example/tasks/reviewed.ics") with
         {
@@ -469,7 +498,7 @@ public sealed class CalendarResourceMoveServiceTests
     [Fact]
     public async Task MoveResourceAsync_RejectsSelectedCalendarHrefOutsideConfiguredScopeBeforeNetwork()
     {
-        var client = Substitute.For<ICalendarClient>();
+        var client = MoveClient();
         var sut = CreateService(client);
         var request = Request("https://cal.example/tasks/reviewed.ics") with
         {
@@ -487,7 +516,7 @@ public sealed class CalendarResourceMoveServiceTests
     [Fact]
     public async Task MoveResourceAsync_RejectsCrossOriginCalendarFromDiscoveryBeforeResourceAccess()
     {
-        var client = Substitute.For<ICalendarClient>();
+        var client = MoveClient();
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
             TodoCalendar("https://other.example/archive/", "Archive")
         ]);
@@ -497,7 +526,7 @@ public sealed class CalendarResourceMoveServiceTests
             Request("https://cal.example/tasks/reviewed.ics"),
             CancellationToken.None);
 
-        result.Code.ShouldBe(CalendarResourceMoveCode.UpstreamProtocolError);
+        result.Code.ShouldBe(CalendarResourceMoveCode.OutsideScope);
         result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
         await client.DidNotReceive().GetCalendarResourceAsync(
             Arg.Any<string>(),
@@ -512,16 +541,13 @@ public sealed class CalendarResourceMoveServiceTests
         const string uid = "reviewed-move";
         var destinationHref = CalendarResourceCreateProtocol.BuildResourceHref(destinationCalendarHref, uid);
         var client = ConfiguredClient(sourceHref, uid);
-        client.GetCalendarResourceAsync(destinationHref, Arg.Any<CancellationToken>()).Returns(
-            new CalendarResourceRead(CalendarResourceReadCode.NotFound),
-            Resource(destinationHref, "\"other\"", "other-uid"));
         client.MoveCalendarResourceAsync(Arg.Any<CalendarResourceMoveDispatchRequest>(), Arg.Any<CancellationToken>())
             .Returns(new CalendarResourceMoveDispatchResult(CalendarResourceMoveDispatchCode.Conflict));
         var sut = CreateService(client);
 
         var result = await sut.MoveResourceAsync(Request(sourceHref), CancellationToken.None);
 
-        result.Code.ShouldBe(CalendarResourceMoveCode.DestinationConflict);
+        result.Code.ShouldBe(CalendarResourceMoveCode.Conflict);
         result.MutationState.ShouldBe(CalendarMutationState.NotCommitted);
         await client.Received(1).MoveCalendarResourceAsync(
             Arg.Any<CalendarResourceMoveDispatchRequest>(),
@@ -529,6 +555,7 @@ public sealed class CalendarResourceMoveServiceTests
     }
 
     [Theory]
+    [InlineData(CalendarResourceMoveDispatchCode.Conflict, CalendarResourceMoveCode.Conflict, false)]
     [InlineData(CalendarResourceMoveDispatchCode.DestinationConflict, CalendarResourceMoveCode.DestinationConflict, false)]
     [InlineData(CalendarResourceMoveDispatchCode.NotFound, CalendarResourceMoveCode.NotFound, false)]
     [InlineData(CalendarResourceMoveDispatchCode.InvalidInput, CalendarResourceMoveCode.InvalidInput, false)]
@@ -550,8 +577,6 @@ public sealed class CalendarResourceMoveServiceTests
         var destinationHref = CalendarResourceCreateProtocol.BuildResourceHref(
             destinationCalendarHref,
             "reviewed-move");
-        client.GetCalendarResourceAsync(destinationHref, Arg.Any<CancellationToken>()).Returns(
-            new CalendarResourceRead(CalendarResourceReadCode.NotFound));
         client.MoveCalendarResourceAsync(Arg.Any<CalendarResourceMoveDispatchRequest>(), Arg.Any<CancellationToken>())
             .Returns(new CalendarResourceMoveDispatchResult(dispatchCode, 2_000));
         var sut = CreateService(client);
@@ -562,6 +587,7 @@ public sealed class CalendarResourceMoveServiceTests
         result.MutationState.ShouldBe(CalendarMutationState.NotCommitted);
         result.Retryable.ShouldBe(retryable);
         result.RetryAfterMilliseconds.ShouldBe(retryable ? 2_000 : null);
+        result.Phase.ShouldBe(CalendarResourceMovePhase.Execution);
         await client.Received(1).MoveCalendarResourceAsync(
             Arg.Any<CalendarResourceMoveDispatchRequest>(),
             Arg.Any<CancellationToken>());
@@ -578,8 +604,6 @@ public sealed class CalendarResourceMoveServiceTests
         client.GetCalendarResourceAsync(sourceHref, Arg.Any<CancellationToken>()).Returns(
             Resource(sourceHref, "\"r1\"", uid),
             Resource(sourceHref, "\"r2\"", uid));
-        client.GetCalendarResourceAsync(destinationHref, Arg.Any<CancellationToken>()).Returns(
-            new CalendarResourceRead(CalendarResourceReadCode.NotFound));
         client.MoveCalendarResourceAsync(Arg.Any<CalendarResourceMoveDispatchRequest>(), Arg.Any<CancellationToken>())
             .Returns(new CalendarResourceMoveDispatchResult(CalendarResourceMoveDispatchCode.Conflict));
         var sut = CreateService(client);
@@ -588,7 +612,7 @@ public sealed class CalendarResourceMoveServiceTests
 
         result.Code.ShouldBe(CalendarResourceMoveCode.Conflict);
         result.MutationState.ShouldBe(CalendarMutationState.NotCommitted);
-        result.Snapshot.ShouldNotBeNull().EntityTag.ShouldBe("\"r2\"");
+        result.Snapshot.ShouldBeNull();
     }
 
     [Fact]
@@ -600,7 +624,6 @@ public sealed class CalendarResourceMoveServiceTests
         var destinationHref = CalendarResourceCreateProtocol.BuildResourceHref(destinationCalendarHref, uid);
         var client = ConfiguredClient(sourceHref, uid);
         client.GetCalendarResourceAsync(destinationHref, Arg.Any<CancellationToken>()).Returns(
-            new CalendarResourceRead(CalendarResourceReadCode.NotFound),
             Resource(destinationHref, "\"r2\"", uid, "X-KEEP;P=One,one:changed"));
         client.GetCalendarResourceAsync(sourceHref, Arg.Any<CancellationToken>()).Returns(
             Resource(sourceHref, "\"r1\"", uid),
@@ -630,7 +653,6 @@ public sealed class CalendarResourceMoveServiceTests
         var destinationHref = CalendarResourceCreateProtocol.BuildResourceHref(destinationCalendarHref, uid);
         var client = ConfiguredClient(sourceHref, uid);
         client.GetCalendarResourceAsync(destinationHref, Arg.Any<CancellationToken>()).Returns(
-            new CalendarResourceRead(CalendarResourceReadCode.NotFound),
             observation == "unchanged"
                 ? new CalendarResourceRead(CalendarResourceReadCode.NotFound)
                 : new CalendarResourceRead(CalendarResourceReadCode.UpstreamProtocolError));
@@ -653,7 +675,7 @@ public sealed class CalendarResourceMoveServiceTests
     }
 
     [Theory]
-    [InlineData("source-unchanged", CalendarResourceMoveCode.UpstreamUnavailable, CalendarMutationState.NotCommitted)]
+    [InlineData("source-unchanged", CalendarResourceMoveCode.Indeterminate, CalendarMutationState.Unknown)]
     [InlineData("source-unavailable", CalendarResourceMoveCode.Indeterminate, CalendarMutationState.Unknown)]
     public async Task MoveResourceAsync_DoesNotInferCommitFromDestinationAfterUncertainDispatch(
         string sourceObservation,
@@ -666,7 +688,6 @@ public sealed class CalendarResourceMoveServiceTests
         var destinationHref = CalendarResourceCreateProtocol.BuildResourceHref(destinationCalendarHref, uid);
         var client = ConfiguredClient(sourceHref, uid);
         client.GetCalendarResourceAsync(destinationHref, Arg.Any<CancellationToken>()).Returns(
-            new CalendarResourceRead(CalendarResourceReadCode.NotFound),
             Resource(destinationHref, "\"r2\"", uid, "X-KEEP;P=One,one:concurrent"));
         client.GetCalendarResourceAsync(sourceHref, Arg.Any<CancellationToken>()).Returns(
             Resource(sourceHref, "\"r1\"", uid),
@@ -693,7 +714,6 @@ public sealed class CalendarResourceMoveServiceTests
         var destinationHref = CalendarResourceCreateProtocol.BuildResourceHref(destinationCalendarHref, uid);
         var client = ConfiguredClient(sourceHref, uid);
         client.GetCalendarResourceAsync(destinationHref, Arg.Any<CancellationToken>()).Returns(
-            _ => new CalendarResourceRead(CalendarResourceReadCode.NotFound),
             _ => Resource(destinationHref, "\"r2\"", uid, "X-KEEP:concurrent"));
         client.GetCalendarResourceAsync(sourceHref, Arg.Any<CancellationToken>()).Returns(
             _ => Resource(sourceHref, "\"r1\"", uid),
@@ -707,16 +727,18 @@ public sealed class CalendarResourceMoveServiceTests
         result.Code.ShouldBe(CalendarResourceMoveCode.Indeterminate);
         result.MutationState.ShouldBe(CalendarMutationState.Unknown);
         result.Snapshot.ShouldBeNull();
-        await client.Received(2).GetCalendarResourceAsync(
+        await client.Received(1).GetCalendarResourceAsync(
             destinationHref,
             Arg.Any<CancellationToken>());
     }
 
     [Theory]
-    [InlineData(CalendarResourceMoveDispatchCode.Dispatched)]
-    [InlineData(CalendarResourceMoveDispatchCode.PossiblyDispatched)]
-    public async Task MoveResourceAsync_CommittedMoveWithoutDestinationTagIsTypedConcurrencyOutcome(
-        CalendarResourceMoveDispatchCode dispatchCode)
+    [InlineData(CalendarResourceMoveDispatchCode.Dispatched, CalendarResourceMoveCode.CommittedButUnverified, CalendarMutationState.Committed)]
+    [InlineData(CalendarResourceMoveDispatchCode.PossiblyDispatched, CalendarResourceMoveCode.Indeterminate, CalendarMutationState.Unknown)]
+    public async Task MoveResourceAsync_WeakDestinationObservationPreservesDispatchTruth(
+        CalendarResourceMoveDispatchCode dispatchCode,
+        CalendarResourceMoveCode expectedCode,
+        CalendarMutationState expectedState)
     {
         const string sourceHref = "https://cal.example/tasks/reviewed.ics";
         const string destinationCalendarHref = "https://cal.example/archive/";
@@ -725,7 +747,6 @@ public sealed class CalendarResourceMoveServiceTests
         var source = Resource(sourceHref, "\"r1\"", uid);
         var client = ConfiguredClient(sourceHref, uid);
         client.GetCalendarResourceAsync(destinationHref, Arg.Any<CancellationToken>()).Returns(
-            new CalendarResourceRead(CalendarResourceReadCode.NotFound),
             new CalendarResourceRead(
                 CalendarResourceReadCode.ConcurrencyUnavailable,
                 destinationHref,
@@ -739,8 +760,8 @@ public sealed class CalendarResourceMoveServiceTests
 
         var result = await sut.MoveResourceAsync(Request(sourceHref), CancellationToken.None);
 
-        result.Code.ShouldBe(CalendarResourceMoveCode.CommittedButConcurrencyUnavailable);
-        result.MutationState.ShouldBe(CalendarMutationState.Committed);
+        result.Code.ShouldBe(expectedCode);
+        result.MutationState.ShouldBe(expectedState);
     }
 
     [Fact]
@@ -761,8 +782,8 @@ public sealed class CalendarResourceMoveServiceTests
 
         var result = await sut.MoveResourceAsync(Request(sourceHref), CancellationToken.None);
 
-        result.Code.ShouldBe(CalendarResourceMoveCode.UpstreamProtocolError);
-        result.MutationState.ShouldBe(CalendarMutationState.NotCommitted);
+        result.Code.ShouldBe(CalendarResourceMoveCode.Indeterminate);
+        result.MutationState.ShouldBe(CalendarMutationState.Unknown);
         result.Snapshot.ShouldNotBeNull().ResourceHref.ShouldBe(sourceHref);
     }
 
@@ -775,8 +796,7 @@ public sealed class CalendarResourceMoveServiceTests
         var destinationHref = CalendarResourceCreateProtocol.BuildResourceHref(destinationCalendarHref, uid);
         var client = ConfiguredClient(sourceHref, uid);
         client.GetCalendarResourceAsync(destinationHref, Arg.Any<CancellationToken>()).Returns(
-            _ => new CalendarResourceRead(CalendarResourceReadCode.NotFound),
-            _ => throw new IOException("destination verification unavailable"));
+            Task.FromException<CalendarResourceRead>(new IOException("destination verification unavailable")));
         client.GetCalendarResourceAsync(sourceHref, Arg.Any<CancellationToken>()).Returns(
             _ => Resource(sourceHref, "\"r1\"", uid),
             _ => throw new IOException("source verification unavailable"));
@@ -801,7 +821,6 @@ public sealed class CalendarResourceMoveServiceTests
         var destination = Resource(destinationHref, "\"r2\"", uid, "X-KEEP:changed");
         var client = ConfiguredClient(sourceHref, uid);
         client.GetCalendarResourceAsync(destinationHref, Arg.Any<CancellationToken>()).Returns(
-            _ => new CalendarResourceRead(CalendarResourceReadCode.NotFound),
             _ => destination);
         client.GetCalendarResourceAsync(sourceHref, Arg.Any<CancellationToken>()).Returns(
             _ => Resource(sourceHref, "\"r1\"", uid),
@@ -812,14 +831,14 @@ public sealed class CalendarResourceMoveServiceTests
 
         var result = await sut.MoveResourceAsync(Request(sourceHref), CancellationToken.None);
 
-        result.Code.ShouldBe(CalendarResourceMoveCode.FidelityFailure);
+        result.Code.ShouldBe(CalendarResourceMoveCode.CommittedButUnverified);
         result.MutationState.ShouldBe(CalendarMutationState.Committed);
-        result.Snapshot.ShouldNotBeNull().ResourceHref.ShouldBe(destinationHref);
+        result.Snapshot.ShouldBeNull();
     }
 
     [Theory]
     [InlineData("matching", CalendarResourceMoveCode.Success)]
-    [InlineData("different", CalendarResourceMoveCode.FidelityFailure)]
+    [InlineData("different", CalendarResourceMoveCode.Indeterminate)]
     public async Task MoveResourceAsync_ReconcilesPossiblyDispatchedDestinationAndSourceAbsence(
         string destinationState,
         CalendarResourceMoveCode expectedCode)
@@ -830,7 +849,6 @@ public sealed class CalendarResourceMoveServiceTests
         var destinationHref = CalendarResourceCreateProtocol.BuildResourceHref(destinationCalendarHref, uid);
         var client = ConfiguredClient(sourceHref, uid);
         client.GetCalendarResourceAsync(destinationHref, Arg.Any<CancellationToken>()).Returns(
-            new CalendarResourceRead(CalendarResourceReadCode.NotFound),
             Resource(
                 destinationHref,
                 "\"r2\"",
@@ -846,11 +864,17 @@ public sealed class CalendarResourceMoveServiceTests
         var result = await sut.MoveResourceAsync(Request(sourceHref), CancellationToken.None);
 
         result.Code.ShouldBe(expectedCode);
-        result.MutationState.ShouldBe(CalendarMutationState.Committed);
+        result.MutationState.ShouldBe(destinationState == "matching"
+            ? CalendarMutationState.Committed
+            : CalendarMutationState.Unknown);
     }
 
-    [Fact]
-    public async Task MoveResourceAsync_DestinationUidScanStopsAtResourceLimitBeforeDispatch()
+    [Theory]
+    [InlineData(1)]
+    [InlineData(50)]
+    [InlineData(600)]
+    public async Task MoveResourceAsync_DestinationSizeDoesNotCauseEnumerationOrUnrelatedReads(
+        int destinationSize)
     {
         const string sourceHref = "https://cal.example/tasks/reviewed.ics";
         const string destinationCalendarHref = "https://cal.example/archive/";
@@ -859,32 +883,47 @@ public sealed class CalendarResourceMoveServiceTests
             destinationCalendarHref,
             "reviewed-move");
         client.GetCalendarResourceAsync(destinationHref, Arg.Any<CancellationToken>()).Returns(
+            Resource(destinationHref, "\"r2\"", "reviewed-move"));
+        client.GetCalendarResourceAsync(sourceHref, Arg.Any<CancellationToken>()).Returns(
+            Resource(sourceHref, "\"r1\"", "reviewed-move"),
             new CalendarResourceRead(CalendarResourceReadCode.NotFound));
         client.QueryCalendarResourceHrefsAsync(
                 destinationCalendarHref,
-                CalendarEntityKind.Todo,
+                Arg.Any<CalendarEntityKind>(),
                 null,
                 null,
                 Arg.Any<CancellationToken>())
-            .Returns(Enumerable.Range(0, 5_001)
-                .Select(index => $"{destinationCalendarHref}{index}.ics")
+            .Returns(Enumerable.Range(0, destinationSize)
+                .Select(index => $"{destinationCalendarHref}unrelated-{index}.ics")
                 .ToArray());
+        client.MoveCalendarResourceAsync(
+                Arg.Any<CalendarResourceMoveDispatchRequest>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceMoveDispatchResult(CalendarResourceMoveDispatchCode.Dispatched));
         var sut = CreateService(client);
 
         var result = await sut.MoveResourceAsync(Request(sourceHref), CancellationToken.None);
 
-        result.Code.ShouldBe(CalendarResourceMoveCode.LimitExhausted);
-        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
-        result.ResourcesInspected.ShouldBe(5_001);
-        await client.DidNotReceive().MoveCalendarResourceAsync(
-            Arg.Any<CalendarResourceMoveDispatchRequest>(),
+        result.Code.ShouldBe(CalendarResourceMoveCode.Success);
+        result.MutationState.ShouldBe(CalendarMutationState.Committed);
+        await client.DidNotReceive().QueryCalendarResourceHrefsAsync(
+            Arg.Any<string>(),
+            Arg.Any<CalendarEntityKind>(),
+            Arg.Any<DateTimeOffset?>(),
+            Arg.Any<DateTimeOffset?>(),
             Arg.Any<CancellationToken>());
+        foreach (var index in Enumerable.Range(0, destinationSize))
+        {
+            await client.DidNotReceive().GetCalendarResourceAsync(
+                $"{destinationCalendarHref}unrelated-{index}.ics",
+                Arg.Any<CancellationToken>());
+        }
     }
 
     [Theory]
     [InlineData(CalendarResourceReadCode.Success, CalendarResourceMoveCode.DestinationConflict)]
     [InlineData(CalendarResourceReadCode.ConcurrencyUnavailable, CalendarResourceMoveCode.DestinationConflict)]
-    [InlineData(CalendarResourceReadCode.PayloadTooLarge, CalendarResourceMoveCode.PayloadTooLarge)]
+    [InlineData(CalendarResourceReadCode.PayloadTooLarge, CalendarResourceMoveCode.DestinationConflict)]
     [InlineData(CalendarResourceReadCode.UpstreamProtocolError, CalendarResourceMoveCode.UpstreamProtocolError)]
     public async Task MoveResourceAsync_MapsGeneratedDestinationPreflightFailure(
         CalendarResourceReadCode readCode,
@@ -895,14 +934,16 @@ public sealed class CalendarResourceMoveServiceTests
         var destinationHref = CalendarResourceCreateProtocol.BuildResourceHref(
             "https://cal.example/archive/",
             "reviewed-move");
-        client.GetCalendarResourceAsync(destinationHref, Arg.Any<CancellationToken>()).Returns(
-            new CalendarResourceRead(readCode));
+        SetPresence(client, destinationHref, new CalendarResourceRead(readCode));
         var sut = CreateService(client);
 
         var result = await sut.MoveResourceAsync(Request(sourceHref), CancellationToken.None);
 
         result.Code.ShouldBe(expectedCode);
         result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        await client.DidNotReceive().GetCalendarResourceAsync(
+            destinationHref,
+            Arg.Any<CancellationToken>());
         await client.DidNotReceive().MoveCalendarResourceAsync(
             Arg.Any<CalendarResourceMoveDispatchRequest>(),
             Arg.Any<CancellationToken>());
@@ -921,7 +962,7 @@ public sealed class CalendarResourceMoveServiceTests
         CalendarResourceMoveCode expectedCode)
     {
         const string sourceHref = "https://cal.example/tasks/reviewed.ics";
-        var client = Substitute.For<ICalendarClient>();
+        var client = MoveClient();
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
             TodoCalendar("https://cal.example/tasks/", "Tasks"),
             TodoCalendar("https://cal.example/archive/", "Archive")
@@ -954,7 +995,7 @@ public sealed class CalendarResourceMoveServiceTests
         CalendarResourceMoveCode expectedCode,
         bool retryable)
     {
-        var client = Substitute.For<ICalendarClient>();
+        var client = MoveClient();
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns<IReadOnlyList<CalendarDescriptor>>(
             _ => throw new HttpRequestException(
                 "private response",
@@ -975,7 +1016,7 @@ public sealed class CalendarResourceMoveServiceTests
     public async Task MoveResourceAsync_PreDispatchWorkStopsAtThirtySecondsWithoutDispatch()
     {
         var timeProvider = new ManualTimeProvider(DateTimeOffset.Parse("2026-08-17T12:00:00Z"));
-        var client = Substitute.For<ICalendarClient>();
+        var client = MoveClient();
         var discoveryEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(async call =>
         {
@@ -1006,7 +1047,7 @@ public sealed class CalendarResourceMoveServiceTests
     [Fact]
     public async Task MoveResourceAsync_CallerCancellationBeforeDispatchPropagatesWithoutWrite()
     {
-        var client = Substitute.For<ICalendarClient>();
+        var client = MoveClient();
         var discoveryEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(async call =>
         {
@@ -1041,7 +1082,6 @@ public sealed class CalendarResourceMoveServiceTests
         var destinationHref = CalendarResourceCreateProtocol.BuildResourceHref(destinationCalendarHref, uid);
         var client = ConfiguredClient(sourceHref, uid);
         client.GetCalendarResourceAsync(destinationHref, Arg.Any<CancellationToken>()).Returns(
-            new CalendarResourceRead(CalendarResourceReadCode.NotFound),
             Resource(destinationHref, "\"r2\"", uid));
         client.GetCalendarResourceAsync(sourceHref, Arg.Any<CancellationToken>()).Returns(
             Resource(sourceHref, "\"r1\"", uid),
@@ -1071,7 +1111,8 @@ public sealed class CalendarResourceMoveServiceTests
         ICalendarClient client,
         string calendarHrefs = "https://cal.example/tasks/,https://cal.example/archive/",
         string? defaultTodoCalendarName = null,
-        TimeProvider? timeProvider = null) => new(
+        TimeProvider? timeProvider = null,
+        string? interoperabilityProfile = CalDavInteroperabilityProfiles.Radicale_3_7_8) => new(
         client,
         Options.Create(new CalDavOptions
         {
@@ -1079,7 +1120,8 @@ public sealed class CalendarResourceMoveServiceTests
             Username = "user",
             Password = "secret",
             CalendarHrefs = calendarHrefs,
-            DefaultTodoCalendarName = defaultTodoCalendarName
+            DefaultTodoCalendarName = defaultTodoCalendarName,
+            InteroperabilityProfile = interoperabilityProfile
         }),
         Substitute.For<ILogger<CalendarService>>(),
         timeProvider ?? TimeProvider.System,
@@ -1113,7 +1155,7 @@ public sealed class CalendarResourceMoveServiceTests
 
     private static ICalendarClient ConfiguredClient(string sourceHref, string uid)
     {
-        var client = Substitute.For<ICalendarClient>();
+        var client = MoveClient();
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
             TodoCalendar("https://cal.example/tasks/", "Tasks"),
             TodoCalendar("https://cal.example/archive/", "Archive")
@@ -1122,6 +1164,22 @@ public sealed class CalendarResourceMoveServiceTests
             Resource(sourceHref, "\"r1\"", uid));
         return client;
     }
+
+    private static ICalendarClient MoveClient()
+    {
+        var client = Substitute.For<ICalendarClient, ICalendarResourcePresenceTransport>();
+        ((ICalendarResourcePresenceTransport)client)
+            .ProbeCalendarResourcePresenceAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceRead(CalendarResourceReadCode.NotFound));
+        return client;
+    }
+
+    private static void SetPresence(
+        ICalendarClient client,
+        string href,
+        CalendarResourceRead read) => ((ICalendarResourcePresenceTransport)client)
+        .ProbeCalendarResourcePresenceAsync(href, Arg.Any<CancellationToken>())
+        .Returns(read);
 
     private static CalendarResourceRead Resource(
         string href,

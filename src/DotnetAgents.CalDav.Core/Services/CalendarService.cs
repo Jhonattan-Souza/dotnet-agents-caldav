@@ -212,13 +212,10 @@ internal sealed class CalendarService : ICalendarService
     /// <inheritdoc />
     public async Task<CalendarResourceMoveResult> MoveResourceAsync(
         CalendarResourceMoveRequest request,
-        CancellationToken cancellationToken) => await new CalendarResourceMoveEngine(
-            _calendarClient,
+        CancellationToken cancellationToken) => await new CalendarMoveModule(
+            _operationDiscovery,
             _options.Value,
-            _timeProvider,
-            ApplyScope,
-            ResolveDefaultCalendar,
-            GetResourceAsync).MoveAsync(request, cancellationToken);
+            _timeProvider).MoveAsync(request, cancellationToken);
 
     /// <inheritdoc />
     public async Task<CalendarResourceDeleteResult> DeleteResourceAsync(

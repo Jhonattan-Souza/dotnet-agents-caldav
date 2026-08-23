@@ -2364,6 +2364,11 @@
       "description": "Explicit IANA zone for bounded Calendar Entity Starts and every Occurrence or To-do Start under the configured Temporal Evaluation Context"
     },
     {
+      "name": "CALDAV_INTEROPERABILITY_PROFILE",
+      "required": false,
+      "description": "Verified server profile; radicale-3.7.8 enables server-authoritative MOVE"
+    },
+    {
       "name": "CALDAV_EXPOSE_EXACT_TOOLS",
       "required": false,
       "type": "boolean"
@@ -2718,7 +2723,7 @@
         "idempotentHint": false,
         "openWorldHint": true
       },
-      "description": "Move one revision-bound semantic resource to the default or selected Calendar."
+      "description": "Move one revision-bound semantic resource with server-authoritative preconditions and bounded bilateral reconciliation; requires a verified interoperability profile."
     },
     {
       "name": "calendar_resources.delete",

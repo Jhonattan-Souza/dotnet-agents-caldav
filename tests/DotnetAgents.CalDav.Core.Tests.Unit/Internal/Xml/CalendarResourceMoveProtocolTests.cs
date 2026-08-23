@@ -97,13 +97,16 @@ public sealed class CalendarResourceMoveProtocolTests
             TestContext.Current.CancellationToken);
 
         result.Code.ShouldBe(expectedCode);
+        result.CollisionKind.ShouldBe(expectedCode == CalendarResourceMoveDispatchCode.Conflict
+            ? CalendarResourceMoveDispatchCollisionKind.Unclassified
+            : CalendarResourceMoveDispatchCollisionKind.None);
     }
 
     [Theory]
     [InlineData(HttpStatusCode.Forbidden)]
     [InlineData(HttpStatusCode.Conflict)]
     [InlineData(HttpStatusCode.PreconditionFailed)]
-    public async Task MoveAsync_MapsBoundedNoUidConflictDavErrorToDestinationConflict(
+    public async Task MoveAsync_MapsBoundedNoUidConflictDavErrorToConflict(
         HttpStatusCode statusCode)
     {
         using var httpClient = new HttpClient(new Handler(_ => Task.FromResult(
@@ -117,7 +120,8 @@ public sealed class CalendarResourceMoveProtocolTests
 
         var result = await sut.MoveAsync(Request(), TestContext.Current.CancellationToken);
 
-        result.Code.ShouldBe(CalendarResourceMoveDispatchCode.DestinationConflict);
+        result.Code.ShouldBe(CalendarResourceMoveDispatchCode.Conflict);
+        result.CollisionKind.ShouldBe(CalendarResourceMoveDispatchCollisionKind.Uid);
     }
 
     [Theory]

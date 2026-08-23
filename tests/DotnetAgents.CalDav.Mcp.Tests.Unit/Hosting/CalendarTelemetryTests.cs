@@ -93,6 +93,38 @@ public sealed class CalendarTelemetryTests
     }
 
     [Fact]
+    public void Operation_EmitsOnlyClosedMoveClassifications()
+    {
+        Activity? stoppedOperation = null;
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == CalendarTelemetry.InstrumentationName,
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) =>
+                ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity => stoppedOperation = activity
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        using (var operation = CalendarTelemetry.StartOperation("calendar_resources.move", null))
+        {
+            operation.ShouldNotBeNull();
+            operation.Complete(
+                "success",
+                mutationState: "committed",
+                moveTelemetry: new CalendarMoveTelemetrySnapshot(
+                    CalendarMoveDispatchClassification.PossiblyDispatched,
+                    CalendarMoveCollisionClassification.None,
+                    CalendarMoveReconciliationClassification.FaithfulDestinationSourceAbsent));
+        }
+
+        stoppedOperation.ShouldNotBeNull();
+        stoppedOperation.GetTagItem("caldav.move.dispatch").ShouldBe("possibly_dispatched");
+        stoppedOperation.GetTagItem("caldav.move.collision").ShouldBe("none");
+        stoppedOperation.GetTagItem("caldav.move.reconciliation")
+            .ShouldBe("faithful_destination_source_absent");
+    }
+
+    [Fact]
     public void Operation_StructuredCommittedFailureExportsOnlyControlledFailureDimensions()
     {
         Activity? stoppedOperation = null;
@@ -228,6 +260,9 @@ public sealed class CalendarTelemetryTests
         activity.SetTag("caldav.error.category", "privateCategory");
         activity.SetTag("caldav.error.phase", "privatePhase");
         activity.SetTag("caldav.mutation.state", "private_state");
+        activity.SetTag("caldav.move.dispatch", "private_dispatch");
+        activity.SetTag("caldav.move.collision", "private_collision");
+        activity.SetTag("caldav.move.reconciliation", "private_reconciliation");
         activity.SetTag("error.type", "caldav.private_secret_code");
         activity.Stop();
 
@@ -238,6 +273,9 @@ public sealed class CalendarTelemetryTests
         activity.GetTagItem("caldav.error.category").ShouldBeNull();
         activity.GetTagItem("caldav.error.phase").ShouldBeNull();
         activity.GetTagItem("caldav.mutation.state").ShouldBeNull();
+        activity.GetTagItem("caldav.move.dispatch").ShouldBeNull();
+        activity.GetTagItem("caldav.move.collision").ShouldBeNull();
+        activity.GetTagItem("caldav.move.reconciliation").ShouldBeNull();
         activity.GetTagItem("error.type").ShouldBeNull();
     }
 
