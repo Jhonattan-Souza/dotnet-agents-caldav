@@ -9,6 +9,7 @@ usage() {
 script_directory=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repository_root=$(cd -- "$script_directory/.." && pwd)
 manifest="$script_directory/test-suite-manifest.json"
+. "$script_directory/test-suite-runner-lib.sh"
 artifacts_owned=false
 temporary_parent=
 python3 "$script_directory/validate-test-suite-manifest.py" "$manifest"
@@ -99,19 +100,6 @@ trap finish EXIT
 
 "$script_directory/test-test-artifacts.sh"
 
-manifest_rows() {
-  python3 - "$manifest" "$1" <<'PY'
-import json
-import sys
-for artifact in json.load(open(sys.argv[1], encoding="utf-8"))["artifacts"]:
-    if artifact["phase"] != sys.argv[2]:
-        continue
-    environment = ";".join(f"{key}={value}" for key, value in artifact["environment"].items())
-    print("\x1f".join((artifact["project"], artifact["trx"], str(artifact["exactTests"]),
-                       artifact.get("coveragePrefix", ""), artifact.get("filterClass", ""), environment)))
-PY
-}
-
 run_project() {
   local project=$1 trx_filename=$2 exact_tests=$3 prefix=$4 filter_class=$5 environment=$6
   local arguments=(dotnet test --project "$repository_root/$project" -c Release --no-build --no-restore
@@ -121,15 +109,13 @@ run_project() {
   [[ -z "$filter_class" ]] || arguments+=(--filter-class "$filter_class")
   if [[ -n "$environment" ]]; then
     IFS=';' read -r -a environment_arguments <<< "$environment"
-    env "${environment_arguments[@]}" "${arguments[@]}"
+    env "${environment_arguments[@]}" "${arguments[@]}" </dev/null
   else
-    "${arguments[@]}"
+    "${arguments[@]}" </dev/null
   fi
 }
 
-while IFS=$'\x1f' read -r project trx exact prefix filter environment; do
-  run_project "$project" "$trx" "$exact" "$prefix" "$filter" "$environment"
-done < <(manifest_rows main)
+run_test_suite_manifest_phase "$manifest" main run_project
 
 cobertura_reports=$("$script_directory/verify-test-artifacts.sh" "$artifacts_directory" main)
 coverage_report_directory="$artifacts_directory/coverage-report"
@@ -140,9 +126,7 @@ dotnet reportgenerator \
   '-assemblyfilters:+DotnetAgents.CalDav.Core;+DotnetAgents.CalDav.Mcp;-*Tests*;-xunit*;-testhost*'
 "$script_directory/verify-coverage.sh" "$coverage_report_directory" 0.90 0.85
 
-while IFS=$'\x1f' read -r project trx exact prefix filter environment; do
-  run_project "$project" "$trx" "$exact" "$prefix" "$filter" "$environment"
-done < <(manifest_rows complete)
+run_test_suite_manifest_phase "$manifest" complete run_project
 "$script_directory/verify-test-artifacts.sh" "$artifacts_directory" complete >/dev/null
 
 echo "Verified isolated test evidence: $artifacts_directory" >&2

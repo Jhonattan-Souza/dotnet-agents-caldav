@@ -8,6 +8,7 @@ manifest_validator="$script_directory/validate-test-suite-manifest.py"
 source_policy="$script_directory/verify-test-source-policy.py"
 state_guard="$script_directory/verify-worktree-state.py"
 cleanup="$script_directory/cleanup-test-artifacts.sh"
+. "$script_directory/test-suite-runner-lib.sh"
 fixture_root=$(mktemp -d)
 inside_tmp=
 caller_inside=
@@ -218,6 +219,19 @@ document["artifacts"][0]["project"] = "tests/Tiny/Tiny.csproj"
 open(path, "w", encoding="utf-8").write(json.dumps(document))
 PY
 expect_rejected "manifest cannot replace the closed suite with a tiny project" python3 "$manifest_validator" "$bad_manifest"
+
+declare -a transported_trx=()
+consume_stdin_and_record_trx() {
+  local _project=$1 row_trx=$2 _exact=$3 _prefix=$4 _filter=$5 _environment=$6
+  cat >/dev/null
+  transported_trx+=("$row_trx")
+}
+run_test_suite_manifest_phase "$manifest" main consume_stdin_and_record_trx
+[[ "${transported_trx[*]}" == "main-core.trx main-mcp.trx main-integration.trx" ]] || {
+  echo "A child process consumed a pending manifest row." >&2
+  exit 1
+}
+echo "PASS materialized manifest rows survive child stdin consumption"
 
 early_exit_tmp="$fixture_root/early-exit-tmp"
 mkdir -p -- "$early_exit_tmp"
