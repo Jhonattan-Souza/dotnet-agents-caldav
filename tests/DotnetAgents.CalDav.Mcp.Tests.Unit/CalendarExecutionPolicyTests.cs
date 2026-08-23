@@ -232,7 +232,6 @@ public sealed class CalendarExecutionPolicyTests
 
     [Theory]
     [InlineData("calendars.list")]
-    [InlineData("calendar_occurrences.query")]
     [InlineData("calendar_resources.get")]
     [InlineData("calendar_resources.exact_get")]
     public async Task PublicToolFilter_StopsEveryReadAtThirtySecondsWithTypedZeroItemFailure(
@@ -303,8 +302,10 @@ public sealed class CalendarExecutionPolicyTests
         AssertElapsedTimeDeadline(above, mutation: false);
     }
 
-    [Fact]
-    public async Task MigratedEntityQueryHasNoHostDeadlineOrLegacyPhase()
+    [Theory]
+    [InlineData("calendar_entities.query")]
+    [InlineData("calendar_occurrences.query")]
+    public async Task MigratedQueryHasNoHostDeadlineOrLegacyPhase(string toolName)
     {
         var stopped = new List<Activity>();
         using var listener = new ActivityListener
@@ -317,7 +318,7 @@ public sealed class CalendarExecutionPolicyTests
         ActivitySource.AddActivityListener(listener);
 
         var result = await InvokeAfterElapsedAsync(
-            "calendar_entities.query",
+            toolName,
             TimeSpan.FromSeconds(31),
             completeOperation: true);
 
@@ -733,7 +734,7 @@ public sealed class CalendarExecutionPolicyTests
         var pending = filtered(context, callerCancellation.Token).AsTask();
         await operationStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
         context.Services!.GetRequiredService<TimeProvider>().ShouldBeSameAs(time);
-        time.TimerCount.ShouldBe(toolName == "calendar_entities.query" ? 0 : 1);
+        time.TimerCount.ShouldBe(toolName is "calendar_entities.query" or "calendar_occurrences.query" ? 0 : 1);
         time.Advance(elapsed);
         if (completeOperation)
         {

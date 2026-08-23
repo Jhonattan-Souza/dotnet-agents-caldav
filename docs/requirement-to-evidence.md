@@ -75,6 +75,23 @@ records the baseline request/serialization shape and the focused zero-work
 continuation, exact-byte, capacity, real stdio, pinned-Radicale, and OTLP
 acceptance boundaries.
 
+## Occurrence deep query cutover
+
+| Requirement | Implementation evidence | Verification evidence |
+| --- | --- | --- |
+| `CAL-OCC-001` | `ICalendarQueryModule.QueryOccurrencesAsync` exposes closed typed Start and Continue requests; `CalendarOccurrenceTools` performs only strict JSON conversion and module reply publication. | `CalendarOccurrenceToolsTests`; live catalog union assertions; host activation test |
+| `CAL-OCC-002` | Occurrence Start owns complete acquisition, recurrence evaluation, projection, ordering, and snapshot publication. Continue injects only cursor authentication, snapshot reading, and the Occurrence page codec. | `CalendarOccurrenceQueryModuleTests.StartExecutorsDependOnNeutralAcquisitionAndTemporalCollaborators` and `StartFreezesTotalOrderAndContinuePerformsNoRemoteWork` |
+| `CAL-OCC-003` | The global ordinal order is effective-start UTC, Calendar href, Entity UID, canonical Recurrence Identity, then Resource href. | `EqualSemanticKeysTraverseByResourceHrefWithoutDuplicatesOrOmissions` traverses 201 equal-key results at page sizes 1, 50, and 200. |
+| `CAL-OCC-004` | Existing recurrence evaluation remains the single semantic authority for rules, RDATE, EXDATE, individual/range overrides, moved timing, cancellations, and source Temporal Values; the snapshot projector preserves the complete Calendar snapshot and strong revision. | Existing `CalendarServiceTests.QueryOccurrencesAsync_*` recurrence corpus plus `CancelledOccurrenceFollowsExplicitInclusionPolicy` and the real Radicale range/temporal witness |
+| `CAL-OCC-005` | The shared `CalendarTemporalContextResolver` rejects missing or invalid context before acquisition and freezes its result into every page and cursor binding. | `InvalidTemporalContextFailsBeforeAnyCalDavWork`, frozen-context continuation assertions, host-zone temporal corpus, and real stdio result evidence |
+| `CAL-OCC-006` | Occurrence pages reuse the concrete snapshot store, authenticated cursor context, exact 4 MiB page admission, 5,000-item/32 MiB snapshot policy, 16-slot/128 MiB process policy, bounded multiget/direct GET retrieval, and privacy-safe query telemetry. | Shared snapshot/cursor/retrieval policy tests, `ContinueReplaysFrozenBytesAfterRemoteStateChangesAndNewStartObservesTheChange`, and the built stdio/OTLP continuation witness |
+| `CAL-OCC-007` | Weak or missing revisions and temporal or recurrence failures are atomic; no partial snapshot is published. | `WeakRevisionFailsAtomicallyWithoutPublishingASnapshot`, evaluator unresolved/unevaluable corpus, and pinned-Radicale typed failures |
+| `CAL-OCC-008` | The MCP adapter contains no deadline, cursor replay query, page construction, CalDAV service, or recurrence orchestration; the old service/engine removal is owned by the final legacy cleanup ticket. | Adapter constructor and pass-through structural tests; source search gate |
+
+The dated Occurrence before/after observation records the former cursor-bound
+re-execution shape and the deterministic, stdio, pinned-Radicale, and OTLP
+evidence for immutable traversal.
+
 ## Bounded multiget and Direct GET Compatibility Mode
 
 | Requirement | Implementation evidence | Verification evidence |

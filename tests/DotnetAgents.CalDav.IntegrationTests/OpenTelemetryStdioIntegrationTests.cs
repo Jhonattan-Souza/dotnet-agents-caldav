@@ -245,6 +245,13 @@ public sealed class OpenTelemetryStdioIntegrationTests
                     .GetProperty("nextCursor")
                     .GetString()
                     .ShouldNotBeNull();
+                var continuation = await client.CallToolAsync(
+                    "calendar_occurrences.query",
+                    new Dictionary<string, object?> { ["cursor"] = nextCursor, ["pageSize"] = 1 },
+                    cancellationToken: TestContext.Current.CancellationToken);
+                continuation.IsError.ShouldBe(false, continuation.StructuredContent?.ToString());
+                continuation.StructuredContent!.Value.GetProperty("pagination").GetProperty("mode").GetString()
+                    .ShouldBe("query_result_snapshot");
 
                 var created = await client.CallToolAsync(
                     "events.create",
@@ -884,17 +891,7 @@ public sealed class OpenTelemetryStdioIntegrationTests
     private static void AssertTraceWaterfalls(IReadOnlyList<OtlpRequest> requests)
     {
         var spans = OtlpProtobufReader.ReadSpans(requests);
-        var queryMcp = spans.Single(span =>
-            span.ScopeName == "Experimental.ModelContextProtocol"
-            && span.Name == "tools/call calendar_occurrences.query");
-        var queryOperation = spans.Single(span =>
-            span.ScopeName == "DotnetAgents.CalDav"
-            && Equals(span.Attributes.GetValueOrDefault("caldav.tool.name"), "calendar_occurrences.query"));
-        queryOperation.ParentSpanId.ShouldBe(queryMcp.SpanId);
-        spans.ShouldContain(span =>
-            span.Name == "caldav.phase.expand"
-            && span.ParentSpanId.SequenceEqual(queryOperation.SpanId));
-
+        AssertOccurrenceQueryWaterfall(spans);
         var createMcp = spans.Single(span =>
             span.ScopeName == "Experimental.ModelContextProtocol"
             && span.Name == "tools/call events.create");
@@ -916,9 +913,48 @@ public sealed class OpenTelemetryStdioIntegrationTests
         spans.Where(span => span.ScopeName == "DotnetAgents.CalDav")
             .ShouldAllBe(span =>
                 span.Name == "caldav.operation"
-                || span.Name.StartsWith("caldav.phase.", StringComparison.Ordinal));
+                || span.Name.StartsWith("caldav.phase.", StringComparison.Ordinal)
+                || span.Name.StartsWith("caldav.query.phase.", StringComparison.Ordinal));
         spans.SelectMany(span => span.Attributes.Keys).ShouldNotContain("url.full");
         spans.SelectMany(span => span.Attributes.Keys).ShouldNotContain("mcp.resource.uri");
+    }
+
+    private static void AssertOccurrenceQueryWaterfall(IReadOnlyList<OtlpSpan> spans)
+    {
+        var queryMcps = spans.Where(span =>
+            span.ScopeName == "Experimental.ModelContextProtocol"
+            && span.Name == "tools/call calendar_occurrences.query").ToArray();
+        var queryOperations = spans.Where(span =>
+            span.ScopeName == "DotnetAgents.CalDav"
+            && Equals(span.Attributes.GetValueOrDefault("caldav.tool.name"), "calendar_occurrences.query"))
+            .ToArray();
+        queryMcps.Length.ShouldBe(2);
+        queryOperations.Length.ShouldBe(2);
+        var queryStart = queryOperations.Single(span =>
+            Equals(span.Attributes.GetValueOrDefault("caldav.query.mode"), "start"));
+        var queryContinue = queryOperations.Single(span =>
+            Equals(span.Attributes.GetValueOrDefault("caldav.query.mode"), "continue"));
+        queryMcps.ShouldContain(span => queryStart.ParentSpanId.SequenceEqual(span.SpanId));
+        queryMcps.ShouldContain(span => queryContinue.ParentSpanId.SequenceEqual(span.SpanId));
+        spans.Where(span => span.ParentSpanId.SequenceEqual(queryStart.SpanId)
+                && span.Name.StartsWith("caldav.query.phase.", StringComparison.Ordinal))
+            .Select(span => span.Attributes.GetValueOrDefault("caldav.query.phase"))
+            .ShouldContain("evaluation");
+        spans.Where(span => span.ParentSpanId.SequenceEqual(queryContinue.SpanId)
+                && span.Name.StartsWith("caldav.query.phase.", StringComparison.Ordinal))
+            .Select(span => span.Attributes.GetValueOrDefault("caldav.query.phase"))
+            .ShouldBe(["snapshot_lookup", "page_admission"]);
+        queryContinue.Attributes.Where(attribute =>
+                attribute.Key.StartsWith("caldav.query.", StringComparison.Ordinal))
+            .Select(attribute => attribute.Key)
+            .Order(StringComparer.Ordinal)
+            .ShouldBe([
+                "caldav.query.mode",
+                "caldav.query.page_admission_count",
+                "caldav.query.snapshot_lookup_count"
+            ]);
+        spans.Where(span => span.TraceId.SequenceEqual(queryContinue.TraceId))
+            .ShouldNotContain(span => span.ScopeName == "DotnetAgents.CalDav.Http");
     }
 
     private static void AssertLogsAndMetrics(IReadOnlyList<OtlpRequest> requests)

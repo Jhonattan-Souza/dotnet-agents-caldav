@@ -65,22 +65,22 @@ internal static class CalendarExecutionPolicy
     private static Func<ProgressNotificationValue, CancellationToken, Task>? LegacyProgressReport(
         string? toolName,
         Func<ProgressNotificationValue, CancellationToken, Task>? report) =>
-        toolName == "calendar_entities.query" ? null : report;
+        IsMigratedQuery(toolName) ? null : report;
 
     private static Action<CalendarOperationPhase>? LegacyPhaseObserver(
         string? toolName,
-        CalendarTelemetryOperation? telemetry) => toolName == "calendar_entities.query" || telemetry is null
+        CalendarTelemetryOperation? telemetry) => IsMigratedQuery(toolName) || telemetry is null
             ? null
             : telemetry.StartPhase;
 
     private static void StartLegacyDiscoveryPhase(string? toolName, CalendarTelemetryOperation? telemetry)
     {
-        if (toolName != "calendar_entities.query")
+        if (!IsMigratedQuery(toolName))
             telemetry?.StartPhase(CalendarOperationPhase.Discovery);
     }
 
     private static IDisposable? AttachLegacyProgress(string? toolName, CalendarExecutionLease execution) =>
-        toolName == "calendar_entities.query" ? null : execution.AttachProgress();
+        IsMigratedQuery(toolName) ? null : execution.AttachProgress();
 
     private static void CompleteExceptionTelemetry(
         CalendarTelemetryOperation? telemetry,
@@ -115,7 +115,7 @@ internal static class CalendarExecutionPolicy
         Func<CancellationToken, ValueTask<CallToolResult>> next,
         CancellationToken callerCancellationToken)
     {
-        if (toolName == "calendar_entities.query")
+        if (IsMigratedQuery(toolName))
             return await next(callerCancellationToken).ConfigureAwait(false);
         var budget = mutation ? MutationExecutionBudget : ReadExecutionBudget;
         using var deadline = new CancellationTokenSource(budget, timeProvider);
@@ -132,6 +132,9 @@ internal static class CalendarExecutionPolicy
             return CreateDeadlineResult(mutation);
         }
     }
+
+    private static bool IsMigratedQuery(string? toolName) =>
+        toolName is "calendar_entities.query" or "calendar_occurrences.query";
 
     internal static async Task<CalendarExecutionLease> AcquireWithProgressAsync(
         TimeProvider timeProvider,

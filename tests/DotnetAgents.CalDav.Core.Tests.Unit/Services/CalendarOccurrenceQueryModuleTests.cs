@@ -20,16 +20,23 @@ public sealed class CalendarOccurrenceQueryModuleTests
     [Fact]
     public void StartExecutorsDependOnNeutralAcquisitionAndTemporalCollaborators()
     {
-        var constructorTypes = typeof(CalendarOccurrenceQueryStartExecutor).GetConstructors(
+        var occurrenceConstructorTypes = ConstructorTypes(typeof(CalendarOccurrenceQueryStartExecutor));
+        var entityConstructorTypes = ConstructorTypes(typeof(CalendarEntityQueryStartExecutor));
+
+        occurrenceConstructorTypes.ShouldContain(typeof(CalendarQueryAcquisitionExecutor));
+        occurrenceConstructorTypes.ShouldContain(typeof(CalendarTemporalContextResolver));
+        occurrenceConstructorTypes.ShouldNotContain(typeof(CalendarEntityQueryStartExecutor));
+        entityConstructorTypes.ShouldContain(typeof(CalendarQueryAcquisitionExecutor));
+        entityConstructorTypes.ShouldContain(typeof(CalendarTemporalContextResolver));
+        entityConstructorTypes.ShouldNotContain(typeof(Func<ICalendarQueryTransport>));
+        entityConstructorTypes.ShouldNotContain(typeof(CalendarQueryResourceRetriever));
+    }
+
+    private static Type[] ConstructorTypes(Type type) => type.GetConstructors(
                 System.Reflection.BindingFlags.Instance
                 | System.Reflection.BindingFlags.Public
                 | System.Reflection.BindingFlags.NonPublic)
             .ShouldHaveSingleItem().GetParameters().Select(parameter => parameter.ParameterType).ToArray();
-
-        constructorTypes.ShouldContain(typeof(CalendarQueryAcquisitionExecutor));
-        constructorTypes.ShouldContain(typeof(CalendarTemporalContextResolver));
-        constructorTypes.ShouldNotContain(typeof(CalendarEntityQueryStartExecutor));
-    }
 
     [Theory]
     [InlineData(false, 0)]
@@ -79,6 +86,114 @@ public sealed class CalendarOccurrenceQueryModuleTests
         second.Value.TemporalEvaluationContext.ShouldBe(first.Value.TemporalEvaluationContext);
     }
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(50)]
+    [InlineData(200)]
+    public async Task EqualSemanticKeysTraverseByResourceHrefWithoutDuplicatesOrOmissions(int pageSize)
+    {
+        const string calendarHref = "https://cal.example/calendars/work/";
+        var resourceHrefs = Enumerable.Range(0, 201)
+            .Select(index => $"{calendarHref}{200 - index:D3}.ics")
+            .ToArray();
+        var transport = new OccurrenceTransport(
+            calendarHref,
+            resourceHrefs,
+            _ => Event("shared-uid", "same-semantic-key"));
+        await using var provider = CreateProvider(transport);
+        var module = provider.GetRequiredService<ICalendarQueryModule>();
+
+        var actual = new List<string>();
+        QueryReply<CalendarOccurrenceQueryItem> reply = await module.QueryOccurrencesAsync(
+            new CalendarOccurrenceQueryRequest.Start(Query(), pageSize),
+            TestContext.Current.CancellationToken);
+        while (true)
+        {
+            var page = reply.ShouldBeOfType<QueryReply<CalendarOccurrenceQueryItem>.Page>().Value;
+            actual.AddRange(page.Items.Select(ItemHref));
+            if (page.NextCursor is null)
+                break;
+            reply = await module.QueryOccurrencesAsync(
+                new CalendarOccurrenceQueryRequest.Continue(page.NextCursor, pageSize),
+                TestContext.Current.CancellationToken);
+        }
+
+        actual.ShouldBe(resourceHrefs.Order(StringComparer.Ordinal));
+        actual.Distinct(StringComparer.Ordinal).Count().ShouldBe(resourceHrefs.Length);
+    }
+
+    [Fact]
+    public async Task ContinueReplaysFrozenBytesAfterRemoteStateChangesAndNewStartObservesTheChange()
+    {
+        const string calendarHref = "https://cal.example/calendars/work/";
+        var resourceHrefs = new[] { calendarHref + "a.ics", calendarHref + "b.ics" };
+        var summary = "before-snapshot";
+        var transport = new OccurrenceTransport(
+            calendarHref,
+            resourceHrefs,
+            _ => Event("stable-uid", summary));
+        await using var provider = CreateProvider(transport);
+        var module = provider.GetRequiredService<ICalendarQueryModule>();
+        var first = (await module.QueryOccurrencesAsync(
+            new CalendarOccurrenceQueryRequest.Start(Query(), 1),
+            TestContext.Current.CancellationToken)).ShouldBeOfType<QueryReply<CalendarOccurrenceQueryItem>.Page>();
+        var cursor = first.Value.NextCursor.ShouldNotBeNull();
+        var workAfterStart = transport.TotalCalls;
+
+        summary = "after-snapshot";
+        var frozen = (await module.QueryOccurrencesAsync(
+            new CalendarOccurrenceQueryRequest.Continue(cursor, 1),
+            TestContext.Current.CancellationToken)).ShouldBeOfType<QueryReply<CalendarOccurrenceQueryItem>.Page>();
+        var replay = (await module.QueryOccurrencesAsync(
+            new CalendarOccurrenceQueryRequest.Continue(cursor, 1),
+            TestContext.Current.CancellationToken)).ShouldBeOfType<QueryReply<CalendarOccurrenceQueryItem>.Page>();
+
+        transport.TotalCalls.ShouldBe(workAfterStart);
+        frozen.Value.StructuredContent.GetRawText().ShouldBe(replay.Value.StructuredContent.GetRawText());
+        frozen.Value.StructuredContent.GetRawText().ShouldContain("before-snapshot");
+        frozen.Value.StructuredContent.GetRawText().ShouldNotContain("after-snapshot");
+
+        var fresh = (await module.QueryOccurrencesAsync(
+            new CalendarOccurrenceQueryRequest.Start(Query(), 1),
+            TestContext.Current.CancellationToken)).ShouldBeOfType<QueryReply<CalendarOccurrenceQueryItem>.Page>();
+        fresh.Value.StructuredContent.GetRawText().ShouldContain("after-snapshot");
+    }
+
+    [Fact]
+    public async Task InvalidTemporalContextFailsBeforeAnyCalDavWork()
+    {
+        const string calendarHref = "https://cal.example/calendars/work/";
+        var transport = new OccurrenceTransport(calendarHref, [calendarHref + "event.ics"]);
+        await using var provider = CreateProvider(transport);
+        var invalidQuery = Query() with { EvaluationTimeZone = "Private/Unknown" };
+
+        var failure = (await provider.GetRequiredService<ICalendarQueryModule>().QueryOccurrencesAsync(
+            new CalendarOccurrenceQueryRequest.Start(invalidQuery),
+            TestContext.Current.CancellationToken)).ShouldBeOfType<QueryReply<CalendarOccurrenceQueryItem>.Failure>();
+
+        failure.Error.Code.ShouldBe(QueryFailureCode.InvalidInput);
+        transport.TotalCalls.ShouldBe(0);
+        provider.GetRequiredService<CalendarQuerySnapshotStore>().ActiveSnapshotCount.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task WeakRevisionFailsAtomicallyWithoutPublishingASnapshot()
+    {
+        const string calendarHref = "https://cal.example/calendars/work/";
+        var transport = new OccurrenceTransport(calendarHref, [calendarHref + "event.ics"])
+        {
+            EntityTag = "W/\"r1\""
+        };
+        await using var provider = CreateProvider(transport);
+
+        var failure = (await provider.GetRequiredService<ICalendarQueryModule>().QueryOccurrencesAsync(
+            new CalendarOccurrenceQueryRequest.Start(Query()),
+            TestContext.Current.CancellationToken)).ShouldBeOfType<QueryReply<CalendarOccurrenceQueryItem>.Failure>();
+
+        failure.Error.Code.ShouldBe(QueryFailureCode.UpstreamProtocolError);
+        provider.GetRequiredService<CalendarQuerySnapshotStore>().ActiveSnapshotCount.ShouldBe(0);
+    }
+
     private static CalendarOccurrenceQuery Query() => new(
         CalendarEntityScope.All,
         From,
@@ -88,6 +203,9 @@ public sealed class CalendarOccurrenceQueryModuleTests
     private static string? Href(QueryReply<CalendarOccurrenceQueryItem>.Page reply) => reply.Value.Items
         .ShouldHaveSingleItem().Value.GetProperty("snapshot").GetProperty("resourceRevision")
         .GetProperty("href").GetString();
+
+    private static string ItemHref(CalendarOccurrenceQueryItem item) => item.Value.GetProperty("snapshot")
+        .GetProperty("resourceRevision").GetProperty("href").GetString().ShouldNotBeNull();
 
     private static ServiceProvider CreateProvider(ICalendarQueryTransport transport)
     {
@@ -113,6 +231,11 @@ public sealed class CalendarOccurrenceQueryModuleTests
         + "DTSTART:20260825T120000Z\r\nDTEND:20260825T130000Z\r\nSTATUS:CANCELLED\r\nEND:VEVENT\r\n"
         + "END:VCALENDAR\r\n");
 
+    private static ReadOnlyMemory<byte> Event(string uid, string summary) => Encoding.UTF8.GetBytes(
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Occurrence Module Tests//EN\r\n"
+        + $"BEGIN:VEVENT\r\nUID:{uid}\r\nDTSTAMP:20260823T120000Z\r\nSUMMARY:{summary}\r\n"
+        + "DTSTART:20260824T120000Z\r\nDTEND:20260824T130000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n");
+
     private sealed class OccurrenceTransport(
         string calendarHref,
         IReadOnlyList<string> resourceHrefs,
@@ -120,6 +243,7 @@ public sealed class CalendarOccurrenceQueryModuleTests
         : ICalendarQueryTransport
     {
         internal int TotalCalls { get; private set; }
+        internal string EntityTag { get; init; } = "\"r1\"";
 
         public Task<CalendarQueryDiscovery> DiscoverAsync(CancellationToken cancellationToken)
         {
@@ -156,7 +280,7 @@ public sealed class CalendarOccurrenceQueryModuleTests
         {
             TotalCalls++;
             return Task.FromResult<CalendarMultigetResult>(new CalendarMultigetResult.Resources(requestedHrefs
-                .Select(href => CalendarResourceRead.Success(href, "\"r1\"", body?.Invoke(href) ?? Event(href)))
+                .Select(href => CalendarResourceRead.Success(href, EntityTag, body?.Invoke(href) ?? Event(href)))
                 .ToArray()));
         }
 
@@ -165,9 +289,8 @@ public sealed class CalendarOccurrenceQueryModuleTests
             string resourceHref,
             CancellationToken cancellationToken) => throw new InvalidOperationException();
 
-        private static ReadOnlyMemory<byte> Event(string href) => Encoding.UTF8.GetBytes(
-            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Occurrence Module Tests//EN\r\n"
-            + $"BEGIN:VEVENT\r\nUID:{Uri.EscapeDataString(href)}\r\nDTSTAMP:20260823T120000Z\r\n"
-            + "DTSTART:20260824T120000Z\r\nDTEND:20260824T130000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n");
+        private static ReadOnlyMemory<byte> Event(string href) => CalendarOccurrenceQueryModuleTests.Event(
+            Uri.EscapeDataString(href),
+            "fixture");
     }
 }

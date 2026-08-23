@@ -136,16 +136,20 @@ public sealed class ContractCatalogTests
         catalog["$defs"]!["todoRecurrenceIdentity"]!["$ref"]!.GetValue<string>()
             .ShouldBe("#/$defs/temporalValue");
         var occurrenceInput = catalog["$defs"]!["occurrenceQueryInput"]!.AsObject();
-        occurrenceInput["required"]!.ToJsonString().ShouldNotContain("evaluationTimeZone");
-        occurrenceInput["properties"]!.AsObject().ShouldContainKey("evaluationTimeZone");
+        occurrenceInput["oneOf"]![0]!["properties"]!.AsObject().ShouldContainKey("evaluationTimeZone");
+        occurrenceInput["oneOf"]![1]!["properties"]!.AsObject().ShouldNotContainKey("evaluationTimeZone");
+        occurrenceInput["oneOf"]![1]!["required"]!.AsArray().Select(item => item!.GetValue<string>())
+            .ShouldBe(["cursor"]);
         var entityQueryInput = catalog["$defs"]!["entityQueryInput"]!.AsObject();
         entityQueryInput["oneOf"]![0]!["properties"]!.AsObject().ShouldContainKey("evaluationTimeZone");
         entityQueryInput["oneOf"]![1]!["properties"]!.AsObject().ShouldNotContainKey("evaluationTimeZone");
         var entityQuerySuccess = catalog["$defs"]!["entityQuerySuccess"]!.AsObject();
         entityQuerySuccess["properties"]!.AsObject().ShouldContainKey("temporalEvaluationContext");
+        var occurrenceQuerySuccess = catalog["$defs"]!["occurrenceQuerySuccess"]!.AsObject();
+        occurrenceQuerySuccess["properties"]!.AsObject().ShouldContainKey("temporalEvaluationContext");
         catalog["environment"]!.AsArray()
             .Single(item => item!["name"]!.GetValue<string>() == "CALDAV_EVALUATION_TIME_ZONE")!
-            ["description"]!.GetValue<string>().ShouldContain("bounded Calendar Entity Start");
+            ["description"]!.GetValue<string>().ShouldContain("bounded Calendar Entity and Occurrence Start");
         var calendarListInput = catalog["$defs"]!["calendarScopeInput"]!.AsObject();
         calendarListInput["required"].ShouldBeNull();
         calendarListInput["properties"].ShouldBeNull();
