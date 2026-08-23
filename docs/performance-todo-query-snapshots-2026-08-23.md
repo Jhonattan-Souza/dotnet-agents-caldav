@@ -1,8 +1,8 @@
 # Compact To-do Query Result Snapshot observation
 
 Date: 2026-08-23
-Baseline revision: `e63ea4d`
-Implementation revision: `146730714489f4ada7a718686ee3ebfcfebd87a9`
+Baseline revision: `e63ea4d62fa4b4062566a6819127c18a30a1a38d`
+Implementation revision: `ecb614cf6df3582c68b0c7966ffcd0333aafb65c`
 Configuration: .NET 10 Release; deterministic typed query transport for work counts; real built MCP stdio and Radicale 3.7.8 pinned as `ghcr.io/kozea/radicale@sha256:3a0080ea51ac69dcd74e345b9587dc14a8c8af0652046069005749f9a75c5c80`; loopback OTLP receiver for export privacy
 
 ## Before
