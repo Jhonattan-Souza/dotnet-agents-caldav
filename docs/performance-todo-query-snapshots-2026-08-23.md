@@ -2,7 +2,7 @@
 
 Date: 2026-08-23
 Baseline revision: `e63ea4d`
-Implementation revision: `13e272159a8ff4d972da17b25974503fc84247c6`
+Implementation revision: `146730714489f4ada7a718686ee3ebfcfebd87a9`
 Configuration: .NET 10 Release; deterministic typed query transport for work counts; real built MCP stdio and Radicale 3.7.8 pinned as `ghcr.io/kozea/radicale@sha256:3a0080ea51ac69dcd74e345b9587dc14a8c8af0652046069005749f9a75c5c80`; loopback OTLP receiver for export privacy
 
 ## Before
@@ -30,3 +30,5 @@ Continue authenticates the tool-bound cursor and reads only the immutable snapsh
 ## Atomicity and cleanup
 
 Missing temporal context and missing or weak Entity Tags fail before semantic exclusion and retain no snapshot. Unevaluable recurrence fails atomically. The snapshot writer reserves storage only when the first page returns a cursor; shared reservation, cancellation, expiry, and disposal tests prove rollback to zero retained snapshots and bytes. Test service providers, Activities, MCP processes, OTLP receiver, HTTP clients, seeded Calendar resources, and the Radicale fixture are disposed by their owners. No broad 1,200-resource rerun, benchmark framework, allocation threshold, or latency SLA was introduced.
+
+The authoritative combined gate passed 2,119 Core tests, 919 MCP tests, 100 Integration tests, and both ten-test pinned-Radicale conformance variants. Coverage was 19,864 of 21,230 lines (93.6%) and 11,259 of 13,224 branches (85.1%), eighteen covered branches above the exact 85% integer minimum. Slopwatch reported zero issues.
