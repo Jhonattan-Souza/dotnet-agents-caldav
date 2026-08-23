@@ -19,6 +19,7 @@ Add this MCP server to VS Code, Claude Desktop, Cursor, or any MCP client:
         "CALDAV_USERNAME": "user",
         "CALDAV_PASSWORD": "password",
         "CALDAV_EVALUATION_TIME_ZONE": "America/Sao_Paulo",
+        "CALDAV_INTEROPERABILITY_PROFILE": "radicale-3.7.8",
         "CALDAV_DEFAULT_EVENT_CALENDAR_NAME": "Events",
         "CALDAV_DEFAULT_TODO_CALENDAR_NAME": "To-dos"
       }
@@ -38,6 +39,7 @@ Add this MCP server to VS Code, Claude Desktop, Cursor, or any MCP client:
 | `CALDAV_DEFAULT_TODO_CALENDAR_NAME` | No | Display name of the default Calendar for To-do operations |
 | `CALDAV_DEFAULT_EVENT_CALENDAR_NAME` | No | Display name of the default Calendar for Event operations |
 | `CALDAV_EVALUATION_TIME_ZONE` | No | Exact IANA zone used as the configured Temporal Evaluation Context for bounded Calendar Entity Starts and every Occurrence or To-do Start; invalid values fail startup and a caller `evaluationTimeZone` override wins |
+| `CALDAV_INTEROPERABILITY_PROFILE` | No | Set to `radicale-3.7.8` only for that verified runtime; otherwise server-authoritative Move fails closed with `unsupported_capability` |
 | `CALDAV_EXPOSE_EXACT_TOOLS` | No | Set to `true` to expose protected exact Calendar Object Resource tools |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | No | Non-empty OTLP endpoint that opts into telemetry export; no exporter is registered when omitted |
 | `OTEL_EXPORTER_OTLP_PROTOCOL` | No | Standard OTLP protocol such as `http/protobuf` or `grpc` |
@@ -64,7 +66,7 @@ Add this MCP server to VS Code, Claude Desktop, Cursor, or any MCP client:
 - `calendar_occurrences.restore_exclusion` — Remove only one exact EXDATE.
 - `calendar_occurrences.cancel` — Create or update one complete cancelled override.
 - `calendar_occurrences.restore_cancellation` — Remove only cancelled status from one override.
-- `calendar_resources.move` — Atomically move one reviewed Calendar Object Resource to a selected Calendar.
+- `calendar_resources.move` — Move one reviewed resource with exact `If-Match`, `Overwrite: F`, server-authoritative UID collision truth, and bounded bilateral reconciliation; requires a verified interoperability profile.
 - `calendar_resources.delete` — Delete an entire resource from an explicitly supplied revision reference (href, UID, kind, and exact strong ETag) after MCP MRTR review and confirmation; success requires verified absence.
 
 The 0.2.2 default catalog contains exactly these 17 tools in the order shown. It has no legacy task aliases or compatibility mode.
@@ -104,7 +106,7 @@ Exported spans show the MCP request, `caldav.operation`, the applicable `discove
 
 ## Supported servers
 
-The verified interoperability profile is the official Radicale 3.7.8 image pinned in the [Radicale 3.7.8 profile](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/v0.2.2/contracts/0.2.2/radicale-3.7.8-profile.json). Other CalDAV servers are unverified profiles even when capability negotiation allows them to operate.
+The verified interoperability profile is the official Radicale 3.7.8 image pinned in the [Radicale 3.7.8 profile](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/v0.2.2/contracts/0.2.2/radicale-3.7.8-profile.json). Set `CALDAV_INTEROPERABILITY_PROFILE=radicale-3.7.8` only for that runtime. Semantic Move fails closed with `unsupported_capability` when the profile is omitted because atomic `If-Match`, `Overwrite: F`, and `CALDAV:no-uid-conflict` enforcement cannot be inferred from stored resources or generic DAV discovery. No collection-scan compatibility fallback is provided. Other CalDAV servers remain unverified profiles even when capability negotiation allows other operations.
 
 ## Migrating from 0.2.1
 

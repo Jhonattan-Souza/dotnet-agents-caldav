@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using DotnetAgents.CalDav.IntegrationTests.Fixtures;
@@ -288,6 +289,207 @@ public sealed class OpenTelemetryStdioIntegrationTests
                 await DeleteResourceAsync(createdHref, createdEntityTag);
             await DeleteResourceAsync(recurringHref, entityTag: null);
         }
+    }
+
+    [Fact]
+    public async Task SemanticMove_ExportsBoundedDispatchReconciliationAndExpectedAbsenceOverStdio()
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        var uid = $"private-move-{suffix}";
+        var content = PrivateTodo(uid);
+        var sourceHref = await PutResourceAsync(_fixture.TodoCalendarHref, $"source-{suffix}.ics", content);
+        var sourceEntityTag = await GetEntityTagAsync(sourceHref);
+        var destinationCalendarHref = $"{_fixture.BaseUrl}{_fixture.ShoppingCalendarHref}";
+        string? destinationHref = null;
+        string? destinationEntityTag = null;
+        await using var receiver = OtlpLoopbackReceiver.Start();
+        var stderr = new ConcurrentQueue<string>();
+
+        try
+        {
+            await using (var client = await CreateClientAsync(
+                             receiver.Endpoint,
+                             stderr,
+                             calendarHrefs: $"{_fixture.BaseUrl}{_fixture.TodoCalendarHref},{destinationCalendarHref}"))
+            {
+                var result = await client.CallToolAsync(
+                    "calendar_resources.move",
+                    MoveArguments(sourceHref, uid, sourceEntityTag, destinationCalendarHref),
+                    cancellationToken: TestContext.Current.CancellationToken);
+                result.IsError.ShouldBe(false, result.StructuredContent?.ToString());
+                var revision = result.StructuredContent!.Value.GetProperty("snapshot")
+                    .GetProperty("resourceRevision");
+                destinationHref = revision.GetProperty("href").GetString().ShouldNotBeNull();
+                destinationEntityTag = revision.GetProperty("entityTag").GetString().ShouldNotBeNull();
+            }
+
+            await receiver.WaitForPathsAsync(["/v1/traces"], TestContext.Current.CancellationToken);
+            var spans = OtlpProtobufReader.ReadSpans(receiver.Requests);
+            var operation = spans.Single(span =>
+                span.Name == "caldav.operation"
+                && Equals(span.Attributes.GetValueOrDefault("caldav.tool.name"), "calendar_resources.move"));
+            operation.Attributes.GetValueOrDefault("caldav.outcome").ShouldBe("success");
+            operation.Attributes.GetValueOrDefault("caldav.mutation.state").ShouldBe("committed");
+            operation.Attributes.GetValueOrDefault("caldav.move.dispatch").ShouldBe("dispatched");
+            operation.Attributes.GetValueOrDefault("caldav.move.collision").ShouldBe("none");
+            operation.Attributes.GetValueOrDefault("caldav.move.reconciliation")
+                .ShouldBe("faithful_destination_source_absent");
+            operation.Attributes.GetValueOrDefault("error.type").ShouldBeNull();
+            operation.StatusCode.ShouldBe(0);
+            spans.Count(span =>
+                    span.ScopeName == "DotnetAgents.CalDav.Http"
+                    && Equals(span.Attributes.GetValueOrDefault("http.request.method"), "MOVE"))
+                .ShouldBe(1);
+            var expectedAbsence = spans.Where(span =>
+                span.ScopeName == "DotnetAgents.CalDav.Http"
+                && Equals(span.Attributes.GetValueOrDefault("http.response.status_code"), 404L))
+                .ToArray();
+            expectedAbsence.Length.ShouldBe(2);
+            expectedAbsence.ShouldAllBe(span =>
+                Equals(span.Attributes.GetValueOrDefault("caldav.http.request_purpose"), "absence_probe")
+                && Equals(span.Attributes.GetValueOrDefault("caldav.http.observation"), "expected_absence")
+                && span.Attributes.GetValueOrDefault("error.type") == null
+                && span.StatusCode == 1);
+            spans.ShouldAllBe(span => span.EventCount == 0);
+            AssertProhibitedDataAbsent(
+                receiver.Requests,
+                uid,
+                content,
+                sourceHref,
+                sourceEntityTag,
+                destinationHref,
+                destinationEntityTag);
+            stderr.ShouldBeEmpty();
+        }
+        finally
+        {
+            await DeleteResourceAsync(sourceHref, entityTag: null);
+            if (destinationHref is not null)
+                await DeleteResourceAsync(destinationHref, destinationEntityTag);
+        }
+    }
+
+    [Fact]
+    public async Task SemanticMoveUidConflict_ExportsDefiniteRejectionWithoutPrivateValuesOverStdio()
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        var uid = $"private-move-conflict-{suffix}";
+        var content = PrivateTodo(uid);
+        var sourceHref = await PutResourceAsync(_fixture.TodoCalendarHref, $"source-conflict-{suffix}.ics", content);
+        var collisionHref = await PutResourceAsync(
+            _fixture.ShoppingCalendarHref,
+            $"existing-conflict-{suffix}.ics",
+            content);
+        var sourceEntityTag = await GetEntityTagAsync(sourceHref);
+        var destinationCalendarHref = $"{_fixture.BaseUrl}{_fixture.ShoppingCalendarHref}";
+        await using var receiver = OtlpLoopbackReceiver.Start();
+        var stderr = new ConcurrentQueue<string>();
+
+        try
+        {
+            await using (var client = await CreateClientAsync(
+                             receiver.Endpoint,
+                             stderr,
+                             calendarHrefs: $"{_fixture.BaseUrl}{_fixture.TodoCalendarHref},{destinationCalendarHref}"))
+            {
+                var result = await client.CallToolAsync(
+                    "calendar_resources.move",
+                    MoveArguments(sourceHref, uid, sourceEntityTag, destinationCalendarHref),
+                    cancellationToken: TestContext.Current.CancellationToken);
+                result.IsError.ShouldBe(true);
+                result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("conflict");
+                result.StructuredContent!.Value.GetProperty("mutationState").GetString().ShouldBe("not_committed");
+            }
+
+            await receiver.WaitForPathsAsync(["/v1/traces"], TestContext.Current.CancellationToken);
+            var spans = OtlpProtobufReader.ReadSpans(receiver.Requests);
+            var operation = spans.Single(span =>
+                span.Name == "caldav.operation"
+                && Equals(span.Attributes.GetValueOrDefault("caldav.tool.name"), "calendar_resources.move"));
+            operation.Attributes.GetValueOrDefault("caldav.outcome").ShouldBe("error");
+            operation.Attributes.GetValueOrDefault("caldav.mutation.state").ShouldBe("not_committed");
+            operation.Attributes.GetValueOrDefault("caldav.move.dispatch").ShouldBe("rejected");
+            operation.Attributes.GetValueOrDefault("caldav.move.collision").ShouldBe("uid");
+            operation.Attributes.GetValueOrDefault("caldav.move.reconciliation").ShouldBe("not_run");
+            operation.Attributes.GetValueOrDefault("caldav.error.phase").ShouldBe("execution");
+            spans.Count(span =>
+                    span.ScopeName == "DotnetAgents.CalDav.Http"
+                    && Equals(span.Attributes.GetValueOrDefault("http.request.method"), "MOVE"))
+                .ShouldBe(1);
+            spans.ShouldContain(span =>
+                Equals(span.Attributes.GetValueOrDefault("http.response.status_code"), 404L)
+                && Equals(span.Attributes.GetValueOrDefault("caldav.http.observation"), "expected_absence"));
+            spans.ShouldAllBe(span => span.EventCount == 0);
+            AssertProhibitedDataAbsent(
+                receiver.Requests,
+                uid,
+                content,
+                sourceHref,
+                sourceEntityTag,
+                collisionHref);
+            stderr.ShouldBeEmpty();
+        }
+        finally
+        {
+            await DeleteResourceAsync(sourceHref, entityTag: null);
+            await DeleteResourceAsync(collisionHref, entityTag: null);
+        }
+    }
+
+    [Fact]
+    public async Task SemanticMovePossiblyDispatched_ExportsReconciledTruthOverStdio()
+    {
+        await using var server = new PossiblyDispatchedMoveServer();
+        await using var receiver = OtlpLoopbackReceiver.Start();
+        var stderr = new ConcurrentQueue<string>();
+
+        await using (var client = await CreateClientAsync(
+                         receiver.Endpoint,
+                         stderr,
+                         baseUrl: server.BaseUrl,
+                         calendarHrefs: $"{server.SourceCalendarHref},{server.DestinationCalendarHref}"))
+        {
+            var result = await client.CallToolAsync(
+                "calendar_resources.move",
+                MoveArguments(
+                    server.SourceHref,
+                    PossiblyDispatchedMoveServer.PrivateUid,
+                    PossiblyDispatchedMoveServer.SourceEntityTag,
+                    server.DestinationCalendarHref),
+                cancellationToken: TestContext.Current.CancellationToken);
+            result.IsError.ShouldBe(false, result.StructuredContent?.ToString());
+            result.StructuredContent!.Value.GetProperty("mutationState").GetString().ShouldBe("committed");
+        }
+
+        await receiver.WaitForPathsAsync(["/v1/traces"], TestContext.Current.CancellationToken);
+        var spans = OtlpProtobufReader.ReadSpans(receiver.Requests);
+        var operation = spans.Single(span =>
+            span.Name == "caldav.operation"
+            && Equals(span.Attributes.GetValueOrDefault("caldav.tool.name"), "calendar_resources.move"));
+        operation.Attributes.GetValueOrDefault("caldav.outcome").ShouldBe("success");
+        operation.Attributes.GetValueOrDefault("caldav.mutation.state").ShouldBe("committed");
+        operation.Attributes.GetValueOrDefault("caldav.move.dispatch").ShouldBe("possibly_dispatched");
+        operation.Attributes.GetValueOrDefault("caldav.move.collision").ShouldBe("none");
+        operation.Attributes.GetValueOrDefault("caldav.move.reconciliation")
+            .ShouldBe("faithful_destination_source_absent");
+        spans.Count(span =>
+                span.ScopeName == "DotnetAgents.CalDav.Http"
+                && Equals(span.Attributes.GetValueOrDefault("http.request.method"), "MOVE"))
+            .ShouldBe(1);
+        spans.Count(span =>
+                Equals(span.Attributes.GetValueOrDefault("http.response.status_code"), 404L)
+                && Equals(span.Attributes.GetValueOrDefault("caldav.http.observation"), "expected_absence"))
+            .ShouldBe(2);
+        spans.ShouldAllBe(span => span.EventCount == 0);
+        AssertProhibitedDataAbsent(
+            receiver.Requests,
+            PossiblyDispatchedMoveServer.PrivateUid,
+            PossiblyDispatchedMoveServer.PrivateContent,
+            PossiblyDispatchedMoveServer.SourceEntityTag,
+            server.SourceHref,
+            server.DestinationHref);
+        server.MoveCount.ShouldBe(1);
+        stderr.ShouldBeEmpty();
     }
 
     [Fact]
@@ -842,6 +1044,67 @@ public sealed class OpenTelemetryStdioIntegrationTests
     }
 
     [Fact]
+    public async Task SemanticMoveCancellationBeforeDispatch_ExportsNotAttemptedTruthOverStdio()
+    {
+        await using var server = new HangingDiscoveryServer();
+        await using var receiver = OtlpLoopbackReceiver.Start();
+        using var process = CreateRawTelemetryProcess(
+            receiver.Endpoint,
+            baseUrl: server.BaseUrl,
+            calendarHrefs: server.CalendarHref);
+        process.Start();
+        var stderrTask = process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
+
+        try
+        {
+            await WriteRawAsync(process,
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2026-07-28\",\"capabilities\":{},\"clientInfo\":{\"name\":\"move-cancellation-test\",\"version\":\"1\"}}}");
+            _ = await ReadRawResponseAsync(process, 1);
+            await WriteRawAsync(process,
+                "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}");
+            await WriteRawAsync(process, JsonSerializer.Serialize(new
+            {
+                jsonrpc = "2.0",
+                id = 2,
+                method = "tools/call",
+                @params = new
+                {
+                    name = "calendar_resources.move",
+                    arguments = MoveArguments(
+                        $"{server.CalendarHref}private-source.ics",
+                        "private-cancelled-move",
+                        "\"private-revision\"",
+                        server.CalendarHref)
+                }
+            }));
+            await server.RequestStarted.WaitAsync(TestContext.Current.CancellationToken);
+            await WriteRawAsync(process,
+                "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/cancelled\",\"params\":{\"requestId\":2,\"reason\":\"caller cancelled\"}}");
+            var operation = await WaitForOperationSpanAsync(
+                receiver,
+                "calendar_resources.move",
+                TestContext.Current.CancellationToken);
+            operation.Attributes.GetValueOrDefault("caldav.outcome").ShouldBe("cancelled");
+            operation.Attributes.GetValueOrDefault("caldav.mutation.state").ShouldBe("not_attempted");
+            operation.Attributes.GetValueOrDefault("caldav.move.dispatch").ShouldBe("not_attempted");
+            operation.Attributes.GetValueOrDefault("caldav.move.collision").ShouldBeNull();
+            operation.Attributes.GetValueOrDefault("caldav.move.reconciliation").ShouldBe("not_run");
+            operation.Attributes.GetValueOrDefault("error.type").ShouldBeNull();
+            operation.StatusCode.ShouldBe(0);
+            OtlpProtobufReader.ReadSpans(receiver.Requests).ShouldAllBe(span => span.EventCount == 0);
+            process.StandardInput.Close();
+            await process.WaitForExitAsync(TestContext.Current.CancellationToken);
+            (await process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken)).ShouldBeEmpty();
+            (await stderrTask).ShouldBeEmpty();
+        }
+        finally
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
+        }
+    }
+
+    [Fact]
     public async Task CommittedCreateWithoutStrongRevision_ExportsControlledCommittedFailureOverStdio()
     {
         var suffix = Guid.NewGuid().ToString("N");
@@ -990,6 +1253,9 @@ public sealed class OpenTelemetryStdioIntegrationTests
             "otlp-private-header",
             "BEGIN:VCALENDAR",
             "Authorization",
+            "If-Match",
+            "Overwrite",
+            "Destination",
             "structuredContent",
             "exception.message",
             "exception.stacktrace"
@@ -1120,6 +1386,7 @@ public sealed class OpenTelemetryStdioIntegrationTests
                 ["CALDAV_URL"] = baseUrl,
                 ["CALDAV_USERNAME"] = "caldavtest",
                 ["CALDAV_PASSWORD"] = "caldavtest123",
+                ["CALDAV_INTEROPERABILITY_PROFILE"] = "radicale-3.7.8",
                 ["CALDAV_CALENDAR_HREFS"] = calendarHrefs,
                 ["CALDAV_DEFAULT_TODO_CALENDAR_NAME"] = defaultTodoCalendarName,
                 ["CALDAV_EVALUATION_TIME_ZONE"] = evaluationTimeZone,
@@ -1196,6 +1463,30 @@ public sealed class OpenTelemetryStdioIntegrationTests
                     ["value"] = "2026-08-21T13:00:00Z"
                 },
                 ["duration"] = "PT1H"
+            }
+        }
+    };
+
+    private static Dictionary<string, object?> MoveArguments(
+        string sourceHref,
+        string uid,
+        string entityTag,
+        string destinationCalendarHref) => new()
+    {
+        ["revision"] = new Dictionary<string, object?>
+        {
+            ["href"] = sourceHref,
+            ["entityUid"] = uid,
+            ["entityKind"] = "todo",
+            ["entityTag"] = entityTag
+        },
+        ["destination"] = new Dictionary<string, object?>
+        {
+            ["mode"] = "selected",
+            ["calendar"] = new Dictionary<string, object?>
+            {
+                ["by"] = "href",
+                ["href"] = destinationCalendarHref
             }
         }
     };
@@ -1289,6 +1580,7 @@ public sealed class OpenTelemetryStdioIntegrationTests
         environment["CALDAV_URL"] = baseUrl;
         environment["CALDAV_USERNAME"] = "caldavtest";
         environment["CALDAV_PASSWORD"] = "caldavtest123";
+        environment["CALDAV_INTEROPERABILITY_PROFILE"] = "radicale-3.7.8";
         environment["CALDAV_CALENDAR_HREFS"] = calendarHrefs;
         environment["CALDAV_EXPOSE_EXACT_TOOLS"] = exposeExact ? "true" : "false";
         environment["OTEL_EXPORTER_OTLP_ENDPOINT"] = endpoint.GetLeftPart(UriPartial.Authority);
@@ -1479,6 +1771,156 @@ public sealed class OpenTelemetryStdioIntegrationTests
                 .ConfigureAwait(false);
             response.Close();
         }
+    }
+
+    private sealed class PossiblyDispatchedMoveServer : IAsyncDisposable
+    {
+        internal const string PrivateUid = "private-possibly-dispatched-move";
+        internal const string SourceEntityTag = "\"source-revision\"";
+        internal const string PrivateContent = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Private Move//EN\r\n"
+            + "BEGIN:VTODO\r\nUID:private-possibly-dispatched-move\r\nDTSTAMP:20260823T120000Z\r\n"
+            + "SUMMARY:private possibly dispatched payload\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+        private readonly HttpListener _listener = new();
+        private readonly CancellationTokenSource _stopping = new();
+        private readonly Task _serve;
+        private int _moved;
+        private int _moveCount;
+
+        internal PossiblyDispatchedMoveServer()
+        {
+            using var reservation = new TcpListener(IPAddress.Loopback, 0);
+            reservation.Start();
+            var port = ((IPEndPoint)reservation.LocalEndpoint).Port;
+            reservation.Stop();
+            BaseUrl = $"http://127.0.0.1:{port}/";
+            SourceCalendarHref = $"{BaseUrl}calendars/test/source/";
+            DestinationCalendarHref = $"{BaseUrl}calendars/test/destination/";
+            SourceHref = $"{SourceCalendarHref}private-source.ics";
+            DestinationHref = $"{DestinationCalendarHref}{OpaqueName(PrivateUid)}.ics";
+            _listener.Prefixes.Add(BaseUrl);
+            _listener.Start();
+            _serve = ServeAsync();
+        }
+
+        internal string BaseUrl { get; }
+
+        internal string SourceCalendarHref { get; }
+
+        internal string DestinationCalendarHref { get; }
+
+        internal string SourceHref { get; }
+
+        internal string DestinationHref { get; }
+
+        internal int MoveCount => Volatile.Read(ref _moveCount);
+
+        public async ValueTask DisposeAsync()
+        {
+            await _stopping.CancelAsync();
+            _listener.Stop();
+            try
+            {
+                await _serve;
+            }
+            catch (Exception exception) when (_stopping.IsCancellationRequested
+                && exception is HttpListenerException or ObjectDisposedException or OperationCanceledException)
+            {
+                System.Diagnostics.Debug.Assert(_stopping.IsCancellationRequested);
+            }
+            _listener.Close();
+            _stopping.Dispose();
+        }
+
+        private async Task ServeAsync()
+        {
+            while (!_stopping.IsCancellationRequested)
+            {
+                var context = await _listener.GetContextAsync()
+                    .WaitAsync(_stopping.Token)
+                    .ConfigureAwait(false);
+                await RespondAsync(context).ConfigureAwait(false);
+            }
+        }
+
+        private Task RespondAsync(HttpListenerContext context) => context.Request.HttpMethod switch
+        {
+            "PROPFIND" => RespondDiscoveryAsync(context),
+            "GET" => RespondGetAsync(context),
+            "MOVE" => RespondMoveAsync(context),
+            _ => CompleteAsync(context, HttpStatusCode.MethodNotAllowed)
+        };
+
+        private static Task RespondDiscoveryAsync(HttpListenerContext context)
+        {
+            var responses = context.Request.Url!.AbsolutePath == "/"
+                ? "<d:response><d:href>/</d:href><d:propstat><d:prop><c:calendar-home-set>"
+                    + "<d:href>/calendars/test/</d:href></c:calendar-home-set></d:prop>"
+                    + "<d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>"
+                : CalendarResponse("/calendars/test/source/", "Private Source")
+                    + CalendarResponse("/calendars/test/destination/", "Private Destination");
+            var xml = "<?xml version=\"1.0\" encoding=\"utf-8\"?><d:multistatus "
+                + "xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\">"
+                + responses
+                + "</d:multistatus>";
+            return CompleteAsync(context, HttpStatusCode.MultiStatus, xml, "application/xml; charset=utf-8");
+        }
+
+        private Task RespondGetAsync(HttpListenerContext context)
+        {
+            var href = context.Request.Url!.AbsoluteUri;
+            var moved = Volatile.Read(ref _moved) == 1;
+            if ((!moved && href == SourceHref) || (moved && href == DestinationHref))
+            {
+                var entityTag = moved ? "\"destination-revision\"" : SourceEntityTag;
+                return CompleteAsync(context, HttpStatusCode.OK, PrivateContent, "text/calendar; charset=utf-8", entityTag);
+            }
+            return CompleteAsync(context, HttpStatusCode.NotFound);
+        }
+
+        private Task RespondMoveAsync(HttpListenerContext context)
+        {
+            Interlocked.Increment(ref _moveCount);
+            var valid = context.Request.Url!.AbsoluteUri == SourceHref
+                && context.Request.Headers["Destination"] == DestinationHref
+                && context.Request.Headers["Overwrite"] == "F"
+                && context.Request.Headers["If-Match"] == SourceEntityTag;
+            if (valid)
+                Volatile.Write(ref _moved, 1);
+            return CompleteAsync(context, valid ? HttpStatusCode.Accepted : HttpStatusCode.BadRequest);
+        }
+
+        private static async Task CompleteAsync(
+            HttpListenerContext context,
+            HttpStatusCode status,
+            string? body = null,
+            string? contentType = null,
+            string? entityTag = null)
+        {
+            var bytes = body is null ? [] : Encoding.UTF8.GetBytes(body);
+            context.Response.StatusCode = (int)status;
+            if (contentType is not null)
+                context.Response.ContentType = contentType;
+            if (entityTag is not null)
+                context.Response.Headers["ETag"] = entityTag;
+            context.Response.ContentLength64 = bytes.Length;
+            if (bytes.Length > 0)
+                await context.Response.OutputStream.WriteAsync(bytes, TestContext.Current.CancellationToken);
+            context.Response.Close();
+        }
+
+        private static string CalendarResponse(string href, string displayName) =>
+            $"<d:response><d:href>{href}</d:href><d:propstat><d:prop>"
+            + "<d:resourcetype><c:calendar/></d:resourcetype>"
+            + $"<d:displayname>{displayName}</d:displayname>"
+            + "<c:supported-calendar-component-set><c:comp name=\"VTODO\"/>"
+            + "</c:supported-calendar-component-set></d:prop>"
+            + "<d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>";
+
+        private static string OpaqueName(string uid) =>
+            Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(uid)))
+                .TrimEnd('=')
+                .Replace('+', '-')
+                .Replace('/', '_');
     }
 
     private sealed class RetryingDiscoveryServer : IAsyncDisposable

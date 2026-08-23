@@ -51,6 +51,11 @@
           "isRequired": false
         },
         {
+          "name": "CALDAV_INTEROPERABILITY_PROFILE",
+          "description": "Verified server runtime profile; radicale-3.7.8 enables server-authoritative MOVE (optional)",
+          "isRequired": false
+        },
+        {
           "name": "CALDAV_EXPOSE_EXACT_TOOLS",
           "description": "Set to true to expose protected exact Calendar Object Resource tools (optional)",
           "isRequired": false

@@ -22,6 +22,10 @@ internal static class CalendarExecutionPolicy
             var requestedToolName = request.Params?.Name;
             var toolName = CalendarTelemetry.NormalizeToolName(requestedToolName);
             var mutation = IsMutation(requestedToolName);
+            var semanticMove = string.Equals(
+                requestedToolName,
+                "calendar_resources.move",
+                StringComparison.Ordinal);
             using var telemetry = CalendarTelemetry.StartOperation(
                 toolName,
                 EntityKind(requestedToolName));
@@ -57,7 +61,7 @@ internal static class CalendarExecutionPolicy
             }
             catch (Exception exception)
             {
-                CompleteExceptionTelemetry(telemetry, exception, mutation, cancellationToken);
+                CompleteExceptionTelemetry(telemetry, exception, mutation, semanticMove, cancellationToken);
                 throw;
             }
         };
@@ -86,6 +90,7 @@ internal static class CalendarExecutionPolicy
         CalendarTelemetryOperation? telemetry,
         Exception exception,
         bool mutation,
+        bool semanticMove,
         CancellationToken callerCancellationToken)
     {
         if (exception is InputRequiredException)
@@ -96,7 +101,7 @@ internal static class CalendarExecutionPolicy
         }
         else if (exception is OperationCanceledException && callerCancellationToken.IsCancellationRequested)
         {
-            telemetry?.Complete("cancelled");
+            CompleteCallerCancellation(telemetry, semanticMove);
         }
         else if (exception is OperationCanceledException)
         {
@@ -106,6 +111,26 @@ internal static class CalendarExecutionPolicy
         {
             telemetry?.Fail(exception);
         }
+    }
+
+    private static void CompleteCallerCancellation(
+        CalendarTelemetryOperation? telemetry,
+        bool semanticMove)
+    {
+        var moveTelemetry = CalendarOperationProgress.CurrentMoveTelemetry;
+        if (semanticMove && moveTelemetry?.Dispatch is null or CalendarMoveDispatchClassification.Unspecified)
+        {
+            moveTelemetry = new CalendarMoveTelemetrySnapshot(
+                CalendarMoveDispatchClassification.NotAttempted,
+                CalendarMoveCollisionClassification.Unspecified,
+                CalendarMoveReconciliationClassification.NotRun);
+        }
+        telemetry?.Complete(
+            "cancelled",
+            mutationState: moveTelemetry?.Dispatch == CalendarMoveDispatchClassification.NotAttempted
+                ? "not_attempted"
+                : null,
+            moveTelemetry: moveTelemetry);
     }
 
     private static async ValueTask<CallToolResult> ExecuteWithinBudgetAsync(
@@ -196,7 +221,8 @@ internal static class CalendarExecutionPolicy
             errorCategory,
             mutationState,
             errorPhase,
-            retryable);
+            retryable,
+            CalendarOperationProgress.CurrentMoveTelemetry);
     }
 
     private static string? StringProperty(JsonElement? structured, string propertyName)

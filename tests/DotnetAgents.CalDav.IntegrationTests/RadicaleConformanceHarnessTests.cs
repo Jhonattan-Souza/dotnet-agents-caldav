@@ -1,11 +1,13 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.DependencyInjection;
+using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Core.Models;
 using DotnetAgents.CalDav.IntegrationTests.Fixtures;
 using Microsoft.Extensions.DependencyInjection;
@@ -39,6 +41,24 @@ public sealed class RadicaleConformanceHarnessTests(RadicaleConformanceFixture f
         fixture.Runtime.VobjectVersion.ShouldBe("0.9.9");
         fixture.Runtime.RuntimeTimeZone.ShouldBe(fixture.Variant.TimeZone);
         fixture.Runtime.StrictPreconditions.ShouldBe(fixture.Variant.StrictPreconditions);
+    }
+
+    [Fact]
+    public async Task Pinned_profile_enforces_server_authoritative_move_preconditions_and_probe_race()
+    {
+        using var probe = CreateProbeClient();
+        var sourceCalendar = new Uri(fixture.BaseUrl + "/conformance/move-source/", UriKind.Absolute);
+        var destinationCalendar = new Uri(fixture.BaseUrl + "/conformance/move-destination/", UriKind.Absolute);
+        (await CreateCalendarAsync(probe, sourceCalendar, "Move Source", "VTODO")).ShouldBe(HttpStatusCode.Created);
+        (await CreateCalendarAsync(probe, destinationCalendar, "Move Destination", "VEVENT", "VTODO"))
+            .ShouldBe(HttpStatusCode.Created);
+        var scope = $"{sourceCalendar.AbsoluteUri},{destinationCalendar.AbsoluteUri}";
+
+        await AssertMoveHrefCollisionAsync(probe, sourceCalendar, destinationCalendar, scope);
+        await AssertMoveUidCollisionAsync(probe, sourceCalendar, destinationCalendar, scope, crossKind: false);
+        await AssertMoveUidCollisionAsync(probe, sourceCalendar, destinationCalendar, scope, crossKind: true);
+        await AssertMoveStaleRevisionAsync(probe, sourceCalendar, destinationCalendar, scope);
+        await AssertMoveProbeRaceAsync(probe, sourceCalendar, destinationCalendar, scope);
     }
 
     [Fact]
@@ -780,10 +800,141 @@ public sealed class RadicaleConformanceHarnessTests(RadicaleConformanceFixture f
             TestContext.Current.CancellationToken);
     }
 
+    private async Task AssertMoveHrefCollisionAsync(
+        HttpClient probe,
+        Uri sourceCalendar,
+        Uri destinationCalendar,
+        string scope)
+    {
+        const string uid = "move-href-collision";
+        var source = await PutResourceAsync(probe, new Uri(sourceCalendar, "href-source.ics"), Todo(uid));
+        var destination = BuildMoveDestinationHref(destinationCalendar, uid);
+        _ = await PutResourceAsync(probe, destination, Todo("occupied-by-another-uid"));
+        await using var provider = CreateProvider(fixture.BaseUrl, scope);
+
+        var result = await MoveAsync(provider, source, uid, destinationCalendar);
+
+        result.Code.ShouldBe(CalendarResourceMoveCode.DestinationConflict);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+    }
+
+    private async Task AssertMoveUidCollisionAsync(
+        HttpClient probe,
+        Uri sourceCalendar,
+        Uri destinationCalendar,
+        string scope,
+        bool crossKind)
+    {
+        var suffix = crossKind ? "cross-kind" : "same-kind";
+        var uid = $"move-{suffix}-collision";
+        var source = await PutResourceAsync(probe, new Uri(sourceCalendar, $"{suffix}-source.ics"), Todo(uid));
+        var collisionContent = crossKind
+            ? Event(uid, "DTSTART:20260816T100000Z\r\n")
+            : Todo(uid);
+        _ = await PutResourceAsync(probe, new Uri(destinationCalendar, $"{suffix}-existing.ics"), collisionContent);
+        await using var provider = CreateProvider(fixture.BaseUrl, scope);
+
+        var result = await MoveAsync(provider, source, uid, destinationCalendar);
+
+        result.Code.ShouldBe(CalendarResourceMoveCode.Conflict);
+        result.MutationState.ShouldBe(CalendarMutationState.NotCommitted);
+        result.Snapshot.ShouldBeNull();
+    }
+
+    private async Task AssertMoveStaleRevisionAsync(
+        HttpClient probe,
+        Uri sourceCalendar,
+        Uri destinationCalendar,
+        string scope)
+    {
+        const string uid = "move-stale-source";
+        var sourceHref = new Uri(sourceCalendar, "stale-source.ics");
+        var source = await PutResourceAsync(probe, sourceHref, Todo(uid));
+        var changed = await SendProbeAsync(
+            probe,
+            HttpMethod.Put,
+            sourceHref,
+            Todo(uid).Replace("SUMMARY:todo", "SUMMARY:changed", StringComparison.Ordinal),
+            ("If-Match", source.EntityTag!));
+        changed.Status.ShouldBe(HttpStatusCode.NoContent);
+        await using var provider = CreateProvider(fixture.BaseUrl, scope);
+
+        var result = await MoveAsync(provider, source, uid, destinationCalendar);
+
+        result.Code.ShouldBe(CalendarResourceMoveCode.Conflict);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        result.Snapshot.ShouldNotBeNull().EntityTag.ShouldNotBe(source.EntityTag);
+    }
+
+    private async Task AssertMoveProbeRaceAsync(
+        HttpClient probe,
+        Uri sourceCalendar,
+        Uri destinationCalendar,
+        string scope)
+    {
+        const string uid = "move-probe-race";
+        var source = await PutResourceAsync(probe, new Uri(sourceCalendar, "race-source.ics"), Todo(uid));
+        var destination = BuildMoveDestinationHref(destinationCalendar, uid);
+        var race = new RaceAfterAbsenceProbeFilter(destination, async cancellationToken =>
+        {
+            var inserted = await SendProbeAsync(
+                probe,
+                HttpMethod.Put,
+                destination,
+                Todo("race-winner"),
+                ("If-None-Match", "*"));
+            inserted.Status.ShouldBe(HttpStatusCode.Created);
+        });
+        await using var provider = CreateProvider(fixture.BaseUrl, scope, mutationFilter: race);
+
+        var result = await MoveAsync(provider, source, uid, destinationCalendar);
+
+        result.Code.ShouldBe(CalendarResourceMoveCode.Conflict);
+        result.MutationState.ShouldBe(CalendarMutationState.NotCommitted);
+        race.WasInserted.ShouldBeTrue();
+    }
+
+    private static async Task<ProbeResponse> PutResourceAsync(
+        HttpClient probe,
+        Uri href,
+        string content)
+    {
+        var response = await SendProbeAsync(probe, HttpMethod.Put, href, content, ("If-None-Match", "*"));
+        response.Status.ShouldBe(HttpStatusCode.Created);
+        var observed = await SendProbeAsync(probe, HttpMethod.Get, href);
+        observed.Status.ShouldBe(HttpStatusCode.OK);
+        observed.EntityTag.ShouldNotBeNull();
+        return observed;
+    }
+
+    private static Uri BuildMoveDestinationHref(Uri calendar, string uid)
+    {
+        var opaqueName = Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(uid)))
+            .TrimEnd('=')
+            .Replace('+', '-')
+            .Replace('/', '_');
+        return new Uri(calendar, $"{opaqueName}.ics");
+    }
+
+    private static Task<CalendarResourceMoveResult> MoveAsync(
+        ServiceProvider provider,
+        ProbeResponse source,
+        string uid,
+        Uri destinationCalendar) => provider.GetRequiredService<ICalendarService>().MoveResourceAsync(
+        new CalendarResourceMoveRequest(
+            new CalendarResourceRevisionReference(
+                source.RequestUri!.AbsoluteUri,
+                uid,
+                CalendarEntityKind.Todo,
+                source.EntityTag!),
+            CalendarMoveDestination.Selected(new CalendarReference(Href: destinationCalendar.AbsoluteUri))),
+        TestContext.Current.CancellationToken);
+
     internal static ServiceProvider CreateProvider(
         string baseUrl,
         string calendarHref,
-        ConcurrentQueue<string>? requestTrace = null)
+        ConcurrentQueue<string>? requestTrace = null,
+        IHttpMessageHandlerBuilderFilter? mutationFilter = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -793,9 +944,12 @@ public sealed class RadicaleConformanceHarnessTests(RadicaleConformanceFixture f
             options.CalendarHrefs = calendarHref;
             options.Username = ConformanceUsername;
             options.Password = ConformancePassword;
+            options.InteroperabilityProfile = CalDavInteroperabilityProfiles.Radicale_3_7_8;
         });
         if (requestTrace is not null)
             services.AddSingleton<IHttpMessageHandlerBuilderFilter>(new SafeRequestTraceFilter(requestTrace));
+        if (mutationFilter is not null)
+            services.AddSingleton<IHttpMessageHandlerBuilderFilter>(mutationFilter);
         return services.BuildServiceProvider();
     }
 
@@ -959,7 +1113,8 @@ public sealed class RadicaleConformanceHarnessTests(RadicaleConformanceFixture f
         return new ProbeResponse(
             response.StatusCode,
             response.Headers.ETag?.Tag,
-            body);
+            body,
+            target);
     }
 
     private static string Todo(string uid) =>
@@ -1075,7 +1230,43 @@ public sealed class RadicaleConformanceHarnessTests(RadicaleConformanceFixture f
 
     private sealed record ObservedResource(string Name, string Href, string EntityTag, byte[] Utf8);
 
-    private sealed record ProbeResponse(HttpStatusCode Status, string? EntityTag, string Body);
+    private sealed record ProbeResponse(HttpStatusCode Status, string? EntityTag, string Body, Uri RequestUri);
+
+    private sealed class RaceAfterAbsenceProbeFilter(
+        Uri target,
+        Func<CancellationToken, Task> insert) : IHttpMessageHandlerBuilderFilter
+    {
+        private int _inserted;
+
+        internal bool WasInserted => Volatile.Read(ref _inserted) == 1;
+
+        public Action<HttpMessageHandlerBuilder> Configure(Action<HttpMessageHandlerBuilder> next) => builder =>
+        {
+            next(builder);
+            builder.AdditionalHandlers.Insert(0, new RaceAfterAbsenceProbeHandler(target, insert, this));
+        };
+
+        private sealed class RaceAfterAbsenceProbeHandler(
+            Uri target,
+            Func<CancellationToken, Task> insert,
+            RaceAfterAbsenceProbeFilter owner) : DelegatingHandler
+        {
+            protected override async Task<HttpResponseMessage> SendAsync(
+                HttpRequestMessage request,
+                CancellationToken cancellationToken)
+            {
+                var response = await base.SendAsync(request, cancellationToken);
+                if (request.Method == HttpMethod.Get
+                    && request.RequestUri == target
+                    && response.StatusCode == HttpStatusCode.NotFound
+                    && Interlocked.Exchange(ref owner._inserted, 1) == 0)
+                {
+                    await insert(cancellationToken);
+                }
+                return response;
+            }
+        }
+    }
 
     private sealed class SafeRequestTraceFilter(ConcurrentQueue<string> trace) : IHttpMessageHandlerBuilderFilter
     {

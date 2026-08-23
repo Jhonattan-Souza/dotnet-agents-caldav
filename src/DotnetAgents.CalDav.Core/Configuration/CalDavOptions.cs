@@ -31,6 +31,9 @@ public sealed class CalDavOptions
     /// <summary>Optional explicit IANA zone for temporal query evaluation.</summary>
     public string? EvaluationTimeZone { get; set; }
 
+    /// <summary>Explicit server runtime whose atomic mutation preconditions were verified.</summary>
+    public string? InteroperabilityProfile { get; set; }
+
     /// <summary>Optional timeout for HTTP requests. Defaults to 30 seconds.</summary>
     public TimeSpan RequestTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
@@ -71,6 +74,7 @@ internal sealed class ValidateCalDavOptions : IValidateOptions<CalDavOptions>
             failures.Add("CalDav:RequestTimeout must be positive.");
 
         ValidateEvaluationTimeZone(options, failures);
+        ValidateInteroperabilityProfile(options.InteroperabilityProfile, failures);
 
         return failures.Count > 0
             ? ValidateOptionsResult.Fail(failures)
@@ -92,6 +96,22 @@ internal sealed class ValidateCalDavOptions : IValidateOptions<CalDavOptions>
         && !original.Contains("%5c", StringComparison.OrdinalIgnoreCase)
         && (string.Equals(original, uri.AbsoluteUri, StringComparison.Ordinal)
             || string.Equals(original + '/', uri.AbsoluteUri, StringComparison.Ordinal));
+
+    private static bool IsSupportedInteroperabilityProfile(string? profile) =>
+        string.IsNullOrEmpty(profile)
+        || string.Equals(profile, CalDavInteroperabilityProfiles.Radicale_3_7_8, StringComparison.Ordinal);
+
+    private static void ValidateInteroperabilityProfile(string? profile, ICollection<string> failures)
+    {
+        if (!IsSupportedInteroperabilityProfile(profile))
+            failures.Add($"CalDav:InteroperabilityProfile must be '{CalDavInteroperabilityProfiles.Radicale_3_7_8}' when specified.");
+    }
+}
+
+/// <summary>Closed set of server runtimes with verified atomic mutation preconditions.</summary>
+public static class CalDavInteroperabilityProfiles
+{
+    public const string Radicale_3_7_8 = "radicale-3.7.8";
 }
 
 internal static class IanaTimeZoneIds

@@ -18,6 +18,9 @@ internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activi
         "caldav.error.phase",
         "caldav.error.retryable",
         "caldav.mutation.state",
+        "caldav.move.dispatch",
+        "caldav.move.collision",
+        "caldav.move.reconciliation",
         "caldav.http.request_purpose",
         "caldav.http.observation",
         "caldav.transport.recovered",
@@ -244,6 +247,12 @@ internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activi
         activity.SetTag("caldav.query.phase", ClosedQueryPhase(activity.GetTagItem("caldav.query.phase")));
         foreach (var name in QueryCounterNames)
             activity.SetTag(name, NonNegativeCounter(activity.GetTagItem(name)));
+        activity.SetTag("caldav.move.dispatch", CalendarTelemetryVocabulary.MoveDispatch(
+            activity.GetTagItem("caldav.move.dispatch") as string));
+        activity.SetTag("caldav.move.collision", CalendarTelemetryVocabulary.MoveCollision(
+            activity.GetTagItem("caldav.move.collision") as string));
+        activity.SetTag("caldav.move.reconciliation", CalendarTelemetryVocabulary.MoveReconciliation(
+            activity.GetTagItem("caldav.move.reconciliation") as string));
         ApplyRetryAggregation(activity);
     }
 

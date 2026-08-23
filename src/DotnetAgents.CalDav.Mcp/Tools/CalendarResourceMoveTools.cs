@@ -147,11 +147,9 @@ public sealed class CalendarResourceMoveTools
             result.Snapshot is null ? null : CalendarSnapshotResult.FromSnapshot(result.Snapshot),
             retryAfterMs: result.RetryAfterMilliseconds,
             limits: result.LimitDimension is null
-                && result.ResourcesInspected is null
                 && result.CalendarCount is null
                 ? null
                 : new CalendarEntityCreateLimits(
-                    ResourcesInspected: result.ResourcesInspected,
                     CalendarCount: result.CalendarCount,
                     Dimension: result.LimitDimension is null
                         ? null
@@ -175,7 +173,7 @@ public sealed class CalendarResourceMoveTools
         CalendarResourceMoveCode.OpaqueResource =>
             new("opaque_resource", "capabilityAndProjection", "A resource cannot be projected safely for semantic move.", "completeResourceSemantics"),
         CalendarResourceMoveCode.Conflict =>
-            new("conflict", "state", "The source Calendar Object Resource revision has changed.", "targetRevision"),
+            new("conflict", "state", "The move was rejected by current source or UID state.", "targetRevision"),
         CalendarResourceMoveCode.DestinationConflict =>
             new("destination_conflict", "state", "The move destination already exists.", "execution"),
         CalendarResourceMoveCode.ConcurrencyUnavailable =>

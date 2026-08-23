@@ -182,21 +182,20 @@ public sealed class CalendarResourceMoveToolsTests
     }
 
     [Fact]
-    public async Task MoveRawAsync_EmitsFrozenResourceAndCalendarCounts()
+    public async Task MoveRawAsync_EmitsFrozenCalendarCountWithoutScanEvidence()
     {
         var service = Substitute.For<ICalendarService>();
         service.MoveResourceAsync(Arg.Any<CalendarResourceMoveRequest>(), Arg.Any<CancellationToken>())
             .Returns(new CalendarResourceMoveResult(
                 CalendarResourceMoveCode.LimitExhausted,
                 CalendarMutationState.NotAttempted,
-                ResourcesInspected: 5_001,
                 CalendarCount: 257));
         var sut = CreateTool(service);
 
         var result = await sut.MoveRawAsync(Arguments("{\"mode\":\"default\"}"), CancellationToken.None);
 
         var limits = result.StructuredContent!.Value.GetProperty("limits");
-        limits.GetProperty("resourcesInspected").GetInt32().ShouldBe(5_001);
+        limits.TryGetProperty("resourcesInspected", out _).ShouldBeFalse();
         limits.GetProperty("calendarCount").GetInt32().ShouldBe(257);
         limits.TryGetProperty("dimension", out _).ShouldBeFalse();
     }

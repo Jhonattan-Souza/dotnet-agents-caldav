@@ -9,17 +9,12 @@ using DotnetAgents.CalDav.Core.Models;
 
 namespace DotnetAgents.CalDav.Core.Services;
 
-internal sealed class CalendarResourceMoveEngine(
-    ICalendarClient calendarClient,
+internal sealed class CalendarMoveModule(
+    ICalendarMoveTransport transport,
     CalDavOptions options,
-    TimeProvider timeProvider,
-    Func<IReadOnlyList<CalendarDescriptor>, CalendarDiscoveryResult> applyScope,
-    Func<CalendarEntityKind, IReadOnlyList<CalendarDescriptor>, IReadOnlyList<CalendarDescriptor>, CalendarSelectionResult>
-        resolveDefaultCalendar,
-    Func<string, CancellationToken, Task<CalendarResourceRead>> readResource)
+    TimeProvider timeProvider)
 {
     private const int MaximumDiagnostics = 32;
-    private const int MaximumInspectedResources = 5_000;
     private static readonly TimeSpan PreDispatchTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan ReconciliationTimeout = TimeSpan.FromSeconds(30);
 
@@ -27,6 +22,9 @@ internal sealed class CalendarResourceMoveEngine(
         CalendarResourceMoveRequest request,
         CancellationToken cancellationToken)
     {
+        CalendarOperationProgress.SetMoveDispatch(CalendarMoveDispatchClassification.NotAttempted);
+        CalendarOperationProgress.SetMoveCollision(CalendarMoveCollisionClassification.Unspecified);
+        CalendarOperationProgress.SetMoveReconciliation(CalendarMoveReconciliationClassification.NotRun);
         var inputFailure = ValidateInput(request);
         if (inputFailure is not null)
             return inputFailure;
@@ -79,144 +77,96 @@ internal sealed class CalendarResourceMoveEngine(
         if (destination.Failure is not null)
             return destination.Failure;
         var destinationCalendar = destination.Calendar!;
+        var sourceCalendar = destination.SourceCalendar!;
+
+        if (!string.Equals(
+                options.InteroperabilityProfile,
+                CalDavInteroperabilityProfiles.Radicale_3_7_8,
+                StringComparison.Ordinal))
+        {
+            return Failure(
+                CalendarResourceMoveCode.UnsupportedCapability,
+                candidates: [destinationCalendar],
+                phase: CalendarResourceMovePhase.SelectionDiscoveryCapability);
+        }
 
         var concurrencyFailure = ValidateStrongRevision(request.Revision);
         if (concurrencyFailure is not null)
             return concurrencyFailure;
 
-        var sourceRead = await readResource(request.Revision.Href, cancellationToken);
+        var sourceRead = Attach(
+            sourceCalendar.Href,
+            await transport.ReadSourceAsync(request.Revision.Href, cancellationToken));
         if (sourceRead.Code != CalendarResourceReadCode.Success || sourceRead.Snapshot is null)
             return FromReadFailure(sourceRead.Code);
         var revisionFailure = ValidateRevision(request.Revision, sourceRead.Snapshot);
         if (revisionFailure is not null)
-            return revisionFailure;
+            return RecordRevisionFailure(revisionFailure);
         if (string.Equals(destinationCalendar.Href, sourceRead.Snapshot.CalendarHref, StringComparison.Ordinal))
             return Failure(CalendarResourceMoveCode.InvalidInput);
 
         var destinationHref = CalendarResourceCreateProtocol.BuildResourceHref(
             destinationCalendar.Href,
             request.Revision.EntityUid);
-        var destinationRead = await calendarClient.GetCalendarResourceAsync(destinationHref, cancellationToken);
+        var destinationRead = await transport.ProbeDestinationPresenceAsync(destinationHref, cancellationToken);
         if (destinationRead.Code != CalendarResourceReadCode.NotFound)
-            return DestinationPreflightFailure(destinationRead);
-        var uidAvailability = await CheckDestinationUidAsync(
-            destinationCalendar.Href,
-            request.Revision.EntityUid,
-            request.Revision.EntityKind,
-            cancellationToken);
-        var uidFailure = DestinationUidFailure(uidAvailability);
-        if (uidFailure is not null)
-            return uidFailure;
+            return RecordDestinationPreflightFailure(destinationRead);
+        CalendarOperationProgress.SetMoveCollision(CalendarMoveCollisionClassification.None);
 
-        var dispatch = await calendarClient.MoveCalendarResourceAsync(
+        var dispatch = await transport.DispatchAsync(
             new CalendarResourceMoveDispatchRequest(
                 request.Revision.Href,
                 destinationHref,
                 request.Revision.EntityTag),
             cancellationToken);
         if (dispatch is null)
+        {
+            CalendarOperationProgress.SetMoveDispatch(CalendarMoveDispatchClassification.Rejected);
             return Rejected(CalendarResourceMoveCode.UpstreamProtocolError);
+        }
+        RecordDispatch(dispatch);
         return await CompleteDispatchAsync(
             request.Revision,
             sourceRead.Snapshot,
             destinationCalendar.Href,
             destinationHref,
-            dispatch,
-            cancellationToken);
+            dispatch);
     }
 
     private async Task<ResolvedMoveDestination> ResolveDestinationAsync(
         CalendarResourceMoveRequest request,
         CancellationToken cancellationToken)
     {
-        var selection = await SelectCalendarAsync(
+        var discovery = await transport.DiscoverCalendarsAsync(cancellationToken);
+        var scoped = discovery.ScopedDiscovery.Items;
+        var sourceUri = new Uri(request.Revision.Href, UriKind.Absolute);
+        var sourceCalendar = scoped
+            .Where(calendar => IsDirectResourceOf(sourceUri, calendar.Href))
+            .OrderByDescending(calendar => calendar.Href.Length)
+            .FirstOrDefault();
+        if (sourceCalendar is null)
+        {
+            return new(
+                null,
+                null,
+                Failure(
+                    CalendarResourceMoveCode.OutsideScope,
+                    phase: CalendarResourceMovePhase.OriginScopeAuthorization));
+        }
+
+        var selection = SelectCalendar(
             request.Destination,
             request.Revision.EntityKind,
-            cancellationToken);
+            discovery,
+            scoped);
         if (selection.Code != CalendarSelectionCode.Success)
-            return new(null, SelectionFailure(selection));
+            return new(null, sourceCalendar, SelectionFailure(selection));
         var calendar = selection.Calendar!;
         if (!TryValidateCalendarHref(calendar.Href))
-            return new(null, Failure(CalendarResourceMoveCode.UpstreamProtocolError));
+            return new(null, sourceCalendar, Failure(CalendarResourceMoveCode.UpstreamProtocolError));
         return Advertises(calendar, request.Revision.EntityKind)
-            ? new(calendar, null)
-            : new(null, Failure(CalendarResourceMoveCode.UnsupportedCapability, candidates: [calendar]));
-    }
-
-    private async Task<DestinationUidAvailability> CheckDestinationUidAsync(
-        string calendarHref,
-        string uid,
-        CalendarEntityKind requestedKind,
-        CancellationToken cancellationToken)
-    {
-        var hrefs = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var kind in GetUidQueryKinds(requestedKind))
-        {
-            hrefs.UnionWith(await calendarClient.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                kind,
-                from: null,
-                to: null,
-                cancellationToken));
-            if (hrefs.Count > MaximumInspectedResources)
-                return DestinationUidAvailability.LimitExhausted;
-        }
-        foreach (var href in hrefs)
-        {
-            var availability = InspectUidRead(
-                await calendarClient.GetCalendarResourceAsync(href, cancellationToken),
-                uid);
-            if (availability != DestinationUidAvailability.Available)
-                return availability;
-        }
-        return DestinationUidAvailability.Available;
-    }
-
-    private static DestinationUidAvailability InspectUidRead(CalendarResourceRead read, string uid)
-    {
-        if (read.Code == CalendarResourceReadCode.NotFound)
-            return DestinationUidAvailability.Available;
-        if (read.Code == CalendarResourceReadCode.ConcurrencyUnavailable
-            && read.AuthoritativeUtf8.IsEmpty)
-        {
-            return DestinationUidAvailability.ConcurrencyUnavailable;
-        }
-        if (read.Code is CalendarResourceReadCode.Success or CalendarResourceReadCode.ConcurrencyUnavailable)
-        {
-            var projected = CalendarResourceProjector.Project(read.AuthoritativeUtf8.Span);
-            if (CalendarResourceProjector.ContainsEntityUid(projected, uid))
-                return DestinationUidAvailability.Exists;
-            return projected.Projection.Kind == CalendarResourceProjectionKind.Opaque
-                ? DestinationUidAvailability.OpaqueResource
-                : DestinationUidAvailability.Available;
-        }
-        return read.Code switch
-        {
-            CalendarResourceReadCode.PayloadTooLarge => DestinationUidAvailability.PayloadTooLarge,
-            _ => DestinationUidAvailability.UpstreamProtocolError
-        };
-    }
-
-    private static CalendarResourceMoveResult? DestinationUidFailure(
-        DestinationUidAvailability availability) => availability switch
-        {
-            DestinationUidAvailability.Available => null,
-            DestinationUidAvailability.Exists => Failure(CalendarResourceMoveCode.DestinationConflict),
-            DestinationUidAvailability.OpaqueResource => Failure(CalendarResourceMoveCode.OpaqueResource),
-            DestinationUidAvailability.ConcurrencyUnavailable => Failure(CalendarResourceMoveCode.ConcurrencyUnavailable),
-            DestinationUidAvailability.LimitExhausted => Failure(
-                CalendarResourceMoveCode.LimitExhausted,
-                resourcesInspected: MaximumInspectedResources + 1),
-            DestinationUidAvailability.PayloadTooLarge => Failure(CalendarResourceMoveCode.PayloadTooLarge),
-            _ => Failure(CalendarResourceMoveCode.UpstreamProtocolError)
-        };
-
-    private static IEnumerable<CalendarEntityKind> GetUidQueryKinds(CalendarEntityKind requestedKind)
-    {
-        yield return requestedKind;
-        yield return requestedKind == CalendarEntityKind.Event
-            ? CalendarEntityKind.Todo
-            : CalendarEntityKind.Event;
+            ? new(calendar, sourceCalendar, null)
+            : new(null, sourceCalendar, Failure(CalendarResourceMoveCode.UnsupportedCapability, candidates: [calendar]));
     }
 
     private async Task<CalendarResourceMoveResult> CompleteDispatchAsync(
@@ -224,11 +174,8 @@ internal sealed class CalendarResourceMoveEngine(
         CalendarResourceSnapshot source,
         string destinationCalendarHref,
         string destinationHref,
-        CalendarResourceMoveDispatchResult dispatch,
-        CancellationToken cancellationToken)
+        CalendarResourceMoveDispatchResult dispatch)
     {
-        if (dispatch.Code == CalendarResourceMoveDispatchCode.Conflict)
-            return await ClassifyConflictAsync(revision, destinationCalendarHref, destinationHref, cancellationToken);
         if (dispatch.Code is not (CalendarResourceMoveDispatchCode.Dispatched
             or CalendarResourceMoveDispatchCode.PossiblyDispatched))
         {
@@ -253,12 +200,13 @@ internal sealed class CalendarResourceMoveEngine(
     {
         CalendarOperationProgress.SetPhase(CalendarOperationPhase.Reconcile);
         using var verification = new CancellationTokenSource(ReconciliationTimeout, timeProvider);
-        var destination = await ObserveResourceAsync(
+        var destinationTask = ObserveResourceAsync(
             destinationCalendarHref,
             destinationHref,
             verification.Token);
-        var source = await ObserveResourceAsync(sourceCalendarHref, sourceHref, verification.Token);
-        return new MoveObservation(destination, source);
+        var sourceTask = ObserveResourceAsync(sourceCalendarHref, sourceHref, verification.Token);
+        await Task.WhenAll(destinationTask, sourceTask);
+        return new MoveObservation(await destinationTask, await sourceTask);
     }
 
     private async Task<CalendarResourceRead?> ObserveResourceAsync(
@@ -270,7 +218,7 @@ internal sealed class CalendarResourceMoveEngine(
         {
             return Attach(
                 calendarHref,
-                await calendarClient.GetCalendarResourceAsync(resourceHref, cancellationToken));
+                await transport.ObserveResourceAsync(resourceHref, cancellationToken));
         }
         catch (Exception)
         {
@@ -278,46 +226,22 @@ internal sealed class CalendarResourceMoveEngine(
         }
     }
 
-    private async Task<CalendarResourceMoveResult> ClassifyConflictAsync(
-        CalendarResourceRevisionReference revision,
-        string destinationCalendarHref,
-        string destinationHref,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            var destination = await calendarClient.GetCalendarResourceAsync(destinationHref, cancellationToken);
-            if (destination.Code is CalendarResourceReadCode.Success
-                or CalendarResourceReadCode.ConcurrencyUnavailable)
-            {
-                return Rejected(CalendarResourceMoveCode.DestinationConflict);
-            }
-            var source = await readResource(revision.Href, cancellationToken);
-            return Rejected(
-                CalendarResourceMoveCode.Conflict,
-                source.Code == CalendarResourceReadCode.Success ? source.Snapshot : null);
-        }
-        catch (Exception)
-        {
-            return Rejected(CalendarResourceMoveCode.Conflict);
-        }
-    }
-
     private static CalendarResourceMoveResult ClassifyDispatched(
-        CalendarResourceRevisionReference revision,
+        CalendarResourceRevisionReference _,
         CalendarResourceSnapshot source,
         MoveObservation observation)
     {
         var verified = VerifiedMoveResult(source, observation);
         if (verified is not null)
             return verified;
-        if (IsCommittedWithoutStrongTag(source, observation))
-            return PostWrite(CalendarResourceMoveCode.CommittedButConcurrencyUnavailable);
-        if (IsSourceUnchangedAfterPossibleDispatch(revision, observation))
-            return Rejected(CalendarResourceMoveCode.UpstreamProtocolError, observation.Source!.Snapshot);
-        if (HasObservedDestination(observation))
-            return PostWrite(CalendarResourceMoveCode.FidelityFailure, observation.Destination?.Snapshot);
-        return PostWrite(CalendarResourceMoveCode.CommittedButUnverified, observation.Source?.Snapshot);
+        if (HasUnavailableObservation(observation))
+        {
+            CalendarOperationProgress.SetMoveReconciliation(
+                CalendarMoveReconciliationClassification.ObservationUnavailable);
+            return PostWrite(CalendarResourceMoveCode.CommittedButUnverified);
+        }
+        CalendarOperationProgress.SetMoveReconciliation(CalendarMoveReconciliationClassification.Indeterminate);
+        return Unknown(observation.Source?.Snapshot);
     }
 
     private static CalendarResourceMoveResult ClassifyPossiblyDispatched(
@@ -325,13 +249,19 @@ internal sealed class CalendarResourceMoveEngine(
         CalendarResourceSnapshot source,
         MoveObservation observation)
     {
-        var verified = VerifiedMoveResult(source, observation);
-        if (verified is not null)
-            return verified;
-        if (IsCommittedWithoutStrongTag(source, observation))
-            return PostWrite(CalendarResourceMoveCode.CommittedButConcurrencyUnavailable);
+        if (IsFaithfulDestinationWithAbsentSource(source, observation))
+        {
+            CalendarOperationProgress.SetMoveReconciliation(
+                CalendarMoveReconciliationClassification.FaithfulDestinationSourceAbsent);
+            return CalendarResourceMoveResult.Success(observation.Destination!.Snapshot!);
+        }
         if (IsSourceUnchangedAfterPossibleDispatch(revision, observation))
+        {
+            CalendarOperationProgress.SetMoveReconciliation(
+                CalendarMoveReconciliationClassification.UnchangedSourceDestinationAbsent);
             return Rejected(CalendarResourceMoveCode.UpstreamUnavailable, observation.Source!.Snapshot, retryable: true);
+        }
+        CalendarOperationProgress.SetMoveReconciliation(ReconciliationObservation(observation));
         return Unknown(observation.Source?.Snapshot);
     }
 
@@ -344,36 +274,75 @@ internal sealed class CalendarResourceMoveEngine(
         {
             return null;
         }
-        return CalendarResourceMoveFidelity.IsCompleteMatch(source, destination)
-            ? CalendarResourceMoveResult.Success(destination)
-            : PostWrite(CalendarResourceMoveCode.FidelityFailure, destination);
+        if (CalendarResourceMoveFidelity.IsCompleteMatch(source, destination))
+        {
+            CalendarOperationProgress.SetMoveReconciliation(
+                CalendarMoveReconciliationClassification.FaithfulDestinationSourceAbsent);
+            return CalendarResourceMoveResult.Success(destination);
+        }
+        CalendarOperationProgress.SetMoveReconciliation(
+            CalendarMoveReconciliationClassification.DivergentDestinationSourceAbsent);
+        return PostWrite(CalendarResourceMoveCode.FidelityFailure, destination);
     }
 
     private static bool IsSourceUnchangedAfterPossibleDispatch(
         CalendarResourceRevisionReference revision,
         MoveObservation observation) =>
-        IsSameRevision(revision, observation.Source?.Snapshot);
+        observation.Destination?.Code == CalendarResourceReadCode.NotFound
+        && IsSameRevision(revision, observation.Source?.Snapshot);
 
-    private static bool IsCommittedWithoutStrongTag(
+    private static bool IsFaithfulDestinationWithAbsentSource(
         CalendarResourceSnapshot source,
         MoveObservation observation) =>
-        observation.Destination?.Code == CalendarResourceReadCode.ConcurrencyUnavailable
+        observation.Destination?.Snapshot is { } destination
         && observation.Source?.Code == CalendarResourceReadCode.NotFound
-        && source.AuthoritativeUtf8.Span.SequenceEqual(observation.Destination.AuthoritativeUtf8.Span);
+        && CalendarResourceMoveFidelity.IsCompleteMatch(source, destination);
 
-    private static bool HasObservedDestination(MoveObservation observation) =>
-        observation.Destination?.Code is CalendarResourceReadCode.Success
-            or CalendarResourceReadCode.ConcurrencyUnavailable;
+    private static bool HasUnavailableObservation(MoveObservation observation) =>
+        observation.Destination?.Code is not (CalendarResourceReadCode.Success or CalendarResourceReadCode.NotFound)
+        || observation.Source?.Code is not (CalendarResourceReadCode.Success or CalendarResourceReadCode.NotFound);
 
-    private async Task<CalendarSelectionResult> SelectCalendarAsync(
+    private static CalendarMoveReconciliationClassification ReconciliationObservation(MoveObservation observation)
+    {
+        if (HasUnavailableObservation(observation))
+            return CalendarMoveReconciliationClassification.ObservationUnavailable;
+        if (observation.Destination?.Snapshot is not null
+            && observation.Source?.Code == CalendarResourceReadCode.NotFound)
+        {
+            return CalendarMoveReconciliationClassification.DivergentDestinationSourceAbsent;
+        }
+        return CalendarMoveReconciliationClassification.Indeterminate;
+    }
+
+    private static void RecordDispatch(CalendarResourceMoveDispatchResult dispatch)
+    {
+        CalendarOperationProgress.SetMoveDispatch(dispatch.Code switch
+        {
+            CalendarResourceMoveDispatchCode.Dispatched => CalendarMoveDispatchClassification.Dispatched,
+            CalendarResourceMoveDispatchCode.PossiblyDispatched => CalendarMoveDispatchClassification.PossiblyDispatched,
+            _ => CalendarMoveDispatchClassification.Rejected
+        });
+        CalendarOperationProgress.SetMoveCollision(dispatch.Code switch
+        {
+            CalendarResourceMoveDispatchCode.DestinationConflict => CalendarMoveCollisionClassification.DestinationHref,
+            CalendarResourceMoveDispatchCode.Conflict => dispatch.CollisionKind switch
+            {
+                CalendarResourceMoveDispatchCollisionKind.DestinationHref => CalendarMoveCollisionClassification.DestinationHref,
+                CalendarResourceMoveDispatchCollisionKind.Uid => CalendarMoveCollisionClassification.Uid,
+                _ => CalendarMoveCollisionClassification.Unclassified
+            },
+            _ => CalendarMoveCollisionClassification.None
+        });
+    }
+
+    private static CalendarSelectionResult SelectCalendar(
         CalendarMoveDestination destination,
         CalendarEntityKind entityKind,
-        CancellationToken cancellationToken)
+        CalendarMoveDiscoveryResult discovery,
+        IReadOnlyList<CalendarDescriptor> scoped)
     {
-        var discovered = await calendarClient.GetCalendarsAsync(cancellationToken);
-        var scoped = applyScope(discovered).Items;
         if (destination.Mode == CalendarEntityScopeMode.Default)
-            return resolveDefaultCalendar(entityKind, discovered, scoped);
+            return discovery.ResolveDefault(entityKind);
         var matches = FindCalendarMatches(scoped, destination.Calendar!);
         if (matches.Length == 0)
             return CalendarSelectionResult.Failure(CalendarSelectionCode.NotFound, scoped.Take(MaximumDiagnostics).ToArray());
@@ -503,11 +472,31 @@ internal sealed class CalendarResourceMoveEngine(
 
     private static CalendarResourceMoveResult DestinationPreflightFailure(CalendarResourceRead read) => read.Code switch
     {
-        CalendarResourceReadCode.Success or CalendarResourceReadCode.ConcurrencyUnavailable =>
+        CalendarResourceReadCode.Success
+            or CalendarResourceReadCode.ConcurrencyUnavailable
+            or CalendarResourceReadCode.PayloadTooLarge =>
             Failure(CalendarResourceMoveCode.DestinationConflict),
-        CalendarResourceReadCode.PayloadTooLarge => Failure(CalendarResourceMoveCode.PayloadTooLarge),
+        CalendarResourceReadCode.UnsupportedCapability => Failure(CalendarResourceMoveCode.UnsupportedCapability),
         _ => Failure(CalendarResourceMoveCode.UpstreamProtocolError)
     };
+
+    private static CalendarResourceMoveResult RecordRevisionFailure(CalendarResourceMoveResult failure)
+    {
+        if (failure.Code == CalendarResourceMoveCode.Conflict)
+            CalendarOperationProgress.SetMoveCollision(CalendarMoveCollisionClassification.SourceRevision);
+        return failure;
+    }
+
+    private static CalendarResourceMoveResult RecordDestinationPreflightFailure(CalendarResourceRead read)
+    {
+        if (read.Code is CalendarResourceReadCode.Success
+            or CalendarResourceReadCode.ConcurrencyUnavailable
+            or CalendarResourceReadCode.PayloadTooLarge)
+        {
+            CalendarOperationProgress.SetMoveCollision(CalendarMoveCollisionClassification.DestinationHref);
+        }
+        return DestinationPreflightFailure(read);
+    }
 
     private static CalendarResourceMoveResult FromReadFailure(CalendarResourceReadCode code) => code switch
     {
@@ -539,6 +528,7 @@ internal sealed class CalendarResourceMoveEngine(
         dispatch.Code switch
         {
             CalendarResourceMoveDispatchCode.NotFound => CalendarResourceMoveCode.NotFound,
+            CalendarResourceMoveDispatchCode.Conflict => CalendarResourceMoveCode.Conflict,
             CalendarResourceMoveDispatchCode.DestinationConflict => CalendarResourceMoveCode.DestinationConflict,
             CalendarResourceMoveDispatchCode.InvalidInput => CalendarResourceMoveCode.InvalidInput,
             CalendarResourceMoveDispatchCode.UnsupportedCapability => CalendarResourceMoveCode.UnsupportedCapability,
@@ -552,7 +542,8 @@ internal sealed class CalendarResourceMoveEngine(
         retryAfterMilliseconds: dispatch.Code == CalendarResourceMoveDispatchCode.UpstreamRateLimited
             ? dispatch.RetryAfterMilliseconds
             : null,
-        retryable: dispatch.Code == CalendarResourceMoveDispatchCode.UpstreamRateLimited);
+        retryable: dispatch.Code == CalendarResourceMoveDispatchCode.UpstreamRateLimited,
+        phase: CalendarResourceMovePhase.Execution);
 
     private static CalendarResourceMoveResult FromPreflightHttpFailure(System.Net.HttpStatusCode? statusCode) =>
         statusCode switch
@@ -643,16 +634,15 @@ internal sealed class CalendarResourceMoveEngine(
         CalendarResourceMoveCode code,
         CalendarResourceSnapshot? snapshot = null,
         int? retryAfterMilliseconds = null,
-        bool retryable = false) =>
+        bool retryable = false,
+        CalendarResourceMovePhase phase = CalendarResourceMovePhase.Execution) =>
         new(
             code,
             CalendarMutationState.NotCommitted,
             snapshot,
             RetryAfterMilliseconds: retryAfterMilliseconds,
             Retryable: retryable,
-            Phase: code == CalendarResourceMoveCode.Conflict
-                ? CalendarResourceMovePhase.TargetRevision
-                : CalendarResourceMovePhase.Execution);
+            Phase: phase);
 
     private static CalendarResourceMoveResult Failure(
         CalendarResourceMoveCode code,
@@ -661,7 +651,6 @@ internal sealed class CalendarResourceMoveEngine(
         bool retryable = false,
         CalendarResourceMoveLimitDimension? limitDimension = null,
         CalendarResourceMovePhase? phase = null,
-        int? resourcesInspected = null,
         int? calendarCount = null) =>
         new(
             code,
@@ -671,7 +660,6 @@ internal sealed class CalendarResourceMoveEngine(
             Retryable: retryable,
             LimitDimension: limitDimension,
             Phase: phase,
-            ResourcesInspected: resourcesInspected,
             CalendarCount: calendarCount);
 
     private static IReadOnlyList<string> ParseScope(string? calendarHrefs) => calendarHrefs is null
@@ -689,16 +677,7 @@ internal sealed class CalendarResourceMoveEngine(
 
     private sealed record ResolvedMoveDestination(
         CalendarDescriptor? Calendar,
+        CalendarDescriptor? SourceCalendar,
         CalendarResourceMoveResult? Failure);
 
-    private enum DestinationUidAvailability
-    {
-        Available,
-        Exists,
-        OpaqueResource,
-        ConcurrencyUnavailable,
-        LimitExhausted,
-        PayloadTooLarge,
-        UpstreamProtocolError
-    }
 }

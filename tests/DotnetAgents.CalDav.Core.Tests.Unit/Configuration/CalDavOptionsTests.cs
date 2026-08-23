@@ -195,4 +195,36 @@ public class CalDavOptionsTests
 
         result.Succeeded.ShouldBeTrue();
     }
+
+    [Theory]
+    [InlineData("unverified")]
+    [InlineData("Radicale-3.7.8")]
+    [InlineData("radicale-3.7.8 ")]
+    public void ValidateCalDavOptions_RejectsUnknownInteroperabilityProfile(string profile)
+    {
+        var result = new ValidateCalDavOptions().Validate(null, new CalDavOptions
+        {
+            BaseUrl = "https://caldav.example.com",
+            Username = "user",
+            Password = "pass",
+            InteroperabilityProfile = profile
+        });
+
+        result.Failed.ShouldBeTrue();
+        result.Failures.ShouldContain(failure => failure.Contains("InteroperabilityProfile", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ValidateCalDavOptions_AcceptsVerifiedRadicaleInteroperabilityProfile()
+    {
+        var result = new ValidateCalDavOptions().Validate(null, new CalDavOptions
+        {
+            BaseUrl = "https://caldav.example.com",
+            Username = "user",
+            Password = "pass",
+            InteroperabilityProfile = CalDavInteroperabilityProfiles.Radicale_3_7_8
+        });
+
+        result.Succeeded.ShouldBeTrue();
+    }
 }

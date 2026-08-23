@@ -1828,6 +1828,31 @@ public class CalDavClientTests
     }
 
     [Fact]
+    public async Task ProbeCalendarResourcePresenceAsync_UsesHeadersOnlyAndMarksExpectedAbsencePurpose()
+    {
+        string? purpose = null;
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            _ = request.Options.TryGetValue(CalendarHttpTelemetry.RequestPurposeKey, out purpose);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Headers = { ETag = new EntityTagHeaderValue("\"private-tag\"") },
+                Content = new StringContent("private Calendar content that must not be retained")
+            };
+        });
+        var sut = CreateSut(handler);
+
+        var result = await ((ICalendarResourcePresenceTransport)sut).ProbeCalendarResourcePresenceAsync(
+            "https://example.com/calendars/user/events/present.ics",
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceReadCode.Success);
+        result.AuthoritativeUtf8.IsEmpty.ShouldBeTrue();
+        result.EntityTag.ShouldBeNull();
+        purpose.ShouldBe(CalendarHttpTelemetry.AbsenceProbe);
+    }
+
+    [Fact]
     public async Task ProbeCalendarResourceAbsenceAsync_PreservesPurposeThroughDecoratorDefault()
     {
         string? purpose = null;

@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 namespace DotnetAgents.CalDav.Core.Internal;
 
 /// <summary>Coordinates one immutable CalDAV discovery acquisition per authorization-bound key and operation.</summary>
-internal sealed class CalendarOperationDiscovery : ICalendarClient, ICalendarCreateTransport
+internal sealed class CalendarOperationDiscovery : ICalendarClient, ICalendarCreateTransport, ICalendarMoveTransport
 {
     private readonly ICalendarClient _transport;
     private readonly Func<IReadOnlyList<CalendarDescriptor>, CalendarDiscoveryResult> _applyScope;
@@ -87,6 +87,42 @@ internal sealed class CalendarOperationDiscovery : ICalendarClient, ICalendarCre
     public Task<CalendarResourceUpdateDispatchResult> UpdateCalendarResourceAsync(
         CalendarResourceUpdateRequest request,
         CancellationToken cancellationToken) => _transport.UpdateCalendarResourceAsync(request, cancellationToken);
+
+    async Task<CalendarMoveDiscoveryResult> ICalendarMoveTransport.DiscoverCalendarsAsync(
+        CancellationToken cancellationToken)
+    {
+        var result = await GetResultAsync(cancellationToken).ConfigureAwait(false);
+        return new CalendarMoveDiscoveryResult(
+            result.Discovery,
+            result.EventDefault,
+            result.TodoDefault);
+    }
+
+    Task<CalendarResourceRead> ICalendarMoveTransport.ReadSourceAsync(
+        string href,
+        CancellationToken cancellationToken) => _transport.GetCalendarResourceAsync(href, cancellationToken);
+
+    Task<CalendarResourceRead> ICalendarMoveTransport.ProbeDestinationPresenceAsync(
+        string href,
+        CancellationToken cancellationToken) => _transport is ICalendarResourcePresenceTransport presenceTransport
+            ? presenceTransport.ProbeCalendarResourcePresenceAsync(href, cancellationToken)
+            : Task.FromResult(new CalendarResourceRead(CalendarResourceReadCode.UnsupportedCapability));
+
+    Task<CalendarResourceRead> ICalendarMoveTransport.ObserveResourceAsync(
+        string href,
+        CancellationToken cancellationToken) => ProbeThroughReadAsync(href, cancellationToken);
+
+    Task<CalendarResourceMoveDispatchResult> ICalendarMoveTransport.DispatchAsync(
+        CalendarResourceMoveDispatchRequest request,
+        CancellationToken cancellationToken) => _transport.MoveCalendarResourceAsync(request, cancellationToken);
+
+    private async Task<CalendarResourceRead> ProbeThroughReadAsync(
+        string href,
+        CancellationToken cancellationToken)
+    {
+        using var scope = CalendarHttpTelemetry.BeginAbsenceProbe();
+        return await _transport.GetCalendarResourceAsync(href, cancellationToken);
+    }
 
     private async Task<CalendarOperationDiscoveryResult> AcquireAsync(
         CalendarDiscoveryKey key,

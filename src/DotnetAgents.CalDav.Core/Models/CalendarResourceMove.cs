@@ -72,7 +72,6 @@ public sealed record CalendarResourceMoveResult(
     bool Retryable = false,
     CalendarResourceMoveLimitDimension? LimitDimension = null,
     CalendarResourceMovePhase? Phase = null,
-    int? ResourcesInspected = null,
     int? CalendarCount = null)
 {
     public static CalendarResourceMoveResult Success(CalendarResourceSnapshot snapshot) =>
@@ -110,4 +109,14 @@ public enum CalendarResourceMoveDispatchCode
 /// <summary>Low-level result that preserves whether MOVE may have reached CalDAV.</summary>
 public sealed record CalendarResourceMoveDispatchResult(
     CalendarResourceMoveDispatchCode Code,
-    int? RetryAfterMilliseconds = null);
+    int? RetryAfterMilliseconds = null,
+    CalendarResourceMoveDispatchCollisionKind CollisionKind = CalendarResourceMoveDispatchCollisionKind.None);
+
+/// <summary>Server-authoritative collision evidence attached to a rejected MOVE dispatch.</summary>
+public enum CalendarResourceMoveDispatchCollisionKind
+{
+    None,
+    DestinationHref,
+    Uid,
+    Unclassified
+}

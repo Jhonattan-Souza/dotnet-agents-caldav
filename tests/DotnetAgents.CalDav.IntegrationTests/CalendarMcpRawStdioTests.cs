@@ -992,6 +992,7 @@ public sealed class CalendarMcpRawStdioTests
         startInfo.Environment["CALDAV_USERNAME"] = "test";
         startInfo.Environment["CALDAV_PASSWORD"] = password;
         startInfo.Environment["CALDAV_CALENDAR_HREFS"] = calendarHref;
+        startInfo.Environment["CALDAV_INTEROPERABILITY_PROFILE"] = "radicale-3.7.8";
         startInfo.Environment["CALDAV_EXPOSE_EXACT_TOOLS"] = exposeExact ? "true" : "false";
         return Process.Start(startInfo)!;
     }
