@@ -1129,6 +1129,7 @@ public sealed class OpenTelemetryStdioIntegrationTests
             ["kind"] = "utcDateTime",
             ["value"] = "2026-08-18T11:00:00Z"
         },
+        ["evaluationTimeZone"] = "UTC",
         ["pageSize"] = 1
     };
 

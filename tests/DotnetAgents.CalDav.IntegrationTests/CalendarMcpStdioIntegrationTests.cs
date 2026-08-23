@@ -89,103 +89,110 @@ public sealed class CalendarMcpStdioIntegrationTests
     [Fact]
     public async Task CalendarEntityQuery_ReturnsSchemaValidSnapshotsAndTypedFailureOverStdio()
     {
-        const string content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Integration//EN\r\n"
-            + "BEGIN:VTODO\r\nUID:entity-query-stdio-1\r\nDTSTAMP:20260817T120000Z\r\n"
-            + "SUMMARY:Entity query integration\r\nDUE;VALUE=DATE:20260817\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
-        var href = await PutResourceAsync("entity-query-stdio-1.ics", content);
-        var stderr = new ConcurrentQueue<string>();
-        await using var client = await CreateClientAsync(
-            stderr,
-            exposeExact: false,
-            evaluationTimeZone: "America/Sao_Paulo");
-        var tools = await client.ListToolsAsync(new ListToolsRequestParams(), TestContext.Current.CancellationToken);
-        var advertised = tools.Tools.Single(tool => tool.Name == "calendar_entities.query");
-        var selectedScope = new Dictionary<string, object?>
+        var suffix = Guid.NewGuid().ToString("N");
+        var content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Integration//EN\r\n"
+            + $"BEGIN:VTODO\r\nUID:entity-query-stdio-{suffix}\r\nDTSTAMP:20260817T120000Z\r\n"
+            + "SUMMARY:Entity query integration\r\nDUE;VALUE=DATE:20960817\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+        var href = await PutResourceAsync($"entity-query-stdio-{suffix}.ics", content);
+        try
         {
-            ["mode"] = "selected",
-            ["calendar"] = new Dictionary<string, object?>
+            var stderr = new ConcurrentQueue<string>();
+            await using var client = await CreateClientAsync(
+                stderr,
+                exposeExact: false,
+                evaluationTimeZone: "America/Sao_Paulo");
+            var tools = await client.ListToolsAsync(new ListToolsRequestParams(), TestContext.Current.CancellationToken);
+            var advertised = tools.Tools.Single(tool => tool.Name == "calendar_entities.query");
+            var selectedScope = new Dictionary<string, object?>
             {
-                ["by"] = "href",
-                ["href"] = $"{_fixture.BaseUrl}{_fixture.TodoCalendarHref}"
-            }
-        };
+                ["mode"] = "selected",
+                ["calendar"] = new Dictionary<string, object?>
+                {
+                    ["by"] = "href",
+                    ["href"] = $"{_fixture.BaseUrl}{_fixture.TodoCalendarHref}"
+                }
+            };
 
-        var success = await client.CallToolAsync(
-            "calendar_entities.query",
-            new Dictionary<string, object?>
-            {
-                ["scope"] = selectedScope,
-                ["entityKinds"] = new[] { "todo" },
-                ["from"] = new Dictionary<string, object?>
+            var success = await client.CallToolAsync(
+                "calendar_entities.query",
+                new Dictionary<string, object?>
                 {
-                    ["kind"] = "utcDateTime",
-                    ["value"] = "2026-08-17T03:00:00Z"
-                },
-                ["to"] = new Dictionary<string, object?>
-                {
-                    ["kind"] = "utcDateTime",
-                    ["value"] = "2026-08-17T04:00:00Z"
-                },
-                ["pageSize"] = 1
-            },
-            cancellationToken: TestContext.Current.CancellationToken);
-        var failure = await client.CallToolAsync(
-            "calendar_entities.query",
-            new Dictionary<string, object?>
-            {
-                ["scope"] = new Dictionary<string, object?>
-                {
-                    ["mode"] = "selected",
-                    ["calendar"] = new Dictionary<string, object?>
+                    ["scope"] = selectedScope,
+                    ["entityKinds"] = new[] { "todo" },
+                    ["from"] = new Dictionary<string, object?>
                     {
-                        ["by"] = "name",
-                        ["name"] = "No such authorized calendar"
-                    }
+                        ["kind"] = "utcDateTime",
+                        ["value"] = "2096-08-17T03:00:00Z"
+                    },
+                    ["to"] = new Dictionary<string, object?>
+                    {
+                        ["kind"] = "utcDateTime",
+                        ["value"] = "2096-08-17T04:00:00Z"
+                    },
+                    ["pageSize"] = 1
                 },
-                ["entityKinds"] = new[] { "todo" }
-            },
-            cancellationToken: TestContext.Current.CancellationToken);
+                cancellationToken: TestContext.Current.CancellationToken);
+            var failure = await client.CallToolAsync(
+                "calendar_entities.query",
+                new Dictionary<string, object?>
+                {
+                    ["scope"] = new Dictionary<string, object?>
+                    {
+                        ["mode"] = "selected",
+                        ["calendar"] = new Dictionary<string, object?>
+                        {
+                            ["by"] = "name",
+                            ["name"] = "No such authorized calendar"
+                        }
+                    },
+                    ["entityKinds"] = new[] { "todo" }
+                },
+                cancellationToken: TestContext.Current.CancellationToken);
 
-        success.IsError.ShouldBe(false);
-        var structured = success.StructuredContent!.Value;
-        structured.EnumerateObject().Select(property => property.Name)
-            .ShouldBe(["outcome", "items", "diagnostics", "temporalEvaluationContext", "pagination"]);
-        structured.GetProperty("outcome").GetString().ShouldBe("success");
-        structured.GetProperty("items").GetArrayLength().ShouldBe(1);
-        structured.GetProperty("items")[0].GetProperty("resourceRevision").GetProperty("entityTag").GetString()
-            .ShouldStartWith("\"");
-        structured.GetProperty("pagination").GetProperty("mode").GetString().ShouldBe("query_result_snapshot");
-        structured.GetProperty("diagnostics").ValueKind.ShouldBe(System.Text.Json.JsonValueKind.Array);
-        structured.GetProperty("temporalEvaluationContext").GetProperty("timeZone").GetString()
-            .ShouldBe("America/Sao_Paulo");
-        structured.GetProperty("temporalEvaluationContext").GetProperty("source").GetString()
-            .ShouldBe("configuration");
-        structured.GetProperty("items")[0].GetProperty("calendarProperties").EnumerateArray()
-            .Single(property => property.GetProperty("name").GetString() == "DUE")
-            .GetProperty("rawEncodedValue").GetString().ShouldBe("20260817");
-        advertised.OutputSchema.ShouldNotBeNull();
-        advertised.OutputSchema.Value.GetProperty("oneOf").GetArrayLength().ShouldBe(2);
-        advertised.InputSchema.GetProperty("oneOf").GetArrayLength().ShouldBe(2);
-        failure.IsError.ShouldBe(true);
-        var error = failure.StructuredContent!.Value;
-        error.EnumerateObject().Select(property => property.Name)
-            .ShouldBe(["code", "category", "message", "retryable", "phase", "authorizedCandidates"]);
-        error.GetProperty("code").GetString().ShouldBe("not_found");
-        error.GetProperty("category").GetString().ShouldBe("selection");
-        error.GetProperty("message").GetString().ShouldNotBeNullOrWhiteSpace();
-        error.GetProperty("retryable").GetBoolean().ShouldBeFalse();
-        error.GetProperty("phase").GetString().ShouldBe("selectionDiscoveryCapability");
-        var candidate = error.GetProperty("authorizedCandidates").EnumerateArray().ShouldHaveSingleItem();
-        candidate.EnumerateObject().Select(property => property.Name)
-            .ShouldBe(["calendar", "displayName", "entityKinds"]);
-        candidate.GetProperty("calendar").GetProperty("href").GetString()
-            .ShouldBe($"{_fixture.BaseUrl}{_fixture.TodoCalendarHref}");
-        candidate.GetProperty("displayName").GetString().ShouldBe("Tasks");
-        candidate.GetProperty("entityKinds").EnumerateObject().Select(property => property.Name)
-            .ShouldBe(["event", "todo"]);
-        error.TryGetProperty("items", out _).ShouldBeFalse();
-        stderr.ShouldBeEmpty();
-        await DeleteResourceAsync(href);
+            success.IsError.ShouldBe(false, success.StructuredContent?.ToString());
+            var structured = success.StructuredContent!.Value;
+            structured.EnumerateObject().Select(property => property.Name)
+                .ShouldBe(["outcome", "items", "diagnostics", "temporalEvaluationContext", "pagination"]);
+            structured.GetProperty("outcome").GetString().ShouldBe("success");
+            structured.GetProperty("items").GetArrayLength().ShouldBe(1);
+            structured.GetProperty("items")[0].GetProperty("resourceRevision").GetProperty("entityTag").GetString()
+                .ShouldStartWith("\"");
+            structured.GetProperty("pagination").GetProperty("mode").GetString().ShouldBe("query_result_snapshot");
+            structured.GetProperty("diagnostics").ValueKind.ShouldBe(System.Text.Json.JsonValueKind.Array);
+            structured.GetProperty("temporalEvaluationContext").GetProperty("timeZone").GetString()
+                .ShouldBe("America/Sao_Paulo");
+            structured.GetProperty("temporalEvaluationContext").GetProperty("source").GetString()
+                .ShouldBe("configuration");
+            structured.GetProperty("items")[0].GetProperty("calendarProperties").EnumerateArray()
+                .Single(property => property.GetProperty("name").GetString() == "DUE")
+                .GetProperty("rawEncodedValue").GetString().ShouldBe("20960817");
+            advertised.OutputSchema.ShouldNotBeNull();
+            advertised.OutputSchema.Value.GetProperty("oneOf").GetArrayLength().ShouldBe(2);
+            advertised.InputSchema.GetProperty("oneOf").GetArrayLength().ShouldBe(2);
+            failure.IsError.ShouldBe(true);
+            var error = failure.StructuredContent!.Value;
+            error.EnumerateObject().Select(property => property.Name)
+                .ShouldBe(["code", "category", "message", "retryable", "phase", "authorizedCandidates"]);
+            error.GetProperty("code").GetString().ShouldBe("not_found");
+            error.GetProperty("category").GetString().ShouldBe("selection");
+            error.GetProperty("message").GetString().ShouldNotBeNullOrWhiteSpace();
+            error.GetProperty("retryable").GetBoolean().ShouldBeFalse();
+            error.GetProperty("phase").GetString().ShouldBe("selectionDiscoveryCapability");
+            var candidate = error.GetProperty("authorizedCandidates").EnumerateArray().ShouldHaveSingleItem();
+            candidate.EnumerateObject().Select(property => property.Name)
+                .ShouldBe(["calendar", "displayName", "entityKinds"]);
+            candidate.GetProperty("calendar").GetProperty("href").GetString()
+                .ShouldBe($"{_fixture.BaseUrl}{_fixture.TodoCalendarHref}");
+            candidate.GetProperty("displayName").GetString().ShouldBe("Tasks");
+            candidate.GetProperty("entityKinds").EnumerateObject().Select(property => property.Name)
+                .ShouldBe(["event", "todo"]);
+            error.TryGetProperty("items", out _).ShouldBeFalse();
+            stderr.ShouldBeEmpty();
+        }
+        finally
+        {
+            await DeleteResourceAsync(href);
+        }
     }
 
     [Fact]
