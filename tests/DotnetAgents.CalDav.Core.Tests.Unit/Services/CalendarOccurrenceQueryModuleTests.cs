@@ -194,6 +194,72 @@ public sealed class CalendarOccurrenceQueryModuleTests
         provider.GetRequiredService<CalendarQuerySnapshotStore>().ActiveSnapshotCount.ShouldBe(0);
     }
 
+    [Theory]
+    [InlineData(true, QueryFailureCode.TemporalUnresolved)]
+    [InlineData(false, QueryFailureCode.RecurrenceUnevaluable)]
+    public async Task SemanticFailureIsAtomicAndPublishesNoPartialOccurrenceSnapshot(
+        bool unresolvedZone,
+        QueryFailureCode expectedCode)
+    {
+        const string calendarHref = "https://cal.example/calendars/work/";
+        var body = unresolvedZone ? UnknownZoneEvent() : UnevaluableEvent();
+        var transport = new OccurrenceTransport(calendarHref, [calendarHref + "event.ics"], _ => body);
+        await using var provider = CreateProvider(transport);
+
+        var failure = (await provider.GetRequiredService<ICalendarQueryModule>().QueryOccurrencesAsync(
+            new CalendarOccurrenceQueryRequest.Start(Query()),
+            TestContext.Current.CancellationToken)).ShouldBeOfType<QueryReply<CalendarOccurrenceQueryItem>.Failure>();
+
+        failure.Error.Code.ShouldBe(expectedCode);
+        provider.GetRequiredService<CalendarQuerySnapshotStore>().ActiveSnapshotCount.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task ContinuationAuthenticatesToolTamperExpiryAndPageBoundsWithoutRemoteWork()
+    {
+        const string calendarHref = "https://cal.example/calendars/work/";
+        var resourceHrefs = new[] { calendarHref + "a.ics", calendarHref + "b.ics" };
+        var transport = new OccurrenceTransport(calendarHref, resourceHrefs);
+        var time = new ManualTimeProvider(From);
+        await using var provider = CreateProvider(transport, time);
+        var module = provider.GetRequiredService<ICalendarQueryModule>();
+        var occurrence = (await module.QueryOccurrencesAsync(
+            new CalendarOccurrenceQueryRequest.Start(Query(), 1),
+            TestContext.Current.CancellationToken)).ShouldBeOfType<QueryReply<CalendarOccurrenceQueryItem>.Page>();
+        var occurrenceCursor = occurrence.Value.NextCursor.ShouldNotBeNull();
+        var entity = (await module.QueryEntitiesAsync(
+            new CalendarEntityQueryRequest.Start(new CalendarEntityQuery(
+                CalendarEntityScope.All,
+                [CalendarEntityKind.Event],
+                From,
+                To,
+                "America/New_York"), 1),
+            TestContext.Current.CancellationToken)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Page>();
+        var entityCursor = entity.Value.NextCursor.ShouldNotBeNull();
+        var workAfterStarts = transport.TotalCalls;
+        var tampered = occurrenceCursor[..^1] + (occurrenceCursor[^1] == 'A' ? "B" : "A");
+
+        var tamperFailure = (await module.QueryOccurrencesAsync(
+            new CalendarOccurrenceQueryRequest.Continue(tampered, 1),
+            TestContext.Current.CancellationToken)).ShouldBeOfType<QueryReply<CalendarOccurrenceQueryItem>.Failure>();
+        var wrongToolFailure = (await module.QueryOccurrencesAsync(
+            new CalendarOccurrenceQueryRequest.Continue(entityCursor, 1),
+            TestContext.Current.CancellationToken)).ShouldBeOfType<QueryReply<CalendarOccurrenceQueryItem>.Failure>();
+        var pageFailure = (await module.QueryOccurrencesAsync(
+            new CalendarOccurrenceQueryRequest.Continue(occurrenceCursor, 0),
+            TestContext.Current.CancellationToken)).ShouldBeOfType<QueryReply<CalendarOccurrenceQueryItem>.Failure>();
+        time.Advance(TimeSpan.FromMinutes(11));
+        var expiryFailure = (await module.QueryOccurrencesAsync(
+            new CalendarOccurrenceQueryRequest.Continue(occurrenceCursor, 1),
+            TestContext.Current.CancellationToken)).ShouldBeOfType<QueryReply<CalendarOccurrenceQueryItem>.Failure>();
+
+        tamperFailure.Error.Code.ShouldBe(QueryFailureCode.InvalidInput);
+        wrongToolFailure.Error.Code.ShouldBe(QueryFailureCode.InvalidInput);
+        pageFailure.Error.Code.ShouldBe(QueryFailureCode.InvalidInput);
+        expiryFailure.Error.Code.ShouldBe(QueryFailureCode.CursorExpired);
+        transport.TotalCalls.ShouldBe(workAfterStarts);
+    }
+
     private static CalendarOccurrenceQuery Query() => new(
         CalendarEntityScope.All,
         From,
@@ -207,7 +273,9 @@ public sealed class CalendarOccurrenceQueryModuleTests
     private static string ItemHref(CalendarOccurrenceQueryItem item) => item.Value.GetProperty("snapshot")
         .GetProperty("resourceRevision").GetProperty("href").GetString().ShouldNotBeNull();
 
-    private static ServiceProvider CreateProvider(ICalendarQueryTransport transport)
+    private static ServiceProvider CreateProvider(
+        ICalendarQueryTransport transport,
+        TimeProvider? timeProvider = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -219,6 +287,8 @@ public sealed class CalendarOccurrenceQueryModuleTests
             options.EvaluationTimeZone = "UTC";
         });
         services.AddSingleton(Substitute.For<ICalendarClient>());
+        if (timeProvider is not null)
+            services.AddSingleton(timeProvider);
         services.AddSingleton(transport);
         return services.BuildServiceProvider();
     }
@@ -235,6 +305,18 @@ public sealed class CalendarOccurrenceQueryModuleTests
         "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Occurrence Module Tests//EN\r\n"
         + $"BEGIN:VEVENT\r\nUID:{uid}\r\nDTSTAMP:20260823T120000Z\r\nSUMMARY:{summary}\r\n"
         + "DTSTART:20260824T120000Z\r\nDTEND:20260824T130000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n");
+
+    private static ReadOnlyMemory<byte> UnknownZoneEvent() => Encoding.UTF8.GetBytes(
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Occurrence Module Tests//EN\r\n"
+        + "BEGIN:VEVENT\r\nUID:unknown-zone\r\nDTSTAMP:20260823T120000Z\r\n"
+        + "DTSTART;TZID=Private/Unknown:20260824T120000\r\nDTEND;TZID=Private/Unknown:20260824T130000\r\n"
+        + "END:VEVENT\r\nEND:VCALENDAR\r\n");
+
+    private static ReadOnlyMemory<byte> UnevaluableEvent() => Encoding.UTF8.GetBytes(
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Occurrence Module Tests//EN\r\n"
+        + "BEGIN:VEVENT\r\nUID:unevaluable\r\nDTSTAMP:20260823T120000Z\r\n"
+        + "DTSTART:20260824T120000Z\r\nDURATION:PT0S\r\nRRULE:FREQ=DAILY;COUNT=2\r\n"
+        + "END:VEVENT\r\nEND:VCALENDAR\r\n");
 
     private sealed class OccurrenceTransport(
         string calendarHref,
@@ -292,5 +374,29 @@ public sealed class CalendarOccurrenceQueryModuleTests
         private static ReadOnlyMemory<byte> Event(string href) => CalendarOccurrenceQueryModuleTests.Event(
             Uri.EscapeDataString(href),
             "fixture");
+    }
+
+    private sealed class ManualTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
+
+        public override ITimer CreateTimer(
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime,
+            TimeSpan period) => new NoOpTimer();
+
+        internal void Advance(TimeSpan amount) => utcNow += amount;
+    }
+
+    private sealed class NoOpTimer : ITimer
+    {
+        public bool Change(TimeSpan dueTime, TimeSpan period) => true;
+
+        public void Dispose()
+        {
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }
