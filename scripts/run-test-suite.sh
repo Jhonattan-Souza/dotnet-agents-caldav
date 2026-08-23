@@ -118,7 +118,7 @@ run_conformance_variant() {
       --results-directory "$artifacts_directory" \
       --report-trx \
       --report-trx-filename "$variant.trx" \
-      --minimum-expected-tests 10 \
+      --minimum-expected-tests 11 \
       --fail-skips on \
       --zero-tests-policy strict \
       --no-ansi

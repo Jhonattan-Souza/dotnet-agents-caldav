@@ -44,7 +44,7 @@ public sealed class CalendarResourceMoveTools
         OpenWorld = true,
         UseStructuredContent = true,
         OutputSchemaType = typeof(CalendarEntityCreateSuccessResult)),
-     Description("Move one revision-bound semantic resource to the default or selected Calendar.")]
+     Description("Move one revision-bound semantic resource with server-authoritative preconditions and bounded bilateral reconciliation; requires a verified interoperability profile.")]
     public Task<CallToolResult> MoveAsync(
         RequestContext<CallToolRequestParams> requestContext,
         CancellationToken cancellationToken) => MoveRawAsync(
