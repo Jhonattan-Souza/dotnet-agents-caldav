@@ -32,7 +32,7 @@ The historical window includes the private `CreatePage` body and its `CallToolRe
 
 Historical and current admitted item order and bytes matched exactly: page-size 1 SHA-256 `6f5b4a796b559fc7cb5d2bc199398d41efe10b4db3a10a6fa21f2efcfafe5f55`, page-size 50 `1ca63e1033ff2e8905dc3fd6ab074b91dd50535e6dd9af443328f01a3239ad29`, and page-size 200 `359cdb6335b270b2bf724f34f8e608e9e4f7367b9d5d674ff1d2ae257fb61dd2`. The historical source blob was `c85965cdf855b0aed5f954e9c2a19ad64bcf7df5`; the current codec source blob was `cdc0df4f4471ffd5c5ebf456f3ec44b1262a9dbf`.
 
-Reproduction command: `bash scripts/observations/query-page-assembly/run.sh /tmp/issue116-page-assembly`. The runner SHA-256 was `43cda1e1bbe6064565510ded291390c2aaeb8daf762f6637312c43e9ea65d383`; `runner-metadata.json` records the complete 18-cell matrix, all fixture/source hashes, runtime, GC mode, and method.
+Reproduction command: `bash scripts/observations/query-page-assembly/run.sh /tmp/issue116-page-assembly`. The runner SHA-256 was `24cbdb520f803e9a1427007d44e90fd695a244c7f5589c1249f7044a62066703`; `runner-metadata.json` records the complete 18-cell matrix, all fixture/source hashes, runtime, GC mode, and method.
 
 The page work oracle records one fixed-envelope serialization and one final materialization at page sizes 1, 50, and 200. The actual MCP SDK `CallToolResult` measurement is exact at 4 MiB - 1 byte, exactly 4 MiB, and 4 MiB + 1 byte with an item separator and non-null cursor present; only the last shape is rejected. Snapshot slot and byte-pool tests independently prove below, at, and above 16 snapshots and 128 MiB, and all cancellation, publication-failure, expiry, and disposal cases end with zero reservations and retained bytes.
 

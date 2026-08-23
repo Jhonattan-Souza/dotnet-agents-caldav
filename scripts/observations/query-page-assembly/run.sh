@@ -10,58 +10,58 @@ repository_root=$(git rev-parse --show-toplevel)
 fixtures_directory="$repository_root/scripts/observations/query-page-assembly"
 results_directory=${1:-}
 if [[ -z "$results_directory" || "$results_directory" != /* || ! -d "$results_directory" ]]; then
-    echo "usage: $0 /absolute/results-directory" >&2
-    exit 64
+  echo "usage: $0 /absolute/results-directory" >&2
+  exit 64
 fi
 results_directory=$(realpath -e -- "$results_directory")
 case "$results_directory/" in
-    "$repository_root/"*)
-        echo "results directory must be outside the repository: $results_directory" >&2
-        exit 66
-        ;;
+  "$repository_root/"*)
+    echo "results directory must be outside the repository: $results_directory" >&2
+    exit 66
+    ;;
 esac
 if [[ -n "$(find "$results_directory" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
-    echo "results directory must be empty: $results_directory" >&2
-    exit 65
+  echo "results directory must be empty: $results_directory" >&2
+  exit 65
 fi
 
 temporary_root=$(mktemp -d "/tmp/caldav-page-assembly.XXXXXX")
 cleanup() {
-    rm -rf -- "$temporary_root"
+  rm -rf -- "$temporary_root"
 }
 trap cleanup EXIT HUP INT TERM
 
 git clone --shared --no-checkout "$repository_root" "$temporary_root/repository" >/dev/null
 
 run_historical() {
-    local family=$1
-    local revision=$2
-    local fixture=$3
-    local checkout="$temporary_root/$family-historical"
-    git -C "$temporary_root/repository" worktree add --detach "$checkout" "$revision" >/dev/null
-    cp -- "$fixtures_directory/historical-support.cs" "$checkout/src/DotnetAgents.CalDav.Mcp/QueryPageAssemblyObservationSupport.cs"
-    mv -- "$checkout/src/DotnetAgents.CalDav.Mcp/Program.cs" "$checkout/src/DotnetAgents.CalDav.Mcp/Program.original.txt"
-    cp -- "$fixtures_directory/$fixture" "$checkout/src/DotnetAgents.CalDav.Mcp/Program.cs"
-    dotnet restore "$checkout/src/DotnetAgents.CalDav.Mcp/DotnetAgents.CalDav.Mcp.csproj" --locked-mode -p:NuGetAudit=false >/dev/null
-    local log="$results_directory/$family-historical.log"
-    dotnet run --project "$checkout/src/DotnetAgents.CalDav.Mcp/DotnetAgents.CalDav.Mcp.csproj" -c Release --framework net10.0 --no-restore \
-        > "$log" 2>&1
-    sed -n 's/^PAGE_ASSEMBLY_OBSERVATION_JSON=//p' "$log" > "$results_directory/$family-historical.json"
-    [[ $(wc -l < "$results_directory/$family-historical.json") -eq 1 ]]
-    git -C "$temporary_root/repository" worktree remove --force "$checkout" >/dev/null
+  local family=$1
+  local revision=$2
+  local fixture=$3
+  local checkout="$temporary_root/$family-historical"
+  git -C "$temporary_root/repository" worktree add --detach "$checkout" "$revision" >/dev/null
+  cp -- "$fixtures_directory/historical-support.cs" "$checkout/src/DotnetAgents.CalDav.Mcp/QueryPageAssemblyObservationSupport.cs"
+  mv -- "$checkout/src/DotnetAgents.CalDav.Mcp/Program.cs" "$checkout/src/DotnetAgents.CalDav.Mcp/Program.original.txt"
+  cp -- "$fixtures_directory/$fixture" "$checkout/src/DotnetAgents.CalDav.Mcp/Program.cs"
+  dotnet restore "$checkout/src/DotnetAgents.CalDav.Mcp/DotnetAgents.CalDav.Mcp.csproj" --locked-mode -p:NuGetAudit=false >/dev/null
+  local log="$results_directory/$family-historical.log"
+  dotnet run --project "$checkout/src/DotnetAgents.CalDav.Mcp/DotnetAgents.CalDav.Mcp.csproj" -c Release --framework net10.0 --no-restore \
+    > "$log" 2>&1
+  sed -n 's/^PAGE_ASSEMBLY_OBSERVATION_JSON=//p' "$log" > "$results_directory/$family-historical.json"
+  [[ $(wc -l < "$results_directory/$family-historical.json") -eq 1 ]]
+  git -C "$temporary_root/repository" worktree remove --force "$checkout" >/dev/null
 }
 
 run_current() {
-    local checkout="$temporary_root/current"
-    git -C "$temporary_root/repository" worktree add --detach "$checkout" "$current_revision" >/dev/null
-    cp -- "$fixtures_directory/current-fixture.cs" "$checkout/src/DotnetAgents.CalDav.Core/QueryPageAssemblyObservation.cs"
-    dotnet restore "$checkout/src/DotnetAgents.CalDav.Core/DotnetAgents.CalDav.Core.csproj" --locked-mode -p:NuGetAudit=false >/dev/null
-    local log="$results_directory/current.log"
-    dotnet run --project "$checkout/src/DotnetAgents.CalDav.Core/DotnetAgents.CalDav.Core.csproj" -c Release --framework net10.0 --no-restore \
-        -p:OutputType=Exe -- "$results_directory" > "$log" 2>&1
-    sed -n 's/^PAGE_ASSEMBLY_OBSERVATION_JSON=//p' "$log" > "$results_directory/current.json"
-    [[ $(wc -l < "$results_directory/current.json") -eq 1 ]]
-    git -C "$temporary_root/repository" worktree remove --force "$checkout" >/dev/null
+  local checkout="$temporary_root/current"
+  git -C "$temporary_root/repository" worktree add --detach "$checkout" "$current_revision" >/dev/null
+  cp -- "$fixtures_directory/current-fixture.cs" "$checkout/src/DotnetAgents.CalDav.Core/QueryPageAssemblyObservation.cs"
+  dotnet restore "$checkout/src/DotnetAgents.CalDav.Core/DotnetAgents.CalDav.Core.csproj" --locked-mode -p:NuGetAudit=false >/dev/null
+  local log="$results_directory/current.log"
+  dotnet run --project "$checkout/src/DotnetAgents.CalDav.Core/DotnetAgents.CalDav.Core.csproj" -c Release --framework net10.0 --no-restore \
+    -p:OutputType=Exe -- "$results_directory" > "$log" 2>&1
+  sed -n 's/^PAGE_ASSEMBLY_OBSERVATION_JSON=//p' "$log" > "$results_directory/current.json"
+  [[ $(wc -l < "$results_directory/current.json") -eq 1 ]]
+  git -C "$temporary_root/repository" worktree remove --force "$checkout" >/dev/null
 }
 
 run_historical entity "$entity_revision" historical-entity-fixture.cs

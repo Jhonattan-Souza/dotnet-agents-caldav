@@ -31,6 +31,10 @@ end_of_line = crlf
 [*.cs]
 indent_size = 4
 
+# Python files
+[*.py]
+indent_size = 4
+
 # Organize usings
 dotnet_separate_import_directive_groups = false
 dotnet_sort_system_directives_first = true
