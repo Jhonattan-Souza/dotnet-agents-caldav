@@ -796,23 +796,26 @@ public sealed class CalendarQueryModuleTests
         var module = provider.GetRequiredService<ICalendarQueryModule>();
 
         QueryReply<CalendarEntityQueryItem>.Page first;
-        using (source.StartActivity("caldav.operation", ActivityKind.Internal))
+        string startOperationId;
+        using (var operation = source.StartActivity("caldav.operation", ActivityKind.Internal))
         {
+            startOperationId = operation!.Id!;
             first = (await module.QueryEntitiesAsync(
                 new CalendarEntityQueryRequest.Start(Query(), pageSize),
                 CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Page>();
         }
         first.Value.Items.Count.ShouldBe(pageSize);
         var cursor = first.Value.NextCursor.ShouldNotBeNull();
-        using (source.StartActivity("caldav.operation", ActivityKind.Internal))
+        string continueOperationId;
+        using (var operation = source.StartActivity("caldav.operation", ActivityKind.Internal))
         {
+            continueOperationId = operation!.Id!;
             (await module.QueryEntitiesAsync(
                 new CalendarEntityQueryRequest.Continue(cursor, 200),
                 CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Page>();
         }
 
-        var operations = stopped.Where(activity => activity.OperationName == "caldav.operation").ToArray();
-        var start = operations.Single(activity => Equals(activity.GetTagItem("caldav.query.mode"), "start"));
+        var start = stopped.Single(activity => activity.Id == startOperationId);
         start.GetTagItem("caldav.query.fetch_mode").ShouldBe("multiget");
         Counter(start, "candidate_count").ShouldBe(pageSize + 1);
         Counter(start, "multiget_resource_count").ShouldBe(pageSize + 1);
@@ -822,7 +825,7 @@ public sealed class CalendarQueryModuleTests
         start.GetTagItem("caldav.query.snapshot_lookup_count").ShouldBeNull();
         Counter(start, "page_admission_count").ShouldBe(1);
 
-        var continuation = operations.Single(activity => Equals(activity.GetTagItem("caldav.query.mode"), "continue"));
+        var continuation = stopped.Single(activity => activity.Id == continueOperationId);
         continuation.GetTagItem("caldav.query.fetch_mode").ShouldBeNull();
         continuation.GetTagItem("caldav.query.candidate_count").ShouldBeNull();
         continuation.GetTagItem("caldav.query.multiget_resource_count").ShouldBeNull();
@@ -1084,11 +1087,23 @@ public sealed class CalendarQueryModuleTests
         const string resourceHref = calendarHref + "item.ics";
         var reads = new[]
         {
-            new CalendarResourceRead(CalendarResourceReadCode.Success, calendarHref + "other.ics", "\"r1\"", Event(resourceHref)),
-            new CalendarResourceRead(CalendarResourceReadCode.Success, resourceHref, "W/\"r1\"", Event(resourceHref)),
-            new CalendarResourceRead(CalendarResourceReadCode.Success, resourceHref, null, Event(resourceHref))
+            (Read: new CalendarResourceRead(
+                CalendarResourceReadCode.Success,
+                calendarHref + "other.ics",
+                "\"r1\"",
+                Event(resourceHref)), Expected: QueryFailureCode.UpstreamProtocolError),
+            (Read: new CalendarResourceRead(
+                CalendarResourceReadCode.Success,
+                resourceHref,
+                "W/\"r1\"",
+                Event(resourceHref)), Expected: QueryFailureCode.ConcurrencyUnavailable),
+            (Read: new CalendarResourceRead(
+                CalendarResourceReadCode.Success,
+                resourceHref,
+                null,
+                Event(resourceHref)), Expected: QueryFailureCode.ConcurrencyUnavailable)
         };
-        foreach (var read in reads)
+        foreach (var (read, expected) in reads)
         {
             var transport = new ScriptedCalendarQueryTransport(
                 [Calendar(calendarHref)],
@@ -1100,7 +1115,7 @@ public sealed class CalendarQueryModuleTests
                 new CalendarEntityQueryRequest.Start(Query()),
                 CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Failure>();
 
-            failure.Error.Code.ShouldBe(QueryFailureCode.UpstreamProtocolError);
+            failure.Error.Code.ShouldBe(expected);
         }
     }
 
