@@ -1907,6 +1907,89 @@ public class CalDavClientTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MoveResourceRead_RejectsSameOriginRedirectOutsideAuthorizedCalendar(
+        bool absenceProbe)
+    {
+        var requests = new List<HttpRequestMessage>();
+        var sut = CreateSut(new StubHttpMessageHandler(request =>
+        {
+            requests.Add(request);
+            return new HttpResponseMessage(HttpStatusCode.TemporaryRedirect)
+            {
+                Headers = { Location = new Uri("/calendars/user/archive/private.ics", UriKind.Relative) }
+            };
+        }));
+
+        await Should.ThrowAsync<CalendarDiscoveryProtocolException>(() =>
+            ((ICalendarMoveResourceTransport)sut).ReadMoveResourceAsync(
+                "https://example.com/calendars/user/events/",
+                "https://example.com/calendars/user/events/a.ics",
+                absenceProbe,
+                CancellationToken.None));
+
+        requests.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task MovePresenceProbe_RejectsSameOriginRedirectOutsideAuthorizedCalendar()
+    {
+        var requests = new List<HttpRequestMessage>();
+        var sut = CreateSut(new StubHttpMessageHandler(request =>
+        {
+            requests.Add(request);
+            return new HttpResponseMessage(HttpStatusCode.PermanentRedirect)
+            {
+                Headers = { Location = new Uri("/calendars/user/private/a.ics", UriKind.Relative) }
+            };
+        }));
+
+        await Should.ThrowAsync<CalendarDiscoveryProtocolException>(() =>
+            ((ICalendarMoveResourceTransport)sut).ProbeMoveResourcePresenceAsync(
+                "https://example.com/calendars/user/events/",
+                "https://example.com/calendars/user/events/a.ics",
+                CancellationToken.None));
+
+        requests.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task MoveResourceRead_AcceptsCanonicalRedirectWithinAuthorizedCalendar()
+    {
+        var requests = new List<HttpRequestMessage>();
+        var handler = CreateSequencedHandler(
+            [
+                new HttpResponseMessage(HttpStatusCode.PermanentRedirect)
+                {
+                    Headers = { Location = new Uri("canonical.ics", UriKind.Relative) }
+                },
+                new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Headers = { ETag = new EntityTagHeaderValue("\"revision-2\"") },
+                    Content = new StringContent(
+                        "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n",
+                        Encoding.UTF8,
+                        "text/calendar")
+                }
+            ],
+            requests);
+        var sut = CreateSut(handler);
+
+        var result = await ((ICalendarMoveResourceTransport)sut).ReadMoveResourceAsync(
+            "https://example.com/calendars/user/events/",
+            "https://example.com/calendars/user/events/old.ics",
+            absenceProbe: false,
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceReadCode.Success);
+        requests.Select(request => request.RequestUri!.AbsoluteUri).ShouldBe([
+            "https://example.com/calendars/user/events/old.ics",
+            "https://example.com/calendars/user/events/canonical.ics"
+        ]);
+    }
+
+    [Theory]
     [InlineData("https://other.example/calendars/user/events/a.ics")]
     [InlineData("/calendars/user/events%2Fprivate/a.ics")]
     [InlineData("/calendars/user/events/a.ics?secret=true")]

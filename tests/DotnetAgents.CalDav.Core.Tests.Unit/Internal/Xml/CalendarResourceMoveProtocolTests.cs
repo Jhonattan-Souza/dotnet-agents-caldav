@@ -71,6 +71,10 @@ public sealed class CalendarResourceMoveProtocolTests
 
     [Theory]
     [InlineData(HttpStatusCode.Accepted, CalendarResourceMoveDispatchCode.PossiblyDispatched)]
+    [InlineData(HttpStatusCode.NonAuthoritativeInformation, CalendarResourceMoveDispatchCode.PossiblyDispatched)]
+    [InlineData(HttpStatusCode.ResetContent, CalendarResourceMoveDispatchCode.PossiblyDispatched)]
+    [InlineData(HttpStatusCode.PartialContent, CalendarResourceMoveDispatchCode.PossiblyDispatched)]
+    [InlineData(HttpStatusCode.MultiStatus, CalendarResourceMoveDispatchCode.PossiblyDispatched)]
     [InlineData(HttpStatusCode.NotFound, CalendarResourceMoveDispatchCode.NotFound)]
     [InlineData(HttpStatusCode.Conflict, CalendarResourceMoveDispatchCode.Conflict)]
     [InlineData(HttpStatusCode.PreconditionFailed, CalendarResourceMoveDispatchCode.Conflict)]
@@ -226,6 +230,26 @@ public sealed class CalendarResourceMoveProtocolTests
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.TemporaryRedirect)
             {
                 Headers = { Location = new Uri("https://other.example/tasks/a.ics") }
+            });
+        }));
+        var sut = new CalendarResourceMoveProtocol(httpClient, new Uri("https://example.com"));
+
+        var result = await sut.MoveAsync(Request(), TestContext.Current.CancellationToken);
+
+        result.Code.ShouldBe(CalendarResourceMoveDispatchCode.UpstreamProtocolError);
+        sendCount.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task MoveAsync_RejectsSameOriginRedirectOutsideAuthorizedSourceCalendar()
+    {
+        var sendCount = 0;
+        using var httpClient = new HttpClient(new Handler(_ =>
+        {
+            sendCount++;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.TemporaryRedirect)
+            {
+                Headers = { Location = new Uri("https://example.com/private/a.ics") }
             });
         }));
         var sut = new CalendarResourceMoveProtocol(httpClient, new Uri("https://example.com"));

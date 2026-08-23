@@ -1766,6 +1766,44 @@ public sealed class CalendarExactResourceServiceTests
         result.MutationState.ShouldBe(expectedState);
     }
 
+    [Fact]
+    public async Task ExactMoveResourceAsync_LexicalNormalizationRemainsFidelityFailure()
+    {
+        const string calendarHref = "https://cal.example/events/";
+        const string sourceHref = "https://cal.example/events/source.ics";
+        const string destinationHref = "https://cal.example/events/destination.ics";
+        const string uid = "exact-move-lexical";
+        var source = Encoding.UTF8.GetBytes(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Exact Tests//EN\r\n"
+            + $"BEGIN:VEVENT\r\nUID:{uid}\r\nDTSTAMP:20260817T120000Z\r\nDTSTART:20260818T120000Z\r\n"
+            + "SUMMARY;LANGUAGE=en;ALTREP=\"cid:part1\":Quarterly review\r\n"
+            + "END:VEVENT\r\nEND:VCALENDAR\r\n");
+        var normalized = Encoding.UTF8.GetBytes(
+            "BEGIN:VCALENDAR\r\nPRODID:-//Exact Tests//EN\r\nVERSION:2.0\r\n"
+            + "BEGIN:VEVENT\r\nSUMMARY;VALUE=TEXT;ALTREP=\"cid:part1\";LANGUAGE=EN:Quarterly \r\n review\r\n"
+            + $"DTSTART:20260818T120000Z\r\nDTSTAMP:20260817T120000Z\r\nUID:{uid}\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n");
+        var client = Substitute.For<ICalendarClient>();
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref)]);
+        client.GetCalendarResourceAsync(sourceHref, Arg.Any<CancellationToken>()).Returns(
+            CalendarResourceRead.Success(sourceHref, "\"r1\"", source),
+            new CalendarResourceRead(CalendarResourceReadCode.NotFound));
+        client.GetCalendarResourceAsync(destinationHref, Arg.Any<CancellationToken>()).Returns(
+            new CalendarResourceRead(CalendarResourceReadCode.NotFound),
+            CalendarResourceRead.Success(destinationHref, "\"r2\"", normalized));
+        client.QueryCalendarResourceHrefsAsync(
+                calendarHref, Arg.Any<CalendarEntityKind>(), null, null, Arg.Any<CancellationToken>())
+            .Returns([]);
+        client.MoveCalendarResourceAsync(
+                Arg.Any<CalendarResourceMoveDispatchRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceMoveDispatchResult(CalendarResourceMoveDispatchCode.Dispatched));
+
+        var result = await CreateService(client, calendarHref).ExactMoveResourceAsync(
+            new CalendarExactMoveRequest(Revision(sourceHref, uid), destinationHref), CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarExactResourceCode.FidelityFailure);
+        result.MutationState.ShouldBe(CalendarMutationState.Committed);
+    }
+
     [Theory]
     [InlineData(CalendarResourceReadCode.Success, CalendarExactResourceCode.DestinationConflict)]
     [InlineData(CalendarResourceReadCode.NotFound, CalendarExactResourceCode.Conflict)]

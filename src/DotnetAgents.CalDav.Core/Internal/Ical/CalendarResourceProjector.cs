@@ -212,13 +212,24 @@ internal static class CalendarResourceProjector
         HasValidExactPropertyGrammar(properties) && HasValidExactPropertyShape(properties);
 
     private static bool HasValidExactPropertyGrammar(IReadOnlyList<CalendarContentProperty> properties) =>
-        !properties.Any(HasInvalidRegisteredGrammar)
+        properties.All(HasValidRegisteredPropertyGrammar)
         && !properties.Any(HasInvalidRegisteredPlacement)
         && !properties.Any(HasInvalidRangeOrRelatedParameter)
         && !properties.Any(HasInvalidTimeZoneParameter)
         && !properties.Any(HasInvalidKnownParameter)
         && !properties.Any(HasInvalidRelatedToCombination)
         && !properties.Any(HasInvalidExactValueParameter);
+
+    internal static bool HasValidRegisteredPropertyGrammar(CalendarContentProperty property) =>
+        !HasInvalidRegisteredGrammar(property);
+
+    internal static bool HasValidLanguageTagForFidelity(string value) => HasValidLanguageTag(value);
+
+    internal static bool IsKnownParameterApplicableForFidelity(
+        CalendarContentProperty property,
+        string parameterName) => IsKnownParameterApplicable(property, parameterName);
+
+    internal static bool IsTokenForFidelity(string value) => IsToken(value);
 
     private static bool HasValidExactPropertyShape(IReadOnlyList<CalendarContentProperty> properties) =>
         !HasRepeatedExactSingleton(properties)
@@ -1027,7 +1038,7 @@ internal static class CalendarResourceProjector
             return true;
         if (TemporalSingletonProperties.Contains(property.Name))
             return !HasValidTemporalGrammar(property);
-        if (property.Name.Equals("RRULE", StringComparison.OrdinalIgnoreCase))
+        if (property.ValueType == CalendarPropertyValueType.Recur)
             return !HasValidRecurrenceRule(property);
         if (property.Name.ToUpperInvariant() is "DURATION" or "REFRESH-INTERVAL")
             return !HasValidEntityDuration(property);
