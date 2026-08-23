@@ -76,10 +76,29 @@ public sealed class CalendarEntityToolsTests
             Arguments(("scope", new { mode = "all" }), ("entityKinds", new[] { "event" }), ("cursor", "opaque")),
             Arguments(("cursor", "opaque"), ("entityKinds", new[] { "event" })),
             Arguments(("cursor", "")),
+            Arguments(("cursor", 42)),
             Arguments(("cursor", "opaque"), ("pageSize", 0)),
+            Arguments(("cursor", "opaque"), ("pageSize", 201)),
+            Arguments(("cursor", "opaque"), ("pageSize", "one")),
             Arguments(("scope", new { mode = "all" }), ("entityKinds", new[] { "event" }),
                 ("from", new { kind = "utcDateTime", value = "2026-08-23T12:00:00Z" })),
-            Arguments(("scope", new { mode = "all" }), ("entityKinds", new[] { "event" }), ("unknown", true))
+            Arguments(("scope", new { mode = "all" }), ("entityKinds", new[] { "event" }), ("unknown", true)),
+            Arguments(("scope", "all"), ("entityKinds", new[] { "event" })),
+            Arguments(("scope", new { mode = "private" }), ("entityKinds", new[] { "event" })),
+            Arguments(("scope", new { mode = "selected" }), ("entityKinds", new[] { "event" })),
+            Arguments(("scope", new { mode = "selected", calendar = new { by = "name", name = "Work", href = "https://cal.example/work/" } }),
+                ("entityKinds", new[] { "event" })),
+            Arguments(("scope", new { mode = "all" }), ("entityKinds", Array.Empty<string>())),
+            Arguments(("scope", new { mode = "all" }), ("entityKinds", new[] { "event", "event" })),
+            Arguments(("scope", new { mode = "all" }), ("entityKinds", new[] { "private" })),
+            Arguments(("scope", new { mode = "all" }), ("entityKinds", 42)),
+            Arguments(("scope", new { mode = "all" }), ("entityKinds", new[] { "event" }),
+                ("from", new { kind = "private", value = "2026-08-23T12:00:00Z" }),
+                ("to", new { kind = "utcDateTime", value = "2026-08-24T12:00:00Z" })),
+            Arguments(("scope", new { mode = "all" }), ("entityKinds", new[] { "event" }),
+                ("from", new { kind = "utcDateTime", value = "2026-08-23T12:00:00+01:00" }),
+                ("to", new { kind = "utcDateTime", value = "2026-08-24T12:00:00Z" })),
+            Arguments(("scope", new { mode = "all" }), ("entityKinds", new[] { "event" }), ("pageSize", 201))
         };
         var module = Substitute.For<ICalendarQueryModule>();
         var tool = new CalendarEntityTools(module);
@@ -93,6 +112,35 @@ public sealed class CalendarEntityToolsTests
         await module.DidNotReceive().QueryEntitiesAsync(
             Arg.Any<CalendarEntityQueryRequest>(),
             Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task QueryRawAsync_AcceptsEveryStrictScopeSelectorAndOptionalDefault()
+    {
+        var module = Substitute.For<ICalendarQueryModule>();
+        var observed = new List<CalendarEntityQueryRequest.Start>();
+        module.QueryEntitiesAsync(
+                Arg.Do<CalendarEntityQueryRequest>(request => observed.Add(request.ShouldBeOfType<CalendarEntityQueryRequest.Start>())),
+                Arg.Any<CancellationToken>())
+            .Returns(PageReply());
+        var tool = new CalendarEntityTools(module);
+        var inputs = new[]
+        {
+            Arguments(("scope", new { mode = "default" }), ("entityKinds", new[] { "todo" })),
+            Arguments(("scope", new { mode = "selected", calendar = new { by = "name", name = "Work" } }),
+                ("entityKinds", new[] { "event" })),
+            Arguments(("scope", new { mode = "selected", calendar = new { by = "href", href = "https://cal.example/work/" } }),
+                ("entityKinds", new[] { "todo" }), ("pageSize", 50))
+        };
+
+        foreach (var input in inputs)
+            (await tool.QueryRawAsync(input, CancellationToken.None)).IsError.ShouldBe(false);
+
+        observed[0].Query.Scope.ShouldBe(CalendarEntityScope.Default);
+        observed[0].Query.EntityKinds.ShouldBe([CalendarEntityKind.Todo]);
+        observed[1].Query.Scope.Calendar!.Name.ShouldBe("Work");
+        observed[2].Query.Scope.Calendar!.Href.ShouldBe("https://cal.example/work/");
+        observed[2].PageSize.ShouldBe(50);
     }
 
     [Theory]
@@ -156,17 +204,47 @@ public sealed class CalendarEntityToolsTests
     {
         var cases = new (QueryFailure Failure, string Code, string Category, string Phase)[]
         {
+            (new(QueryFailureCode.InvalidInput, QueryFailureCategory.Input, "input", false,
+                QueryFailurePhase.SchemaLexicalDiscriminator), "invalid_input", "input", "schemaLexicalDiscriminator"),
             (new(QueryFailureCode.CursorExpired, QueryFailureCategory.State, "expired", false,
                 QueryFailurePhase.Pagination), "cursor_expired", "state", "pagination"),
+            (new(QueryFailureCode.LimitExhausted, QueryFailureCategory.LimitsAndAdmission, "limit", false,
+                QueryFailurePhase.Execution), "limit_exhausted", "limitsAndAdmission", "execution"),
             (new(QueryFailureCode.Busy, QueryFailureCategory.LimitsAndAdmission, "busy", true,
                 QueryFailurePhase.Pagination, RetryAfterMs: 123), "busy", "limitsAndAdmission", "pagination"),
+            (new(QueryFailureCode.PayloadTooLarge, QueryFailureCategory.LimitsAndAdmission, "large", false,
+                QueryFailurePhase.AdmissionAndPayload), "payload_too_large", "limitsAndAdmission", "admissionAndPayload"),
+            (new(QueryFailureCode.UpstreamProtocolError, QueryFailureCategory.Upstream, "protocol", false,
+                QueryFailurePhase.SelectionDiscoveryCapability), "upstream_protocol_error", "upstream",
+                "selectionDiscoveryCapability"),
+            (new(QueryFailureCode.UnsupportedCapability, QueryFailureCategory.CapabilityAndProjection, "unsupported", false,
+                QueryFailurePhase.SelectionDiscoveryCapability), "unsupported_capability", "capabilityAndProjection",
+                "selectionDiscoveryCapability"),
             (new(QueryFailureCode.ConcurrencyUnavailable, QueryFailureCategory.State, "etag", false,
                 QueryFailurePhase.TargetRevision), "concurrency_unavailable", "state", "targetRevision"),
+            (new(QueryFailureCode.RecurrenceUnevaluable, QueryFailureCategory.CapabilityAndProjection, "recurrence", false,
+                QueryFailurePhase.CompleteResourceSemantics), "recurrence_unevaluable", "capabilityAndProjection",
+                "completeResourceSemantics"),
+            (new(QueryFailureCode.UpstreamUnavailable, QueryFailureCategory.Upstream, "unavailable", true,
+                QueryFailurePhase.Execution), "upstream_unavailable", "upstream", "execution"),
+            (new(QueryFailureCode.UpstreamUnauthorized, QueryFailureCategory.Upstream, "unauthorized", false,
+                QueryFailurePhase.Execution), "upstream_unauthorized", "upstream", "execution"),
+            (new(QueryFailureCode.UpstreamForbidden, QueryFailureCategory.Upstream, "forbidden", false,
+                QueryFailurePhase.Execution), "upstream_forbidden", "upstream", "execution"),
             (new(QueryFailureCode.UpstreamRateLimited, QueryFailureCategory.Upstream, "rate", true,
                 QueryFailurePhase.Execution), "upstream_rate_limited", "upstream", "execution"),
             (new(QueryFailureCode.TemporalUnresolved, QueryFailureCategory.CapabilityAndProjection, "time", false,
                 QueryFailurePhase.CompleteResourceSemantics), "temporal_unresolved", "capabilityAndProjection",
-                "completeResourceSemantics")
+                "completeResourceSemantics"),
+            (new(QueryFailureCode.NotFound, QueryFailureCategory.Selection, "missing", false,
+                QueryFailurePhase.SelectionDiscoveryCapability), "not_found", "selection",
+                "selectionDiscoveryCapability"),
+            (new(QueryFailureCode.Ambiguous, QueryFailureCategory.Selection, "ambiguous", false,
+                QueryFailurePhase.SelectionDiscoveryCapability), "ambiguous", "selection",
+                "selectionDiscoveryCapability"),
+            (new(QueryFailureCode.OutsideScope, QueryFailureCategory.Selection, "scope", false,
+                QueryFailurePhase.OriginScopeAuthorization), "outside_scope", "selection",
+                "originScopeAuthorization")
         };
         foreach (var testCase in cases)
         {
@@ -186,6 +264,66 @@ public sealed class CalendarEntityToolsTests
             if (testCase.Failure.RetryAfterMs is not null)
                 error.GetProperty("retryAfterMs").GetInt32().ShouldBe(123);
         }
+    }
+
+    [Fact]
+    public async Task QueryRawAsync_MapsEveryOptionalFailureEvidenceField()
+    {
+        var candidate = new QueryAuthorizedCandidate(
+            "https://cal.example/calendars/work/",
+            "Work",
+            EntityKindSupport.Advertised,
+            EntityKindSupport.NotAdvertised,
+            [new CapabilityEvidence("probe", "event")],
+            []);
+        var failure = new QueryFailure(
+            QueryFailureCode.LimitExhausted,
+            QueryFailureCategory.LimitsAndAdmission,
+            "limit",
+            false,
+            QueryFailurePhase.Execution,
+            new QueryExecutionLimits(1, 2, 3, 4, 5, 6),
+            [candidate],
+            123);
+        var module = Substitute.For<ICalendarQueryModule>();
+        module.QueryEntitiesAsync(Arg.Any<CalendarEntityQueryRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new QueryReply<CalendarEntityQueryItem>.Failure(failure));
+
+        var result = await new CalendarEntityTools(module).QueryRawAsync(
+            Arguments(("cursor", "opaque")),
+            CancellationToken.None);
+
+        var error = result.StructuredContent!.Value;
+        error.GetProperty("limits").GetProperty("resourcesInspected").GetInt32().ShouldBe(1);
+        error.GetProperty("limits").GetProperty("calendarCount").GetInt32().ShouldBe(2);
+        error.GetProperty("limits").GetProperty("occurrenceCount").GetInt32().ShouldBe(3);
+        error.GetProperty("limits").GetProperty("byteCount").GetInt32().ShouldBe(4);
+        error.GetProperty("limits").GetProperty("itemCount").GetInt32().ShouldBe(5);
+        error.GetProperty("limits").GetProperty("snapshotCount").GetInt32().ShouldBe(6);
+        error.GetProperty("authorizedCandidates")[0].GetProperty("calendar").GetProperty("href").GetString()
+            .ShouldBe(candidate.CalendarHref);
+        error.GetProperty("retryAfterMs").GetInt32().ShouldBe(123);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task QueryRawAsync_RejectsUndefinedTypedFailureVocabulary(int invalidField)
+    {
+        var failure = new QueryFailure(
+            invalidField == 0 ? (QueryFailureCode)99 : QueryFailureCode.InvalidInput,
+            invalidField == 1 ? (QueryFailureCategory)99 : QueryFailureCategory.Input,
+            "invalid internal vocabulary",
+            false,
+            invalidField == 2 ? (QueryFailurePhase)99 : QueryFailurePhase.Execution);
+        var module = Substitute.For<ICalendarQueryModule>();
+        module.QueryEntitiesAsync(Arg.Any<CalendarEntityQueryRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new QueryReply<CalendarEntityQueryItem>.Failure(failure));
+
+        await Should.ThrowAsync<ArgumentOutOfRangeException>(() => new CalendarEntityTools(module).QueryRawAsync(
+            Arguments(("cursor", "opaque")),
+            CancellationToken.None));
     }
 
     [Fact]

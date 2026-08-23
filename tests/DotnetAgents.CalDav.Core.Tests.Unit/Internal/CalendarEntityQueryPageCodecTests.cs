@@ -75,6 +75,74 @@ public sealed class CalendarEntityQueryPageCodecTests
         stopped.ShouldBeEmpty();
     }
 
+    [Theory]
+    [InlineData(0, -1, 1)]
+    [InlineData(0, 1, 1)]
+    [InlineData(1, -1, 1)]
+    [InlineData(1, 1, 1)]
+    [InlineData(1, 0, 0)]
+    [InlineData(1, 0, 201)]
+    public void PlanRejectsEveryInvalidPositionAndPageSize(int itemCount, int position, int pageSize)
+    {
+        var items = Enumerable.Range(0, itemCount)
+            .Select(index => new StoredCalendarEntityQueryItem(Json(index)))
+            .ToImmutableArray();
+        var snapshot = new CalendarQuerySnapshot(Guid.NewGuid(), Now.AddMinutes(10), items, "[]"u8.ToArray(), 0);
+
+        var planned = Codec().Plan(snapshot, position, pageSize, CancellationToken.None);
+
+        planned.Error!.Code.ShouldBe(QueryFailureCode.InvalidInput);
+    }
+
+    [Fact]
+    public void AdmitReturnsBothPageAndFailureBranches()
+    {
+        var codec = Codec();
+        codec.Admit(Snapshot(Json(1)), 0, 1, CancellationToken.None).Value.ShouldNotBeNull();
+        codec.Admit(Snapshot(Json(1)), 1, 1, CancellationToken.None).Error!.Code
+            .ShouldBe(QueryFailureCode.InvalidInput);
+    }
+
+    [Fact]
+    public void HumanPresentationBudgetRejectsOversizedDiagnosticsBeforeItemAdmission()
+    {
+        var diagnostics = JsonSerializer.SerializeToUtf8Bytes(new[]
+        {
+            new QueryDiagnostic("safe", new string('x', CalendarEntityQueryPageCodec.MaximumHumanReadableBytes), "warning")
+        });
+        var snapshot = new CalendarQuerySnapshot(
+            Guid.NewGuid(),
+            Now.AddMinutes(10),
+            ImmutableArray<StoredCalendarEntityQueryItem>.Empty,
+            diagnostics,
+            diagnostics.Length);
+
+        var planned = Codec().Plan(snapshot, 0, 1, CancellationToken.None);
+
+        planned.Error!.Code.ShouldBe(QueryFailureCode.PayloadTooLarge);
+    }
+
+    [Fact]
+    public void MaterializeHandlesNullDiagnosticsAndNonNullCursorMechanically()
+    {
+        var item = new StoredCalendarEntityQueryItem(Json(1));
+        var snapshot = new CalendarQuerySnapshot(
+            Guid.NewGuid(),
+            Now.AddMinutes(10),
+            [item, item],
+            "null"u8.ToArray(),
+            item.JsonByteCount * 2 + 4);
+        var codec = Codec();
+        var plan = codec.Plan(snapshot, 0, 1, CancellationToken.None).Value!;
+
+        var page = codec.Materialize(snapshot, plan);
+
+        page.Diagnostics.ShouldBeEmpty();
+        page.NextCursor.ShouldNotBeNull();
+        page.StructuredContent.GetProperty("pagination").GetProperty("nextCursor").GetString()
+            .ShouldBe(page.NextCursor);
+    }
+
     private static CalendarEntityQueryPageCodec Codec(CalendarQueryPageWorkCounter? workCounter = null)
     {
         var options = Options.Create(new CalDavOptions

@@ -73,6 +73,97 @@ public sealed class CalendarQueryCursorCodecTests
             .ShouldBe(CalendarQueryCursorAuthenticationCode.Invalid);
     }
 
+    [Theory]
+    [InlineData(0, 64)]
+    [InlineData(63, 63)]
+    [InlineData(65, 65)]
+    public void CursorKeyRejectsNullOptionsAndNonExactKeyMaterial(int optionMarker, int keyLength)
+    {
+        var options = optionMarker == 0 ? null : OptionsFor();
+        var key = new byte[keyLength];
+
+        if (options is null)
+            Should.Throw<ArgumentNullException>(() => new CalendarQueryCursorKey(null!, key));
+        else
+            Should.Throw<ArgumentException>(() => new CalendarQueryCursorKey(options, key));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("+")]
+    [InlineData("A")]
+    public void MalformedLexicalCursorsAreRejected(string cursor)
+    {
+        var key = new CalendarQueryCursorKey(OptionsFor(), Key);
+
+        new CalendarQueryCursorAuthenticator(key, new FixedTimeProvider(Now))
+            .Authenticate(cursor, CalendarEntityQueryPageCodec.ToolName).Code
+            .ShouldBe(CalendarQueryCursorAuthenticationCode.Invalid);
+    }
+
+    [Fact]
+    public void OversizedAndStructurallyShortCursorsAreRejected()
+    {
+        var key = new CalendarQueryCursorKey(OptionsFor(), Key);
+        var authenticator = new CalendarQueryCursorAuthenticator(key, new FixedTimeProvider(Now));
+        var exactlyTwentyEightBytes = CalendarQueryCursorIssuer.Base64UrlEncode(new byte[28]);
+
+        authenticator.Authenticate(new string('A', 2049), CalendarEntityQueryPageCodec.ToolName).Code
+            .ShouldBe(CalendarQueryCursorAuthenticationCode.Invalid);
+        authenticator.Authenticate(exactlyTwentyEightBytes, CalendarEntityQueryPageCodec.ToolName).Code
+            .ShouldBe(CalendarQueryCursorAuthenticationCode.Invalid);
+    }
+
+    [Fact]
+    public void AuthenticatedPayloadStillRequiresPositivePositionAndExpiry()
+    {
+        var key = new CalendarQueryCursorKey(OptionsFor(), Key);
+        var issuer = new CalendarQueryCursorIssuer(key);
+        var authenticator = new CalendarQueryCursorAuthenticator(key, new FixedTimeProvider(Now));
+
+        authenticator.Authenticate(
+                issuer.Issue(CalendarEntityQueryPageCodec.ToolName, Guid.NewGuid(), 0, Now.AddMinutes(10)),
+                CalendarEntityQueryPageCodec.ToolName).Code
+            .ShouldBe(CalendarQueryCursorAuthenticationCode.Invalid);
+        authenticator.Authenticate(
+                issuer.Issue(CalendarEntityQueryPageCodec.ToolName, Guid.NewGuid(), 1, DateTimeOffset.UnixEpoch),
+                CalendarEntityQueryPageCodec.ToolName).Code
+            .ShouldBe(CalendarQueryCursorAuthenticationCode.Invalid);
+    }
+
+    [Fact]
+    public void CursorContextBindsTodoDefaultCanonicalScopeAndRequestTimeout()
+    {
+        var baseline = new CalendarQueryCursorKey(OptionsFor(), Key);
+        var cursor = new CalendarQueryCursorIssuer(baseline).Issue(
+            CalendarEntityQueryPageCodec.ToolName,
+            Guid.NewGuid(),
+            1,
+            Now.AddMinutes(10));
+        var changedOptions = OptionsFor();
+        changedOptions.Value.CalendarHrefs = "https://cal.example/z/, https://cal.example/a/, https://cal.example/a/";
+        changedOptions.Value.DefaultTodoCalendarName = " Todos ";
+        changedOptions.Value.RequestTimeout = TimeSpan.FromSeconds(31);
+
+        new CalendarQueryCursorAuthenticator(
+                new CalendarQueryCursorKey(changedOptions, Key),
+                new FixedTimeProvider(Now))
+            .Authenticate(cursor, CalendarEntityQueryPageCodec.ToolName).Code
+            .ShouldBe(CalendarQueryCursorAuthenticationCode.Invalid);
+    }
+
+    [Fact]
+    public void IssuerRejectsProtectedCursorBeyondTheLexicalLimit()
+    {
+        var issuer = new CalendarQueryCursorIssuer(new CalendarQueryCursorKey(OptionsFor(), Key));
+
+        Should.Throw<InvalidOperationException>(() => issuer.Issue(
+            new string('x', CalendarQueryCursorIssuer.MaximumCursorCharacters),
+            Guid.NewGuid(),
+            1,
+            Now.AddMinutes(10)));
+    }
+
     private static IOptions<CalDavOptions> OptionsFor(
         string password = "password",
         string? scope = null,

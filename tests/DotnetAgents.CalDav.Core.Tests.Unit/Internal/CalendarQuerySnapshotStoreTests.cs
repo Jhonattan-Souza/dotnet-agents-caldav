@@ -92,6 +92,76 @@ public sealed class CalendarQuerySnapshotStoreTests
         store.RetainedBytes.ShouldBe(0);
     }
 
+    [Fact]
+    public void ExpiredSnapshotsAreRemovedBeforeLookupAndNewAdmission()
+    {
+        var time = new MutableTimeProvider();
+        using var store = new CalendarQuerySnapshotStore(time);
+        var id = Guid.NewGuid();
+        using var lease = store.TryReserve(Snapshot(id, 7)).Lease!;
+        lease.Commit().ShouldBeTrue();
+        store.Get(id).ShouldNotBeNull();
+
+        time.Advance(TimeSpan.FromMinutes(10));
+
+        store.Get(id).ShouldBeNull();
+        store.ActiveSnapshotCount.ShouldBe(0);
+        store.RetainedBytes.ShouldBe(0);
+        store.TryReserve(Snapshot(Guid.NewGuid(), 1)).IsAccepted.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void LeaseCompletionAndStoreDisposalAreIdempotent()
+    {
+        var store = new CalendarQuerySnapshotStore(new FixedTimeProvider());
+        var lease = store.TryReserve(Snapshot(Guid.NewGuid(), 3)).Lease!;
+
+        lease.Commit().ShouldBeTrue();
+        lease.Commit().ShouldBeFalse();
+        lease.Dispose();
+        store.Dispose();
+        store.Dispose();
+        lease.Dispose();
+
+        store.Get(Guid.NewGuid()).ShouldBeNull();
+        Should.Throw<ObjectDisposedException>(() => store.TryReserve(Snapshot(Guid.NewGuid(), 1)));
+        store.ActiveSnapshotCount.ShouldBe(0);
+        store.ActiveReservationCount.ShouldBe(0);
+        store.RetainedBytes.ShouldBe(0);
+    }
+
+    [Fact]
+    public void ReservedSnapshotCannotPublishAfterStoreDisposal()
+    {
+        var store = new CalendarQuerySnapshotStore(new FixedTimeProvider());
+        var lease = store.TryReserve(Snapshot(Guid.NewGuid(), 3)).Lease!;
+
+        store.Dispose();
+
+        lease.Commit().ShouldBeFalse();
+        lease.Dispose();
+        store.ActiveSnapshotCount.ShouldBe(0);
+        store.ActiveReservationCount.ShouldBe(0);
+        store.RetainedBytes.ShouldBe(0);
+    }
+
+    [Fact]
+    public void CompletedLeaseCannotPublishAnotherSnapshotAndDisposesItsProvisionalTimer()
+    {
+        var time = new CountingTimerTimeProvider();
+        using var store = new CalendarQuerySnapshotStore(time);
+        var lease = store.TryReserve(Snapshot(Guid.NewGuid(), 3)).Lease!;
+        lease.Commit().ShouldBeTrue();
+
+        store.Commit(lease, Snapshot(Guid.NewGuid(), 5)).ShouldBeFalse();
+
+        time.CreatedTimers.ShouldBe(2);
+        time.DisposedTimers.ShouldBe(1);
+        store.ActiveSnapshotCount.ShouldBe(1);
+        store.ActiveReservationCount.ShouldBe(0);
+        store.RetainedBytes.ShouldBe(3);
+    }
+
     private static CalendarQuerySnapshot Snapshot(Guid id, long retainedBytes) => new(
         id,
         Now.AddMinutes(10),
@@ -113,5 +183,46 @@ public sealed class CalendarQuerySnapshotStoreTests
             object? state,
             TimeSpan dueTime,
             TimeSpan period) => throw new InvalidOperationException("scripted timer failure");
+    }
+
+    private sealed class MutableTimeProvider : TimeProvider
+    {
+        private DateTimeOffset _now = Now;
+
+        public override DateTimeOffset GetUtcNow() => _now;
+
+        internal void Advance(TimeSpan amount) => _now += amount;
+    }
+
+    private sealed class CountingTimerTimeProvider : TimeProvider
+    {
+        internal int CreatedTimers { get; private set; }
+
+        internal int DisposedTimers { get; private set; }
+
+        public override DateTimeOffset GetUtcNow() => Now;
+
+        public override ITimer CreateTimer(
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime,
+            TimeSpan period)
+        {
+            CreatedTimers++;
+            return new CountingTimer(this);
+        }
+
+        private sealed class CountingTimer(CountingTimerTimeProvider owner) : ITimer
+        {
+            public bool Change(TimeSpan dueTime, TimeSpan period) => true;
+
+            public void Dispose() => owner.DisposedTimers++;
+
+            public ValueTask DisposeAsync()
+            {
+                Dispose();
+                return ValueTask.CompletedTask;
+            }
+        }
     }
 }
