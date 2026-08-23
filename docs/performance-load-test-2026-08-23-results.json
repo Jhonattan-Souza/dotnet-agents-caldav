@@ -1,0 +1,275 @@
+{
+  "schemaVersion": 1,
+  "reportDate": "2026-08-23",
+  "baseline": {
+    "source": "docs/performance-load-test-2026-08-21.md",
+    "revision": "ed316f9beb46a81d69e785006c0fe65d58c2298b",
+    "corpus": {
+      "events": 600,
+      "todos": 600
+    }
+  },
+  "current": {
+    "revision": "fb61342c4006ba2b3bbfd10bbe482566795410ad",
+    "mcpDllSha256": "3158808fc207574263dbf85176be09b988906df6dbb24599f4c1d859ed9228c3",
+    "dotnetSdk": "10.0.100",
+    "radicaleImage": "ghcr.io/kozea/radicale@sha256:3a0080ea51ac69dcd74e345b9587dc14a8c8af0652046069005749f9a75c5c80",
+    "aspireDashboardImage": "mcr.microsoft.com/dotnet/aspire-dashboard:13.4.2@sha256:76d05882595dd43e708d6ef3e269d98ca763694c0c822bbe98edc99790eaad1b",
+    "driver": "raw MCP 2026-07-28 stdio",
+    "startedUtc": "2026-08-23T22:04:17.358040Z",
+    "finishedUtc": "2026-08-23T22:05:14.893279Z",
+    "initialCorpus": {
+      "events": 600,
+      "todos": 600
+    },
+    "finalCorpus": {
+      "events": 600,
+      "todos": 600,
+      "archive": 0
+    },
+    "catalogToolsObserved": 21,
+    "missingCatalogTools": [],
+    "matrixServerTraces": 36,
+    "exceptionEvents": 0,
+    "latestLogWindow": {
+      "records": 300,
+      "information": 160,
+      "debug": 140,
+      "warning": 0,
+      "error": 0,
+      "fatal": 0
+    },
+    "httpAcrossMatrix": {
+      "PROPFIND": 175,
+      "REPORT": 160,
+      "GET": 54,
+      "PUT": 12,
+      "DELETE": 3,
+      "MOVE": 3
+    }
+  },
+  "targetedFollowUp": {
+    "reason": "Match the baseline occurrence-aware To-do corpus and collection topology after review found that the main current matrix had 600 To-dos before archive creation while the baseline sample had 601 To-dos with the archive present.",
+    "corpus": {
+      "todos": 601,
+      "unrelatedEvents": 600,
+      "todoCalendars": 2
+    },
+    "traceId": "13b78cdb49dc3c88d2212d63f5e1c063",
+    "timestampUtc": "2026-08-23T22:21:30.8048075Z",
+    "serverDurationMs": 1470,
+    "operationDurationMs": 1334,
+    "clientDurationMs": 1910.4,
+    "http": {
+      "PROPFIND": 5,
+      "REPORT": 15
+    },
+    "candidateCount": 601,
+    "snapshotCount": 601,
+    "evaluationCount": 601,
+    "serializationCount": 1265,
+    "directGetAttemptCount": 0,
+    "fetchMode": "multiget",
+    "outcome": "success",
+    "hasError": false,
+    "finalTodoCount": 600
+  },
+  "comparisons": [
+    {
+      "path": "semantic move into a 600-resource destination",
+      "baselineDurationMs": 2334,
+      "currentDurationMs": 1298,
+      "durationReductionPercent": 44.39,
+      "speedup": 1.80,
+      "baselineHttpRequests": 617,
+      "currentHttpRequests": 10,
+      "httpRequestReductionPercent": 98.38,
+      "baselineGet": 604,
+      "currentGet": 4,
+      "getReductionPercent": 99.34
+    },
+    {
+      "path": "exact move complete two-call MRTR workflow",
+      "baselineDurationMs": 5631,
+      "currentDurationMs": 462,
+      "durationReductionPercent": 91.80,
+      "speedup": 12.19,
+      "baselineHttpRequests": 1827,
+      "currentHttpRequests": 17,
+      "httpRequestReductionPercent": 99.07,
+      "baselineGet": 1808,
+      "currentGet": 6,
+      "getReductionPercent": 99.67,
+      "timingCaveat": "The current exact-Move calls ran after exact create and replace in the same process, while the baseline timing came from a dedicated exact-Move process. Request work is the primary comparison."
+    },
+    {
+      "path": "occurrence-aware todo query",
+      "baselineDurationMs": 4224,
+      "currentDurationMs": 1470,
+      "durationReductionPercent": 65.20,
+      "speedup": 2.87,
+      "baselineHttpRequests": 53,
+      "currentHttpRequests": 20,
+      "httpRequestReductionPercent": 62.26,
+      "baselineReport": 43,
+      "currentReport": 15,
+      "reportReductionPercent": 65.12,
+      "comparisonBoundary": "601 To-dos and two VTODO Calendars in both samples"
+    },
+    {
+      "path": "entity query page-size incremental server duration, 1 to 200",
+      "baselineIncrementalMs": 2466,
+      "currentIncrementalMs": 817,
+      "incrementalReductionPercent": 66.87
+    },
+    {
+      "path": "entity query page 200 start",
+      "baselineDurationMs": 4335,
+      "currentDurationMs": 4118,
+      "durationReductionPercent": 5.01,
+      "baselineHttpRequests": 33,
+      "currentHttpRequests": 33
+    }
+  ],
+  "currentTraceEvidence": [
+    {
+      "label": "entity.main",
+      "traceId": "7ddf99a564b3e1e6f8aad13585f3a8fe",
+      "serverDurationMs": 4282,
+      "operationDurationMs": 4044,
+      "http": { "PROPFIND": 5, "REPORT": 26 },
+      "candidateCount": 1200,
+      "snapshotCount": 1200,
+      "serializationCount": 1200,
+      "fetchMode": "multiget"
+    },
+    {
+      "label": "entity.window",
+      "traceId": "7d214dc8af4e5f7c8a73eb81f994b22f",
+      "serverDurationMs": 3368,
+      "operationDurationMs": 3151,
+      "http": { "PROPFIND": 5, "REPORT": 26 },
+      "outcome": "success",
+      "temporalContextSource": "caller"
+    },
+    {
+      "label": "occurrence.main",
+      "traceId": "777627b7b90f54c1ede8dcef7488eaa8",
+      "serverDurationMs": 4429,
+      "operationDurationMs": 4197,
+      "http": { "PROPFIND": 5, "REPORT": 26 },
+      "candidateCount": 1200,
+      "serializationCount": 2987,
+      "fetchMode": "multiget"
+    },
+    {
+      "label": "todo.compact",
+      "traceId": "403c7d8309dc3b2425e77d3f9a550ebc",
+      "serverDurationMs": 1964,
+      "operationDurationMs": 1749,
+      "http": { "PROPFIND": 5, "REPORT": 13 },
+      "candidateCount": 600,
+      "serializationCount": 600,
+      "fetchMode": "multiget"
+    },
+    {
+      "label": "todo.occurrence",
+      "traceId": "e96dca35a6f1698dfde56d9ca9d82d13",
+      "serverDurationMs": 2203,
+      "operationDurationMs": 1995,
+      "http": { "PROPFIND": 5, "REPORT": 13 },
+      "candidateCount": 600,
+      "serializationCount": 1260,
+      "fetchMode": "multiget"
+    },
+    {
+      "label": "todo.occurrence.601",
+      "traceId": "13b78cdb49dc3c88d2212d63f5e1c063",
+      "serverDurationMs": 1470,
+      "operationDurationMs": 1334,
+      "http": { "PROPFIND": 5, "REPORT": 15 },
+      "candidateCount": 601,
+      "snapshotCount": 601,
+      "serializationCount": 1265,
+      "fetchMode": "multiget",
+      "outcome": "success",
+      "hasError": false
+    },
+    {
+      "label": "entity.page_1.start",
+      "traceId": "3dd273fb5faf818c51f51f3a16beefe3",
+      "serverDurationMs": 3301,
+      "operationDurationMs": 3096,
+      "http": { "PROPFIND": 5, "REPORT": 28 },
+      "phasesMs": { "serialization": 404, "pageAdmission": 8 }
+    },
+    {
+      "label": "entity.page_1.continue_200",
+      "traceId": "4fb38c9efa9ddbd781730b261c1e0029",
+      "serverDurationMs": 856,
+      "operationDurationMs": 66,
+      "http": {},
+      "phasesMs": { "snapshotLookup": 4, "pageAdmission": 26 }
+    },
+    {
+      "label": "entity.page_200.start",
+      "traceId": "b8a856b97988b14e8d143366a5f73c72",
+      "serverDurationMs": 4118,
+      "operationDurationMs": 3109,
+      "http": { "PROPFIND": 5, "REPORT": 28 },
+      "phasesMs": { "serialization": 387, "pageAdmission": 10 }
+    },
+    {
+      "label": "semantic_move.populated_destination",
+      "traceId": "ce7e8b470cfdc26a02ac531038f60fde",
+      "serverDurationMs": 1298,
+      "operationDurationMs": 1068,
+      "http": { "PROPFIND": 5, "GET": 4, "MOVE": 1 },
+      "outcome": "success",
+      "mutationState": "committed",
+      "expectedAbsenceSpans": 2
+    },
+    {
+      "label": "exact.move",
+      "traceId": "f8f605b4b8df653c956c9755e38ac350",
+      "serverDurationMs": 209,
+      "operationDurationMs": 209,
+      "http": { "PROPFIND": 5, "GET": 2 },
+      "outcome": "input_required",
+      "mutationState": "not_attempted"
+    },
+    {
+      "label": "exact.move.confirmed",
+      "traceId": "b5e9a0394e6275ae4266ddfef9fffced",
+      "serverDurationMs": 253,
+      "operationDurationMs": 221,
+      "http": { "PROPFIND": 5, "GET": 4, "MOVE": 1 },
+      "outcome": "success",
+      "mutationState": "committed",
+      "expectedAbsenceSpans": 2
+    },
+    {
+      "label": "exact.delete.confirmed",
+      "traceId": "85f4f19d3f59d6278ed70d2502f7053c",
+      "serverDurationMs": 211,
+      "operationDurationMs": 199,
+      "http": { "PROPFIND": 5, "GET": 3, "DELETE": 1 },
+      "outcome": "success",
+      "mutationState": "committed",
+      "hasError": true,
+      "errorSpanCount": 1,
+      "expectedAbsenceSpans": 0
+    }
+  ],
+  "telemetryFinding": {
+    "tracesWithErrorDerivedFromChildren": 3,
+    "errorHttpSpans": 3,
+    "expectedAbsenceSpans": 9,
+    "exceptionEvents": 0,
+    "affectedLabels": [
+      "event.delete.confirmed",
+      "exact.delete.confirmed",
+      "todo.delete.confirmed"
+    ]
+  }
+}
