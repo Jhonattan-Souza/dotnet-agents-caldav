@@ -93,7 +93,7 @@ trace.
 
 Baseline revision: `334234903c66e7e3572687eb7b990de61161f378`
 
-Changed implementation revision: `766898ab6e5fad5890c61427a77a07d570ef42b9`
+Changed implementation revision: `cf71366aece23fa07f6519a0955e68f7cf843ea6`
 
 Exact Move now performs two constant-work MRTR preparations rather than three
 destination UID scans. The initial call returns only a protected non-executable
@@ -106,9 +106,9 @@ bytes, including for Opaque resources and same-Calendar renames.
 Both Exact revisions used the runtime and host recorded above. The committed
 changed-revision witness sources were copied byte-for-byte into the detached
 baseline worktree. Their SHA-256 values are
-`8bdeff6e6f88d755095a1f169c03fbf1c30efdc63d0c4d26b35b0250316d3a85`
+`1aa714b5205e367a3eaa2e4449a7589c2e36af49127046934e44e0552baafe6b`
 for `ExactMoveMrtrWorkEvidenceTests.cs` and
-`7cf833b9b4df51c81b08a7938a370d9b5bb5c2ca7b3d694a83c3f17be29622b1`
+`6d7585a6195b12c783d79efbcf99fe458dced28f2cf741cf11fccf30748e8cfc`
 for `ExactMoveMrtrRadicaleSizeEvidenceTests.cs`.
 
 The deterministic witness drives the real `CalDavClient` and
@@ -123,18 +123,31 @@ no REPORT or unrelated-resource GET.
 
 | Destination resources | Revision | Duration ms | Requests | PROPFIND | REPORT | Source GET | Destination GET | Unrelated GET | MOVE |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | baseline | 186.355 | 22 | 4 | 6 | 4 | 4 | 3 | 1 |
-| 1 | changed | 3.870 | 11 | 4 | 0 | 3 | 3 | 0 | 1 |
-| 50 | baseline | 43.976 | 169 | 4 | 6 | 4 | 4 | 150 | 1 |
-| 50 | changed | 180.810 | 11 | 4 | 0 | 3 | 3 | 0 | 1 |
-| 600 | baseline | 460.386 | 1,819 | 4 | 6 | 4 | 4 | 1,800 | 1 |
-| 600 | changed | 2.841 | 11 | 4 | 0 | 3 | 3 | 0 | 1 |
+| 1 | baseline | 192.202 | 22 | 4 | 6 | 4 | 4 | 3 | 1 |
+| 1 | changed | 2.107 | 11 | 4 | 0 | 3 | 3 | 0 | 1 |
+| 50 | baseline | 47.531 | 169 | 4 | 6 | 4 | 4 | 150 | 1 |
+| 50 | changed | 1.994 | 11 | 4 | 0 | 3 | 3 | 0 | 1 |
+| 600 | baseline | 485.264 | 1,819 | 4 | 6 | 4 | 4 | 1,800 | 1 |
+| 600 | changed | 2.479 | 11 | 4 | 0 | 3 | 3 | 0 | 1 |
 
 The deterministic baseline is `3N + 19` requests: four discovery PROPFINDs,
 six REPORTs, `3N + 8` involved or candidate GETs, and one MOVE. The changed
 trace is 11 requests at every size: four discovery PROPFINDs, six involved-
 resource GETs, and one MOVE. The discovery counts separately prove one fresh
 acquisition in each MRTR call. Both modes use zero multiget and zero HEAD.
+
+The same deterministic seam also fixes unrelated-resource shape independently
+of Calendar size. At 1, 50, and 600 resources, an opaque unrelated corpus keeps
+the baseline `3N + 19` scan while every changed trace remains 11 requests with
+zero unrelated GETs. An oversized unrelated corpus makes the baseline stop as
+`payload_too_large`/`not_attempted`, and a weak-ETag unrelated corpus makes it
+stop as `concurrency_unavailable`/`not_attempted`; each stopping trace is seven
+requests: two PROPFINDs, two REPORTs, one source GET, one destination GET, one
+unrelated GET, and no MOVE. Both shapes still produce the same 11-request
+successful changed trace at all three sizes because unrelated resources are not
+read. Weak-ETag evidence is deterministic-only: Radicale 3.7.8 emits strong
+Entity Tags for the accepted resources below, so the pinned-server witness does
+not claim a server-authored weak Entity Tag.
 
 ### Exact Move pinned-Radicale observations
 
@@ -149,12 +162,12 @@ recorded above.
 
 | Destination resources | Revision | Duration ms | Requests | PROPFIND | REPORT | Source GET | Destination GET | Unrelated GET | MOVE |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | baseline | 329.3614 | 28 | 10 | 6 | 4 | 4 | 3 | 1 |
-| 1 | changed | 300.2858 | 17 | 10 | 0 | 3 | 3 | 0 | 1 |
-| 50 | baseline | 433.4922 | 175 | 10 | 6 | 4 | 4 | 150 | 1 |
-| 50 | changed | 60.5085 | 17 | 10 | 0 | 3 | 3 | 0 | 1 |
-| 600 | baseline | 3535.6835 | 1,825 | 10 | 6 | 4 | 4 | 1,800 | 1 |
-| 600 | changed | 195.7318 | 17 | 10 | 0 | 3 | 3 | 0 | 1 |
+| 1 | baseline | 355.1021 | 28 | 10 | 6 | 4 | 4 | 3 | 1 |
+| 1 | changed | 320.3831 | 17 | 10 | 0 | 3 | 3 | 0 | 1 |
+| 50 | baseline | 463.9283 | 175 | 10 | 6 | 4 | 4 | 150 | 1 |
+| 50 | changed | 72.2156 | 17 | 10 | 0 | 3 | 3 | 0 | 1 |
+| 600 | baseline | 3780.7293 | 1,825 | 10 | 6 | 4 | 4 | 1,800 | 1 |
+| 600 | changed | 196.1332 | 17 | 10 | 0 | 3 | 3 | 0 | 1 |
 
 The Radicale baseline is `3N + 25` requests and the changed trace is exactly 17
 requests. The extra six PROPFINDs are Radicale's discovery shape. Corpus setup,
@@ -162,6 +175,22 @@ cardinality verification, representative non-interference reads, and cleanup
 are outside the timer and classified trace. Durations are supporting local
 observations only; request and involved-resource counts are the regression
 contract.
+
+The server witness additionally replaces one ordinary destination VTODO with
+a Radicale-accepted VEVENT that retains `CALSCALE:X-CUSTOM`, has authoritative
+UTF-8 content larger than 4 MiB, and has a strong server-authored Entity Tag.
+The opaque projection and byte size are asserted outside the trace. This makes
+the legacy scan fail closed before dispatch while the changed revision remains
+Calendar-size independent:
+
+| Destination resources | Revision | Duration ms | Requests | PROPFIND | REPORT | Source GET | Destination GET | Unrelated GET | MOVE | Outcome |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 1 | baseline | 75.8564 | 10 | 5 | 2 | 1 | 1 | 1 | 0 | `payload_too_large` / `not_attempted` |
+| 1 | changed | 74.8774 | 17 | 10 | 0 | 3 | 3 | 0 | 1 | `success` / `committed` |
+| 50 | baseline | 91.0921 | 10 | 5 | 2 | 1 | 1 | 1 | 0 | `payload_too_large` / `not_attempted` |
+| 50 | changed | 80.4829 | 17 | 10 | 0 | 3 | 3 | 0 | 1 | `success` / `committed` |
+| 600 | baseline | 247.0800 | 10 | 5 | 2 | 1 | 1 | 1 | 0 | `payload_too_large` / `not_attempted` |
+| 600 | changed | 219.2864 | 17 | 10 | 0 | 3 | 3 | 0 | 1 | `success` / `committed` |
 
 ### Exact Move reproduction
 
@@ -173,8 +202,7 @@ git worktree add --detach /tmp/dotnet-agents-caldav-issue115-baseline 334234903c
 cp tests/DotnetAgents.CalDav.Core.Tests.Unit/Services/ExactMoveMrtrWorkEvidenceTests.cs /tmp/dotnet-agents-caldav-issue115-baseline/tests/DotnetAgents.CalDav.Core.Tests.Unit/Services/
 cp tests/DotnetAgents.CalDav.IntegrationTests/ExactMoveMrtrRadicaleSizeEvidenceTests.cs /tmp/dotnet-agents-caldav-issue115-baseline/tests/DotnetAgents.CalDav.IntegrationTests/
 dotnet restore
-dotnet build tests/DotnetAgents.CalDav.Core.Tests.Unit/DotnetAgents.CalDav.Core.Tests.Unit.csproj -c Release --no-restore
-dotnet build tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj -c Release --no-restore
+dotnet build -c Release --no-restore -m:1 /nodeReuse:false
 ```
 
 From the baseline worktree:
@@ -184,41 +212,46 @@ CALDAV_MOVE_EVIDENCE_MODE=legacy-scan dotnet test \
   --project tests/DotnetAgents.CalDav.Core.Tests.Unit/DotnetAgents.CalDav.Core.Tests.Unit.csproj \
   -c Release --no-build --no-restore \
   --filter-class '*ExactMoveMrtrWorkEvidenceTests' \
-  --results-directory /tmp/issue115-evidence-766898a/baseline-core \
+  --results-directory /tmp/issue115-evidence-cf71366/baseline-core \
   --report-trx --report-trx-filename baseline-core.trx \
-  --minimum-expected-tests 4 --fail-skips on --zero-tests-policy strict --no-ansi
+  --minimum-expected-tests 13 --fail-skips on --zero-tests-policy strict \
+  --max-parallel-test-modules 1 --output Detailed --no-ansi
 CALDAV_MOVE_EVIDENCE_MODE=legacy-scan RADICALE_CONFORMANCE_VARIANT=baseline dotnet test \
   --project tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj \
   -c Release --no-build --no-restore \
   --filter-class '*ExactMoveMrtrRadicaleSizeEvidenceTests' \
-  --results-directory /tmp/issue115-evidence-766898a/baseline-radicale \
+  --results-directory /tmp/issue115-evidence-cf71366/baseline-radicale \
   --report-trx --report-trx-filename baseline-radicale.trx \
-  --minimum-expected-tests 2 --fail-skips on --zero-tests-policy strict --no-ansi
+  --minimum-expected-tests 2 --fail-skips on --zero-tests-policy strict \
+  --max-parallel-test-modules 1 --output Detailed --no-ansi
 ```
 
-From changed implementation revision `766898ab6e5fad5890c61427a77a07d570ef42b9`:
+From changed implementation revision `cf71366aece23fa07f6519a0955e68f7cf843ea6`:
 
 ```bash
 CALDAV_MOVE_EVIDENCE_MODE=server-authoritative dotnet test \
   --project tests/DotnetAgents.CalDav.Core.Tests.Unit/DotnetAgents.CalDav.Core.Tests.Unit.csproj \
   -c Release --no-build --no-restore \
   --filter-class '*ExactMoveMrtrWorkEvidenceTests' \
-  --results-directory /tmp/issue115-evidence-766898a/current-core \
+  --results-directory /tmp/issue115-evidence-cf71366/current-core \
   --report-trx --report-trx-filename current-core.trx \
-  --minimum-expected-tests 4 --fail-skips on --zero-tests-policy strict --no-ansi
+  --minimum-expected-tests 13 --fail-skips on --zero-tests-policy strict \
+  --max-parallel-test-modules 1 --output Detailed --no-ansi
 CALDAV_MOVE_EVIDENCE_MODE=server-authoritative RADICALE_CONFORMANCE_VARIANT=baseline dotnet test \
   --project tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj \
   -c Release --no-build --no-restore \
   --filter-class '*ExactMoveMrtrRadicaleSizeEvidenceTests' \
-  --results-directory /tmp/issue115-evidence-766898a/current-radicale \
+  --results-directory /tmp/issue115-evidence-cf71366/current-radicale \
   --report-trx --report-trx-filename current-radicale.trx \
-  --minimum-expected-tests 2 --fail-skips on --zero-tests-policy strict --no-ansi
+  --minimum-expected-tests 2 --fail-skips on --zero-tests-policy strict \
+  --max-parallel-test-modules 1 --output Detailed --no-ansi
 ```
 
-All four Exact runs passed. Each Core run executed four tests and each Radicale
-run executed two. The four TRX files remain retained under
-`/tmp/issue115-evidence-766898a`; the Radicale witness performs exact cleanup in
-`finally`, and fixture disposal removes the disposable container.
+All four Exact runs passed. Each Core run executed 13 tests and each Radicale
+run executed two. The four TRX files were retained through transcription and
+then removed with the successful evidence root; the detached baseline worktree
+was removed as well. The Radicale witness performs exact Calendar/resource
+cleanup in `finally`, and fixture disposal removes the disposable container.
 
 ## Semantic Move reproduction
 
