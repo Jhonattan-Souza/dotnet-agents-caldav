@@ -255,7 +255,7 @@ public sealed class OpenTelemetryStdioIntegrationTests
         var spans = OtlpProtobufReader.ReadSpans(receiver.Requests);
         var discoveryPhases = spans.Where(span => span.Name == "caldav.phase.discovery").ToArray();
         var attempts = spans.Where(span =>
-            span.ScopeName == "System.Net.Http"
+            span.ScopeName == "DotnetAgents.CalDav.Http"
             && Equals(span.Attributes.GetValueOrDefault("http.request.method"), "PROPFIND"))
             .ToArray();
         attempts.Length.ShouldBeGreaterThanOrEqualTo(2, string.Join(
@@ -270,6 +270,52 @@ public sealed class OpenTelemetryStdioIntegrationTests
         attempts.ShouldAllBe(attempt => discoveryPhases.Any(phase =>
             attempt.ParentSpanId.SequenceEqual(phase.SpanId)));
         server.TransientFailureCount.ShouldBe(1);
+        spans.ShouldNotContain(span => span.ScopeName == "System.Net.Http");
+        spans.ShouldAllBe(span => span.EventCount == 0);
+        stderr.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task AbortedReadAttempt_ExportsControlledFailureWithoutExceptionEvents()
+    {
+        await using var server = new AbortBeforeHeadersDiscoveryServer();
+        await using var receiver = OtlpLoopbackReceiver.Start();
+        var stderr = new ConcurrentQueue<string>();
+
+        await using (var client = await CreateClientAsync(
+                         receiver.Endpoint,
+                         stderr,
+                         baseUrl: server.BaseUrl,
+                         calendarHrefs: server.CalendarHref))
+        {
+            var result = await client.CallToolAsync(
+                "calendars.list",
+                cancellationToken: TestContext.Current.CancellationToken);
+            result.IsError.ShouldBe(false, result.StructuredContent?.ToString());
+        }
+
+        await receiver.WaitForPathsAsync(["/v1/traces"], TestContext.Current.CancellationToken);
+        var spans = OtlpProtobufReader.ReadSpans(receiver.Requests);
+        var discoveryPhases = spans.Where(span => span.Name == "caldav.phase.discovery").ToArray();
+        var attempts = spans.Where(span =>
+            span.ScopeName == "DotnetAgents.CalDav.Http"
+            && Equals(span.Attributes.GetValueOrDefault("http.request.method"), "PROPFIND"))
+            .ToArray();
+        attempts.Length.ShouldBeGreaterThanOrEqualTo(2, string.Join(
+            Environment.NewLine,
+            spans.Select(span => $"{span.ScopeName} | {span.Name} | {string.Join(',', span.Attributes.Select(item => $"{item.Key}={item.Value}"))}")));
+        attempts.Select(span => Convert.ToHexString(span.SpanId)).Distinct(StringComparer.Ordinal).Count()
+            .ShouldBe(attempts.Length);
+        attempts.ShouldContain(span =>
+            Equals(span.Attributes.GetValueOrDefault("error.type"), "connection_error")
+            || Equals(span.Attributes.GetValueOrDefault("error.type"), "response_ended"));
+        attempts.ShouldContain(span =>
+            Equals(span.Attributes.GetValueOrDefault("http.response.status_code"), 207L));
+        attempts.ShouldAllBe(attempt => discoveryPhases.Any(phase =>
+            attempt.ParentSpanId.SequenceEqual(phase.SpanId)));
+        spans.ShouldNotContain(span => span.ScopeName == "System.Net.Http");
+        spans.ShouldAllBe(span => span.EventCount == 0);
+        server.AbortedRequestCount.ShouldBe(1);
         stderr.ShouldBeEmpty();
     }
 
@@ -297,7 +343,7 @@ public sealed class OpenTelemetryStdioIntegrationTests
         var createPhases = spans.Where(span => span.ParentSpanId.SequenceEqual(createOperation.SpanId)).ToArray();
         createPhases.ShouldContain(span => span.Name == "caldav.phase.reconcile");
         spans.ShouldContain(span =>
-            span.ScopeName == "System.Net.Http"
+            span.ScopeName == "DotnetAgents.CalDav.Http"
             && createPhases.Any(phase => span.ParentSpanId.SequenceEqual(phase.SpanId))
             && span.Attributes.ContainsKey("http.request.method"));
         spans.ShouldAllBe(span => span.EventCount == 0);
@@ -640,6 +686,95 @@ public sealed class OpenTelemetryStdioIntegrationTests
             context.Response.ContentLength64 = bytes.Length;
             await context.Response.OutputStream.WriteAsync(bytes, TestContext.Current.CancellationToken);
             context.Response.Close();
+        }
+    }
+
+    private sealed class AbortBeforeHeadersDiscoveryServer : IAsyncDisposable
+    {
+        private readonly TcpListener _listener;
+        private readonly CancellationTokenSource _stopping = new();
+        private readonly Task _serve;
+        private int _abortedRequestCount;
+        private int _requestCount;
+
+        internal AbortBeforeHeadersDiscoveryServer()
+        {
+            _listener = new TcpListener(IPAddress.Loopback, 0);
+            _listener.Start();
+            var port = ((IPEndPoint)_listener.LocalEndpoint).Port;
+            BaseUrl = $"http://127.0.0.1:{port}/";
+            CalendarHref = $"{BaseUrl}calendars/test/entities/";
+            _serve = ServeAsync();
+        }
+
+        internal string BaseUrl { get; }
+
+        internal string CalendarHref { get; }
+
+        internal int AbortedRequestCount => Volatile.Read(ref _abortedRequestCount);
+
+        public async ValueTask DisposeAsync()
+        {
+            await _stopping.CancelAsync();
+            _listener.Stop();
+            try
+            {
+                await _serve;
+            }
+            catch (Exception exception) when (_stopping.IsCancellationRequested
+                && exception is SocketException or ObjectDisposedException or OperationCanceledException)
+            {
+                System.Diagnostics.Debug.Assert(_stopping.IsCancellationRequested);
+            }
+            _stopping.Dispose();
+        }
+
+        private async Task ServeAsync()
+        {
+            while (!_stopping.IsCancellationRequested)
+            {
+                using var client = await _listener.AcceptTcpClientAsync(_stopping.Token)
+                    .ConfigureAwait(false);
+                await RespondAsync(client).ConfigureAwait(false);
+            }
+        }
+
+        private async Task RespondAsync(TcpClient client)
+        {
+            await using var stream = client.GetStream();
+            using var reader = new StreamReader(
+                stream,
+                Encoding.ASCII,
+                detectEncodingFromByteOrderMarks: false,
+                leaveOpen: true);
+            var requestLine = await reader.ReadLineAsync(_stopping.Token);
+            while (await reader.ReadLineAsync(_stopping.Token) is { Length: > 0 })
+            {
+            }
+
+            if (Interlocked.Increment(ref _requestCount) == 1)
+            {
+                Interlocked.Increment(ref _abortedRequestCount);
+                client.Client.LingerState = new LingerOption(enable: true, seconds: 0);
+                return;
+            }
+
+            var path = requestLine?.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                .ElementAtOrDefault(1);
+            var body = path == "/"
+                ? "<d:response><d:href>/</d:href><d:propstat><d:prop><c:calendar-home-set><d:href>/calendars/test/</d:href></c:calendar-home-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>"
+                : "<d:response><d:href>/calendars/test/entities/</d:href><d:propstat><d:prop><d:resourcetype><c:calendar/></d:resourcetype><d:displayname>Abort Recovery Calendar</d:displayname><c:supported-calendar-component-set><c:comp name=\"VEVENT\"/><c:comp name=\"VTODO\"/></c:supported-calendar-component-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>";
+            var xml = "<?xml version=\"1.0\" encoding=\"utf-8\"?><d:multistatus xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\">"
+                + body
+                + "</d:multistatus>";
+            var bytes = Encoding.UTF8.GetBytes(xml);
+            var headers = Encoding.ASCII.GetBytes(
+                "HTTP/1.1 207 Multi-Status\r\n"
+                + "Content-Type: application/xml; charset=utf-8\r\n"
+                + $"Content-Length: {bytes.Length}\r\n"
+                + "Connection: close\r\n\r\n");
+            await stream.WriteAsync(headers, _stopping.Token);
+            await stream.WriteAsync(bytes, _stopping.Token);
         }
     }
 

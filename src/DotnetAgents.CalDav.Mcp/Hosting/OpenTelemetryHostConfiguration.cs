@@ -14,6 +14,7 @@ internal static class OpenTelemetryHostConfiguration
     internal const string DefaultServiceName = "dotnet-agents-caldav";
     internal const string InstrumentationName = "DotnetAgents.CalDav";
     internal const string McpInstrumentationName = "Experimental.ModelContextProtocol";
+    internal const string HttpInstrumentationName = "DotnetAgents.CalDav.Http";
     internal const int ExporterTimeoutMilliseconds = 250;
 
     internal static bool IsEnabled(Func<string, string?>? environmentProvider = null)
@@ -46,8 +47,7 @@ internal static class OpenTelemetryHostConfiguration
                 .AddService(serviceName)
                 .AddTelemetrySdk())
             .WithTracing(tracing => tracing
-                .AddSource(McpInstrumentationName, InstrumentationName)
-                .AddHttpClientInstrumentation(options => options.RecordException = false)
+                .AddSource(McpInstrumentationName, InstrumentationName, HttpInstrumentationName)
                 .AddProcessor(new TelemetryActivityAllowlistProcessor())
                 .AddOtlpExporter(ConfigureExporter))
             .WithMetrics(metrics => metrics
