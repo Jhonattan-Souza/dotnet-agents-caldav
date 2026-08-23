@@ -376,6 +376,10 @@ public sealed class CalendarMoveModuleTests
     [InlineData("etag-malformed")]
     [InlineData("source-format")]
     [InlineData("source-origin")]
+    [InlineData("source-query")]
+    [InlineData("source-fragment")]
+    [InlineData("source-encoded-separator")]
+    [InlineData("source-encoded-dot")]
     [InlineData("destination-shape")]
     [InlineData("destination-null")]
     public async Task InvalidAuthorizationOrRevisionShapeStopsBeforeDiscovery(string invalidity)
@@ -390,6 +394,14 @@ public sealed class CalendarMoveModuleTests
                 "not-an-absolute-href", Uid, CalendarEntityKind.Todo, "\"r1\""),
             "source-origin" => new CalendarResourceRevisionReference(
                 "https://other.example/tasks/reviewed.ics", Uid, CalendarEntityKind.Todo, "\"r1\""),
+            "source-query" => new CalendarResourceRevisionReference(
+                SourceHref + "?view=private", Uid, CalendarEntityKind.Todo, "\"r1\""),
+            "source-fragment" => new CalendarResourceRevisionReference(
+                SourceHref + "#private", Uid, CalendarEntityKind.Todo, "\"r1\""),
+            "source-encoded-separator" => new CalendarResourceRevisionReference(
+                "https://cal.example/tasks%2Freviewed.ics", Uid, CalendarEntityKind.Todo, "\"r1\""),
+            "source-encoded-dot" => new CalendarResourceRevisionReference(
+                "https://cal.example/tasks/%2e%2e/reviewed.ics", Uid, CalendarEntityKind.Todo, "\"r1\""),
             _ => Request().Revision
         };
         var destination = invalidity switch
