@@ -185,7 +185,17 @@ internal static class OtlpProtobufReader
             ReadBytes(fields, 4),
             ReadAttributes(fields, 9),
             ReadString(fields, 3),
-            fields.Count(field => field.Number == 11));
+            fields.Count(field => field.Number == 11),
+            ReadStatusCode(payload));
+    }
+
+    private static long ReadStatusCode(byte[] spanPayload)
+    {
+        var status = MessageFields(spanPayload, 15).FirstOrDefault();
+        if (status is null)
+            return 0;
+        var code = ReadFields(status).FirstOrDefault(field => field.Number == 3);
+        return code is null ? 0 : checked((long)code.Integer);
     }
 
     private static IReadOnlyList<IReadOnlyDictionary<string, object?>> ReadMetricDataPointAttributes(
@@ -335,7 +345,8 @@ internal sealed record OtlpSpan(
     byte[] ParentSpanId,
     IReadOnlyDictionary<string, object?> Attributes,
     string TraceState,
-    int EventCount);
+    int EventCount,
+    long StatusCode);
 
 internal sealed record OtlpLogRecord(
     string ScopeName,

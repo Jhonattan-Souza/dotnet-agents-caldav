@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.IO.Compression;
 using System.Text;
+using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Core.Internal;
 using DotnetAgents.CalDav.Core.Models;
@@ -1232,6 +1233,52 @@ public class CalDavClientTests
         result.Snapshot.ShouldBeNull();
     }
 
+    [Fact]
+    public async Task ProbeCalendarResourceAbsenceAsync_MarksOnlyTheExplicitWireRequest()
+    {
+        var purposes = new List<string?>();
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            purposes.Add(request.Options.TryGetValue(
+                CalendarHttpTelemetry.RequestPurposeKey,
+                out var purpose)
+                    ? purpose
+                    : null);
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+        var sut = CreateSut(handler);
+
+        var probe = await sut.ProbeCalendarResourceAbsenceAsync(
+            "https://example.com/calendars/user/events/probe.ics",
+            CancellationToken.None);
+        var ordinary = await sut.GetCalendarResourceAsync(
+            "https://example.com/calendars/user/events/ordinary.ics",
+            CancellationToken.None);
+
+        probe.Code.ShouldBe(CalendarResourceReadCode.NotFound);
+        ordinary.Code.ShouldBe(CalendarResourceReadCode.NotFound);
+        purposes.ShouldBe([CalendarHttpTelemetry.AbsenceProbe, null]);
+    }
+
+    [Fact]
+    public async Task ProbeCalendarResourceAbsenceAsync_PreservesPurposeThroughDecoratorDefault()
+    {
+        string? purpose = null;
+        var concrete = CreateSut(new StubHttpMessageHandler(request =>
+        {
+            _ = request.Options.TryGetValue(CalendarHttpTelemetry.RequestPurposeKey, out purpose);
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        }));
+        ICalendarClient decorator = new GetOnlyCalendarClient(concrete);
+
+        var result = await decorator.ProbeCalendarResourceAbsenceAsync(
+            "https://example.com/calendars/user/events/probe.ics",
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceReadCode.NotFound);
+        purpose.ShouldBe(CalendarHttpTelemetry.AbsenceProbe);
+    }
+
     [Theory]
     [InlineData(HttpStatusCode.MovedPermanently)]
     [InlineData(HttpStatusCode.Redirect)]
@@ -1896,6 +1943,31 @@ public class CalDavClientTests
             internal static NullScope Instance { get; } = new();
             public void Dispose() { }
         }
+    }
+
+    private sealed class GetOnlyCalendarClient(ICalendarClient inner) : ICalendarClient
+    {
+        public Task<IReadOnlyList<CalendarDescriptor>> GetCalendarsAsync(CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<IReadOnlyList<string>> QueryCalendarResourceHrefsAsync(
+            string calendarHref,
+            CalendarEntityKind entityKind,
+            DateTimeOffset? from,
+            DateTimeOffset? to,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<CalendarResourceRead> GetCalendarResourceAsync(
+            string href,
+            CancellationToken cancellationToken) => inner.GetCalendarResourceAsync(href, cancellationToken);
+
+        public Task<CalendarResourceCreateResult> CreateCalendarResourceAsync(
+            CalendarResourceCreateRequest request,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<CalendarResourceDeleteDispatchResult> DeleteCalendarResourceAsync(
+            CalendarResourceDeleteRequest request,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
     #endregion

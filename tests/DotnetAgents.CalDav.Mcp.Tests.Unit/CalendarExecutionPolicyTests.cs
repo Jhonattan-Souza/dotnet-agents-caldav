@@ -15,6 +15,91 @@ namespace DotnetAgents.CalDav.Mcp.Tests.Unit;
 public sealed class CalendarExecutionPolicyTests
 {
     [Fact]
+    public async Task PublicToolFilter_MrtrInputRequiredIsExpectedControlFlow()
+    {
+        var stopped = new List<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == CalendarTelemetry.InstrumentationName,
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) =>
+                ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = stopped.Add
+        };
+        ActivitySource.AddActivityListener(listener);
+        using var services = new ServiceCollection()
+            .AddSingleton(TimeProvider.System)
+            .AddSingleton<CalendarOperationAdmission>()
+            .BuildServiceProvider();
+        await using var transport = new StreamServerTransport(
+            new MemoryStream(),
+            new MemoryStream(),
+            "mrtr-telemetry-test",
+            Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
+        await using var server = McpServer.Create(
+            transport,
+            new McpServerOptions(),
+            Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance,
+            services);
+        var context = new RequestContext<CallToolRequestParams>(
+            server,
+            new JsonRpcRequest { Id = new RequestId(1L), Method = "tools/call" },
+            new CallToolRequestParams { Name = "calendar_resources.delete" });
+        var filtered = CalendarExecutionPolicy.CallTool((_, _) => throw new InputRequiredException(
+            new Dictionary<string, InputRequest>(),
+            "private-state"));
+
+        await Should.ThrowAsync<InputRequiredException>(() =>
+            filtered(context, TestContext.Current.CancellationToken).AsTask());
+
+        var operation = stopped.Single(activity => activity.OperationName == "caldav.operation");
+        operation.GetTagItem("caldav.outcome").ShouldBe("input_required");
+        operation.GetTagItem("caldav.mutation.state").ShouldBe("not_attempted");
+        operation.GetTagItem("error.type").ShouldBeNull();
+        operation.Status.ShouldBe(ActivityStatusCode.Unset);
+    }
+
+    [Fact]
+    public async Task PublicToolFilter_UnsignalledCancellationIsControlledTimeoutFailure()
+    {
+        var stopped = new List<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == CalendarTelemetry.InstrumentationName,
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) =>
+                ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = stopped.Add
+        };
+        ActivitySource.AddActivityListener(listener);
+        using var services = new ServiceCollection()
+            .AddSingleton(TimeProvider.System)
+            .AddSingleton<CalendarOperationAdmission>()
+            .BuildServiceProvider();
+        await using var transport = new StreamServerTransport(
+            new MemoryStream(),
+            new MemoryStream(),
+            "unsignalled-cancellation-telemetry-test",
+            Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
+        await using var server = McpServer.Create(
+            transport,
+            new McpServerOptions(),
+            Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance,
+            services);
+        var context = new RequestContext<CallToolRequestParams>(
+            server,
+            new JsonRpcRequest { Id = new RequestId(1L), Method = "tools/call" },
+            new CallToolRequestParams { Name = "calendars.list" });
+        var filtered = CalendarExecutionPolicy.CallTool((_, _) => throw new OperationCanceledException());
+
+        await Should.ThrowAsync<OperationCanceledException>(() =>
+            filtered(context, CancellationToken.None).AsTask());
+
+        var operation = stopped.Single(activity => activity.OperationName == "caldav.operation");
+        operation.GetTagItem("caldav.outcome").ShouldBe("error");
+        operation.GetTagItem("error.type").ShouldBe("timeout");
+        operation.Status.ShouldBe(ActivityStatusCode.Error);
+    }
+
+    [Fact]
     public async Task PublicToolFilter_EmitsParentedOperationPhaseAndSafeResultDimensions()
     {
         var stopped = new List<Activity>();
@@ -50,9 +135,10 @@ public sealed class CalendarExecutionPolicyTests
             IsError = true,
             StructuredContent = JsonSerializer.SerializeToElement(new
             {
-                code = "entity_revision_conflict",
-                category = "limitsAndAdmission",
-                phase = "reconcile",
+                code = "conflict",
+                category = "state",
+                phase = "targetRevision",
+                retryable = false,
                 mutationState = "not_committed"
             })
         };
@@ -67,9 +153,12 @@ public sealed class CalendarExecutionPolicyTests
         operation.GetTagItem("caldav.tool.name").ShouldBe("todos.complete");
         operation.GetTagItem("caldav.entity.kind").ShouldBe("todo");
         operation.GetTagItem("caldav.outcome").ShouldBe("error");
-        operation.GetTagItem("caldav.error.code").ShouldBe("entity_revision_conflict");
-        operation.GetTagItem("caldav.error.category").ShouldBe("limitsAndAdmission");
+        operation.GetTagItem("caldav.error.code").ShouldBe("conflict");
+        operation.GetTagItem("caldav.error.category").ShouldBe("state");
+        operation.GetTagItem("caldav.error.phase").ShouldBe("targetRevision");
+        operation.GetTagItem("caldav.error.retryable").ShouldBe(false);
         operation.GetTagItem("caldav.mutation.state").ShouldBe("not_committed");
+        operation.GetTagItem("error.type").ShouldBe("caldav.conflict");
         operation.Status.ShouldBe(ActivityStatusCode.Error);
     }
 

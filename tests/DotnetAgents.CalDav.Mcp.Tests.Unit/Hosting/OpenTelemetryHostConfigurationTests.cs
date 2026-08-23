@@ -9,6 +9,12 @@ namespace DotnetAgents.CalDav.Mcp.Tests.Unit.Hosting;
 public sealed class OpenTelemetryHostConfigurationTests
 {
     [Fact]
+    public void TelemetryContract_UsesDedicatedHttpAttemptInstrumentation()
+    {
+        OpenTelemetryHostConfiguration.HttpInstrumentationName.ShouldBe("DotnetAgents.CalDav.Http");
+    }
+
+    [Fact]
     public void TelemetryContract_UsesStableInstrumentationAndDefaultServiceNames()
     {
         OpenTelemetryHostConfiguration.InstrumentationName.ShouldBe("DotnetAgents.CalDav");

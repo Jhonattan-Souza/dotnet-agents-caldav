@@ -78,6 +78,7 @@ public sealed class CalendarCreationModuleTests
         transport.UnrelatedResourceCount.ShouldBe(5_001);
         transport.DiscoveryCount.ShouldBe(3);
         transport.DirectReadCount.ShouldBe(4);
+        transport.AbsenceProbeCount.ShouldBe(1);
         transport.ConditionalPutCount.ShouldBe(3);
     }
 
@@ -98,6 +99,8 @@ public sealed class CalendarCreationModuleTests
 
         public int DirectReadCount { get; private set; }
 
+        public int AbsenceProbeCount { get; private set; }
+
         public int ConditionalPutCount { get; private set; }
 
         public Task<IReadOnlyList<CalendarDescriptor>> GetCalendarsAsync(CancellationToken cancellationToken)
@@ -111,6 +114,8 @@ public sealed class CalendarCreationModuleTests
             CancellationToken cancellationToken)
         {
             DirectReadCount++;
+            if (CalendarHttpTelemetry.IsAbsenceProbe)
+                AbsenceProbeCount++;
             return Task.FromResult(_resources.TryGetValue(href, out var authoritativeUtf8)
                 ? CalendarResourceRead.Success(href, $"\"r{DirectReadCount}\"", authoritativeUtf8)
                 : new CalendarResourceRead(CalendarResourceReadCode.NotFound));

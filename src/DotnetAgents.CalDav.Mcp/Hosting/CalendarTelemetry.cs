@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using DotnetAgents.CalDav.Core.Models;
 using DotnetAgents.CalDav.Core.Services;
 
 namespace DotnetAgents.CalDav.Mcp.Hosting;
@@ -57,6 +58,61 @@ internal enum CalendarTelemetryEntityKind
     Todo
 }
 
+internal static class CalendarTelemetryVocabulary
+{
+    private static readonly HashSet<string> ErrorCodes = new(StringComparer.Ordinal)
+    {
+        "ambiguous", "busy", "committed_but_concurrency_unavailable", "committed_but_unverified",
+        "completion_state_conflict", "concurrency_unavailable", "confirmation_expired",
+        "confirmation_mismatch", "conflict", "destination_conflict", "entity_kind_mismatch",
+        "fidelity_failure", "indeterminate", "invalid_calendar_data", "invalid_input",
+        "limit_exhausted", "not_found", "opaque_resource", "outside_scope", "payload_too_large",
+        "recurrence_unevaluable", "temporal_unresolved", "unsupported_capability", "upstream_forbidden",
+        "upstream_protocol_error", "upstream_rate_limited", "upstream_unauthorized", "upstream_unavailable"
+    };
+    private static readonly HashSet<string> ErrorCategories = new(StringComparer.Ordinal)
+    {
+        "capabilityAndProjection", "confirmation", "input", "limitsAndAdmission", "postWriteTruth",
+        "selection", "state", "upstream"
+    };
+    private static readonly HashSet<string> ErrorPhases = new(StringComparer.Ordinal)
+    {
+        "admissionAndPayload", "completeResourceSemantics", "execution", "mrtr",
+        "originScopeAuthorization", "postWriteVerificationOrReconciliation",
+        "schemaLexicalDiscriminator", "selectionDiscoveryCapability", "targetRevision",
+        "transportAuthorization"
+    };
+
+    internal static string? ErrorCode(string? value) => Known(value, ErrorCodes);
+
+    internal static IReadOnlySet<string> KnownErrorCodes => ErrorCodes;
+
+    internal static string? ErrorCategory(string? value) => Known(value, ErrorCategories);
+
+    internal static IReadOnlySet<string> KnownErrorCategories => ErrorCategories;
+
+    internal static string? ErrorPhase(string? value) => Known(value, ErrorPhases);
+
+    internal static IReadOnlySet<string> KnownErrorPhases => ErrorPhases;
+
+    internal static string? ErrorType(object? value)
+    {
+        if (value is not string text)
+            return null;
+        if (text is "timeout" or "connection_error" or "response_ended" or "protocol_error" or "internal_error")
+            return text;
+        if (text.StartsWith("caldav.", StringComparison.Ordinal)
+            && ErrorCode(text["caldav.".Length..]) is not null)
+        {
+            return text;
+        }
+        return text is { Length: 3 } && text.All(char.IsAsciiDigit) ? text : null;
+    }
+
+    private static string? Known(string? value, HashSet<string> known) =>
+        value is not null && known.Contains(value) ? value : null;
+}
+
 internal sealed class CalendarTelemetryOperation : IDisposable
 {
     private readonly ActivitySource _source;
@@ -81,17 +137,27 @@ internal sealed class CalendarTelemetryOperation : IDisposable
         string outcome,
         string? errorCode = null,
         string? errorCategory = null,
-        string? mutationState = null)
+        string? mutationState = null,
+        string? errorPhase = null,
+        bool? retryable = null)
     {
         if (!_operation.IsAllDataRequested)
             return;
 
+        if (outcome is not ("success" or "input_required" or "cancelled" or "error"))
+            throw new ArgumentOutOfRangeException(nameof(outcome), outcome, null);
+
         _operation.SetTag("caldav.outcome", outcome);
         _operation.SetTag("caldav.error.code", errorCode);
         _operation.SetTag("caldav.error.category", errorCategory);
+        _operation.SetTag("caldav.error.phase", errorPhase);
+        _operation.SetTag("caldav.error.retryable", retryable);
         _operation.SetTag("caldav.mutation.state", mutationState);
         if (string.Equals(outcome, "error", StringComparison.Ordinal))
+        {
+            _operation.SetTag("error.type", errorCode is null ? null : $"caldav.{errorCode}");
             _operation.SetStatus(ActivityStatusCode.Error);
+        }
     }
 
     internal void Fail(Exception exception)
@@ -100,7 +166,7 @@ internal sealed class CalendarTelemetryOperation : IDisposable
             return;
 
         _operation.SetTag("caldav.outcome", "error");
-        _operation.SetTag("error.type", exception.GetType().FullName);
+        _operation.SetTag("error.type", ClassifyException(exception));
         _operation.SetStatus(ActivityStatusCode.Error);
     }
 
@@ -128,5 +194,14 @@ internal sealed class CalendarTelemetryOperation : IDisposable
         CalendarOperationPhase.Expand => "expand",
         CalendarOperationPhase.Reconcile => "reconcile",
         _ => throw new ArgumentOutOfRangeException(nameof(phase), phase, null)
+    };
+
+    private static string ClassifyException(Exception exception) => exception switch
+    {
+        TimeoutException or TaskCanceledException => "timeout",
+        HttpRequestException { HttpRequestError: HttpRequestError.ResponseEnded } => "response_ended",
+        HttpRequestException or IOException => "connection_error",
+        CalendarDiscoveryProtocolException => "protocol_error",
+        _ => "internal_error"
     };
 }

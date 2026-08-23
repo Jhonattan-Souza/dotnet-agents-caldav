@@ -765,7 +765,7 @@ internal sealed class CalendarCreationModule(
         try
         {
             return new ExactReadAttempt(
-                await transport.GetCalendarResourceAsync(href, cancellationToken),
+                await transport.ProbeCalendarResourceAbsenceAsync(href, cancellationToken),
                 null);
         }
         catch (Exception exception) when (IsExactPhaseFailure(exception, cancellationToken))

@@ -176,13 +176,34 @@ internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport
     }
 
     /// <inheritdoc />
-    public async Task<CalendarResourceRead> GetCalendarResourceAsync(string href, CancellationToken cancellationToken)
+    public Task<CalendarResourceRead> GetCalendarResourceAsync(
+        string href,
+        CancellationToken cancellationToken) => GetCalendarResourceAsync(
+            href,
+            CalendarHttpTelemetry.IsAbsenceProbe,
+            cancellationToken);
+
+    /// <inheritdoc />
+    public Task<CalendarResourceRead> ProbeCalendarResourceAbsenceAsync(
+        string href,
+        CancellationToken cancellationToken) => GetCalendarResourceAsync(
+            href,
+            absenceProbe: true,
+            cancellationToken);
+
+    private async Task<CalendarResourceRead> GetCalendarResourceAsync(
+        string href,
+        bool absenceProbe,
+        CancellationToken cancellationToken)
     {
         CalendarOperationProgress.SetPhase(CalendarOperationPhase.Fetch);
         if (!TryValidateAbsoluteResourceHref(href, out var resourceUri))
             return new CalendarResourceRead(CalendarResourceReadCode.InvalidInput);
 
-        using var response = await SendGetWithRedirectHandlingAsync(resourceUri, cancellationToken);
+        using var response = await SendGetWithRedirectHandlingAsync(
+            resourceUri,
+            absenceProbe,
+            cancellationToken);
         if (response.StatusCode == HttpStatusCode.NotFound)
             return new CalendarResourceRead(CalendarResourceReadCode.NotFound);
 
@@ -416,6 +437,7 @@ internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport
 
     private async Task<HttpResponseMessage> SendGetWithRedirectHandlingAsync(
         Uri initialUri,
+        bool absenceProbe,
         CancellationToken cancellationToken,
         int maxRedirects = 5)
     {
@@ -423,6 +445,8 @@ internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport
         for (var attempt = 0; ; attempt++)
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, currentUri);
+            if (absenceProbe)
+                CalendarHttpTelemetry.MarkAbsenceProbe(request);
             var response = await _httpClient.SendAsync(
                 request,
                 HttpCompletionOption.ResponseHeadersRead,

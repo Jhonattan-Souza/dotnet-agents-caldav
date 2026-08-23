@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using DotnetAgents.CalDav.Mcp.Hosting;
 using Shouldly;
 using Xunit;
 
@@ -6,6 +7,20 @@ namespace DotnetAgents.CalDav.Mcp.Tests.Unit;
 
 public sealed class ContractCatalogTests
 {
+    [Fact]
+    public void Telemetry_failure_vocabulary_covers_every_public_contract_dimension()
+    {
+        var definitions = ReadJson("mcp-tool-catalog.json")["$defs"]!;
+        var error = definitions["errorOutcome"]!["properties"]!;
+
+        CalendarTelemetryVocabulary.KnownErrorCodes.SetEquals(EnumValues(error["code"]!))
+            .ShouldBeTrue();
+        CalendarTelemetryVocabulary.KnownErrorCategories.SetEquals(EnumValues(error["category"]!))
+            .ShouldBeTrue();
+        CalendarTelemetryVocabulary.KnownErrorPhases.SetEquals(EnumValues(error["phase"]!))
+            .ShouldBeTrue();
+    }
+
     [Fact]
     public void Mcp_catalog_freezes_the_semantic_and_exact_tool_contract()
     {
@@ -432,6 +447,10 @@ public sealed class ContractCatalogTests
 
     private static JsonObject FindTool(JsonObject catalog, string name) =>
         catalog["tools"]!.AsArray().Single(tool => tool!["name"]!.GetValue<string>() == name)!.AsObject();
+
+    private static string[] EnumValues(JsonNode schema) => schema["enum"]!.AsArray()
+        .Select(value => value!.GetValue<string>())
+        .ToArray();
 
     private static void AssertCreateRecurrenceSchema(JsonObject catalog, string kind)
     {
