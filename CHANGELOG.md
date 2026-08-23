@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Kept successful query retrieval on 50-resource `calendar-multiget` batches with zero GETs, and made missing, duplicate, unsafe, unrequested, incomplete, or inconsistently tagged multiget results atomic protocol failures instead of fallback triggers.
 - Migrated test execution from VSTest to Microsoft.Testing.Platform v2 and xUnit 4.
 - Isolated coverage and TRX evidence per run so historical or nested runner artifacts cannot affect quality gates.
+- Closed the performance acceptance gate over one source-controlled five-artifact manifest, exact passing TRX result records, skip/flaky source policy, and before/after worktree-state preservation.
 - Classified MRTR input requests and cooperative cancellation as expected control flow while preserving committed failures and exhausted retries as errors.
 
 ### Removed

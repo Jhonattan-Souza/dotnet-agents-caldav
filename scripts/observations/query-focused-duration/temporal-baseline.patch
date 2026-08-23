@@ -1,0 +1,41 @@
+diff --git a/tests/DotnetAgents.CalDav.Core.Tests.Unit/Services/CalendarQueryModuleTests.cs b/tests/DotnetAgents.CalDav.Core.Tests.Unit/Services/CalendarQueryModuleTests.cs
+--- a/tests/DotnetAgents.CalDav.Core.Tests.Unit/Services/CalendarQueryModuleTests.cs
++++ b/tests/DotnetAgents.CalDav.Core.Tests.Unit/Services/CalendarQueryModuleTests.cs
+@@ -18,6 +18,37 @@ public sealed class CalendarQueryModuleTests
+ {
+     private static readonly DateTimeOffset Now = new(2026, 8, 23, 12, 0, 0, TimeSpan.Zero);
+ 
++    [Fact]
++    public async Task BaselineBoundedDateOnlyStartWithoutContextPerformsAuthoritativeWork()
++    {
++        const string calendarHref = "https://cal.example/calendars/work/";
++        const string resourceHref = calendarHref + "date-only.ics";
++        var transport = new ScriptedCalendarQueryTransport(
++            [Calendar(calendarHref)],
++            static () => [resourceHref],
++            reads: _ => [CalendarResourceRead.Success(resourceHref, "\"r1\"", Ics(
++                "BEGIN:VEVENT\r\nUID:date-only\r\nDTSTAMP:20260823T120000Z\r\n"
++                + "DTSTART;VALUE=DATE:20260824\r\nEND:VEVENT\r\n"))]);
++        await using var provider = CreateProvider(transport, new MutableTimeProvider(Now));
++
++        var failure = (await provider.GetRequiredService<ICalendarQueryModule>().QueryEntitiesAsync(
++            new CalendarEntityQueryRequest.Start(new CalendarEntityQuery(
++                CalendarEntityScope.All,
++                [CalendarEntityKind.Event],
++                Now,
++                Now.AddDays(1))),
++            CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Failure>();
++
++        failure.Error.Code.ShouldBe(QueryFailureCode.TemporalUnresolved);
++        transport.DiscoveryCount.ShouldBe(1);
++        transport.CandidateQueryCount.ShouldBe(1);
++        transport.MultigetCount.ShouldBe(1);
++        var store = provider.GetRequiredService<CalendarQuerySnapshotStore>();
++        store.ActiveSnapshotCount.ShouldBe(0);
++        store.ActiveReservationCount.ShouldBe(0);
++        store.RetainedBytes.ShouldBe(0);
++    }
++
+     [Fact]
+     public async Task ContinueReadsTheImmutableResultWithoutRepeatingCalDavWork()
+     {

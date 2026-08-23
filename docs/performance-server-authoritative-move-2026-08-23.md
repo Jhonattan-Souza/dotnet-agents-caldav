@@ -8,6 +8,10 @@ Baseline revision: `6a9a8883e9e8e2ae92fb762b4073e8b8e615971d`
 
 Changed implementation revision: `1c1b3c8da64903a0f722482cb9384757218e0a56`
 
+Final #114 stack revision: `334234903c66e7e3572687eb7b990de61161f378`
+
+Changed semantic observation anchor: `a0d9cc217516d135a94aed3e72d47464b3ec657b`
+
 ## Claim
 
 Semantic Move no longer searches a destination Calendar for a matching UID.
@@ -26,6 +30,10 @@ counts and privacy boundaries are the acceptance evidence.
 Both revisions used .NET SDK `10.0.100`, .NET host/runtime `10.0.0`, Linux
 `x64`, Omarchy `4.0.0`, kernel `7.2.0-1-cachyos`, and an AMD Ryzen 7 7735HS.
 They used the same committed witness sources from the changed revision:
+
+The deterministic handler has no server image, so its server digest is N/A.
+Page-assembly allocation is N/A for Semantic and Exact Move because neither
+change assembles a query result page.
 
 - `SemanticMoveWorkEvidenceTests.SameHttpCorpusObservesBaselineScanAndChangedConstantWork`
   drives the real `CalDavClient` and `CalendarService` through one deterministic
@@ -94,6 +102,8 @@ trace.
 Baseline revision: `334234903c66e7e3572687eb7b990de61161f378`
 
 Changed implementation revision: `cf71366aece23fa07f6519a0955e68f7cf843ea6`
+
+Final #115 stack revision and changed evidence anchor: `61f2607383807f96464f33350e608180c1abee49`
 
 Exact Move now performs two constant-work MRTR preparations rather than three
 destination UID scans. The initial call returns only a protected non-executable
@@ -357,3 +367,34 @@ consolidation remains assigned to issue `#116`. The architectural rationale is
 recorded in [ADR 0006](adr/0006-server-authoritative-semantic-move.md), and the
 canonical requirement mapping is in
 [requirement-to-evidence.md](requirement-to-evidence.md).
+
+## #116 evidence-root disposition and cleanup
+
+Before cleanup, #116 classified every retained #114 root. The authoritative
+final success root `/tmp/issue114-standards-final-Zi4qjd` contained 2,211 Core,
+923 MCP, 106 Integration, and 11 tests in each strict and alternate conformance
+variant, all Passed. Its homogeneous report covered 19,826 of 21,094 lines
+(93.99%) and 11,299 of 13,239 branches (85.35%). Those values and the focused
+Occurrence/To-do durations above were transcribed before removal.
+
+`issue114-move-service` (80 Failed, four Passed) and
+`issue114-radicale-size-current` (one Failed) were classified as real,
+superseded diagnostic runs and were never used as passing evidence. The empty
+or superseded focused roots were `issue114-evidence-baseline`,
+`issue114-evidence-changed`, `issue114-evidence-current`,
+`issue114-evidence-changed-2`, `issue114-observation-changed`,
+`issue114-core-evidence-current`, `issue114-radicale-size-current-2`, and
+`issue114-coverage-recapture-IcxZTh`. `issue114-full-gate-7aVUpc` had green TRX
+rows but failed its aggregate branch gate at 84.9581%; `issue114-final-gate-Yr9eIu`
+was incomplete because it lacked Integration and aggregate evidence and retained
+an orphan stream. Neither was classified as a successful gate.
+`issue114-authoritative-final-0BPf2h` was the superseded successful gate. The
+seven `caldav115-coverage.*` roots and one `caldav115-homogeneous.*` root were
+found as successful intermediate coverage captures, not distinct semantic
+observations; no `issue115*` root remained.
+
+After that classification and transcription, only those exact roots were
+removed and their absence was verified. No generic `caldav-tests.*` directory,
+credential store, branch ref, or stash was deleted. The detached Semantic and
+Exact baseline worktrees were already absent; the protected stash remained
+`f5e4f63914d50b96ddba0b59f37d4cd2f5785141`.
