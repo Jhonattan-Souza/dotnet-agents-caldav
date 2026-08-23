@@ -83,10 +83,14 @@ public class McpMetadataTests
         envVars.EnumerateArray()
             .Single(item => item.GetProperty("name").GetString() == "OTEL_EXPORTER_OTLP_HEADERS")
             .GetProperty("isSecret").GetBoolean().ShouldBeTrue();
-        envVars.EnumerateArray()
+        var evaluationZoneDescription = envVars.EnumerateArray()
             .Single(item => item.GetProperty("name").GetString() == "CALDAV_EVALUATION_TIME_ZONE")
-            .GetProperty("description").GetString().ShouldNotBeNull()
-            .ShouldContain("bounded Calendar Entity Starts");
+            .GetProperty("description").GetString();
+        evaluationZoneDescription.ShouldNotBeNull();
+        evaluationZoneDescription.ShouldContain(
+            "bounded Calendar Entity Starts and every Occurrence or To-do Start");
+        evaluationZoneDescription.ShouldNotContain("later", Case.Insensitive);
+        evaluationZoneDescription.ShouldNotContain("cutover", Case.Insensitive);
         var description = root.GetProperty("description").GetString()!;
         description.ShouldContain("Calendars");
         description.ShouldContain("Events");

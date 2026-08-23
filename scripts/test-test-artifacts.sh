@@ -29,8 +29,8 @@ seed_main_artifacts() {
     printf '<coverage />\n' > "$directory/$prefix.coverage.opencover.260821000000001.xml"
   done
 
-  write_successful_trx "$directory/main-core.trx" 2119
-  write_successful_trx "$directory/main-mcp.trx" 919
+  write_successful_trx "$directory/main-core.trx" 2082
+  write_successful_trx "$directory/main-mcp.trx" 922
   write_successful_trx "$directory/main-integration.trx" 100
 }
 
@@ -72,6 +72,17 @@ fi
 
 echo "PASS conformance evidence requires the exact test count"
 
+over_conformance_count="$fixture_root/over-conformance-count"
+seed_main_artifacts "$over_conformance_count"
+write_successful_trx "$over_conformance_count/strict-preconditions.trx" 11
+write_successful_trx "$over_conformance_count/alternate-time-zone.trx" 10
+if "$verifier" "$over_conformance_count" complete >/dev/null 2>&1; then
+  echo "Expected a conformance TRX above the exact test count to be rejected." >&2
+  exit 1
+fi
+
+echo "PASS conformance evidence rejects counts above the exact baseline"
+
 missing_report="$fixture_root/missing-report"
 seed_main_artifacts "$missing_report"
 rm -- "$missing_report/main-mcp.coverage.opencover.260821000000001.xml"
@@ -104,13 +115,22 @@ echo "PASS unknown root coverage reports are rejected"
 
 below_minimum="$fixture_root/below-minimum"
 seed_main_artifacts "$below_minimum"
-write_successful_trx "$below_minimum/main-core.trx" 2080
+write_successful_trx "$below_minimum/main-core.trx" 2081
 if "$verifier" "$below_minimum" main >/dev/null 2>&1; then
   echo "Expected a main test result below its discovery baseline to be rejected." >&2
   exit 1
 fi
 
 echo "PASS main test evidence enforces discovery baselines"
+
+above_minimum="$fixture_root/above-minimum"
+seed_main_artifacts "$above_minimum"
+write_successful_trx "$above_minimum/main-core.trx" 2083
+write_successful_trx "$above_minimum/main-mcp.trx" 923
+write_successful_trx "$above_minimum/main-integration.trx" 101
+"$verifier" "$above_minimum" main >/dev/null
+
+echo "PASS main test evidence accepts counts above discovery baselines"
 
 complete_run="$fixture_root/complete-run"
 seed_main_artifacts "$complete_run"

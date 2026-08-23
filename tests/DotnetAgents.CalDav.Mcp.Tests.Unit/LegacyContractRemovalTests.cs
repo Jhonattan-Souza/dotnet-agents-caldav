@@ -1,6 +1,7 @@
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.DependencyInjection;
 using DotnetAgents.CalDav.Mcp.Hosting;
+using DotnetAgents.CalDav.Mcp.Tools;
 using Shouldly;
 using Xunit;
 
@@ -8,6 +9,150 @@ namespace DotnetAgents.CalDav.Mcp.Tests.Unit;
 
 public sealed class LegacyContractRemovalTests
 {
+    [Fact]
+    public void QueryModule_ExposesExactlyTheThreeClosedQueryFamilies()
+    {
+        typeof(ICalendarQueryModule).GetMethods()
+            .Select(method => method.Name)
+            .Order(StringComparer.Ordinal)
+            .ShouldBe([
+                "QueryEntitiesAsync",
+                "QueryOccurrencesAsync",
+                "QueryTodosAsync"
+            ]);
+    }
+
+    [Fact]
+    public void CalendarServiceAndShippedAssemblies_ContainNoLegacyQueryPath()
+    {
+        typeof(ICalendarService).GetMethods()
+            .Select(method => method.Name)
+            .ShouldNotContain(name => name.StartsWith("Query", StringComparison.Ordinal));
+
+        var coreTypes = typeof(ICalendarService).Assembly.GetTypes();
+        coreTypes.Single(type => type.Name == "CalendarService")
+            .GetMethods(System.Reflection.BindingFlags.Instance
+                | System.Reflection.BindingFlags.DeclaredOnly
+                | System.Reflection.BindingFlags.NonPublic
+                | System.Reflection.BindingFlags.Public)
+            .Select(method => method.Name)
+            .ShouldNotContain(name => name.StartsWith("Query", StringComparison.Ordinal));
+
+        var shippedTypeNames = coreTypes
+            .Concat(typeof(CalDavHostBuilder).Assembly.GetTypes())
+            .Select(type => type.Name)
+            .ToHashSet(StringComparer.Ordinal);
+        string[] removedTypes =
+        [
+            "CalendarEntityQueryEngine",
+            "CalendarOccurrenceQueryEngine",
+            "CalendarTodoQueryEngine",
+            "CalendarEntityQueryResult",
+            "CalendarOccurrenceQueryResult",
+            "CalendarTodoQueryResult",
+            "CalendarTodoQueryItem",
+            "CalendarEntityQueryExecutionLimits",
+            "CalendarOccurrenceQueryExecutionLimits",
+            "CalendarEntityQueryCode",
+            "CalendarOccurrenceQueryCode",
+            "CalendarTodoQueryCode",
+            "CalendarTodoQueryResultKind",
+            "CalendarOccurrenceTiming",
+            "CalendarOccurrenceSnapshot",
+            "CalendarTodoCompletionClassification",
+            "CalendarEntityCursorProtector",
+            "CalendarEntityContinuation"
+        ];
+
+        foreach (var removedType in removedTypes)
+            shippedTypeNames.ShouldNotContain(removedType);
+    }
+
+    [Fact]
+    public void EveryStartExecutor_UsesTheOneConcreteQueryPolicy()
+    {
+        var core = typeof(ICalendarQueryModule).Assembly;
+        string[] executorNames =
+        [
+            "CalendarEntityQueryStartExecutor",
+            "CalendarOccurrenceQueryStartExecutor",
+            "CalendarTodoQueryStartExecutor"
+        ];
+
+        foreach (var executorName in executorNames)
+        {
+            var parameters = core.GetTypes().Single(type => type.Name == executorName)
+                .GetConstructors(System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.NonPublic
+                    | System.Reflection.BindingFlags.Public)
+                .ShouldHaveSingleItem()
+                .GetParameters()
+                .Select(parameter => parameter.ParameterType.Name)
+                .ToArray();
+
+            parameters.Count(name => name == "CalendarQueryPolicy").ShouldBe(1);
+            parameters.ShouldNotContain("TimeProvider");
+        }
+
+        core.GetTypes().Count(type => type.Name == "CalendarQueryPolicy").ShouldBe(1);
+    }
+
+    [Fact]
+    public void QueryTools_HoldOnlyTheClosedQueryModuleDependency()
+    {
+        Type[] tools = [typeof(CalendarEntityTools), typeof(CalendarOccurrenceTools), typeof(CalendarTodoTools)];
+
+        foreach (var tool in tools)
+        {
+            tool.GetFields(System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.NonPublic
+                    | System.Reflection.BindingFlags.Public)
+                .Select(field => field.FieldType)
+                .ShouldBe([typeof(ICalendarQueryModule)]);
+        }
+    }
+
+    [Fact]
+    public void ContinueExecutors_HaveOnlyCursorSnapshotAndPageDependencies()
+    {
+        var core = typeof(ICalendarQueryModule).Assembly;
+        var executors = new Dictionary<string, string[]>(StringComparer.Ordinal)
+        {
+            ["CalendarEntityQueryContinueExecutor"] =
+                ["CalendarQueryCursorAuthenticator", "CalendarQuerySnapshotReader", "CalendarEntityQueryPageCodec"],
+            ["CalendarOccurrenceQueryContinueExecutor"] =
+                ["CalendarQueryCursorAuthenticator", "CalendarQuerySnapshotReader", "CalendarOccurrenceQueryPageCodec"],
+            ["CalendarTodoQueryContinueExecutor"] =
+                ["CalendarQueryCursorAuthenticator", "CalendarQuerySnapshotReader", "CalendarTodoQueryPageCodec"]
+        };
+
+        foreach (var executor in executors)
+        {
+            var executorType = core.GetTypes().Single(type => type.Name == executor.Key);
+            var parameters = executorType.GetConstructors(System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.NonPublic
+                    | System.Reflection.BindingFlags.Public)
+                .ShouldHaveSingleItem()
+                .GetParameters()
+                .Select(parameter => parameter.ParameterType.Name)
+                .ToArray();
+
+            parameters.ShouldBe(executor.Value);
+        }
+    }
+
+    [Fact]
+    public void ShippedCore_HasOneQueryTransportSeamAndOneProductionAdapter()
+    {
+        var coreTypes = typeof(ICalendarQueryModule).Assembly.GetTypes();
+        coreTypes.ShouldNotContain(type => type.Name == "ICalendarQueryResourceTransport");
+
+        var transport = coreTypes.Single(type => type.Name == "ICalendarQueryTransport");
+        coreTypes.Where(type => !type.IsInterface && transport.IsAssignableFrom(type))
+            .Select(type => type.Name)
+            .ShouldBe(["CalendarQueryTransport"]);
+    }
+
     [Fact]
     public void ShippedAssemblies_ContainNoLegacyTaskContractTypes()
     {

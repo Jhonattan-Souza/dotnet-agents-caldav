@@ -13,6 +13,7 @@ using Xunit;
 
 namespace DotnetAgents.CalDav.Core.Tests.Unit.Services;
 
+[Collection("ActivityListener")]
 public sealed class CalendarTodoQueryModuleTests
 {
     private static readonly DateTimeOffset From = new(2026, 8, 24, 0, 0, 0, TimeSpan.Zero);
@@ -81,12 +82,13 @@ public sealed class CalendarTodoQueryModuleTests
         ]);
         await using var provider = CreateProvider(transport);
         var module = provider.GetRequiredService<ICalendarQueryModule>();
-        var stopped = new List<Activity>();
-        using var listener = Listen(stopped);
+        using var listener = Listen([]);
         using var source = new ActivitySource(CalendarQueryTelemetry.InstrumentationName, "0.1.0");
         QueryReply<CalendarTodoQueryPageItem>.Page first;
-        using (source.StartActivity("caldav.operation", ActivityKind.Internal))
+        Activity startOperation;
+        using (var operation = source.StartActivity("caldav.operation", ActivityKind.Internal))
         {
+            startOperation = operation!;
             first = (await module.QueryTodosAsync(
                 new CalendarTodoQueryRequest.Start(
                     new CalendarTodoQuery(CalendarEntityScope.All),
@@ -97,8 +99,10 @@ public sealed class CalendarTodoQueryModuleTests
         var cursor = first.Value.NextCursor.ShouldNotBeNull();
         var counts = (transport.DiscoveryCount, transport.CandidateKinds.Count, transport.MultigetRequests.Count);
         QueryReply<CalendarTodoQueryPageItem>.Page continued;
-        using (source.StartActivity("caldav.operation", ActivityKind.Internal))
+        Activity continueOperation;
+        using (var operation = source.StartActivity("caldav.operation", ActivityKind.Internal))
         {
+            continueOperation = operation!;
             continued = (await module.QueryTodosAsync(
                 new CalendarTodoQueryRequest.Continue(cursor, PageSize: 1),
                 CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarTodoQueryPageItem>.Page>();
@@ -110,14 +114,12 @@ public sealed class CalendarTodoQueryModuleTests
         (transport.DiscoveryCount, transport.CandidateKinds.Count, transport.MultigetRequests.Count)
             .ShouldBe(counts);
         replay.Value.StructuredContent.GetRawText().ShouldBe(continued.Value.StructuredContent.GetRawText());
-        var operations = stopped.Where(activity => activity.OperationName == "caldav.operation").ToArray();
-        operations.Length.ShouldBe(2);
-        operations[0].GetTagItem("caldav.query.evaluation_count").ShouldNotBeNull();
-        operations[1].GetTagItem("caldav.query.mode").ShouldBe("continue");
-        operations[1].GetTagItem("caldav.query.snapshot_lookup_count").ShouldBe(1L);
-        operations[1].GetTagItem("caldav.query.page_admission_count").ShouldBe(1L);
-        operations[1].GetTagItem("caldav.query.evaluation_count").ShouldBeNull();
-        operations[1].GetTagItem("caldav.query.serialization_count").ShouldBeNull();
+        startOperation.GetTagItem("caldav.query.evaluation_count").ShouldNotBeNull();
+        continueOperation.GetTagItem("caldav.query.mode").ShouldBe("continue");
+        continueOperation.GetTagItem("caldav.query.snapshot_lookup_count").ShouldBe(1L);
+        continueOperation.GetTagItem("caldav.query.page_admission_count").ShouldBe(1L);
+        continueOperation.GetTagItem("caldav.query.evaluation_count").ShouldBeNull();
+        continueOperation.GetTagItem("caldav.query.serialization_count").ShouldBeNull();
     }
 
     [Fact]

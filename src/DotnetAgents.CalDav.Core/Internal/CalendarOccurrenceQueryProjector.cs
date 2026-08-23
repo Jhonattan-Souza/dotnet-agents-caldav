@@ -11,7 +11,7 @@ internal static class CalendarOccurrenceQueryProjector
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
-    internal static StoredCalendarEntityQueryItem Project(CalendarOccurrenceSnapshot occurrence)
+    internal static StoredCalendarEntityQueryItem Project(EvaluatedOccurrence occurrence)
     {
         var snapshot = CalendarEntityQueryProjector.Project(occurrence.Snapshot);
         using var document = JsonDocument.Parse(snapshot.JsonUtf8);

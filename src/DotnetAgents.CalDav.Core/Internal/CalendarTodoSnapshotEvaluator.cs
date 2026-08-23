@@ -26,7 +26,6 @@ internal sealed record CalendarTodoEvaluationResult(
 
 internal static class CalendarTodoSnapshotEvaluator
 {
-    private const int MaximumOccurrences = 5000;
     private static readonly CalendarTodoCompletionState[] DefaultStates = [CalendarTodoCompletionState.Open];
 
     internal static CalendarTodoEvaluationResult Evaluate(
@@ -45,7 +44,7 @@ internal static class CalendarTodoSnapshotEvaluator
             observedOccurrences += evaluated.ObservedOccurrences;
             if (evaluated.Error is not null)
                 return CalendarTodoEvaluationResult.Failure(evaluated.Error);
-            if (observedOccurrences > MaximumOccurrences)
+            if (observedOccurrences > CalendarQueryPolicy.MaximumOccurrences)
             {
                 return CalendarTodoEvaluationResult.Failure(CalendarQueryFailures.Limit(
                     "The To-do query exhausted its occurrence budget.",
@@ -145,7 +144,7 @@ internal static class CalendarTodoSnapshotEvaluator
             document,
             resource.TypedCalendar,
             cancellationToken);
-        if (evaluated.Code != CalendarOccurrenceQueryCode.Success)
+        if (evaluated.Code != CalendarOccurrenceEvaluationCode.Success)
             return CalendarTodoResourceEvaluation.Failure(EvaluationFailure(evaluated));
         var rows = evaluated.Items.Select(occurrence => CreateOccurrenceRow(
                 occurrence,
@@ -164,7 +163,7 @@ internal static class CalendarTodoSnapshotEvaluator
     {
         var completion = CalendarTodoCompletionClassifier.Classify(document, master.Path);
         return new CalendarTodoEvaluatedRow(
-            CalendarTodoQueryResultKind.Entity,
+            CalendarTodoEvaluationKind.Entity,
             snapshot,
             null,
             completion,
@@ -178,7 +177,7 @@ internal static class CalendarTodoSnapshotEvaluator
     }
 
     private static CalendarTodoEvaluatedRow CreateOccurrenceRow(
-        CalendarOccurrenceSnapshot occurrence,
+        EvaluatedOccurrence occurrence,
         CalendarContentDocument document,
         CalendarContentComponent master)
     {
@@ -186,7 +185,7 @@ internal static class CalendarTodoSnapshotEvaluator
         var timing = ReadOccurrenceTiming(document, component, master, occurrence);
         var completion = CalendarTodoCompletionClassifier.Classify(document, component.Path);
         return new CalendarTodoEvaluatedRow(
-            CalendarTodoQueryResultKind.Occurrence,
+            CalendarTodoEvaluationKind.Occurrence,
             occurrence.Snapshot,
             occurrence,
             completion,
@@ -203,7 +202,7 @@ internal static class CalendarTodoSnapshotEvaluator
         CalendarContentDocument document,
         CalendarContentComponent component,
         CalendarContentComponent master,
-        CalendarOccurrenceSnapshot occurrence)
+        EvaluatedOccurrence occurrence)
     {
         var properties = Owned(document, component).ToArray();
         if (!properties.Any(property => property.Name is "DTSTART" or "DUE" or "DURATION"))
@@ -227,10 +226,10 @@ internal static class CalendarTodoSnapshotEvaluator
     }
 
     private static CalendarTodoEvaluatedRow CreateOpaqueRow(CalendarResourceSnapshot snapshot) => new(
-        CalendarTodoQueryResultKind.Unresolved,
+        CalendarTodoEvaluationKind.Unresolved,
         snapshot,
         null,
-        new CalendarTodoCompletionClassification(CalendarTodoCompletionState.Indeterminate, null, null, null, []),
+        new EvaluatedTodoCompletion(CalendarTodoCompletionState.Indeterminate, null, null, null, []),
         null,
         null,
         null,
@@ -403,8 +402,8 @@ internal static class CalendarTodoSnapshotEvaluator
 
     private static QueryFailure EvaluationFailure(CalendarOccurrenceEvaluation evaluation) => evaluation.Code switch
     {
-        CalendarOccurrenceQueryCode.TemporalUnresolved => CalendarQueryFailures.TemporalUnresolved(),
-        CalendarOccurrenceQueryCode.LimitExhausted => CalendarQueryFailures.Limit(
+        CalendarOccurrenceEvaluationCode.TemporalUnresolved => CalendarQueryFailures.TemporalUnresolved(),
+        CalendarOccurrenceEvaluationCode.LimitExhausted => CalendarQueryFailures.Limit(
             "The To-do query exhausted its occurrence budget.",
             new QueryExecutionLimits(OccurrenceCount: evaluation.ObservedOccurrenceCount)),
         _ => CalendarQueryFailures.RecurrenceUnevaluable()
@@ -440,10 +439,10 @@ internal static class CalendarTodoSnapshotEvaluator
 }
 
 internal sealed record CalendarTodoEvaluatedRow(
-    CalendarTodoQueryResultKind ResultKind,
+    CalendarTodoEvaluationKind ResultKind,
     CalendarResourceSnapshot Snapshot,
-    CalendarOccurrenceSnapshot? Occurrence,
-    CalendarTodoCompletionClassification Completion,
+    EvaluatedOccurrence? Occurrence,
+    EvaluatedTodoCompletion Completion,
     CalendarTemporalValue? Due,
     DateTimeOffset? EvaluatedDueUtc,
     CalendarTemporalValue? Start,
@@ -452,7 +451,7 @@ internal sealed record CalendarTodoEvaluatedRow(
     JsonElement Fields,
     JsonElement? CompletedAt)
 {
-    internal bool RequiresOccurrenceTarget => IsRecurring && ResultKind == CalendarTodoQueryResultKind.Entity;
+    internal bool RequiresOccurrenceTarget => IsRecurring && ResultKind == CalendarTodoEvaluationKind.Entity;
 }
 
 internal static class CalendarTodoQueryProjector
@@ -497,7 +496,7 @@ internal static class CalendarTodoQueryProjector
                 "todo",
                 row.Snapshot.EntityTag)
             : null;
-        if (row.ResultKind == CalendarTodoQueryResultKind.Unresolved)
+        if (row.ResultKind == CalendarTodoEvaluationKind.Unresolved)
         {
             return new CompletionTargetWire(
                 "unavailable",
@@ -593,10 +592,10 @@ internal static class CalendarTodoQueryProjector
         value.Value,
         value.TimeZoneId);
 
-    private static string ResultKind(CalendarTodoQueryResultKind kind) => kind switch
+    private static string ResultKind(CalendarTodoEvaluationKind kind) => kind switch
     {
-        CalendarTodoQueryResultKind.Entity => "entity",
-        CalendarTodoQueryResultKind.Occurrence => "occurrence",
+        CalendarTodoEvaluationKind.Entity => "entity",
+        CalendarTodoEvaluationKind.Occurrence => "occurrence",
         _ => "unresolved"
     };
 

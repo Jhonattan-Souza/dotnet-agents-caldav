@@ -10,9 +10,17 @@ using IcalCalendar = Ical.Net.Calendar;
 
 namespace DotnetAgents.CalDav.Core.Internal.Ical;
 
+internal enum CalendarOccurrenceEvaluationCode
+{
+    Success,
+    LimitExhausted,
+    TemporalUnresolved,
+    RecurrenceUnevaluable
+}
+
 internal sealed record CalendarOccurrenceEvaluation(
-    CalendarOccurrenceQueryCode Code,
-    IReadOnlyList<CalendarOccurrenceSnapshot> Items,
+    CalendarOccurrenceEvaluationCode Code,
+    IReadOnlyList<EvaluatedOccurrence> Items,
     int ObservedOccurrenceCount,
     IReadOnlySet<string>? ObservedIdentities = null);
 
@@ -34,7 +42,7 @@ internal static class CalendarOccurrenceEvaluator
             var properties = GetEntityProperties(snapshot);
             var masterProperties = properties.Where(property => property.ComponentPath[1].Occurrence == 0).ToArray();
             if (HasUnevaluableRecurrenceShape(snapshot, properties, masterProperties))
-                return Failure(CalendarOccurrenceQueryCode.RecurrenceUnevaluable);
+                return Failure(CalendarOccurrenceEvaluationCode.RecurrenceUnevaluable);
 
             var resolver = new CalendarTemporalResolver(
                 snapshot.CalendarProperties,
@@ -45,11 +53,11 @@ internal static class CalendarOccurrenceEvaluator
             if (periodValidation is not null)
                 return Failure(periodValidation.Value);
             if (masterProperties.Where(RequiresEagerResolution).Any(property => !resolver.CanResolve(property)))
-                return Failure(CalendarOccurrenceQueryCode.TemporalUnresolved);
+                return Failure(CalendarOccurrenceEvaluationCode.TemporalUnresolved);
             var overrides = CreateOverrides(properties, snapshot.Projection.Kind);
 
             if (typedCalendar is null)
-                return Failure(CalendarOccurrenceQueryCode.RecurrenceUnevaluable);
+                return Failure(CalendarOccurrenceEvaluationCode.RecurrenceUnevaluable);
             var calendar = typedCalendar;
             var evaluated = snapshot.Projection.Kind == CalendarResourceProjectionKind.Event
                 ? EvaluateEvent(
@@ -68,23 +76,23 @@ internal static class CalendarOccurrenceEvaluator
                     properties,
                     overrides,
                     cancellationToken);
-            if (evaluated.Code != CalendarOccurrenceQueryCode.Success)
+            if (evaluated.Code != CalendarOccurrenceEvaluationCode.Success)
                 return evaluated;
             var periodDates = EvaluatePeriodDates(snapshot, query, resolver, properties, overrides, cancellationToken);
-            if (periodDates.Code != CalendarOccurrenceQueryCode.Success)
+            if (periodDates.Code != CalendarOccurrenceEvaluationCode.Success)
                 return periodDates;
             var detached = EvaluateDetachedOverrides(
                 snapshot, query, resolver, properties, overrides, cancellationToken);
-            if (detached.Code != CalendarOccurrenceQueryCode.Success)
+            if (detached.Code != CalendarOccurrenceEvaluationCode.Success)
                 return detached;
             var merged = MergeOccurrences(evaluated, periodDates);
-            return merged.Code == CalendarOccurrenceQueryCode.Success
+            return merged.Code == CalendarOccurrenceEvaluationCode.Success
                 ? MergeOccurrences(merged, detached, replaceExisting: false)
                 : merged;
         }
         catch (EvaluationLimitExceededException)
         {
-            return Failure(CalendarOccurrenceQueryCode.LimitExhausted);
+            return Failure(CalendarOccurrenceEvaluationCode.LimitExhausted);
         }
         catch (Exception exception) when (exception is EvaluationOutOfRangeException
             or FormatException
@@ -92,7 +100,7 @@ internal static class CalendarOccurrenceEvaluator
             or OverflowException
             or InvalidOperationException)
         {
-            return Failure(CalendarOccurrenceQueryCode.RecurrenceUnevaluable);
+            return Failure(CalendarOccurrenceEvaluationCode.RecurrenceUnevaluable);
         }
     }
 
@@ -149,7 +157,7 @@ internal static class CalendarOccurrenceEvaluator
             && GetProperty(masterProperties, "RRULE") is not null
             && GetProperty(masterProperties, "DTSTART") is null;
 
-    private static CalendarOccurrenceQueryCode? ValidatePeriodStructure(
+    private static CalendarOccurrenceEvaluationCode? ValidatePeriodStructure(
         IEnumerable<CalendarProperty> properties,
         CalendarTemporalResolver resolver)
     {
@@ -167,46 +175,46 @@ internal static class CalendarOccurrenceEvaluator
         return null;
     }
 
-    private static CalendarOccurrenceQueryCode? ValidatePeriod(
+    private static CalendarOccurrenceEvaluationCode? ValidatePeriod(
         CalendarProperty property,
         string period,
         CalendarTemporalResolver resolver)
     {
         var parts = period.Split('/', StringSplitOptions.None);
         if (parts.Length != 2 || !IsPeriodDateTime(parts[0]))
-            return CalendarOccurrenceQueryCode.RecurrenceUnevaluable;
+            return CalendarOccurrenceEvaluationCode.RecurrenceUnevaluable;
         return CalendarDurationArithmetic.LooksLikeDuration(parts[1])
             ? ValidatePeriodDuration(property, parts, resolver)
             : ValidateExplicitPeriod(property, parts, resolver);
     }
 
-    private static CalendarOccurrenceQueryCode? ValidatePeriodDuration(
+    private static CalendarOccurrenceEvaluationCode? ValidatePeriodDuration(
         CalendarProperty property,
         IReadOnlyList<string> parts,
         CalendarTemporalResolver resolver)
     {
         if (!CalendarDurationArithmetic.TryParse(parts[1], out var duration) || !duration.IsStrictlyPositive)
-            return CalendarOccurrenceQueryCode.RecurrenceUnevaluable;
+            return CalendarOccurrenceEvaluationCode.RecurrenceUnevaluable;
         var start = resolver.ResolveToken(property, parts[0]);
         if (start.Value is null)
             return ToFailure(start);
         return null;
     }
 
-    private static CalendarOccurrenceQueryCode? ValidateExplicitPeriod(
+    private static CalendarOccurrenceEvaluationCode? ValidateExplicitPeriod(
         CalendarProperty property,
         IReadOnlyList<string> parts,
         CalendarTemporalResolver resolver)
     {
         if (!IsPeriodDateTime(parts[1]))
-            return CalendarOccurrenceQueryCode.RecurrenceUnevaluable;
+            return CalendarOccurrenceEvaluationCode.RecurrenceUnevaluable;
         var start = resolver.ResolveToken(property, parts[0]);
         if (start.Value is null)
             return ToFailure(start);
         var end = resolver.ResolveToken(property, parts[1]);
         if (end.Value is null)
             return ToFailure(end);
-        return end.Value <= start.Value ? CalendarOccurrenceQueryCode.RecurrenceUnevaluable : null;
+        return end.Value <= start.Value ? CalendarOccurrenceEvaluationCode.RecurrenceUnevaluable : null;
     }
 
     private static bool IsPeriodDateTime(string raw) => raw.EndsWith('Z')
@@ -234,7 +242,7 @@ internal static class CalendarOccurrenceEvaluator
         if (periodDates.ObservedIdentities is not null)
             identities.UnionWith(periodDates.ObservedIdentities);
         if (identities.Count > MaximumEntityOccurrences)
-            return Failure(CalendarOccurrenceQueryCode.LimitExhausted, identities.Count);
+            return Failure(CalendarOccurrenceEvaluationCode.LimitExhausted, identities.Count);
         var items = generated.Items.ToDictionary(
             item => GetIdentitySortKey(item.RecurrenceIdentity),
             StringComparer.Ordinal);
@@ -245,7 +253,7 @@ internal static class CalendarOccurrenceEvaluator
                 items[key] = item;
         }
         return new CalendarOccurrenceEvaluation(
-            CalendarOccurrenceQueryCode.Success,
+            CalendarOccurrenceEvaluationCode.Success,
             items.Values.ToArray(),
             identities.Count,
             identities);
@@ -259,7 +267,7 @@ internal static class CalendarOccurrenceEvaluator
         OverridePlan overrides,
         CancellationToken cancellationToken)
     {
-        var items = new Dictionary<string, CalendarOccurrenceSnapshot>(StringComparer.Ordinal);
+        var items = new Dictionary<string, EvaluatedOccurrence>(StringComparer.Ordinal);
         var identities = new HashSet<string>(StringComparer.Ordinal);
         var excluded = GetExcludedIdentities(properties);
         foreach (var property in properties.Where(property => property.ComponentPath[1].Occurrence == 0
@@ -271,7 +279,7 @@ internal static class CalendarOccurrenceEvaluator
                 cancellationToken.ThrowIfCancellationRequested();
                 var identity = GetPeriodIdentity(property, period);
                 if (identity is not null && identities.Add(identity) && identities.Count > MaximumEntityOccurrences)
-                    return Failure(CalendarOccurrenceQueryCode.LimitExhausted, identities.Count);
+                    return Failure(CalendarOccurrenceEvaluationCode.LimitExhausted, identities.Count);
                 var evaluated = EvaluatePeriodDate(snapshot, query, resolver, property, period, excluded, overrides);
                 if (evaluated.Code is { } code)
                     return Failure(code, identities.Count);
@@ -280,7 +288,7 @@ internal static class CalendarOccurrenceEvaluator
             }
         }
         return new CalendarOccurrenceEvaluation(
-            CalendarOccurrenceQueryCode.Success, items.Values.ToArray(), identities.Count, identities);
+            CalendarOccurrenceEvaluationCode.Success, items.Values.ToArray(), identities.Count, identities);
     }
 
     private static string? GetPeriodIdentity(CalendarProperty property, string period)
@@ -300,8 +308,8 @@ internal static class CalendarOccurrenceEvaluator
         CancellationToken cancellationToken)
     {
         if (overrides.All.Count == 0)
-            return new CalendarOccurrenceEvaluation(CalendarOccurrenceQueryCode.Success, [], 0, new HashSet<string>());
-        var items = new Dictionary<string, CalendarOccurrenceSnapshot>(StringComparer.Ordinal);
+            return new CalendarOccurrenceEvaluation(CalendarOccurrenceEvaluationCode.Success, [], 0, new HashSet<string>());
+        var items = new Dictionary<string, EvaluatedOccurrence>(StringComparer.Ordinal);
         var identities = new HashSet<string>(StringComparer.Ordinal);
         var excluded = GetExcludedIdentities(properties);
         var master = properties.Where(property => property.ComponentPath[1].Occurrence == 0).ToArray();
@@ -314,7 +322,7 @@ internal static class CalendarOccurrenceEvaluator
             var sourceStart = ToTemporalValue(definition.Identity);
             var identityKey = GetIdentitySortKey(sourceStart);
             if (ExceedsEntityLimit(identities, identityKey))
-                return Failure(CalendarOccurrenceQueryCode.LimitExhausted, identities.Count);
+                return Failure(CalendarOccurrenceEvaluationCode.LimitExhausted, identities.Count);
             if (ShouldSkipDetachedOverride(definition, overrides, excluded, identityKey, query.IncludeCancelledOccurrences))
                 continue;
             var evaluated = EvaluateDetachedOverride(
@@ -332,7 +340,7 @@ internal static class CalendarOccurrenceEvaluator
                 items[identityKey] = evaluated.Item;
         }
         return new CalendarOccurrenceEvaluation(
-            CalendarOccurrenceQueryCode.Success, items.Values.ToArray(), identities.Count, identities);
+            CalendarOccurrenceEvaluationCode.Success, items.Values.ToArray(), identities.Count, identities);
     }
 
     private static PeriodEvaluation EvaluateDetachedOverride(
@@ -435,7 +443,7 @@ internal static class CalendarOccurrenceEvaluator
     {
         var parts = period.Split('/', StringSplitOptions.None);
         if (parts.Length != 2)
-            return PeriodEvaluation.Failure(CalendarOccurrenceQueryCode.RecurrenceUnevaluable);
+            return PeriodEvaluation.Failure(CalendarOccurrenceEvaluationCode.RecurrenceUnevaluable);
         var start = resolver.ResolveToken(property, parts[0]);
         if (start.Value is null)
             return PeriodEvaluation.Failure(ToFailure(start));
@@ -465,10 +473,10 @@ internal static class CalendarOccurrenceEvaluator
             return overridden;
         if (!Overlaps(start.Value.Value, resolvedEnd.Instant.Value.Value, query.From, query.To))
             return PeriodEvaluation.NoMatch;
-        return PeriodEvaluation.Match(new CalendarOccurrenceSnapshot(
+        return PeriodEvaluation.Match(new EvaluatedOccurrence(
             snapshot,
             sourceStart,
-            new CalendarOccurrenceTiming(
+            new EvaluatedOccurrenceTiming(
                 sourceStart,
                 sourceStart,
                 resolvedEnd.Value,
@@ -541,14 +549,14 @@ internal static class CalendarOccurrenceEvaluator
             return Failure(sourceEnd.Code);
         if (!Overlaps(start.Value.Value, sourceEnd.Instant.Value, query.From, query.To))
             return new CalendarOccurrenceEvaluation(
-                CalendarOccurrenceQueryCode.Success, [], 1, new HashSet<string> { GetIdentitySortKey(sourceStart) });
+                CalendarOccurrenceEvaluationCode.Success, [], 1, new HashSet<string> { GetIdentitySortKey(sourceStart) });
         var endValue = sourceEnd.Value;
         return new CalendarOccurrenceEvaluation(
-            CalendarOccurrenceQueryCode.Success,
-            [new CalendarOccurrenceSnapshot(
+            CalendarOccurrenceEvaluationCode.Success,
+            [new EvaluatedOccurrence(
                 snapshot,
                 sourceStart,
-                new CalendarOccurrenceTiming(
+                new EvaluatedOccurrenceTiming(
                     sourceStart,
                     sourceStart,
                     endValue,
@@ -574,13 +582,13 @@ internal static class CalendarOccurrenceEvaluator
             var end = resolver.Resolve(endProperty);
             return end.Value is null
                 ? new OverrideEndResolution(null, null, ToFailure(end))
-                : new OverrideEndResolution(ToTemporalValue(endProperty), end.Value, CalendarOccurrenceQueryCode.Success);
+                : new OverrideEndResolution(ToTemporalValue(endProperty), end.Value, CalendarOccurrenceEvaluationCode.Success);
         }
         if (durationProperty is not null)
             return FromDuration(CalendarDurationArithmetic.Resolve(
                 ToTemporalValue(startProperty), start, durationProperty.RawEncodedValue, resolver));
         if (startProperty.ValueType != CalendarPropertyValueType.Date)
-            return new OverrideEndResolution(null, start, CalendarOccurrenceQueryCode.Success);
+            return new OverrideEndResolution(null, start, CalendarOccurrenceEvaluationCode.Success);
         return FromDuration(CalendarDurationArithmetic.Resolve(
             ToTemporalValue(startProperty), start, "P1D", resolver));
     }
@@ -893,7 +901,7 @@ internal static class CalendarOccurrenceEvaluator
         bool includeCancelledOverrides,
         CancellationToken cancellationToken)
     {
-        var items = new List<CalendarOccurrenceSnapshot>();
+        var items = new List<EvaluatedOccurrence>();
         var identities = new HashSet<string>(StringComparer.Ordinal);
         foreach (var occurrence in periods)
         {
@@ -905,7 +913,7 @@ internal static class CalendarOccurrenceEvaluator
                 break;
             identities.Add(GetIdentitySortKey(ToTemporalValue(occurrence.Period.StartTime)));
             if (identities.Count > MaximumEntityOccurrences)
-                return Failure(CalendarOccurrenceQueryCode.LimitExhausted, identities.Count);
+                return Failure(CalendarOccurrenceEvaluationCode.LimitExhausted, identities.Count);
             var evaluated = EvaluatePeriod(
                 snapshot,
                 query,
@@ -923,7 +931,7 @@ internal static class CalendarOccurrenceEvaluator
                 items.Add(evaluated.Item);
         }
         return new CalendarOccurrenceEvaluation(
-            CalendarOccurrenceQueryCode.Success, items, identities.Count, identities);
+            CalendarOccurrenceEvaluationCode.Success, items, identities.Count, identities);
     }
 
     private static PeriodEvaluation EvaluatePeriod(
@@ -976,10 +984,10 @@ internal static class CalendarOccurrenceEvaluator
 
         var evaluatedStart = ToUtcValue(resolvedStart);
         var evaluatedEnd = end.Value is null ? null : ToUtcValue(end.Instant.Value.Value);
-        return PeriodEvaluation.Match(new CalendarOccurrenceSnapshot(
+        return PeriodEvaluation.Match(new EvaluatedOccurrence(
             snapshot,
             sourceStart,
-            new CalendarOccurrenceTiming(
+            new EvaluatedOccurrenceTiming(
                 sourceStart,
                 sourceStart,
                 sourceEnd,
@@ -1053,9 +1061,9 @@ internal static class CalendarOccurrenceEvaluator
                 ? CancelledMatch(snapshot, baseline)
                 : PeriodEvaluation.NoMatch;
         if (!resolver.CanResolve(definition.Identity))
-            return PeriodEvaluation.Failure(CalendarOccurrenceQueryCode.TemporalUnresolved);
+            return PeriodEvaluation.Failure(CalendarOccurrenceEvaluationCode.TemporalUnresolved);
         if (definition.Start is null)
-            return PeriodEvaluation.Failure(CalendarOccurrenceQueryCode.RecurrenceUnevaluable);
+            return PeriodEvaluation.Failure(CalendarOccurrenceEvaluationCode.RecurrenceUnevaluable);
         var overrideStart = resolver.Resolve(definition.Start);
         if (overrideStart.Value is null)
             return PeriodEvaluation.Failure(ToFailure(overrideStart));
@@ -1071,10 +1079,10 @@ internal static class CalendarOccurrenceEvaluator
             return PeriodEvaluation.NoMatch;
 
         var effectiveEnd = overrideEnd.Value;
-        return PeriodEvaluation.Match(new CalendarOccurrenceSnapshot(
+        return PeriodEvaluation.Match(new EvaluatedOccurrence(
             snapshot,
             baseline.SourceStart,
-            new CalendarOccurrenceTiming(
+            new EvaluatedOccurrenceTiming(
                 baseline.SourceStart,
                 effectiveStart,
                 baseline.SourceEnd,
@@ -1099,9 +1107,9 @@ internal static class CalendarOccurrenceEvaluator
                 ? CancelledMatch(snapshot, baseline)
                 : PeriodEvaluation.NoMatch;
         if (!resolver.CanResolve(definition.Identity))
-            return PeriodEvaluation.Failure(CalendarOccurrenceQueryCode.TemporalUnresolved);
+            return PeriodEvaluation.Failure(CalendarOccurrenceEvaluationCode.TemporalUnresolved);
         if (definition.Start is null)
-            return PeriodEvaluation.Failure(CalendarOccurrenceQueryCode.RecurrenceUnevaluable);
+            return PeriodEvaluation.Failure(CalendarOccurrenceEvaluationCode.RecurrenceUnevaluable);
         var anchorIdentity = ToTemporalValue(definition.Identity);
         var anchorStart = ToTemporalValue(definition.Start);
         var effectiveStart = AddTemporalOffset(baseline.SourceStart, GetNominalDifference(anchorIdentity, anchorStart));
@@ -1113,10 +1121,10 @@ internal static class CalendarOccurrenceEvaluator
             return PeriodEvaluation.Failure(ToFailure(rangeEnd.Instant));
         if (!Overlaps(rangeStart.Value.Value, rangeEnd.Instant.Value.Value, query.From, query.To))
             return PeriodEvaluation.NoMatch;
-        return PeriodEvaluation.Match(new CalendarOccurrenceSnapshot(
+        return PeriodEvaluation.Match(new EvaluatedOccurrence(
             snapshot,
             baseline.SourceStart,
-            new CalendarOccurrenceTiming(
+            new EvaluatedOccurrenceTiming(
                 baseline.SourceStart,
                 effectiveStart,
                 baseline.SourceEnd,
@@ -1130,10 +1138,10 @@ internal static class CalendarOccurrenceEvaluator
 
     private static PeriodEvaluation CancelledMatch(
         CalendarResourceSnapshot snapshot,
-        OccurrenceBaseline baseline) => PeriodEvaluation.Match(new CalendarOccurrenceSnapshot(
+        OccurrenceBaseline baseline) => PeriodEvaluation.Match(new EvaluatedOccurrence(
             snapshot,
             baseline.SourceStart,
-            new CalendarOccurrenceTiming(
+            new EvaluatedOccurrenceTiming(
                 baseline.SourceStart,
                 baseline.SourceStart,
                 baseline.SourceEnd,
@@ -1185,7 +1193,7 @@ internal static class CalendarOccurrenceEvaluator
             var end = resolver.Resolve(definition.End);
             return end.Value is null
                 ? new OverrideEndResolution(null, null, ToFailure(end))
-                : new OverrideEndResolution(ToTemporalValue(definition.End), end.Value, CalendarOccurrenceQueryCode.Success);
+                : new OverrideEndResolution(ToTemporalValue(definition.End), end.Value, CalendarOccurrenceEvaluationCode.Success);
         }
         if (definition.Duration is not null)
         {
@@ -1194,14 +1202,14 @@ internal static class CalendarOccurrenceEvaluator
         }
         return definition.DateEventDefaultsToOneDay
             ? FromDuration(CalendarDurationArithmetic.Resolve(effectiveStart, start, "P1D", resolver))
-            : new OverrideEndResolution(null, start, CalendarOccurrenceQueryCode.Success);
+            : new OverrideEndResolution(null, start, CalendarOccurrenceEvaluationCode.Success);
     }
 
     private static OverrideEndResolution FromDuration(CalendarDurationResolution duration) =>
         duration.Instant.Value is null
             ? new OverrideEndResolution(null, null, ToFailure(duration.Instant))
             : new OverrideEndResolution(
-                duration.Value, duration.Instant.Value, CalendarOccurrenceQueryCode.Success);
+                duration.Value, duration.Instant.Value, CalendarOccurrenceEvaluationCode.Success);
 
     private static CalendarTemporalValue AddTemporalOffset(CalendarTemporalValue value, TimeSpan offset)
     {
@@ -1375,9 +1383,9 @@ internal static class CalendarOccurrenceEvaluator
     private static DateTimeOffset AddSafely(DateTimeOffset value, TimeSpan offset) =>
         DateTimeOffset.MaxValue - value < offset ? DateTimeOffset.MaxValue : value + offset;
 
-    private static CalendarOccurrenceQueryCode ToFailure(ResolvedCalendarInstant instant) => instant.Unresolved
-        ? CalendarOccurrenceQueryCode.TemporalUnresolved
-        : CalendarOccurrenceQueryCode.RecurrenceUnevaluable;
+    private static CalendarOccurrenceEvaluationCode ToFailure(ResolvedCalendarInstant instant) => instant.Unresolved
+        ? CalendarOccurrenceEvaluationCode.TemporalUnresolved
+        : CalendarOccurrenceEvaluationCode.RecurrenceUnevaluable;
 
     private static bool Overlaps(DateTimeOffset start, DateTimeOffset end, DateTimeOffset from, DateTimeOffset to) =>
         end > start ? start < to && end > from : start >= from && start < to;
@@ -1429,16 +1437,16 @@ internal static class CalendarOccurrenceEvaluator
         properties.FirstOrDefault(property => property.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
 
     private static CalendarOccurrenceEvaluation Failure(
-        CalendarOccurrenceQueryCode code,
+        CalendarOccurrenceEvaluationCode code,
         int observed = 0) => new(code, [], observed);
 
     private sealed record PeriodEvaluation(
-        CalendarOccurrenceQueryCode? Code,
-        CalendarOccurrenceSnapshot? Item)
+        CalendarOccurrenceEvaluationCode? Code,
+        EvaluatedOccurrence? Item)
     {
         public static PeriodEvaluation NoMatch { get; } = new(null, null);
-        public static PeriodEvaluation Failure(CalendarOccurrenceQueryCode code) => new(code, null);
-        public static PeriodEvaluation Match(CalendarOccurrenceSnapshot item) => new(null, item);
+        public static PeriodEvaluation Failure(CalendarOccurrenceEvaluationCode code) => new(code, null);
+        public static PeriodEvaluation Match(EvaluatedOccurrence item) => new(null, item);
     }
 
     private sealed record OccurrenceBaseline(
@@ -1465,7 +1473,7 @@ internal static class CalendarOccurrenceEvaluator
     private readonly record struct OverrideEndResolution(
         CalendarTemporalValue? Value,
         DateTimeOffset? Instant,
-        CalendarOccurrenceQueryCode Code);
+        CalendarOccurrenceEvaluationCode Code);
 
     private readonly record struct EvaluationBounds(DateTimeOffset SearchFrom, DateTimeOffset StopAt);
 }

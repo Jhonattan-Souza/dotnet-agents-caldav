@@ -1,12 +1,9 @@
 using System.Collections.Immutable;
 using System.Net;
-using System.Xml;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Internal;
 using DotnetAgents.CalDav.Core.Internal.Ical;
 using DotnetAgents.CalDav.Core.Models;
-using Polly.CircuitBreaker;
-using Polly.Timeout;
 
 namespace DotnetAgents.CalDav.Core.Services;
 
@@ -76,23 +73,20 @@ internal sealed class CalendarEntityQueryStartExecutor
 {
     internal const int MaximumSnapshotItems = CalendarQuerySnapshotPolicy.MaximumItems;
     internal const long MaximumSnapshotBytes = CalendarQuerySnapshotPolicy.MaximumBytes;
-    private const int MaximumOccurrences = 5000;
-    private static readonly TimeSpan ExecutionTimeout = TimeSpan.FromSeconds(30);
-    private static readonly TimeSpan SnapshotLifetime = TimeSpan.FromMinutes(10);
-    private readonly TimeProvider _timeProvider;
+    private readonly CalendarQueryPolicy _queryPolicy;
     private readonly CalendarQuerySnapshotWriter _snapshotWriter;
     private readonly CalendarEntityQueryPageCodec _pageCodec;
     private readonly CalendarQueryAcquisitionExecutor _acquisitionExecutor;
     private readonly CalendarTemporalContextResolver _temporalContextResolver;
 
     internal CalendarEntityQueryStartExecutor(
-        TimeProvider timeProvider,
+        CalendarQueryPolicy queryPolicy,
         CalendarQuerySnapshotWriter snapshotWriter,
         CalendarEntityQueryPageCodec pageCodec,
         CalendarQueryAcquisitionExecutor acquisitionExecutor,
         CalendarTemporalContextResolver temporalContextResolver)
     {
-        _timeProvider = timeProvider;
+        _queryPolicy = queryPolicy;
         _snapshotWriter = snapshotWriter;
         _pageCodec = pageCodec;
         _acquisitionExecutor = acquisitionExecutor;
@@ -111,71 +105,32 @@ internal sealed class CalendarEntityQueryStartExecutor
             "Calendar Entity"));
         if (temporal.Error is not null)
             return Failure(temporal.Error);
-        var startedAt = _timeProvider.GetUtcNow();
-        using var deadline = new CancellationTokenSource(ExecutionTimeout, _timeProvider);
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
-        try
-        {
-            var completed = await CompleteQueryAsync(request.Query, temporal.Context, linked.Token)
-                .ConfigureAwait(false);
-            ThrowIfDeadlineExpired(startedAt, linked.Token);
-            if (completed.Error is not null)
-                return Failure(completed.Error);
-            return PublishFirstPage(completed, request.PageSize, linked.Token);
-        }
-        catch (CalendarDiscoveryLimitException exception)
-        {
-            return Failure(CalendarQueryFailures.Limit(
-                "The query exceeded the Calendar limit.",
-                new QueryExecutionLimits(CalendarCount: exception.CalendarCount)));
-        }
-        catch (HttpRequestException exception)
-        {
-            return Failure(CalendarQueryFailures.FromHttp(exception.StatusCode));
-        }
-        catch (OperationCanceledException) when (deadline.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
-        {
-            return Failure(CalendarQueryFailures.ElapsedLimit());
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            return Failure(CalendarQueryFailures.UpstreamUnavailable());
-        }
-        catch (Exception exception) when (exception is TimeoutException or TimeoutRejectedException
-                                           or BrokenCircuitException)
-        {
-            return Failure(CalendarQueryFailures.UpstreamUnavailable());
-        }
-        catch (Exception exception) when (exception is XmlException or CalendarDiscoveryProtocolException)
-        {
-            return Failure(CalendarQueryFailures.Protocol());
-        }
-        catch (CalendarDiscoveryUnsupportedCapabilityException)
-        {
-            return Failure(CalendarQueryFailures.UnsupportedCapability());
-        }
-        catch (CalendarEntityQueryDeadlineException)
-        {
-            return Failure(CalendarQueryFailures.ElapsedLimit());
-        }
+        return await _queryPolicy.ExecuteStartAsync<CompletedCalendarEntityQuery, CalendarEntityQueryItem>(
+            cancellationToken,
+            "The query exceeded the Calendar limit.",
+            execution => CompleteQueryAsync(request.Query, temporal.Context, execution),
+            (completed, token) => completed.Error is not null
+                ? Failure(completed.Error)
+                : PublishFirstPage(completed, request.PageSize, token)).ConfigureAwait(false);
     }
 
     private async Task<CompletedCalendarEntityQuery> CompleteQueryAsync(
         CalendarEntityQuery query,
         TemporalEvaluationContext? temporalContext,
-        CancellationToken cancellationToken)
+        CalendarQueryPolicy.CalendarQueryExecution execution)
     {
         var acquired = await _acquisitionExecutor.ExecuteAsync(new CalendarQueryAcquisitionRequest(
                 query.Scope,
                 query.EntityKinds,
                 query.From,
-                query.To), cancellationToken)
+                query.To), execution.Token)
             .ConfigureAwait(false);
+        execution.ThrowIfDeadlineExpired();
         if (acquired.Error is not null)
             return CompletedCalendarEntityQuery.Failure(acquired.Error);
         FilterResult filtered;
         using (CalendarQueryTelemetry.StartPhase("evaluation"))
-            filtered = Filter(acquired.Resources, query, temporalContext, cancellationToken);
+            filtered = Filter(acquired.Resources, query, temporalContext, execution.Token);
         if (filtered.Error is not null)
             return CompletedCalendarEntityQuery.Failure(filtered.Error);
         using (CalendarQueryTelemetry.StartPhase("serialization"))
@@ -183,7 +138,7 @@ internal sealed class CalendarEntityQueryStartExecutor
                 filtered.Resources.Select(resource => resource.Snapshot).ToArray(),
                 acquired.Diagnostics,
                 temporalContext,
-                cancellationToken);
+                execution.Token);
     }
 
     private QueryReply<CalendarEntityQueryItem> PublishFirstPage(
@@ -191,10 +146,9 @@ internal sealed class CalendarEntityQueryStartExecutor
         int pageSize,
         CancellationToken cancellationToken)
     {
-        var firstPageAt = _timeProvider.GetUtcNow();
         var snapshot = new CalendarQuerySnapshot(
             Guid.NewGuid(),
-            firstPageAt.Add(SnapshotLifetime),
+            _queryPolicy.GetSnapshotExpiry(),
             completed.Items,
             completed.DiagnosticsUtf8,
             completed.RetainedBytes,
@@ -307,20 +261,13 @@ internal sealed class CalendarEntityQueryStartExecutor
         CalendarEntityTemporalMatch.LimitExhausted => CalendarQueryFailures.Limit(
             "The Calendar Entity query exhausted its occurrence budget.",
             new QueryExecutionLimits(OccurrenceCount: occurrenceCount)),
-        _ when occurrenceCount > MaximumOccurrences => CalendarQueryFailures.Limit(
+        _ when occurrenceCount > CalendarQueryPolicy.MaximumOccurrences => CalendarQueryFailures.Limit(
             "The Calendar Entity query exhausted its occurrence budget.",
             new QueryExecutionLimits(OccurrenceCount: occurrenceCount)),
         CalendarEntityTemporalMatch.Unresolved => CalendarQueryFailures.TemporalUnresolved(),
         CalendarEntityTemporalMatch.Unevaluable => CalendarQueryFailures.RecurrenceUnevaluable(),
         _ => null
     };
-
-    private void ThrowIfDeadlineExpired(DateTimeOffset startedAt, CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        if (_timeProvider.GetUtcNow() >= startedAt.Add(ExecutionTimeout))
-            throw new CalendarEntityQueryDeadlineException();
-    }
 
     private static bool IsValid(CalendarEntityQueryRequest.Start request) =>
         request.Query is not null
@@ -341,7 +288,6 @@ internal sealed class CalendarEntityQueryStartExecutor
         internal static FilterResult Failure(QueryFailure error) => new([], error);
     }
 
-    private sealed class CalendarEntityQueryDeadlineException : Exception;
 }
 
 internal sealed class CalendarEntityQueryContinueExecutor(
@@ -436,12 +382,16 @@ internal static class CalendarQueryFailures
         new(QueryFailureCode.LimitExhausted, QueryFailureCategory.LimitsAndAdmission, message, false,
             QueryFailurePhase.Execution, limits);
 
-    internal static QueryFailure ElapsedLimit() => Limit(
-        "The Calendar Entity query exhausted the elapsed_time execution budget.",
-        new QueryExecutionLimits(
-            Dimension: QueryLimitDimension.ElapsedTime,
-            Observed: 30_000,
-            Limit: 30_000));
+    internal static QueryFailure ElapsedLimit()
+    {
+        var limitMilliseconds = checked((long)CalendarQueryPolicy.ExecutionTimeout.TotalMilliseconds);
+        return Limit(
+            "The query exhausted the elapsed_time execution budget.",
+            new QueryExecutionLimits(
+                Dimension: QueryLimitDimension.ElapsedTime,
+                Observed: limitMilliseconds,
+                Limit: limitMilliseconds));
+    }
 
     internal static QueryFailure Busy(int retryAfterMs) => new(
         QueryFailureCode.Busy,

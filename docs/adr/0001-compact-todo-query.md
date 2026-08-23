@@ -9,9 +9,9 @@ Date: 2026-08-19
 ## Context
 
 Routine agent task-list reads need a bounded semantic result without requiring
-clients to parse `calendarProperties`. Existing `calendar_entities.query`
-remains the compatibility surface for complete Calendar Object Resource
-snapshots. To-do completion is not represented reliably by one iCalendar
+clients to parse `calendarProperties`. The `calendar_entities.query` cutover is
+complete and supplies complete Calendar Object Resource snapshots through the
+same closed query module. To-do completion is not represented reliably by one iCalendar
 property: `STATUS`, `COMPLETED`, and `PERCENT-COMPLETE` can be absent,
 contradictory, or accompanied by `CANCELLED`.
 
@@ -55,9 +55,14 @@ every To-do Start to resolve one explicit IANA Temporal Evaluation Context
 before I/O. The completion model, compact projection, lane semantics, and
 strong revision targets in this ADR remain authoritative.
 
+In a windowed query, dated and undated non-recurring To-dos remain Entity rows;
+the implementation never invents a Recurrence Identity for them. Only recurring
+To-dos enter the Occurrence lane and carry an actual Recurrence Identity.
+
 ## Consequences
 
-`calendar_entities.query` remains the full snapshot contract.
+`calendar_entities.query` remains the full snapshot projection behind the same
+closed `ICalendarQueryModule`; it is not a legacy or compatibility path.
 The semantic catalog grows from 16 to 17 default tools (21 including exact
 tools), and the additive contract is documented as 0.2.1 while 0.2.0 artifacts
 remain available for existing clients. Native stdio tests prove the compact

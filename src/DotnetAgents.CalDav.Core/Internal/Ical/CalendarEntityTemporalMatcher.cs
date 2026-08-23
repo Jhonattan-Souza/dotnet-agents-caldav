@@ -125,15 +125,15 @@ internal static class CalendarEntityTemporalMatcher
             cancellationToken);
         return evaluated.Code switch
         {
-            CalendarOccurrenceQueryCode.Success => new(
+            CalendarOccurrenceEvaluationCode.Success => new(
                 evaluated.Items.Count > 0
                     ? CalendarEntityTemporalMatch.Match
                     : CalendarEntityTemporalMatch.NoMatch,
                 evaluated.ObservedOccurrenceCount),
-            CalendarOccurrenceQueryCode.TemporalUnresolved => new(
+            CalendarOccurrenceEvaluationCode.TemporalUnresolved => new(
                 CalendarEntityTemporalMatch.Unresolved,
                 evaluated.ObservedOccurrenceCount),
-            CalendarOccurrenceQueryCode.LimitExhausted => new(
+            CalendarOccurrenceEvaluationCode.LimitExhausted => new(
                 CalendarEntityTemporalMatch.LimitExhausted,
                 evaluated.ObservedOccurrenceCount),
             _ => new(CalendarEntityTemporalMatch.Unevaluable, evaluated.ObservedOccurrenceCount)

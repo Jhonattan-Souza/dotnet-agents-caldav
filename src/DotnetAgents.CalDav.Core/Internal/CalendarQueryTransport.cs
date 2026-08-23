@@ -3,7 +3,9 @@ using DotnetAgents.CalDav.Core.Models;
 namespace DotnetAgents.CalDav.Core.Internal;
 
 /// <summary>Production CalDAV adapter for the query transport seam.</summary>
-internal sealed class CalendarQueryTransport(CalendarOperationDiscovery discovery) : ICalendarQueryTransport
+internal sealed class CalendarQueryTransport(
+    CalendarOperationDiscovery discovery,
+    CalDavClient client) : ICalendarQueryTransport
 {
     public async Task<CalendarQueryDiscovery> DiscoverAsync(CancellationToken cancellationToken)
     {
@@ -33,7 +35,7 @@ internal sealed class CalendarQueryTransport(CalendarOperationDiscovery discover
     {
         try
         {
-            var resources = await discovery.MultigetAsync(
+            var resources = await client.GetCalendarResourcesForQueryAsync(
                 calendarHref,
                 resourceHrefs,
                 cancellationToken).ConfigureAwait(false);
@@ -48,7 +50,7 @@ internal sealed class CalendarQueryTransport(CalendarOperationDiscovery discover
     public async Task<CalendarResourceRead> GetAsync(
         string calendarHref,
         string resourceHref,
-        CancellationToken cancellationToken) => await discovery.DirectGetAsync(
+        CancellationToken cancellationToken) => await client.GetCalendarResourceDirectlyForQueryAsync(
             calendarHref,
             resourceHref,
             cancellationToken)

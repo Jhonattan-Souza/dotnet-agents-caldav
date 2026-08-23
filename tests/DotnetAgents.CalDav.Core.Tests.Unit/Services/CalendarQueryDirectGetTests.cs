@@ -16,6 +16,7 @@ using Xunit;
 
 namespace DotnetAgents.CalDav.Core.Tests.Unit.Services;
 
+[Collection("ActivityListener")]
 public sealed class CalendarQueryDirectGetTests
 {
     private const string CalendarHref = "https://cal.example/calendars/work/";

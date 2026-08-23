@@ -13,6 +13,7 @@ using Xunit;
 
 namespace DotnetAgents.CalDav.Core.Tests.Unit.DependencyInjection;
 
+[Collection("ActivityListener")]
 public sealed class CalDavServiceCollectionExtensionsTests
 {
     [Fact]
@@ -79,31 +80,31 @@ public sealed class CalDavServiceCollectionExtensionsTests
         const string resourceHref = calendarHref + "a.ics";
         var handler = new UnsupportedReportThenGetHandler();
         using var provider = BuildProvider(handler);
-        var transport = (ICalendarQueryResourceTransport)provider.GetRequiredService<ICalendarClient>();
+        var transport = provider.GetRequiredService<ICalendarQueryTransport>();
         using var listener = ListenToQueries();
         using var source = new ActivitySource(CalendarQueryTelemetry.InstrumentationName, "0.1.0");
 
         using (var first = source.StartActivity("caldav.operation", ActivityKind.Internal))
         {
             CalendarQueryTelemetry.Begin(false);
-            await Should.ThrowAsync<CalendarDiscoveryUnsupportedCapabilityException>(() => transport.MultigetAsync(
+            (await transport.MultigetAsync(
                 calendarHref,
                 [resourceHref],
-                TestContext.Current.CancellationToken));
+                TestContext.Current.CancellationToken)).ShouldBeOfType<CalendarMultigetResult.VerifiedUnavailable>();
             first.ShouldNotBeNull().GetTagItem("caldav.query.multiget_resource_count").ShouldBe(1L);
         }
         using (var cached = source.StartActivity("caldav.operation", ActivityKind.Internal))
         {
             CalendarQueryTelemetry.Begin(false);
-            await Should.ThrowAsync<CalendarDiscoveryUnsupportedCapabilityException>(() => transport.MultigetAsync(
+            (await transport.MultigetAsync(
                 calendarHref,
                 [resourceHref],
-                TestContext.Current.CancellationToken));
+                TestContext.Current.CancellationToken)).ShouldBeOfType<CalendarMultigetResult.VerifiedUnavailable>();
             cached.ShouldNotBeNull().GetTagItem("caldav.query.multiget_resource_count").ShouldBe(0L);
         }
         var meter = new CalendarDirectGetBudget().StartResource();
         using var scope = CalendarHttpTelemetry.BeginQueryResourceRead(meter);
-        var read = await transport.DirectGetAsync(
+        var read = await transport.GetAsync(
             calendarHref,
             resourceHref,
             TestContext.Current.CancellationToken);

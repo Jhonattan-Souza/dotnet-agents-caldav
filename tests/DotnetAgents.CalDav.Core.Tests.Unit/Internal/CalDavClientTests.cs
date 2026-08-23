@@ -238,7 +238,7 @@ public class CalDavClientTests
             };
         }));
 
-        var read = await ((ICalendarQueryResourceTransport)sut).DirectGetAsync(
+        var read = await sut.GetCalendarResourceDirectlyForQueryAsync(
             calendarHref,
             resourceHref,
             TestContext.Current.CancellationToken);
@@ -256,7 +256,7 @@ public class CalDavClientTests
             new HttpResponseMessage(HttpStatusCode.TemporaryRedirect)));
 
         await Should.ThrowAsync<CalendarDiscoveryProtocolException>(() =>
-            ((ICalendarQueryResourceTransport)sut).DirectGetAsync(
+            sut.GetCalendarResourceDirectlyForQueryAsync(
                 calendarHref,
                 resourceHref,
                 TestContext.Current.CancellationToken));
@@ -285,7 +285,7 @@ public class CalDavClientTests
             throw new InvalidOperationException("No request is expected for an unsafe identity.");
         }));
 
-        var read = await ((ICalendarQueryResourceTransport)sut).DirectGetAsync(
+        var read = await sut.GetCalendarResourceDirectlyForQueryAsync(
             calendarHref,
             resourceHref,
             TestContext.Current.CancellationToken);
@@ -314,7 +314,7 @@ public class CalDavClientTests
         }));
 
         await Should.ThrowAsync<CalendarDiscoveryProtocolException>(() =>
-            ((ICalendarQueryResourceTransport)sut).DirectGetAsync(
+            sut.GetCalendarResourceDirectlyForQueryAsync(
                 calendarHref,
                 resourceHref,
                 TestContext.Current.CancellationToken));
@@ -348,7 +348,7 @@ public class CalDavClientTests
         var meter = new CalendarDirectGetBudget().StartResource();
         using var scope = CalendarHttpTelemetry.BeginQueryResourceRead(meter);
 
-        var result = await ((ICalendarQueryResourceTransport)sut).DirectGetAsync(
+        var result = await sut.GetCalendarResourceDirectlyForQueryAsync(
             calendarHref,
             resourceHref,
             TestContext.Current.CancellationToken);
@@ -401,14 +401,14 @@ public class CalDavClientTests
             }
             return new HttpResponseMessage(HttpStatusCode.MethodNotAllowed);
         }));
-        var transport = (ICalendarQueryResourceTransport)sut;
+        var transport = sut;
 
-        var first = transport.MultigetAsync(calendarHref, [resourceHref], TestContext.Current.CancellationToken);
+        var first = transport.GetCalendarResourcesForQueryAsync(calendarHref, [resourceHref], TestContext.Current.CancellationToken);
         await requestStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
         sut.RediscoverCapabilities();
         releaseResponse.TrySetResult();
         await Should.ThrowAsync<CalendarDiscoveryUnsupportedCapabilityException>(() => first);
-        await Should.ThrowAsync<CalendarDiscoveryUnsupportedCapabilityException>(() => transport.MultigetAsync(
+        await Should.ThrowAsync<CalendarDiscoveryUnsupportedCapabilityException>(() => transport.GetCalendarResourcesForQueryAsync(
             calendarHref,
             [resourceHref],
             TestContext.Current.CancellationToken));
@@ -2542,20 +2542,11 @@ public class CalDavClientTests
 
 internal static class CalDavClientQueryTestExtensions
 {
-    internal static Task<IReadOnlyList<CalendarResourceRead>> GetCalendarResourcesForQueryAsync(
-        this CalDavClient client,
-        string calendarHref,
-        IReadOnlyList<string> resourceHrefs,
-        CancellationToken cancellationToken) => ((ICalendarQueryResourceTransport)client).MultigetAsync(
-        calendarHref,
-        resourceHrefs,
-        cancellationToken);
-
     internal static async Task<CalendarResourceRead> GetCalendarResourceForQueryAsync(
         this CalDavClient client,
         string calendarHref,
         string resourceHref,
-        CancellationToken cancellationToken) => (await ((ICalendarQueryResourceTransport)client).MultigetAsync(
+        CancellationToken cancellationToken) => (await client.GetCalendarResourcesForQueryAsync(
             calendarHref,
             [resourceHref],
             cancellationToken)).Single();
