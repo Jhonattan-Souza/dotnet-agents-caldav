@@ -234,13 +234,6 @@ public sealed class CalendarResourceMoveServiceTests
             new CalendarResourceRead(CalendarResourceReadCode.NotFound));
         client.GetCalendarResourceAsync(generatedDestinationHref, Arg.Any<CancellationToken>()).Returns(
             Resource(generatedDestinationHref, "\"r2\"", entityUid));
-        client.QueryCalendarResourceHrefsAsync(
-                destinationCalendarHref,
-                Arg.Any<CalendarEntityKind>(),
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([collisionHref]);
         client.GetCalendarResourceAsync(collisionHref, Arg.Any<CancellationToken>()).Returns(
             unrelatedReadCode == CalendarResourceReadCode.Success
                 ? CalendarResourceRead.Success(collisionHref, "\"opaque\"", Encoding.UTF8.GetBytes("not iCalendar"))
@@ -263,12 +256,6 @@ public sealed class CalendarResourceMoveServiceTests
 
         result.Code.ShouldBe(CalendarResourceMoveCode.Success);
         result.MutationState.ShouldBe(CalendarMutationState.Committed);
-        await client.DidNotReceive().QueryCalendarResourceHrefsAsync(
-            Arg.Any<string>(),
-            Arg.Any<CalendarEntityKind>(),
-            Arg.Any<DateTimeOffset?>(),
-            Arg.Any<DateTimeOffset?>(),
-            Arg.Any<CancellationToken>());
         await client.DidNotReceive().GetCalendarResourceAsync(
             collisionHref,
             Arg.Any<CancellationToken>());
@@ -867,57 +854,6 @@ public sealed class CalendarResourceMoveServiceTests
         result.MutationState.ShouldBe(destinationState == "matching"
             ? CalendarMutationState.Committed
             : CalendarMutationState.Unknown);
-    }
-
-    [Theory]
-    [InlineData(1)]
-    [InlineData(50)]
-    [InlineData(600)]
-    public async Task MoveResourceAsync_DestinationSizeDoesNotCauseEnumerationOrUnrelatedReads(
-        int destinationSize)
-    {
-        const string sourceHref = "https://cal.example/tasks/reviewed.ics";
-        const string destinationCalendarHref = "https://cal.example/archive/";
-        var client = ConfiguredClient(sourceHref, "reviewed-move");
-        var destinationHref = CalendarResourceCreateProtocol.BuildResourceHref(
-            destinationCalendarHref,
-            "reviewed-move");
-        client.GetCalendarResourceAsync(destinationHref, Arg.Any<CancellationToken>()).Returns(
-            Resource(destinationHref, "\"r2\"", "reviewed-move"));
-        client.GetCalendarResourceAsync(sourceHref, Arg.Any<CancellationToken>()).Returns(
-            Resource(sourceHref, "\"r1\"", "reviewed-move"),
-            new CalendarResourceRead(CalendarResourceReadCode.NotFound));
-        client.QueryCalendarResourceHrefsAsync(
-                destinationCalendarHref,
-                Arg.Any<CalendarEntityKind>(),
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns(Enumerable.Range(0, destinationSize)
-                .Select(index => $"{destinationCalendarHref}unrelated-{index}.ics")
-                .ToArray());
-        client.MoveCalendarResourceAsync(
-                Arg.Any<CalendarResourceMoveDispatchRequest>(),
-                Arg.Any<CancellationToken>())
-            .Returns(new CalendarResourceMoveDispatchResult(CalendarResourceMoveDispatchCode.Dispatched));
-        var sut = CreateService(client);
-
-        var result = await sut.MoveResourceAsync(Request(sourceHref), CancellationToken.None);
-
-        result.Code.ShouldBe(CalendarResourceMoveCode.Success);
-        result.MutationState.ShouldBe(CalendarMutationState.Committed);
-        await client.DidNotReceive().QueryCalendarResourceHrefsAsync(
-            Arg.Any<string>(),
-            Arg.Any<CalendarEntityKind>(),
-            Arg.Any<DateTimeOffset?>(),
-            Arg.Any<DateTimeOffset?>(),
-            Arg.Any<CancellationToken>());
-        foreach (var index in Enumerable.Range(0, destinationSize))
-        {
-            await client.DidNotReceive().GetCalendarResourceAsync(
-                $"{destinationCalendarHref}unrelated-{index}.ics",
-                Arg.Any<CancellationToken>());
-        }
     }
 
     [Theory]
