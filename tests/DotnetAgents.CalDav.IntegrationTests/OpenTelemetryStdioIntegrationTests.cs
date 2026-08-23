@@ -1099,6 +1099,8 @@ public sealed class OpenTelemetryStdioIntegrationTests
         private readonly Task _serve;
         private readonly TaskCompletionSource _requestStarted = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _releaseRequest = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
 
         internal HangingDiscoveryServer()
         {
@@ -1121,6 +1123,7 @@ public sealed class OpenTelemetryStdioIntegrationTests
 
         public async ValueTask DisposeAsync()
         {
+            _releaseRequest.TrySetResult();
             await _stopping.CancelAsync();
             _listener.Stop();
             try
@@ -1142,7 +1145,7 @@ public sealed class OpenTelemetryStdioIntegrationTests
                 .WaitAsync(_stopping.Token)
                 .ConfigureAwait(false);
             _requestStarted.TrySetResult();
-            await Task.Delay(Timeout.InfiniteTimeSpan, _stopping.Token).ConfigureAwait(false);
+            await _releaseRequest.Task.WaitAsync(_stopping.Token).ConfigureAwait(false);
             context.Response.Close();
         }
     }
