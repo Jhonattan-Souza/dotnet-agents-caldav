@@ -1,5 +1,6 @@
 using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Core.Internal;
+using DotnetAgents.CalDav.Core.Models;
 using Microsoft.Extensions.Options;
 using Shouldly;
 using Xunit;
@@ -150,6 +151,58 @@ public sealed class CalendarQueryCursorCodecTests
                 new FixedTimeProvider(Now))
             .Authenticate(cursor, CalendarEntityQueryPageCodec.ToolName).Code
             .ShouldBe(CalendarQueryCursorAuthenticationCode.Invalid);
+    }
+
+    [Fact]
+    public void CursorContextBindsConfiguredTemporalEvaluationContextWithoutDisclosingTheChange()
+    {
+        var baselineOptions = OptionsFor();
+        baselineOptions.Value.EvaluationTimeZone = "America/Sao_Paulo";
+        var baseline = new CalendarQueryCursorKey(baselineOptions, Key);
+        var cursor = new CalendarQueryCursorIssuer(baseline).Issue(
+            CalendarEntityQueryPageCodec.ToolName,
+            Guid.NewGuid(),
+            1,
+            Now.AddMinutes(10));
+        var changedOptions = OptionsFor();
+        changedOptions.Value.EvaluationTimeZone = "Europe/London";
+
+        var result = new CalendarQueryCursorAuthenticator(
+                new CalendarQueryCursorKey(changedOptions, Key),
+                new FixedTimeProvider(Now))
+            .Authenticate(cursor, CalendarEntityQueryPageCodec.ToolName);
+
+        result.Code.ShouldBe(CalendarQueryCursorAuthenticationCode.Invalid);
+        cursor.ShouldNotContain("America");
+        cursor.ShouldNotContain("Sao_Paulo");
+    }
+
+    [Fact]
+    public void CursorAuthenticatesTheExactEffectiveCallerContextBinding()
+    {
+        var key = new CalendarQueryCursorKey(OptionsFor(), Key);
+        var issuer = new CalendarQueryCursorIssuer(key);
+        var authenticator = new CalendarQueryCursorAuthenticator(key, new FixedTimeProvider(Now));
+        var contextA = CalendarTemporalEvaluationContextCodec.Encode(new TemporalEvaluationContext(
+            "America/Sao_Paulo",
+            TemporalEvaluationContextSource.Caller));
+        var contextB = CalendarTemporalEvaluationContextCodec.Encode(new TemporalEvaluationContext(
+            "Europe/London",
+            TemporalEvaluationContextSource.Caller));
+        var protectedCursor = issuer.Issue(
+            CalendarEntityQueryPageCodec.ToolName,
+            Guid.NewGuid(),
+            1,
+            Now.AddMinutes(10),
+            contextA);
+
+        var cursor = authenticator.Authenticate(protectedCursor, CalendarEntityQueryPageCodec.ToolName)
+            .Cursor.ShouldNotBeNull();
+
+        authenticator.MatchesTemporalContext(cursor, contextA.Span).ShouldBeTrue();
+        authenticator.MatchesTemporalContext(cursor, contextB.Span).ShouldBeFalse();
+        protectedCursor.ShouldNotContain("America");
+        protectedCursor.ShouldNotContain("London");
     }
 
     [Fact]

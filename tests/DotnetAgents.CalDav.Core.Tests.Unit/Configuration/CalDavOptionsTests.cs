@@ -159,4 +159,40 @@ public class CalDavOptionsTests
 
         result.Succeeded.ShouldBeTrue();
     }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("America/Sao_Paulo ")]
+    [InlineData("Eastern Standard Time")]
+    [InlineData("Private/Unknown")]
+    public void ValidateCalDavOptions_RejectsInvalidConfiguredEvaluationTimeZone(string evaluationTimeZone)
+    {
+        var result = new ValidateCalDavOptions().Validate(null, new CalDavOptions
+        {
+            BaseUrl = "https://caldav.example.com",
+            Username = "user",
+            Password = "pass",
+            EvaluationTimeZone = evaluationTimeZone
+        });
+
+        result.Failed.ShouldBeTrue();
+        result.Failures.ShouldContain(failure => failure.Contains("EvaluationTimeZone", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("UTC")]
+    [InlineData("America/Sao_Paulo")]
+    public void ValidateCalDavOptions_AcceptsAbsentOrIanaEvaluationTimeZone(string? evaluationTimeZone)
+    {
+        var result = new ValidateCalDavOptions().Validate(null, new CalDavOptions
+        {
+            BaseUrl = "https://caldav.example.com",
+            Username = "user",
+            Password = "pass",
+            EvaluationTimeZone = evaluationTimeZone
+        });
+
+        result.Succeeded.ShouldBeTrue();
+    }
 }

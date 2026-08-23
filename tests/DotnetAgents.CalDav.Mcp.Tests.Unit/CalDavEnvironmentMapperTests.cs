@@ -130,8 +130,21 @@ public class CalDavEnvironmentMapperTests
             "CALDAV_PASSWORD",
             "CALDAV_CALENDAR_HREFS",
             "CALDAV_DEFAULT_TODO_CALENDAR_NAME",
-            "CALDAV_DEFAULT_EVENT_CALENDAR_NAME"
+            "CALDAV_DEFAULT_EVENT_CALENDAR_NAME",
+            "CALDAV_EVALUATION_TIME_ZONE"
         ]);
+    }
+
+    [Fact]
+    public void MapFromEnvironment_MapsConfiguredTemporalEvaluationContextExactly()
+    {
+        var configure = CalDavEnvironmentMapper.MapFromEnvironment(name =>
+            name == "CALDAV_EVALUATION_TIME_ZONE" ? "America/Sao_Paulo" : null);
+        var options = new CalDavOptions();
+
+        configure(options);
+
+        options.EvaluationTimeZone.ShouldBe("America/Sao_Paulo");
     }
 
 }

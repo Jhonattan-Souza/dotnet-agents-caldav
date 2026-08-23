@@ -45,7 +45,7 @@ internal sealed class CalendarEntityQueryPageCodec
     {
         if (IsInvalidRequest(snapshot.Items.Length, position, pageSize))
             return CalendarQueryPagePlanAdmission.Failure(CalendarQueryFailures.InvalidInput());
-        var fixedBudget = MeasureFixedBudget(snapshot.DiagnosticsUtf8);
+        var fixedBudget = MeasureFixedBudget(snapshot.DiagnosticsUtf8, snapshot.TemporalEvaluationContextUtf8);
         _workCounter?.RecordAdmissionEnvelopeSerialization();
         if (fixedBudget.HumanReadableBytes > MaximumHumanReadableBytes)
             return CalendarQueryPagePlanAdmission.Failure(CalendarQueryFailures.PayloadTooLarge(
@@ -72,7 +72,12 @@ internal sealed class CalendarEntityQueryPageCodec
             var candidatePosition = position + candidateCount;
             var hasMore = candidatePosition < snapshot.Items.Length;
             var candidateCursor = hasMore
-                ? _cursorIssuer.Issue(ToolName, snapshot.Id, candidatePosition, snapshot.ExpiresAt)
+                ? _cursorIssuer.Issue(
+                    ToolName,
+                    snapshot.Id,
+                    candidatePosition,
+                    snapshot.ExpiresAt,
+                    snapshot.TemporalEvaluationContextUtf8)
                 : null;
             var candidateBytes = admittedBytes + stored.JsonByteCount;
             var measured = fixedCallToolResultBytes
@@ -119,6 +124,7 @@ internal sealed class CalendarEntityQueryPageCodec
             writer.WriteEndArray();
             writer.WritePropertyName("diagnostics");
             writer.WriteRawValue(snapshot.DiagnosticsUtf8.Span, skipInputValidation: true);
+            WriteTemporalContext(writer, snapshot.TemporalEvaluationContextUtf8);
             writer.WritePropertyName("pagination");
             writer.WriteStartObject();
             writer.WriteString("mode", "query_result_snapshot");
@@ -141,10 +147,14 @@ internal sealed class CalendarEntityQueryPageCodec
             plan.NextCursor,
             structuredContent,
             SuccessText,
-            plan.MeasuredCallToolResultBytes);
+            plan.MeasuredCallToolResultBytes,
+            TemporalEvaluationContext: CalendarTemporalEvaluationContextCodec.Decode(
+                snapshot.TemporalEvaluationContextUtf8));
     }
 
-    private static CalendarQueryFixedBudget MeasureFixedBudget(ReadOnlyMemory<byte> diagnosticsUtf8)
+    private static CalendarQueryFixedBudget MeasureFixedBudget(
+        ReadOnlyMemory<byte> diagnosticsUtf8,
+        ReadOnlyMemory<byte> temporalEvaluationContextUtf8)
     {
         var callToolResult = new ArrayBufferWriter<byte>();
         using (var writer = new Utf8JsonWriter(callToolResult))
@@ -158,7 +168,7 @@ internal sealed class CalendarEntityQueryPageCodec
             writer.WriteEndObject();
             writer.WriteEndArray();
             writer.WritePropertyName("structuredContent");
-            WriteEmptyStructuredContent(writer, diagnosticsUtf8);
+            WriteEmptyStructuredContent(writer, diagnosticsUtf8, temporalEvaluationContextUtf8);
             writer.WriteBoolean("isError", false);
             writer.WriteNull("_meta");
             writer.WriteNull("resultType");
@@ -179,7 +189,10 @@ internal sealed class CalendarEntityQueryPageCodec
         return new CalendarQueryFixedBudget(callToolResult.WrittenCount, human.WrittenCount);
     }
 
-    private static void WriteEmptyStructuredContent(Utf8JsonWriter writer, ReadOnlyMemory<byte> diagnosticsUtf8)
+    private static void WriteEmptyStructuredContent(
+        Utf8JsonWriter writer,
+        ReadOnlyMemory<byte> diagnosticsUtf8,
+        ReadOnlyMemory<byte> temporalEvaluationContextUtf8)
     {
         writer.WriteStartObject();
         writer.WriteString("outcome", "success");
@@ -188,12 +201,23 @@ internal sealed class CalendarEntityQueryPageCodec
         writer.WriteEndArray();
         writer.WritePropertyName("diagnostics");
         writer.WriteRawValue(diagnosticsUtf8.Span, skipInputValidation: true);
+        WriteTemporalContext(writer, temporalEvaluationContextUtf8);
         writer.WritePropertyName("pagination");
         writer.WriteStartObject();
         writer.WriteString("mode", "query_result_snapshot");
         writer.WriteNull("nextCursor");
         writer.WriteEndObject();
         writer.WriteEndObject();
+    }
+
+    private static void WriteTemporalContext(
+        Utf8JsonWriter writer,
+        ReadOnlyMemory<byte> temporalEvaluationContextUtf8)
+    {
+        if (temporalEvaluationContextUtf8.IsEmpty)
+            return;
+        writer.WritePropertyName("temporalEvaluationContext");
+        writer.WriteRawValue(temporalEvaluationContextUtf8.Span, skipInputValidation: true);
     }
 
     private static int CursorDelta(string? cursor) => cursor is null ? 0 : cursor.Length - 2;

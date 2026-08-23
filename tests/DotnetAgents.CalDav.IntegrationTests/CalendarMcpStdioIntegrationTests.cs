@@ -91,10 +91,13 @@ public sealed class CalendarMcpStdioIntegrationTests
     {
         const string content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Integration//EN\r\n"
             + "BEGIN:VTODO\r\nUID:entity-query-stdio-1\r\nDTSTAMP:20260817T120000Z\r\n"
-            + "SUMMARY:Entity query integration\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+            + "SUMMARY:Entity query integration\r\nDUE;VALUE=DATE:20260817\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
         var href = await PutResourceAsync("entity-query-stdio-1.ics", content);
         var stderr = new ConcurrentQueue<string>();
-        await using var client = await CreateClientAsync(stderr, exposeExact: false);
+        await using var client = await CreateClientAsync(
+            stderr,
+            exposeExact: false,
+            evaluationTimeZone: "America/Sao_Paulo");
         var tools = await client.ListToolsAsync(new ListToolsRequestParams(), TestContext.Current.CancellationToken);
         var advertised = tools.Tools.Single(tool => tool.Name == "calendar_entities.query");
         var selectedScope = new Dictionary<string, object?>
@@ -113,6 +116,16 @@ public sealed class CalendarMcpStdioIntegrationTests
             {
                 ["scope"] = selectedScope,
                 ["entityKinds"] = new[] { "todo" },
+                ["from"] = new Dictionary<string, object?>
+                {
+                    ["kind"] = "utcDateTime",
+                    ["value"] = "2026-08-17T03:00:00Z"
+                },
+                ["to"] = new Dictionary<string, object?>
+                {
+                    ["kind"] = "utcDateTime",
+                    ["value"] = "2026-08-17T04:00:00Z"
+                },
                 ["pageSize"] = 1
             },
             cancellationToken: TestContext.Current.CancellationToken);
@@ -136,13 +149,20 @@ public sealed class CalendarMcpStdioIntegrationTests
         success.IsError.ShouldBe(false);
         var structured = success.StructuredContent!.Value;
         structured.EnumerateObject().Select(property => property.Name)
-            .ShouldBe(["outcome", "items", "diagnostics", "pagination"]);
+            .ShouldBe(["outcome", "items", "diagnostics", "temporalEvaluationContext", "pagination"]);
         structured.GetProperty("outcome").GetString().ShouldBe("success");
         structured.GetProperty("items").GetArrayLength().ShouldBe(1);
         structured.GetProperty("items")[0].GetProperty("resourceRevision").GetProperty("entityTag").GetString()
             .ShouldStartWith("\"");
         structured.GetProperty("pagination").GetProperty("mode").GetString().ShouldBe("query_result_snapshot");
         structured.GetProperty("diagnostics").ValueKind.ShouldBe(System.Text.Json.JsonValueKind.Array);
+        structured.GetProperty("temporalEvaluationContext").GetProperty("timeZone").GetString()
+            .ShouldBe("America/Sao_Paulo");
+        structured.GetProperty("temporalEvaluationContext").GetProperty("source").GetString()
+            .ShouldBe("configuration");
+        structured.GetProperty("items")[0].GetProperty("calendarProperties").EnumerateArray()
+            .Single(property => property.GetProperty("name").GetString() == "DUE")
+            .GetProperty("rawEncodedValue").GetString().ShouldBe("20260817");
         advertised.OutputSchema.ShouldNotBeNull();
         advertised.OutputSchema.Value.GetProperty("oneOf").GetArrayLength().ShouldBe(2);
         advertised.InputSchema.GetProperty("oneOf").GetArrayLength().ShouldBe(2);
@@ -1431,7 +1451,8 @@ public sealed class CalendarMcpStdioIntegrationTests
         string? baseUrl = null,
         string? calendarHrefs = null,
         bool confirmMutations = false,
-        string? password = null)
+        string? password = null,
+        string? evaluationTimeZone = null)
     {
         var environment = CreateEnvironment();
         if (baseUrl is not null)
@@ -1443,6 +1464,8 @@ public sealed class CalendarMcpStdioIntegrationTests
             environment["CALDAV_CALENDAR_HREFS"] = calendarHrefs;
         if (password is not null)
             environment["CALDAV_PASSWORD"] = password;
+        if (evaluationTimeZone is not null)
+            environment["CALDAV_EVALUATION_TIME_ZONE"] = evaluationTimeZone;
         environment["CALDAV_EXPOSE_EXACT_TOOLS"] = exposeExact ? "true" : "false";
         var transport = new StdioClientTransport(new StdioClientTransportOptions
         {

@@ -21,6 +21,514 @@ public sealed class CalendarQueryModuleTests
     private static readonly DateTimeOffset Now = new(2026, 8, 23, 12, 0, 0, TimeSpan.Zero);
 
     [Fact]
+    public async Task BoundedStartWithoutTemporalContextFailsBeforeAnyCalDavWork()
+    {
+        const string calendarHref = "https://cal.example/calendars/work/";
+        var transport = new ScriptedCalendarQueryTransport([Calendar(calendarHref)], static () => []);
+        var transportConstructionCount = 0;
+        await using var provider = CreateProvider(
+            transport,
+            new MutableTimeProvider(Now),
+            services => services.AddTransient<ICalendarQueryTransport>(_ =>
+            {
+                transportConstructionCount++;
+                return transport;
+            }),
+            configureOptions: options => options.EvaluationTimeZone = null);
+
+        var failure = (await provider.GetRequiredService<ICalendarQueryModule>().QueryEntitiesAsync(
+            new CalendarEntityQueryRequest.Start(new CalendarEntityQuery(
+                CalendarEntityScope.All,
+                [CalendarEntityKind.Event],
+                Now,
+                Now.AddDays(1))),
+            CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Failure>();
+
+        failure.Error.Code.ShouldBe(QueryFailureCode.InvalidInput);
+        transportConstructionCount.ShouldBe(0);
+        transport.DiscoveryCount.ShouldBe(0);
+        transport.CandidateQueryCount.ShouldBe(0);
+        transport.MultigetCount.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task CallerTemporalContextWinsAndIsFrozenAcrossContinuation()
+    {
+        const string calendarHref = "https://cal.example/calendars/work/";
+        var hrefs = new[] { calendarHref + "a.ics", calendarHref + "b.ics" };
+        var transport = new ScriptedCalendarQueryTransport([Calendar(calendarHref)], () => hrefs);
+        await using var provider = CreateProvider(
+            transport,
+            new MutableTimeProvider(Now),
+            configureOptions: options => options.EvaluationTimeZone = "Europe/London");
+        var module = provider.GetRequiredService<ICalendarQueryModule>();
+        var query = new CalendarEntityQuery(
+            CalendarEntityScope.All,
+            [CalendarEntityKind.Event],
+            Now,
+            Now.AddDays(2),
+            "America/Sao_Paulo");
+
+        var first = (await module.QueryEntitiesAsync(
+            new CalendarEntityQueryRequest.Start(query, PageSize: 1),
+            CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Page>();
+        var continued = (await module.QueryEntitiesAsync(
+            new CalendarEntityQueryRequest.Continue(first.Value.NextCursor.ShouldNotBeNull()),
+            CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Page>();
+
+        first.Value.TemporalEvaluationContext.ShouldBe(
+            new TemporalEvaluationContext("America/Sao_Paulo", TemporalEvaluationContextSource.Caller));
+        continued.Value.TemporalEvaluationContext.ShouldBe(first.Value.TemporalEvaluationContext);
+        continued.Value.StructuredContent.GetProperty("temporalEvaluationContext")
+            .GetProperty("source").GetString().ShouldBe("caller");
+        transport.DiscoveryCount.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task ConfiguredTemporalContextIsReportedWithoutPerItemDuplication()
+    {
+        const string calendarHref = "https://cal.example/calendars/work/";
+        var transport = new ScriptedCalendarQueryTransport(
+            [Calendar(calendarHref)],
+            () => [calendarHref + "a.ics"]);
+        await using var provider = CreateProvider(
+            transport,
+            new MutableTimeProvider(Now),
+            configureOptions: options => options.EvaluationTimeZone = "Europe/London");
+
+        var page = (await provider.GetRequiredService<ICalendarQueryModule>().QueryEntitiesAsync(
+            new CalendarEntityQueryRequest.Start(new CalendarEntityQuery(
+                CalendarEntityScope.All,
+                [CalendarEntityKind.Event],
+                Now,
+                Now.AddDays(2))),
+            CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Page>();
+
+        page.Value.TemporalEvaluationContext.ShouldBe(new TemporalEvaluationContext(
+            "Europe/London",
+            TemporalEvaluationContextSource.Configuration));
+        page.Value.Items.ShouldHaveSingleItem().Value.GetRawText().ShouldNotContain("Europe/London");
+    }
+
+    [Fact]
+    public async Task UnboundedStartLeavesConfiguredTemporalContextUnusedAndUnreported()
+    {
+        const string calendarHref = "https://cal.example/calendars/work/";
+        var transport = new ScriptedCalendarQueryTransport(
+            [Calendar(calendarHref)],
+            () => [calendarHref + "a.ics"]);
+        await using var provider = CreateProvider(
+            transport,
+            new MutableTimeProvider(Now),
+            configureOptions: options => options.EvaluationTimeZone = "Europe/London");
+
+        var page = (await provider.GetRequiredService<ICalendarQueryModule>().QueryEntitiesAsync(
+            new CalendarEntityQueryRequest.Start(new CalendarEntityQuery(
+                CalendarEntityScope.All,
+                [CalendarEntityKind.Event])),
+            CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Page>();
+
+        page.Value.TemporalEvaluationContext.ShouldBeNull();
+        page.Value.StructuredContent.TryGetProperty("temporalEvaluationContext", out _).ShouldBeFalse();
+        transport.DiscoveryCount.ShouldBe(1);
+        transport.CandidateQueryCount.ShouldBe(1);
+        transport.MultigetCount.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task EffectiveTemporalContextNeverEntersQueryTelemetry()
+    {
+        const string calendarHref = "https://cal.example/calendars/work/";
+        const string privateZone = "America/Sao_Paulo";
+        var stopped = new List<Activity>();
+        using var listener = ListenToQuery(stopped);
+        using var source = new ActivitySource(CalendarQueryTelemetry.InstrumentationName, "0.1.0");
+        await using var provider = CreateProvider(
+            new ScriptedCalendarQueryTransport([Calendar(calendarHref)], () => [calendarHref + "a.ics"]),
+            new MutableTimeProvider(Now));
+
+        using (source.StartActivity("caldav.operation", ActivityKind.Internal))
+        {
+            (await provider.GetRequiredService<ICalendarQueryModule>().QueryEntitiesAsync(
+                new CalendarEntityQueryRequest.Start(new CalendarEntityQuery(
+                    CalendarEntityScope.All,
+                    [CalendarEntityKind.Event],
+                    Now,
+                    Now.AddDays(2),
+                    privateZone)),
+                CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Page>();
+        }
+
+        stopped.Single(activity => activity.OperationName == "caldav.operation").TagObjects
+            .Select(tag => tag.Value?.ToString() ?? string.Empty)
+            .ShouldAllBe(value => !value.Contains(privateZone, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task UnboundedStartRejectsUnusedCallerTemporalOverrideBeforeAnyCalDavWork()
+    {
+        const string calendarHref = "https://cal.example/calendars/work/";
+        var transport = new ScriptedCalendarQueryTransport([Calendar(calendarHref)], static () => []);
+        await using var provider = CreateProvider(transport, new MutableTimeProvider(Now));
+
+        var failure = (await provider.GetRequiredService<ICalendarQueryModule>().QueryEntitiesAsync(
+            new CalendarEntityQueryRequest.Start(new CalendarEntityQuery(
+                CalendarEntityScope.All,
+                [CalendarEntityKind.Event],
+                EvaluationTimeZone: "UTC")),
+            CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Failure>();
+
+        failure.Error.Code.ShouldBe(QueryFailureCode.InvalidInput);
+        transport.DiscoveryCount.ShouldBe(0);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("America/New_York ")]
+    [InlineData("Eastern Standard Time")]
+    [InlineData("Private/Unknown")]
+    public async Task InvalidCallerTemporalContextFailsBeforeAnyCalDavWork(string evaluationTimeZone)
+    {
+        const string calendarHref = "https://cal.example/calendars/work/";
+        var transport = new ScriptedCalendarQueryTransport([Calendar(calendarHref)], static () => []);
+        await using var provider = CreateProvider(transport, new MutableTimeProvider(Now));
+
+        var failure = (await provider.GetRequiredService<ICalendarQueryModule>().QueryEntitiesAsync(
+            new CalendarEntityQueryRequest.Start(new CalendarEntityQuery(
+                CalendarEntityScope.All,
+                [CalendarEntityKind.Event],
+                Now,
+                Now.AddDays(1),
+                evaluationTimeZone)),
+            CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Failure>();
+
+        failure.Error.Code.ShouldBe(QueryFailureCode.InvalidInput);
+        transport.DiscoveryCount.ShouldBe(0);
+    }
+
+    [Theory]
+    [InlineData("20260308", "2026-03-09T03:30:00Z", "2026-03-09T03:45:00Z")]
+    [InlineData("20261101", "2026-11-02T04:30:00Z", "2026-11-02T04:45:00Z")]
+    public async Task DateOnlyEventWithoutEndOccupiesOneCompleteCivilDayAcrossDst(
+        string localDate,
+        string from,
+        string to)
+    {
+        const string calendarHref = "https://cal.example/calendars/work/";
+        const string resourceHref = calendarHref + "date.ics";
+        var transport = new ScriptedCalendarQueryTransport(
+            [Calendar(calendarHref)],
+            static () => [resourceHref],
+            reads: _ => [CalendarResourceRead.Success(resourceHref, "\"r1\"", Ics(
+                $"BEGIN:VEVENT\r\nUID:date\r\nDTSTAMP:20260823T120000Z\r\n"
+                + $"DTSTART;VALUE=DATE:{localDate}\r\nEND:VEVENT\r\n"))]);
+        await using var provider = CreateProvider(transport, new MutableTimeProvider(Now));
+
+        var page = (await provider.GetRequiredService<ICalendarQueryModule>().QueryEntitiesAsync(
+            new CalendarEntityQueryRequest.Start(new CalendarEntityQuery(
+                CalendarEntityScope.All,
+                [CalendarEntityKind.Event],
+                DateTimeOffset.Parse(from, System.Globalization.CultureInfo.InvariantCulture),
+                DateTimeOffset.Parse(to, System.Globalization.CultureInfo.InvariantCulture),
+                "America/New_York")),
+            CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Page>();
+
+        page.Value.Items.ShouldHaveSingleItem();
+        var start = page.Value.Items[0].Value.GetProperty("calendarProperties").EnumerateArray()
+            .Single(property => property.GetProperty("name").GetString() == "DTSTART");
+        start.GetProperty("valueType").GetString().ShouldBe("date");
+        start.GetProperty("rawEncodedValue").GetString().ShouldBe(localDate);
+    }
+
+    [Theory]
+    [InlineData("20260308", "2026-03-09T03:30:00Z", "2026-03-09T03:45:00Z")]
+    [InlineData("20261101", "2026-11-02T04:30:00Z", "2026-11-02T04:45:00Z")]
+    public async Task RecurringDateOnlyEventUsesOneCivilDayWhenOccurrenceHasNoExplicitEnd(
+        string localDate,
+        string from,
+        string to)
+    {
+        var page = await QueryTemporalResourceAsync(
+            $"BEGIN:VEVENT\r\nUID:event\r\nDTSTAMP:20260823T120000Z\r\n"
+            + $"DTSTART;VALUE=DATE:{localDate}\r\nRRULE:FREQ=DAILY;COUNT=2\r\nEND:VEVENT\r\n",
+            CalendarEntityKind.Event,
+            DateTimeOffset.Parse(from, System.Globalization.CultureInfo.InvariantCulture),
+            DateTimeOffset.Parse(to, System.Globalization.CultureInfo.InvariantCulture));
+
+        page.Value.Items.ShouldHaveSingleItem();
+    }
+
+    [Fact]
+    public async Task RetainedSnapshotCountsTheExactContextWireBytesOnce()
+    {
+        const string calendarHref = "https://cal.example/calendars/work/";
+        var transport = new ScriptedCalendarQueryTransport(
+            [Calendar(calendarHref)],
+            () => [calendarHref + "a.ics", calendarHref + "b.ics"]);
+        await using var provider = CreateProvider(transport, new MutableTimeProvider(Now));
+        var module = provider.GetRequiredService<ICalendarQueryModule>();
+
+        var first = (await module.QueryEntitiesAsync(
+            new CalendarEntityQueryRequest.Start(new CalendarEntityQuery(
+                CalendarEntityScope.All,
+                [CalendarEntityKind.Event],
+                Now,
+                Now.AddDays(2),
+                "America/Sao_Paulo"),
+                PageSize: 1),
+            CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Page>();
+        var second = (await module.QueryEntitiesAsync(
+            new CalendarEntityQueryRequest.Continue(first.Value.NextCursor.ShouldNotBeNull()),
+            CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Page>();
+        var itemBytes = first.Value.Items.Concat(second.Value.Items)
+            .Sum(item => Encoding.UTF8.GetByteCount(item.Value.GetRawText()));
+        var expectedContext = "{\"timeZone\":\"America/Sao_Paulo\",\"source\":\"caller\"}";
+
+        provider.GetRequiredService<CalendarQuerySnapshotStore>().RetainedBytes.ShouldBe(
+            itemBytes + "[]"u8.Length + Encoding.UTF8.GetByteCount(expectedContext));
+        first.Value.StructuredContent.GetProperty("temporalEvaluationContext").GetRawText()
+            .ShouldBe(expectedContext);
+        second.Value.StructuredContent.GetProperty("temporalEvaluationContext").GetRawText()
+            .ShouldBe(expectedContext);
+    }
+
+    [Theory]
+    [InlineData("20260308", "20260309", "2026-03-09T03:30:00Z", "2026-03-09T03:45:00Z")]
+    [InlineData("20261101", "20261102", "2026-11-02T04:30:00Z", "2026-11-02T04:45:00Z")]
+    public async Task DateOnlyTodoStartAndDueFormTheInterveningCivilSpan(
+        string startDate,
+        string dueDate,
+        string from,
+        string to)
+    {
+        var page = await QueryTemporalResourceAsync(
+            $"BEGIN:VTODO\r\nUID:todo\r\nDTSTAMP:20260823T120000Z\r\n"
+            + $"DTSTART;VALUE=DATE:{startDate}\r\nDUE;VALUE=DATE:{dueDate}\r\nEND:VTODO\r\n",
+            CalendarEntityKind.Todo,
+            DateTimeOffset.Parse(from, System.Globalization.CultureInfo.InvariantCulture),
+            DateTimeOffset.Parse(to, System.Globalization.CultureInfo.InvariantCulture));
+
+        page.Value.Items.ShouldHaveSingleItem();
+    }
+
+    [Theory]
+    [InlineData("2026-03-09T03:59:00Z", "2026-03-09T04:00:00Z", 0)]
+    [InlineData("2026-03-09T04:00:00Z", "2026-03-09T04:01:00Z", 1)]
+    public async Task LoneDateOnlyTodoDueIsAPointAtTheCivilDateBoundary(
+        string from,
+        string to,
+        int expectedItems)
+    {
+        var page = await QueryTemporalResourceAsync(
+            "BEGIN:VTODO\r\nUID:todo\r\nDTSTAMP:20260823T120000Z\r\n"
+            + "DUE;VALUE=DATE:20260309\r\nEND:VTODO\r\n",
+            CalendarEntityKind.Todo,
+            DateTimeOffset.Parse(from, System.Globalization.CultureInfo.InvariantCulture),
+            DateTimeOffset.Parse(to, System.Globalization.CultureInfo.InvariantCulture));
+
+        page.Value.Items.Count.ShouldBe(expectedItems);
+    }
+
+    [Theory]
+    [InlineData("20260308T023000", "2026-03-08T07:30:00Z", "2026-03-08T07:31:00Z")]
+    [InlineData("20261101T013000", "2026-11-01T05:30:00Z", "2026-11-01T05:31:00Z")]
+    public async Task FloatingGapAndOverlapUseTheEstablishedDeterministicOffset(
+        string localStart,
+        string from,
+        string to)
+    {
+        var page = await QueryTemporalResourceAsync(
+            $"BEGIN:VEVENT\r\nUID:event\r\nDTSTAMP:20260823T120000Z\r\n"
+            + $"DTSTART:{localStart}\r\nEND:VEVENT\r\n",
+            CalendarEntityKind.Event,
+            DateTimeOffset.Parse(from, System.Globalization.CultureInfo.InvariantCulture),
+            DateTimeOffset.Parse(to, System.Globalization.CultureInfo.InvariantCulture));
+
+        page.Value.Items.ShouldHaveSingleItem();
+    }
+
+    [Theory]
+    [InlineData(
+        CalendarEntityKind.Event,
+        "DTSTART;TZID=America/New_York:20260308T023000\r\n",
+        "2026-03-08T07:30:00Z",
+        "2026-03-08T07:31:00Z")]
+    [InlineData(
+        CalendarEntityKind.Event,
+        "DTSTART;TZID=America/New_York:20261101T013000\r\nRRULE:FREQ=DAILY;COUNT=2\r\n",
+        "2026-11-01T05:30:00Z",
+        "2026-11-01T05:31:00Z")]
+    [InlineData(
+        CalendarEntityKind.Todo,
+        "DUE;TZID=America/New_York:20261101T013000\r\n",
+        "2026-11-01T05:30:00Z",
+        "2026-11-01T05:31:00Z")]
+    [InlineData(
+        CalendarEntityKind.Todo,
+        "DTSTART;TZID=America/New_York:20260308T013000\r\n"
+        + "DUE;TZID=America/New_York:20260308T023000\r\nRRULE:FREQ=DAILY;COUNT=2\r\n",
+        "2026-03-08T06:30:00Z",
+        "2026-03-08T06:31:00Z")]
+    public async Task NamedIanaGapAndOverlapMatrixCoversEventAndTodoRecurringAndNonRecurring(
+        CalendarEntityKind kind,
+        string temporalLines,
+        string from,
+        string to)
+    {
+        var component = kind == CalendarEntityKind.Event ? "VEVENT" : "VTODO";
+        var page = await QueryTemporalResourceAsync(
+            $"BEGIN:{component}\r\nUID:matrix\r\nDTSTAMP:20260823T120000Z\r\n"
+            + temporalLines
+            + $"END:{component}\r\n",
+            kind,
+            DateTimeOffset.Parse(from, System.Globalization.CultureInfo.InvariantCulture),
+            DateTimeOffset.Parse(to, System.Globalization.CultureInfo.InvariantCulture));
+
+        page.Value.Items.ShouldHaveSingleItem();
+    }
+
+    [Fact]
+    public async Task ValidResourceLocalVTimeZoneIsAuthoritativeOverEvaluationContext()
+    {
+        var page = await QueryTemporalResourceAsync(
+            "BEGIN:VTIMEZONE\r\nTZID:Custom/Shift\r\nBEGIN:STANDARD\r\n"
+            + "DTSTART:19700101T000000\r\nTZOFFSETFROM:+0230\r\nTZOFFSETTO:+0230\r\n"
+            + "END:STANDARD\r\nEND:VTIMEZONE\r\n"
+            + "BEGIN:VEVENT\r\nUID:local-zone\r\nDTSTAMP:20260823T120000Z\r\n"
+            + "DTSTART;TZID=Custom/Shift:20260824T120000\r\nEND:VEVENT\r\n",
+            CalendarEntityKind.Event,
+            DateTimeOffset.Parse("2026-08-24T09:30:00Z", System.Globalization.CultureInfo.InvariantCulture),
+            DateTimeOffset.Parse("2026-08-24T09:31:00Z", System.Globalization.CultureInfo.InvariantCulture));
+
+        var item = page.Value.Items.ShouldHaveSingleItem().Value;
+        item.GetRawText().ShouldContain("Custom/Shift");
+    }
+
+    [Theory]
+    [InlineData("20260308", "20260309", "2026-03-09T03:30:00Z", "2026-03-09T03:45:00Z")]
+    [InlineData("20261101", "20261102", "2026-11-02T04:30:00Z", "2026-11-02T04:45:00Z")]
+    public async Task RecurringDateOnlyTodoUsesCivilBoundariesAcrossTwentyThreeAndTwentyFiveHourDays(
+        string startDate,
+        string dueDate,
+        string from,
+        string to)
+    {
+        var page = await QueryTemporalResourceAsync(
+            $"BEGIN:VTODO\r\nUID:todo-recurring-date\r\nDTSTAMP:20260823T120000Z\r\n"
+            + $"DTSTART;VALUE=DATE:{startDate}\r\nDUE;VALUE=DATE:{dueDate}\r\n"
+            + "RRULE:FREQ=DAILY;COUNT=2\r\nEND:VTODO\r\n",
+            CalendarEntityKind.Todo,
+            DateTimeOffset.Parse(from, System.Globalization.CultureInfo.InvariantCulture),
+            DateTimeOffset.Parse(to, System.Globalization.CultureInfo.InvariantCulture));
+
+        page.Value.Items.ShouldHaveSingleItem();
+    }
+
+    [Fact]
+    public async Task ExplicitTemporalContextProducesHostZoneIndependentItemsAndBytes()
+    {
+        const string outputEnvironmentName = "CALDAV_TEMPORAL_HOST_ORACLE_OUTPUT";
+        var oracleOutput = Environment.GetEnvironmentVariable(outputEnvironmentName);
+        if (oracleOutput is not null)
+        {
+            var page = await QueryTemporalResourceAsync(
+                "BEGIN:VEVENT\r\nUID:host-independent\r\nDTSTAMP:20260823T120000Z\r\n"
+                + "DTSTART:20260308T013000\r\nEND:VEVENT\r\n",
+                CalendarEntityKind.Event,
+                DateTimeOffset.Parse("2026-03-08T06:30:00Z", System.Globalization.CultureInfo.InvariantCulture),
+                DateTimeOffset.Parse("2026-03-08T06:31:00Z", System.Globalization.CultureInfo.InvariantCulture));
+            var evidence = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                items = page.Value.Items.Select(item => item.Value.GetRawText()).ToArray(),
+                measuredCallToolResultBytes = page.Value.MeasuredCallToolResultBytes
+            });
+            await File.WriteAllTextAsync(oracleOutput, evidence, TestContext.Current.CancellationToken);
+            return;
+        }
+
+        var temporaryDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"caldav-temporal-host-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(temporaryDirectory);
+        try
+        {
+            var utc = await RunHostZoneOracleAsync("UTC", Path.Combine(temporaryDirectory, "utc.json"));
+            var kiritimati = await RunHostZoneOracleAsync(
+                "Pacific/Kiritimati",
+                Path.Combine(temporaryDirectory, "kiritimati.json"));
+
+            utc.ShouldBe(kiritimati);
+            using var evidence = System.Text.Json.JsonDocument.Parse(utc);
+            evidence.RootElement.GetProperty("items").GetArrayLength().ShouldBe(1);
+            evidence.RootElement.GetProperty("measuredCallToolResultBytes").GetInt32().ShouldBeGreaterThan(0);
+        }
+        finally
+        {
+            Directory.Delete(temporaryDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task UnknownResourceLocalZoneFailsAtomicallyWithoutRetainingASnapshot()
+    {
+        const string calendarHref = "https://cal.example/calendars/work/";
+        const string resourceHref = calendarHref + "unknown.ics";
+        var transport = new ScriptedCalendarQueryTransport(
+            [Calendar(calendarHref)],
+            static () => [resourceHref],
+            reads: _ => [CalendarResourceRead.Success(resourceHref, "\"r1\"", Ics(
+                "BEGIN:VEVENT\r\nUID:event\r\nDTSTAMP:20260823T120000Z\r\n"
+                + "DTSTART;TZID=Private/Unknown:20260824T120000\r\nEND:VEVENT\r\n"))]);
+        await using var provider = CreateProvider(transport, new MutableTimeProvider(Now));
+
+        var failure = (await provider.GetRequiredService<ICalendarQueryModule>().QueryEntitiesAsync(
+            new CalendarEntityQueryRequest.Start(new CalendarEntityQuery(
+                CalendarEntityScope.All,
+                [CalendarEntityKind.Event],
+                Now,
+                Now.AddDays(2),
+                "America/New_York")),
+            CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Failure>();
+
+        failure.Error.Code.ShouldBe(QueryFailureCode.TemporalUnresolved);
+        failure.Error.Retryable.ShouldBeFalse();
+        provider.GetRequiredService<CalendarQuerySnapshotStore>().ActiveSnapshotCount.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task ConflictingResourceLocalZonesFailAtomicallyWithoutRetainingASnapshot()
+    {
+        const string calendarHref = "https://cal.example/calendars/work/";
+        const string resourceHref = calendarHref + "conflicting.ics";
+        var transport = new ScriptedCalendarQueryTransport(
+            [Calendar(calendarHref)],
+            static () => [resourceHref],
+            reads: _ => [CalendarResourceRead.Success(resourceHref, "\"r1\"", Ics(
+                "BEGIN:VTIMEZONE\r\nTZID:Private/Conflicting\r\n"
+                + "BEGIN:STANDARD\r\nDTSTART:19700101T000000\r\nTZOFFSETFROM:+0000\r\nTZOFFSETTO:+0000\r\n"
+                + "END:STANDARD\r\nEND:VTIMEZONE\r\n"
+                + "BEGIN:VTIMEZONE\r\nTZID:Private/Conflicting\r\n"
+                + "BEGIN:STANDARD\r\nDTSTART:19700101T000000\r\nTZOFFSETFROM:+0100\r\nTZOFFSETTO:+0100\r\n"
+                + "END:STANDARD\r\nEND:VTIMEZONE\r\n"
+                + "BEGIN:VEVENT\r\nUID:event\r\nDTSTAMP:20260823T120000Z\r\n"
+                + "DTSTART;TZID=Private/Conflicting:20260824T120000\r\nEND:VEVENT\r\n"))]);
+        await using var provider = CreateProvider(transport, new MutableTimeProvider(Now));
+
+        var failure = (await provider.GetRequiredService<ICalendarQueryModule>().QueryEntitiesAsync(
+            new CalendarEntityQueryRequest.Start(new CalendarEntityQuery(
+                CalendarEntityScope.All,
+                [CalendarEntityKind.Event],
+                Now,
+                Now.AddDays(2),
+                "America/New_York")),
+            CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Failure>();
+
+        failure.Error.Code.ShouldBe(QueryFailureCode.TemporalUnresolved);
+        failure.Error.Retryable.ShouldBeFalse();
+        provider.GetRequiredService<CalendarQuerySnapshotStore>().ActiveSnapshotCount.ShouldBe(0);
+    }
+
+    [Fact]
     public async Task ContinueReadsTheImmutableResultWithoutRepeatingCalDavWork()
     {
         const string calendarHref = "https://cal.example/calendars/work/";
@@ -1081,7 +1589,7 @@ public sealed class CalendarQueryModuleTests
             "BEGIN:VEVENT\r\nUID:event-date\r\nDTSTAMP:20260823T120000Z\r\n"
             + "DTSTART;VALUE=DATE:20260824\r\nEND:VEVENT\r\n",
             CalendarEntityKind.Event,
-            -1];
+            1];
         yield return [
             "BEGIN:VEVENT\r\nUID:event-recur\r\nDTSTAMP:20260823T120000Z\r\n"
             + "DTSTART:20260823T120000Z\r\nRRULE:FREQ=DAILY;COUNT=3\r\n"
@@ -1212,6 +1720,7 @@ public sealed class CalendarQueryModuleTests
             options.BaseUrl = "https://cal.example";
             options.Username = "user";
             options.Password = "password";
+            options.EvaluationTimeZone = "UTC";
             configure?.Invoke(options);
         });
         services.AddSingleton(client);
@@ -1222,7 +1731,8 @@ public sealed class CalendarQueryModuleTests
     private static ServiceProvider CreateProvider(
         ICalendarQueryTransport transport,
         TimeProvider timeProvider,
-        Action<IServiceCollection>? configure = null)
+        Action<IServiceCollection>? configure = null,
+        Action<CalDavOptions>? configureOptions = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -1231,6 +1741,8 @@ public sealed class CalendarQueryModuleTests
             options.BaseUrl = "https://cal.example";
             options.Username = "user";
             options.Password = "password";
+            options.EvaluationTimeZone = "UTC";
+            configureOptions?.Invoke(options);
         });
         services.AddSingleton(Substitute.For<ICalendarClient>());
         services.AddSingleton(timeProvider);
@@ -1291,6 +1803,70 @@ public sealed class CalendarQueryModuleTests
         "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Query Module Tests//EN\r\n"
         + component
         + "END:VCALENDAR\r\n");
+
+    private static async Task<QueryReply<CalendarEntityQueryItem>.Page> QueryTemporalResourceAsync(
+        string component,
+        CalendarEntityKind kind,
+        DateTimeOffset from,
+        DateTimeOffset to)
+    {
+        const string calendarHref = "https://cal.example/calendars/work/";
+        const string resourceHref = calendarHref + "temporal.ics";
+        var calendar = Calendar(calendarHref) with
+        {
+            EventSupport = kind == CalendarEntityKind.Event
+                ? EntityKindSupport.Advertised
+                : EntityKindSupport.NotAdvertised,
+            TodoSupport = kind == CalendarEntityKind.Todo
+                ? EntityKindSupport.Advertised
+                : EntityKindSupport.NotAdvertised
+        };
+        var transport = new ScriptedCalendarQueryTransport(
+            [calendar],
+            static () => [resourceHref],
+            reads: _ => [CalendarResourceRead.Success(resourceHref, "\"r1\"", Ics(component))]);
+        await using var provider = CreateProvider(transport, new MutableTimeProvider(Now));
+        return (await provider.GetRequiredService<ICalendarQueryModule>().QueryEntitiesAsync(
+            new CalendarEntityQueryRequest.Start(new CalendarEntityQuery(
+                CalendarEntityScope.All,
+                [kind],
+                from,
+                to,
+                "America/New_York")),
+            CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Page>();
+    }
+
+    private static async Task<string> RunHostZoneOracleAsync(string hostTimeZone, string outputPath)
+    {
+        var assemblyPath = typeof(CalendarQueryModuleTests).Assembly.Location;
+        var executablePath = Path.Combine(
+            Path.GetDirectoryName(assemblyPath)!,
+            Path.GetFileNameWithoutExtension(assemblyPath));
+        var startInfo = new ProcessStartInfo(executablePath)
+        {
+            RedirectStandardError = true,
+            RedirectStandardOutput = true,
+            UseShellExecute = false
+        };
+        startInfo.ArgumentList.Add("--filter-method");
+        startInfo.ArgumentList.Add(
+            "DotnetAgents.CalDav.Core.Tests.Unit.Services.CalendarQueryModuleTests.ExplicitTemporalContextProducesHostZoneIndependentItemsAndBytes");
+        startInfo.ArgumentList.Add("--minimum-expected-tests");
+        startInfo.ArgumentList.Add("1");
+        startInfo.ArgumentList.Add("--no-progress");
+        startInfo.Environment["TZ"] = hostTimeZone;
+        startInfo.Environment["CALDAV_TEMPORAL_HOST_ORACLE_OUTPUT"] = outputPath;
+
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Could not start the temporal host-zone oracle.");
+        var standardOutput = process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
+        var standardError = process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
+        await process.WaitForExitAsync(TestContext.Current.CancellationToken);
+        var output = await standardOutput;
+        var error = await standardError;
+        process.ExitCode.ShouldBe(0, $"Host-zone oracle failed for {hostTimeZone}: {output}\n{error}");
+        return await File.ReadAllTextAsync(outputPath, TestContext.Current.CancellationToken);
+    }
 
     private static CalendarEntityQuery Query() =>
         new(CalendarEntityScope.All, [CalendarEntityKind.Event]);

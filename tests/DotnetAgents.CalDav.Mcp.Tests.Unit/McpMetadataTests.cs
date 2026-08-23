@@ -72,6 +72,7 @@ public class McpMetadataTests
             "CALDAV_CALENDAR_HREFS",
             "CALDAV_DEFAULT_TODO_CALENDAR_NAME",
             "CALDAV_DEFAULT_EVENT_CALENDAR_NAME",
+            "CALDAV_EVALUATION_TIME_ZONE",
             "CALDAV_EXPOSE_EXACT_TOOLS",
             "OTEL_EXPORTER_OTLP_ENDPOINT",
             "OTEL_EXPORTER_OTLP_PROTOCOL",
@@ -82,6 +83,10 @@ public class McpMetadataTests
         envVars.EnumerateArray()
             .Single(item => item.GetProperty("name").GetString() == "OTEL_EXPORTER_OTLP_HEADERS")
             .GetProperty("isSecret").GetBoolean().ShouldBeTrue();
+        envVars.EnumerateArray()
+            .Single(item => item.GetProperty("name").GetString() == "CALDAV_EVALUATION_TIME_ZONE")
+            .GetProperty("description").GetString().ShouldNotBeNull()
+            .ShouldContain("bounded Calendar Entity Starts");
         var description = root.GetProperty("description").GetString()!;
         description.ShouldContain("Calendars");
         description.ShouldContain("Events");

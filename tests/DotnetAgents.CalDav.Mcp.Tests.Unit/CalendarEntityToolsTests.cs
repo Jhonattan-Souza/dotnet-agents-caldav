@@ -49,6 +49,7 @@ public sealed class CalendarEntityToolsTests
             ["entityKinds"] = JsonSerializer.SerializeToElement(new[] { "event", "todo" }),
             ["from"] = JsonSerializer.SerializeToElement(new { kind = "utcDateTime", value = "2026-08-23T12:00:00Z" }),
             ["to"] = JsonSerializer.SerializeToElement(new { kind = "utcDateTime", value = "2026-08-24T12:00:00Z" }),
+            ["evaluationTimeZone"] = JsonSerializer.SerializeToElement("America/Sao_Paulo"),
             ["pageSize"] = JsonSerializer.SerializeToElement(1)
         }, CancellationToken.None);
         var continuation = await tool.QueryRawAsync(new Dictionary<string, JsonElement>
@@ -64,6 +65,7 @@ public sealed class CalendarEntityToolsTests
         typedStart.Query.Scope.ShouldBe(CalendarEntityScope.All);
         typedStart.Query.EntityKinds.ShouldBe([CalendarEntityKind.Event, CalendarEntityKind.Todo]);
         typedStart.Query.From.ShouldBe(new DateTimeOffset(2026, 8, 23, 12, 0, 0, TimeSpan.Zero));
+        typedStart.Query.EvaluationTimeZone.ShouldBe("America/Sao_Paulo");
         observed[1].ShouldBe(new CalendarEntityQueryRequest.Continue("opaque", 200));
     }
 
@@ -101,6 +103,8 @@ public sealed class CalendarEntityToolsTests
                 ("from", new { kind = "utcDateTime", value = "2026-08-23T12:00:00+01:00" }),
                 ("to", new { kind = "utcDateTime", value = "2026-08-24T12:00:00Z" })),
             Arguments(("scope", new { mode = "all" }), ("entityKinds", new[] { "event" }), ("pageSize", 201))
+            ,Arguments(("scope", new { mode = "all" }), ("entityKinds", new[] { "event" }),
+                ("evaluationTimeZone", JsonSerializer.SerializeToElement<string?>(null)))
         };
         var module = Substitute.For<ICalendarQueryModule>();
         var tool = new CalendarEntityTools(module);
@@ -379,7 +383,7 @@ public sealed class CalendarEntityToolsTests
     }
 
     [Fact]
-    public async Task ActualSdkEnvelopeMatchesTheModuleAccountant()
+    public async Task ActualSdkEnvelopeMatchesTheModuleAccountantWithTemporalContext()
     {
         const string calendarHref = "https://cal.example/calendars/work/";
         var services = new ServiceCollection();
@@ -392,11 +396,17 @@ public sealed class CalendarEntityToolsTests
             options.Username = "user";
             options.Password = "password";
             options.CalendarHrefs = calendarHref;
+            options.EvaluationTimeZone = "Europe/London";
         });
         await using var provider = services.BuildServiceProvider();
         var page = (await provider.GetRequiredService<ICalendarQueryModule>().QueryEntitiesAsync(
             new CalendarEntityQueryRequest.Start(
-                new CalendarEntityQuery(CalendarEntityScope.All, [CalendarEntityKind.Event])),
+                new CalendarEntityQuery(
+                    CalendarEntityScope.All,
+                    [CalendarEntityKind.Event],
+                    new DateTimeOffset(2026, 8, 23, 0, 0, 0, TimeSpan.Zero),
+                    new DateTimeOffset(2026, 8, 25, 0, 0, 0, TimeSpan.Zero),
+                    "America/Sao_Paulo")),
             CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Page>();
         var module = Substitute.For<ICalendarQueryModule>();
         module.QueryEntitiesAsync(Arg.Any<CalendarEntityQueryRequest>(), Arg.Any<CancellationToken>())
@@ -407,6 +417,9 @@ public sealed class CalendarEntityToolsTests
             CancellationToken.None);
 
         CalendarEntityTools.MeasureResult(actual).ShouldBe(page.Value.MeasuredCallToolResultBytes);
+        actual.StructuredContent!.Value.GetProperty("items").GetArrayLength().ShouldBe(1);
+        actual.StructuredContent!.Value.GetProperty("temporalEvaluationContext")
+            .GetProperty("timeZone").GetString().ShouldBe("America/Sao_Paulo");
         actual.Content.OfType<TextContentBlock>().ShouldHaveSingleItem().Text.ShouldBe(page.Value.HumanText);
     }
 
@@ -424,6 +437,7 @@ public sealed class CalendarEntityToolsTests
                 outcome = "success",
                 items = new object[] { new { marker = 1 }, new { padding = new string('x', padding) } },
                 diagnostics = Array.Empty<object>(),
+                temporalEvaluationContext = new { timeZone = "America/Sao_Paulo", source = "caller" },
                 pagination = new { mode = "query_result_snapshot", nextCursor = "opaque-cursor" }
             }),
             Content = [new TextContentBlock { Text = "Calendar Entity query completed." }]

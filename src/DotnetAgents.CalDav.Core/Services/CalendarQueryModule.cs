@@ -72,13 +72,20 @@ internal sealed class CalendarEntityQueryStartExecutor
     {
         if (!IsValid(request))
             return Failure(CalendarQueryFailures.InvalidInput());
+        var temporal = ResolveTemporalContext(request.Query);
+        if (temporal.Error is not null)
+            return Failure(temporal.Error);
+        var selectedHrefFailure = PrevalidateSelectedHref(request.Query);
+        if (selectedHrefFailure is not null)
+            return Failure(selectedHrefFailure);
         var transport = _transportFactory();
         var startedAt = _timeProvider.GetUtcNow();
         using var deadline = new CancellationTokenSource(ExecutionTimeout, _timeProvider);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
         try
         {
-            var completed = await CompleteQueryAsync(transport, request.Query, linked.Token).ConfigureAwait(false);
+            var completed = await CompleteQueryAsync(transport, request.Query, temporal.Context, linked.Token)
+                .ConfigureAwait(false);
             ThrowIfDeadlineExpired(startedAt, linked.Token);
             if (completed.Error is not null)
                 return Failure(completed.Error);
@@ -124,11 +131,9 @@ internal sealed class CalendarEntityQueryStartExecutor
     private async Task<CompletedCalendarEntityQuery> CompleteQueryAsync(
         ICalendarQueryTransport transport,
         CalendarEntityQuery query,
+        TemporalEvaluationContext? temporalContext,
         CancellationToken cancellationToken)
     {
-        var selectedHrefFailure = PrevalidateSelectedHref(query);
-        if (selectedHrefFailure is not null)
-            return CompletedCalendarEntityQuery.Failure(selectedHrefFailure);
         CalendarQueryDiscovery discovery;
         using (CalendarQueryTelemetry.StartPhase("discovery"))
             discovery = await transport.DiscoverAsync(cancellationToken).ConfigureAwait(false);
@@ -159,11 +164,11 @@ internal sealed class CalendarEntityQueryStartExecutor
             return CompletedCalendarEntityQuery.Failure(fetched.Error);
         FilterResult filtered;
         using (CalendarQueryTelemetry.StartPhase("evaluation"))
-            filtered = Filter(fetched.Snapshots, query, cancellationToken);
+            filtered = Filter(fetched.Snapshots, query, temporalContext, cancellationToken);
         if (filtered.Error is not null)
             return CompletedCalendarEntityQuery.Failure(filtered.Error);
         using (CalendarQueryTelemetry.StartPhase("serialization"))
-            return Project(filtered.Snapshots, fetched.Diagnostics, cancellationToken);
+            return Project(filtered.Snapshots, fetched.Diagnostics, temporalContext, cancellationToken);
     }
 
     private QueryReply<CalendarEntityQueryItem> PublishFirstPage(
@@ -177,7 +182,8 @@ internal sealed class CalendarEntityQueryStartExecutor
             firstPageAt.Add(SnapshotLifetime),
             completed.Items,
             completed.DiagnosticsUtf8,
-            completed.RetainedBytes);
+            completed.RetainedBytes,
+            completed.TemporalEvaluationContextUtf8);
         CalendarQueryPagePlanAdmission planned;
         using (CalendarQueryTelemetry.StartPhase("page_admission"))
         {
@@ -210,6 +216,7 @@ internal sealed class CalendarEntityQueryStartExecutor
     private static CompletedCalendarEntityQuery Project(
         IReadOnlyList<CalendarResourceSnapshot> snapshots,
         IReadOnlyList<QueryDiagnostic> diagnostics,
+        TemporalEvaluationContext? temporalContext,
         CancellationToken cancellationToken)
     {
         var countFailure = CalendarQuerySnapshotPolicy.Validate(snapshots.Count, 0);
@@ -229,14 +236,16 @@ internal sealed class CalendarEntityQueryStartExecutor
                 return CompletedCalendarEntityQuery.Failure(byteFailure);
         }
         var diagnosticsUtf8 = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(diagnostics);
-        var retainedBytes = itemBytes + diagnosticsUtf8.Length;
+        var temporalContextUtf8 = CalendarTemporalEvaluationContextCodec.Encode(temporalContext);
+        var retainedBytes = itemBytes + diagnosticsUtf8.Length + temporalContextUtf8.Length;
         var retainedFailure = CalendarQuerySnapshotPolicy.Validate(projected.Count, retainedBytes);
         if (retainedFailure is not null)
             return CompletedCalendarEntityQuery.Failure(retainedFailure);
         return CompletedCalendarEntityQuery.Success(
             projected.MoveToImmutable(),
             diagnosticsUtf8,
-            retainedBytes);
+            retainedBytes,
+            temporalContextUtf8);
     }
 
     private async Task<FetchResult> FetchSnapshotsAsync(
@@ -312,6 +321,7 @@ internal sealed class CalendarEntityQueryStartExecutor
     private static FilterResult Filter(
         IReadOnlyList<CalendarResourceSnapshot> snapshots,
         CalendarEntityQuery query,
+        TemporalEvaluationContext? temporalContext,
         CancellationToken cancellationToken)
     {
         var filtered = new List<CalendarResourceSnapshot>();
@@ -325,7 +335,12 @@ internal sealed class CalendarEntityQueryStartExecutor
                 continue;
             }
             CalendarQueryTelemetry.Add("caldav.query.evaluation_count");
-            var temporal = CalendarEntityTemporalMatcher.Matches(snapshot, query.From, query.To, cancellationToken);
+            var temporal = CalendarEntityTemporalMatcher.Matches(
+                snapshot,
+                query.From,
+                query.To,
+                temporalContext?.TimeZone,
+                cancellationToken);
             occurrenceCount += temporal.OccurrenceCount;
             var failure = TemporalFailure(temporal.Match, occurrenceCount);
             if (failure is not null)
@@ -587,6 +602,33 @@ internal sealed class CalendarEntityQueryStartExecutor
             _ => false
         };
 
+    private TemporalContextResolution ResolveTemporalContext(CalendarEntityQuery query)
+    {
+        var isBounded = query.From is not null;
+        if (!isBounded)
+        {
+            return query.EvaluationTimeZone is null
+                ? TemporalContextResolution.Success(null)
+                : TemporalContextResolution.Failure(CalendarQueryFailures.InvalidInput(
+                    "An unbounded Calendar Entity query cannot use evaluationTimeZone."));
+        }
+        if (query.EvaluationTimeZone is { } caller)
+        {
+            return IanaTimeZoneIds.IsValid(caller)
+                ? TemporalContextResolution.Success(new TemporalEvaluationContext(
+                    caller,
+                    TemporalEvaluationContextSource.Caller))
+                : TemporalContextResolution.Failure(CalendarQueryFailures.InvalidInput(
+                    "The Calendar Entity query evaluationTimeZone is invalid."));
+        }
+        return _options.EvaluationTimeZone is { } configured && IanaTimeZoneIds.IsValid(configured)
+            ? TemporalContextResolution.Success(new TemporalEvaluationContext(
+                configured,
+                TemporalEvaluationContextSource.Configuration))
+            : TemporalContextResolution.Failure(CalendarQueryFailures.InvalidInput(
+                "A bounded Calendar Entity query requires a Temporal Evaluation Context."));
+    }
+
     private static bool HasValidWindow(DateTimeOffset? from, DateTimeOffset? to) => from is null || to is null
         ? from is null && to is null
         : from.Value.Offset == TimeSpan.Zero
@@ -666,6 +708,15 @@ internal sealed class CalendarEntityQueryStartExecutor
         internal static FilterResult Failure(QueryFailure error) => new([], error);
     }
 
+    private sealed record TemporalContextResolution(
+        TemporalEvaluationContext? Context,
+        QueryFailure? Error)
+    {
+        internal static TemporalContextResolution Success(TemporalEvaluationContext? context) => new(context, null);
+
+        internal static TemporalContextResolution Failure(QueryFailure error) => new(null, error);
+    }
+
     private sealed class CalendarEntityQueryDeadlineException : Exception;
 }
 
@@ -706,10 +757,11 @@ internal sealed class CalendarEntityQueryContinueExecutor(
             : Failure(admitted.Error));
     }
 
-    private static bool MatchesSnapshot(CalendarQueryCursor cursor, CalendarQuerySnapshot? snapshot) => snapshot is not null
+    private bool MatchesSnapshot(CalendarQueryCursor cursor, CalendarQuerySnapshot? snapshot) => snapshot is not null
         && cursor.ExpiresAtUnixMilliseconds == snapshot.ExpiresAt.ToUnixTimeMilliseconds()
         && cursor.Position > 0
-        && cursor.Position < snapshot.Items.Length;
+        && cursor.Position < snapshot.Items.Length
+        && cursorAuthenticator.MatchesTemporalContext(cursor, snapshot.TemporalEvaluationContextUtf8.Span);
 
     private static QueryReply<CalendarEntityQueryItem>.Failure Failure(QueryFailure failure) => new(failure);
 }
@@ -718,14 +770,18 @@ internal sealed record CompletedCalendarEntityQuery(
     ImmutableArray<StoredCalendarEntityQueryItem> Items,
     ReadOnlyMemory<byte> DiagnosticsUtf8,
     long RetainedBytes,
+    ReadOnlyMemory<byte> TemporalEvaluationContextUtf8,
     QueryFailure? Error)
 {
     internal static CompletedCalendarEntityQuery Success(
         ImmutableArray<StoredCalendarEntityQueryItem> items,
         ReadOnlyMemory<byte> diagnosticsUtf8,
-        long retainedBytes) => new(items, diagnosticsUtf8, retainedBytes, null);
+        long retainedBytes,
+        ReadOnlyMemory<byte> temporalEvaluationContextUtf8) =>
+        new(items, diagnosticsUtf8, retainedBytes, temporalEvaluationContextUtf8, null);
 
-    internal static CompletedCalendarEntityQuery Failure(QueryFailure error) => new([], ReadOnlyMemory<byte>.Empty, 0, error);
+    internal static CompletedCalendarEntityQuery Failure(QueryFailure error) =>
+        new([], ReadOnlyMemory<byte>.Empty, 0, ReadOnlyMemory<byte>.Empty, error);
 }
 
 internal static class CalendarQueryFailures
