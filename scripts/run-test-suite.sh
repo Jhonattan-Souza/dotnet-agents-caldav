@@ -8,12 +8,18 @@ usage() {
 
 script_directory=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repository_root=$(cd -- "$script_directory/.." && pwd)
+manifest="$script_directory/test-suite-manifest.json"
 artifacts_owned=false
 temporary_parent=
+python3 "$script_directory/validate-test-suite-manifest.py" "$manifest"
 
 case $# in
   0)
     temporary_parent=$(realpath -- "${TMPDIR:-/tmp}")
+    if [[ "$temporary_parent" == *';'* || "$temporary_parent" == *$'\n'* ]]; then
+      echo "Temporary artifact parent cannot contain semicolons or newlines." >&2
+      exit 65
+    fi
     artifacts_directory=$(mktemp -d "$temporary_parent/caldav-tests.XXXXXX")
     artifacts_owned=true
     ;;
@@ -41,10 +47,45 @@ if [[ "$artifacts_directory" == *';'* || "$artifacts_directory" == *$'\n'* ]]; t
 fi
 
 cd -- "$repository_root"
+case "$artifacts_directory/" in
+  "$repository_root/"*)
+    if [[ "$artifacts_owned" == true ]]; then
+      "$script_directory/cleanup-test-artifacts.sh" "$artifacts_directory" "$temporary_parent"
+    fi
+    echo "Artifact directory must be outside the repository so the worktree guard can remain authoritative." >&2
+    exit 65
+    ;;
+esac
+state_parent=$(realpath -- "${TMPDIR:-/tmp}")
+case "$state_parent/" in
+  "$repository_root/"*)
+    echo "Temporary worktree-state directory must be outside the repository." >&2
+    exit 65
+    ;;
+esac
+state_directory=$(mktemp -d "$state_parent/caldav-worktree-state.XXXXXX")
+before_state="$state_directory/before.json"
+after_state="$state_directory/after.json"
+early_finish() {
+  local status=$?
+  rm -rf -- "$state_directory"
+  if [[ "$artifacts_owned" == true ]]; then
+    echo "Test artifacts retained after worktree-state capture failure: $artifacts_directory" >&2
+  fi
+  exit "$status"
+}
+trap early_finish EXIT
+echo "Test artifacts: $artifacts_directory" >&2
+python3 "$script_directory/verify-worktree-state.py" capture "$repository_root" "$before_state"
 
 finish() {
   local status=$?
   trap - EXIT
+  if ! python3 "$script_directory/verify-worktree-state.py" compare \
+    "$repository_root" "$before_state" "$after_state"; then
+    status=70
+  fi
+  rm -rf -- "$state_directory"
   if [[ "$artifacts_owned" == true ]]; then
     if [[ $status -eq 0 ]]; then
       "$script_directory/cleanup-test-artifacts.sh" "$artifacts_directory" "$temporary_parent"
@@ -56,46 +97,39 @@ finish() {
 }
 trap finish EXIT
 
-echo "Test artifacts: $artifacts_directory" >&2
 "$script_directory/test-test-artifacts.sh"
 
-run_main_project() {
-  local project=$1
-  local prefix=$2
-  local trx_filename=$3
-  local minimum_tests=$4
-
-  dotnet test \
-    --project "$repository_root/$project" \
-    -c Release \
-    --no-build \
-    --no-restore \
-    --results-directory "$artifacts_directory" \
-    --report-trx \
-    --report-trx-filename "$trx_filename" \
-    --coverlet \
-    --coverlet-file-prefix "$prefix" \
-    --minimum-expected-tests "$minimum_tests" \
-    --fail-skips on \
-    --zero-tests-policy strict \
-    --no-ansi
+manifest_rows() {
+  python3 - "$manifest" "$1" <<'PY'
+import json
+import sys
+for artifact in json.load(open(sys.argv[1], encoding="utf-8"))["artifacts"]:
+    if artifact["phase"] != sys.argv[2]:
+        continue
+    environment = ";".join(f"{key}={value}" for key, value in artifact["environment"].items())
+    print("\x1f".join((artifact["project"], artifact["trx"], str(artifact["exactTests"]),
+                       artifact.get("coveragePrefix", ""), artifact.get("filterClass", ""), environment)))
+PY
 }
 
-run_main_project \
-  tests/DotnetAgents.CalDav.Core.Tests.Unit/DotnetAgents.CalDav.Core.Tests.Unit.csproj \
-  main-core \
-  main-core.trx \
-  2279
-run_main_project \
-  tests/DotnetAgents.CalDav.Mcp.Tests.Unit/DotnetAgents.CalDav.Mcp.Tests.Unit.csproj \
-  main-mcp \
-  main-mcp.trx \
-  964
-run_main_project \
-  tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj \
-  main-integration \
-  main-integration.trx \
-  109
+run_project() {
+  local project=$1 trx_filename=$2 exact_tests=$3 prefix=$4 filter_class=$5 environment=$6
+  local arguments=(dotnet test --project "$repository_root/$project" -c Release --no-build --no-restore
+    --results-directory "$artifacts_directory" --report-trx --report-trx-filename "$trx_filename"
+    --minimum-expected-tests "$exact_tests" --fail-skips on --zero-tests-policy strict --no-ansi)
+  [[ -z "$prefix" ]] || arguments+=(--coverlet --coverlet-file-prefix "$prefix")
+  [[ -z "$filter_class" ]] || arguments+=(--filter-class "$filter_class")
+  if [[ -n "$environment" ]]; then
+    IFS=';' read -r -a environment_arguments <<< "$environment"
+    env "${environment_arguments[@]}" "${arguments[@]}"
+  else
+    "${arguments[@]}"
+  fi
+}
+
+while IFS=$'\x1f' read -r project trx exact prefix filter environment; do
+  run_project "$project" "$trx" "$exact" "$prefix" "$filter" "$environment"
+done < <(manifest_rows main)
 
 cobertura_reports=$("$script_directory/verify-test-artifacts.sh" "$artifacts_directory" main)
 coverage_report_directory="$artifacts_directory/coverage-report"
@@ -106,26 +140,9 @@ dotnet reportgenerator \
   '-assemblyfilters:+DotnetAgents.CalDav.Core;+DotnetAgents.CalDav.Mcp;-*Tests*;-xunit*;-testhost*'
 "$script_directory/verify-coverage.sh" "$coverage_report_directory" 0.90 0.85
 
-run_conformance_variant() {
-  local variant=$1
-  RADICALE_CONFORMANCE_VARIANT="$variant" \
-    dotnet test \
-      --project "$repository_root/tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj" \
-      -c Release \
-      --no-build \
-      --no-restore \
-      --filter-class '*RadicaleConformanceHarnessTests' \
-      --results-directory "$artifacts_directory" \
-      --report-trx \
-      --report-trx-filename "$variant.trx" \
-      --minimum-expected-tests 11 \
-      --fail-skips on \
-      --zero-tests-policy strict \
-      --no-ansi
-}
-
-run_conformance_variant strict-preconditions
-run_conformance_variant alternate-time-zone
+while IFS=$'\x1f' read -r project trx exact prefix filter environment; do
+  run_project "$project" "$trx" "$exact" "$prefix" "$filter" "$environment"
+done < <(manifest_rows complete)
 "$script_directory/verify-test-artifacts.sh" "$artifacts_directory" complete >/dev/null
 
 echo "Verified isolated test evidence: $artifacts_directory" >&2

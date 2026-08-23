@@ -173,10 +173,19 @@ public sealed class OpenTelemetryStdioIntegrationTests
         {
             var mixed = await client.CallToolAsync(
                 "calendar_entities.query",
-                StartEntityQueryArguments(),
+                StartEntityQueryArguments(pageSize: 1),
                 cancellationToken: TestContext.Current.CancellationToken);
             mixed.IsError.ShouldBe(false, mixed.StructuredContent?.ToString());
-            mixed.StructuredContent!.Value.GetProperty("items").GetArrayLength().ShouldBe(2);
+            mixed.StructuredContent!.Value.GetProperty("items").GetArrayLength().ShouldBe(1);
+            var cursor = mixed.StructuredContent.Value.GetProperty("pagination").GetProperty("nextCursor")
+                .GetString().ShouldNotBeNull();
+
+            var continuation = await client.CallToolAsync(
+                "calendar_entities.query",
+                new Dictionary<string, object?> { ["cursor"] = cursor, ["pageSize"] = 1 },
+                cancellationToken: TestContext.Current.CancellationToken);
+            continuation.IsError.ShouldBe(false, continuation.StructuredContent?.ToString());
+            continuation.StructuredContent!.Value.GetProperty("items").GetArrayLength().ShouldBe(1);
 
             var direct = await client.CallToolAsync(
                 "calendar_entities.query",
@@ -187,23 +196,36 @@ public sealed class OpenTelemetryStdioIntegrationTests
         }
 
         await receiver.WaitForPathsAsync(["/v1/traces"], TestContext.Current.CancellationToken);
-        var operations = await WaitForQueryOperationsAsync(receiver, expectedCount: 2);
-        operations.Length.ShouldBe(2);
+        var operations = await WaitForQueryOperationsAsync(receiver, expectedCount: 3);
+        operations.Length.ShouldBe(3);
         var mixedOperation = operations.Single(span =>
             Equals(span.Attributes.GetValueOrDefault("caldav.query.fetch_mode"), "mixed"));
         var directOperation = operations.Single(span =>
             Equals(span.Attributes.GetValueOrDefault("caldav.query.fetch_mode"), "direct_get_fallback"));
+        var continueOperation = operations.Single(span =>
+            Equals(span.Attributes.GetValueOrDefault("caldav.query.mode"), "continue"));
         AssertFallbackOperation(mixedOperation, multigetResourceCount: 3);
         AssertFallbackOperation(directOperation, multigetResourceCount: null);
         var spans = OtlpProtobufReader.ReadSpans(receiver.Requests);
         var mixedTrace = spans.Where(span => span.TraceId.SequenceEqual(mixedOperation.TraceId)).ToArray();
         var directTrace = spans.Where(span => span.TraceId.SequenceEqual(directOperation.TraceId)).ToArray();
+        var continueTrace = spans.Where(span => span.TraceId.SequenceEqual(continueOperation.TraceId)).ToArray();
         mixedTrace.ShouldContain(span => span.ScopeName == "DotnetAgents.CalDav.Http"
             && span.Name == "REPORT"
             && Equals(span.Attributes.GetValueOrDefault("http.response.status_code"), 501L)
             && span.StatusCode == 2);
         AssertDirectReadTrace(mixedTrace);
         AssertDirectReadTrace(directTrace);
+        continueTrace.ShouldNotContain(span => span.ScopeName == "DotnetAgents.CalDav.Http");
+        continueOperation.Attributes.Where(attribute =>
+                attribute.Key.StartsWith("caldav.query.", StringComparison.Ordinal))
+            .Select(attribute => attribute.Key)
+            .Order(StringComparer.Ordinal)
+            .ShouldBe([
+                "caldav.query.mode",
+                "caldav.query.page_admission_count",
+                "caldav.query.snapshot_lookup_count"
+            ]);
         server.MultigetReportCount.ShouldBe(2);
         server.DirectGetCount.ShouldBe(4);
         stderr.ShouldBeEmpty();
@@ -1388,7 +1410,9 @@ public sealed class OpenTelemetryStdioIntegrationTests
             .ToArray();
     }
 
-    private static Dictionary<string, object?> StartEntityQueryArguments(string? selectedCalendarHref = null)
+    private static Dictionary<string, object?> StartEntityQueryArguments(
+        string? selectedCalendarHref = null,
+        int pageSize = 10)
     {
         var scope = selectedCalendarHref is null
             ? new Dictionary<string, object?> { ["mode"] = "all" }
@@ -1405,7 +1429,7 @@ public sealed class OpenTelemetryStdioIntegrationTests
         {
             ["scope"] = scope,
             ["entityKinds"] = new[] { "event" },
-            ["pageSize"] = 10
+            ["pageSize"] = pageSize
         };
     }
 
