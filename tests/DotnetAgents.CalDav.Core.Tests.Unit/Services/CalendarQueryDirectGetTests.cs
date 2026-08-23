@@ -193,18 +193,16 @@ public sealed class CalendarQueryDirectGetTests
     {
         var hrefs = Enumerable.Range(0, 5).Select(index => $"{CalendarHref}{index}.ics").ToArray();
         var fourStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseReads = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var cancellationObserved = 0;
-        var blockReads = 1;
         FallbackTransport? transport = null;
         transport = new FallbackTransport(hrefs, get: async (href, cancellationToken) =>
         {
             if (transport!.GetCount == 4)
                 fourStarted.TrySetResult();
-            if (Volatile.Read(ref blockReads) == 0)
-                return Success(href);
             try
             {
-                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                await releaseReads.Task.WaitAsync(cancellationToken);
             }
             catch (OperationCanceledException)
             {
@@ -224,7 +222,7 @@ public sealed class CalendarQueryDirectGetTests
         cancellationObserved.ShouldBe(4);
         transport.GetCount.ShouldBe(4);
         transport.InFlight.ShouldBe(0);
-        Volatile.Write(ref blockReads, 0);
+        releaseReads.TrySetResult();
         (await QueryAsync(provider, TestContext.Current.CancellationToken))
             .ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Page>();
         transport.GetCount.ShouldBe(9);
@@ -750,8 +748,11 @@ public sealed class CalendarQueryDirectGetTests
             CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref _attempts);
-            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
-            throw new InvalidOperationException("The attempt timeout did not cancel the wire operation.");
+            var cancelledAttempt = new TaskCompletionSource<HttpResponseMessage>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            using var registration = cancellationToken.Register(() =>
+                cancelledAttempt.TrySetCanceled(cancellationToken));
+            return await cancelledAttempt.Task;
         }
     }
 
