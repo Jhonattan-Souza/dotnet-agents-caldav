@@ -37,7 +37,7 @@ Add this MCP server to VS Code, Claude Desktop, Cursor, or any MCP client:
 | `CALDAV_CALENDAR_HREFS` | No | Comma-separated exact canonical Calendar href allowlist; omit to discover every Calendar |
 | `CALDAV_DEFAULT_TODO_CALENDAR_NAME` | No | Display name of the default Calendar for To-do operations |
 | `CALDAV_DEFAULT_EVENT_CALENDAR_NAME` | No | Display name of the default Calendar for Event operations |
-| `CALDAV_EVALUATION_TIME_ZONE` | No | Exact IANA zone used as the configured Temporal Evaluation Context for bounded Calendar Entity Starts; invalid values fail startup and a caller `evaluationTimeZone` override wins. This is the shared policy for later Occurrence and To-do query-module cutovers |
+| `CALDAV_EVALUATION_TIME_ZONE` | No | Exact IANA zone used as the configured Temporal Evaluation Context for bounded Calendar Entity and Occurrence Starts; invalid values fail startup and a caller `evaluationTimeZone` override wins. The same policy is shared by the To-do query-module cutover |
 | `CALDAV_EXPOSE_EXACT_TOOLS` | No | Set to `true` to expose protected exact Calendar Object Resource tools |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | No | Non-empty OTLP endpoint that opts into telemetry export; no exporter is registered when omitted |
 | `OTEL_EXPORTER_OTLP_PROTOCOL` | No | Standard OTLP protocol such as `http/protobuf` or `grpc` |
@@ -51,7 +51,7 @@ Add this MCP server to VS Code, Claude Desktop, Cursor, or any MCP client:
 
 - `calendars.list` — Discover the configured Calendar Scope.
 - `calendar_entities.query` — Start a persisted Event and To-do query across Calendar Scope, or continue its immutable Query Result Snapshot without repeating CalDAV work. A bounded Start requires an explicit caller or configured IANA Temporal Evaluation Context and reports the frozen context on every page.
-- `calendar_occurrences.query` — Expand Event and To-do occurrences locally within a required half-open UTC window, using an explicit IANA evaluation time zone only when floating or date-only values require it.
+- `calendar_occurrences.query` — Start one bounded Event and To-do Occurrence query under an explicit caller or configured IANA Temporal Evaluation Context, or continue its immutable Query Result Snapshot with no CalDAV or recurrence work.
 - `todos.query` — Read compact normalized To-do results in an explicit Calendar Scope; routine open-task reads use this surface instead of parsing full snapshots.
 - `calendar_resources.get` — Read an authoritative semantic-or-opaque snapshot by confirmed absolute href.
 - `events.create` — Create one Event in a selected Calendar.

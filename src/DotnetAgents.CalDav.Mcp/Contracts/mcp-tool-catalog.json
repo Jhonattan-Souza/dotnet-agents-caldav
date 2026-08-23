@@ -2361,7 +2361,7 @@
     {
       "name": "CALDAV_EVALUATION_TIME_ZONE",
       "required": false,
-      "description": "Explicit IANA zone for bounded Calendar Entity Start Temporal Evaluation Context; shared policy for later Occurrence and To-do query-module cutovers"
+      "description": "Explicit IANA zone for bounded Calendar Entity and Occurrence Start Temporal Evaluation Context; shared policy for the To-do query-module cutover"
     },
     {
       "name": "CALDAV_EXPOSE_EXACT_TOOLS",
@@ -2458,7 +2458,7 @@
         "idempotentHint": true,
         "openWorldHint": true
       },
-      "description": "Query bounded derived occurrences over a half-open UTC range."
+      "description": "Start one bounded Occurrence query or continue its immutable Query Result Snapshot. Start evaluates recurrence once under an explicit IANA Temporal Evaluation Context from evaluationTimeZone or validated configuration; Continue accepts only cursor and optional pageSize and performs no CalDAV or semantic work."
     },
     {
       "name": "todos.query",
@@ -3719,11 +3719,6 @@
     "occurrenceQueryInput": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "scope",
-        "from",
-        "to"
-      ],
       "properties": {
         "scope": {
           "$ref": "#/$defs/calendarScope"
@@ -3744,9 +3739,62 @@
           "maximum": 200
         },
         "cursor": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
         }
-      }
+      },
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "scope",
+            "from",
+            "to"
+          ],
+          "properties": {
+            "scope": {
+              "$ref": "#/$defs/calendarScope"
+            },
+            "from": {
+              "$ref": "#/$defs/utcTemporalValue"
+            },
+            "to": {
+              "$ref": "#/$defs/utcTemporalValue"
+            },
+            "evaluationTimeZone": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "pageSize": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "cursor"
+          ],
+          "properties": {
+            "cursor": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            "pageSize": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          }
+        }
+      ]
     },
     "resourceAddressInput": {
       "type": "object",
@@ -4581,8 +4629,29 @@
             "$ref": "#/$defs/diagnostic"
           }
         },
+        "temporalEvaluationContext": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "timeZone",
+            "source"
+          ],
+          "properties": {
+            "timeZone": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "source": {
+              "enum": [
+                "caller",
+                "configuration"
+              ]
+            }
+          }
+        },
         "pagination": {
-          "$ref": "#/$defs/pagination"
+          "$ref": "#/$defs/entityQueryPagination"
         }
       }
     },
@@ -8643,7 +8712,7 @@
           "$ref": "#/$defs/occurrenceQuerySuccess"
         },
         {
-          "$ref": "#/$defs/errorOutcome"
+          "$ref": "#/$defs/entityQueryErrorOutcome"
         }
       ]
     },

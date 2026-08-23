@@ -533,7 +533,7 @@ public sealed class CalendarMcpRawStdioTests
     public async Task CalendarOccurrenceQuery_NormalRawCallReachesServiceAndReturnsTypedExecutionFailure()
     {
         const string request = """
-            {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"calendar_occurrences.query","arguments":{"scope":{"mode":"default"},"from":{"kind":"utcDateTime","value":"2026-08-15T12:00:00Z"},"to":{"kind":"utcDateTime","value":"2026-08-16T12:00:00Z"}}}}
+            {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"calendar_occurrences.query","arguments":{"scope":{"mode":"default"},"from":{"kind":"utcDateTime","value":"2026-08-15T12:00:00Z"},"to":{"kind":"utcDateTime","value":"2026-08-16T12:00:00Z"},"evaluationTimeZone":"UTC"}}}
             """;
 
         var result = await InvokeRawAsync(request);

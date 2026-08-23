@@ -334,7 +334,8 @@ public sealed class CalendarMcpStdioIntegrationTests
             .ShouldBe("2026-08-16T10:00:00Z");
         occurrence.GetProperty("timing").GetProperty("effectiveEnd").GetProperty("value").GetString()
             .ShouldBe("2026-08-16T10:30:00Z");
-        advertised.InputSchema.GetProperty("required").EnumerateArray().Select(item => item.GetString())
+        advertised.InputSchema.GetProperty("oneOf")[0].GetProperty("required")
+            .EnumerateArray().Select(item => item.GetString())
             .ShouldBe(["scope", "from", "to"]);
         advertised.Meta!["cache"]!["ttlMs"]!.GetValue<int>().ShouldBe(5000);
         advertised.Meta!["cache"]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
@@ -1788,7 +1789,8 @@ public sealed class CalendarMcpStdioIntegrationTests
         ["CALDAV_URL"] = _fixture.BaseUrl,
         ["CALDAV_USERNAME"] = "caldavtest",
         ["CALDAV_PASSWORD"] = "caldavtest123",
-        ["CALDAV_CALENDAR_HREFS"] = $"{_fixture.BaseUrl}{_fixture.TodoCalendarHref}"
+        ["CALDAV_CALENDAR_HREFS"] = $"{_fixture.BaseUrl}{_fixture.TodoCalendarHref}",
+        ["CALDAV_EVALUATION_TIME_ZONE"] = "UTC"
     };
 
     private static string Todo(string uid, string temporalLines) =>
