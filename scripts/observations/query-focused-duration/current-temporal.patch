@@ -1,0 +1,33 @@
+diff --git a/tests/DotnetAgents.CalDav.Core.Tests.Unit/Services/CalendarQueryModuleTests.cs b/tests/DotnetAgents.CalDav.Core.Tests.Unit/Services/CalendarQueryModuleTests.cs
+--- a/tests/DotnetAgents.CalDav.Core.Tests.Unit/Services/CalendarQueryModuleTests.cs
++++ b/tests/DotnetAgents.CalDav.Core.Tests.Unit/Services/CalendarQueryModuleTests.cs
+@@ -24,8 +24,14 @@ public sealed class CalendarQueryModuleTests
+     [Fact]
+     public async Task BoundedStartWithoutTemporalContextFailsBeforeAnyCalDavWork()
+     {
+         const string calendarHref = "https://cal.example/calendars/work/";
+-        var transport = new ScriptedCalendarQueryTransport([Calendar(calendarHref)], static () => []);
++        const string resourceHref = calendarHref + "date-only.ics";
++        var transport = new ScriptedCalendarQueryTransport(
++            [Calendar(calendarHref)],
++            static () => [resourceHref],
++            reads: _ => [CalendarResourceRead.Success(resourceHref, "\"r1\"", Ics(
++                "BEGIN:VEVENT\r\nUID:date-only\r\nDTSTAMP:20260823T120000Z\r\n"
++                + "DTSTART;VALUE=DATE:20260824\r\nEND:VEVENT\r\n"))]);
+         var transportConstructionCount = 0;
+         await using var provider = CreateProvider(
+             transport,
+@@ -45,9 +45,13 @@ public sealed class CalendarQueryModuleTests
+                 Now.AddDays(1))),
+             CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Failure>();
+ 
+         failure.Error.Code.ShouldBe(QueryFailureCode.InvalidInput);
+         transportConstructionCount.ShouldBe(0);
+         transport.DiscoveryCount.ShouldBe(0);
+         transport.CandidateQueryCount.ShouldBe(0);
+         transport.MultigetCount.ShouldBe(0);
++        var store = provider.GetRequiredService<CalendarQuerySnapshotStore>();
++        store.ActiveSnapshotCount.ShouldBe(0);
++        store.ActiveReservationCount.ShouldBe(0);
++        store.RetainedBytes.ShouldBe(0);
+     }

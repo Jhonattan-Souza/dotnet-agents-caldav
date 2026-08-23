@@ -50,6 +50,10 @@ public sealed class CalendarQueryModuleTests
         transport.DiscoveryCount.ShouldBe(0);
         transport.CandidateQueryCount.ShouldBe(0);
         transport.MultigetCount.ShouldBe(0);
+        var store = provider.GetRequiredService<CalendarQuerySnapshotStore>();
+        store.ActiveSnapshotCount.ShouldBe(0);
+        store.ActiveReservationCount.ShouldBe(0);
+        store.RetainedBytes.ShouldBe(0);
     }
 
     [Fact]
