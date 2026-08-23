@@ -250,3 +250,7 @@ The semantic Move comparison used the same lifecycle To-do for both calls: To-do
 ## Cleanup verification
 
 Cleanup removed containers `caldav-full-perf-radicale` and `caldav-full-perf-aspire`, Docker volume `caldav-full-perf-data`, temporary Radicale configuration and credential files, raw trace and log exports, and generated harness scripts. Post-cleanup checks found no matching container or volume, no listener on ports 5232, 18888, or 4318, and no temporary evidence directory. The digest-pinned images remain in the shared Docker image cache.
+
+## Resolution follow-up
+
+After this historical run, PR [#118](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/pull/118) split ordinary delete reads from marked absence verification. `OpenTelemetryStdioIntegrationTests.ConfirmedDelete_ExportsExpectedAbsenceWithoutErrorOverStdio` now proves a confirmed delete exports committed success, one DELETE, and an `absence_probe` 404 classified as `expected_absence` and Ok without `error.type`, exception events, private values, or stderr output. The measured revision and the three original bad trace IDs above remain unchanged as historical evidence.
