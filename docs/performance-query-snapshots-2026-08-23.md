@@ -2,7 +2,7 @@
 
 Date: 2026-08-23
 Baseline revision: `ed316f9beb46a81d69e785006c0fe65d58c2298b`
-Implementation revision: `47aca6e`
+Implementation revision: `ca0fb10`
 Configuration: .NET 10 Release; deterministic scripted CalDAV port for work counts; real MCP stdio and digest-pinned Radicale 3.7.8 for transport evidence
 
 ## Before
@@ -15,7 +15,7 @@ The deterministic Start-to-Continue tracer freezes two results with `pageSize: 1
 
 The page work oracle records one fixed-envelope serialization and one final materialization at page sizes 1, 50, and 200. The actual MCP SDK `CallToolResult` measurement is exact at 4 MiB - 1 byte, exactly 4 MiB, and 4 MiB + 1 byte with an item separator and non-null cursor present; only the last shape is rejected. Snapshot slot and byte-pool tests independently prove below, at, and above 16 snapshots and 128 MiB, and all cancellation, publication-failure, expiry, and disposal cases end with zero reservations and retained bytes.
 
-The real stdio/Radicale/OTLP witness passed on 2026-08-23 at revision `71d7b9c` (1 test, 6.17 seconds). It started a two-page Calendar Entity query and continued it in the same built MCP process, observed `pagination.mode: query_result_snapshot`, and observed no CalDAV wire request during Continue. Both Continue phases were direct children of the existing `caldav.operation`; the Continue operation exported only `snapshot_lookup_count` and `page_admission_count`; and the exported payload contained none of the private cursor, UID, summary, or href sentinels. The MCP process also kept stderr clean.
+The real stdio/Radicale/OTLP witness passed on 2026-08-23 at revision `95f7711` (1 test, 6.17 seconds). It started a two-page Calendar Entity query and continued it in the same built MCP process, observed `pagination.mode: query_result_snapshot`, and observed no CalDAV wire request during Continue. Both Continue phases were direct children of the existing `caldav.operation`; the Continue operation exported only `snapshot_lookup_count` and `page_admission_count`; and the exported payload contained none of the private cursor, UID, summary, or href sentinels. The MCP process also kept stderr clean.
 
 ## Boundary and cleanup
 
