@@ -516,7 +516,7 @@ internal static class CalendarOccurrenceEvaluator
                 false,
                 GetMasterDurationValue(properties),
                 GetMasterExactDuration(properties, resolver),
-                includeCancelledOverrides: false,
+                query.IncludeCancelledOccurrences,
                 cancellationToken)
             : EvaluateNonRecurringEvent(snapshot, query, resolver, properties);
 
