@@ -1,8 +1,8 @@
 # Operation-scoped discovery reuse evidence
 
-Date: 2026-08-23  
-Baseline revision: `5daf24b7434ca12359dbb8a053071bc25399a702`  
-Changed-code revisions: `668116f`, `adb358e`, `4ddfad0`  
+Date: 2026-08-23
+Baseline revision: `5daf24b7434ca12359dbb8a053071bc25399a702`
+Changed-code revisions: `668116f`, `adb358e`, `4ddfad0`
 Configuration: .NET 10, Release, deterministic in-memory `ICalendarClient`, one in-scope Calendar, one Event patch
 
 ## Focused work count
