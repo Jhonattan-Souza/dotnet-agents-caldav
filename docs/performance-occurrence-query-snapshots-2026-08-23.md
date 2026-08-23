@@ -36,7 +36,7 @@ The historical window includes the private `CreatePage` body and its `CallToolRe
 
 Historical and current admitted item order and bytes matched exactly: page-size 1 SHA-256 `f6c723fab94a9d7a45b044632f3f1513a9e73f84cb56f26cbe35c046e14c2c72`, page-size 50 `8f2a264c35e792ff04acd21b10a29d052926e565664559d9a27b7a2574dd4d70`, and page-size 200 `e697c516317542dd5d9d57c6c46d6af9dd74138c792ab202f266171131e0fa02`. The historical source blob was `70f8ab4b68b7d245383e8039db288bfec84bd551`; the current codec source blob was `ca4a3d66e1fc16a7f75fc3b4e9967381695200db`.
 
-Reproduction command: `bash scripts/observations/query-page-assembly/run.sh /tmp/issue116-page-assembly`. The runner SHA-256 was `43cda1e1bbe6064565510ded291390c2aaeb8daf762f6637312c43e9ea65d383`; `runner-metadata.json` records the complete 18-cell matrix, all fixture/source hashes, runtime, GC mode, and method.
+Reproduction command: `bash scripts/observations/query-page-assembly/run.sh /tmp/issue116-page-assembly`. The runner SHA-256 was `24cbdb520f803e9a1427007d44e90fd695a244c7f5589c1249f7044a62066703`; `runner-metadata.json` records the complete 18-cell matrix, all fixture/source hashes, runtime, GC mode, and method.
 
 The focused Core module class passed 13 tests, including explicit included/excluded cancellation, neutral acquisition/context constructor structure, invalid context with zero I/O, strong-revision and semantic-failure atomicity, cursor authentication/expiry, frozen context, and page sizes 1/50/200. The complete Core and MCP unit projects passed 2,094 and 924 tests respectively in Release. These are deterministic structural and work-count observations, not latency thresholds.
 
