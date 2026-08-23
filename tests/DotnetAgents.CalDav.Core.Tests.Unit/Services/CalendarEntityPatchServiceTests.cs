@@ -673,6 +673,7 @@ public sealed class CalendarEntityPatchServiceTests
         await client.Received(1).UpdateCalendarResourceAsync(
             Arg.Is<CalendarResourceUpdateRequest>(request => request.EntityTag == "\"r1\""),
             Arg.Any<CancellationToken>());
+        await client.Received(1).GetCalendarsAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]

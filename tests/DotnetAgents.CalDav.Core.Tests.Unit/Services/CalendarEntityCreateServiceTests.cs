@@ -93,7 +93,6 @@ public sealed class CalendarEntityCreateServiceTests
     {
         const string calendarHref = "https://cal.example/events/";
         var client = Substitute.For<ICalendarClient>();
-        var sut = CreateService(client, defaultEventName: "Events");
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref, "Events")]);
         var utcStart = new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-17T13:00:00Z");
         CalendarEventCreateFields[] invalidFields =
@@ -286,7 +285,7 @@ public sealed class CalendarEntityCreateServiceTests
 
         foreach (var fields in invalidFields)
         {
-            var result = await sut.CreateEventAsync(
+            var result = await CreateService(client, defaultEventName: "Events").CreateEventAsync(
                 new CalendarEventCreateRequest(CalendarCreateDestination.Default, "invalid-event", fields),
                 CancellationToken.None);
             result.Code.ShouldBe(CalendarEntityCreateCode.InvalidCalendarData);
@@ -665,7 +664,6 @@ public sealed class CalendarEntityCreateServiceTests
     {
         const string calendarHref = "https://cal.example/todos/";
         var client = Substitute.For<ICalendarClient>();
-        var sut = CreateTodoService(client);
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([TodoCalendar(calendarHref, "Todos")]);
         var start = new CalendarTemporalValue(CalendarTemporalKind.UtcDateTime, "2026-08-17T13:00:00Z");
         CalendarTodoCreateFields[] invalidFields =
@@ -680,7 +678,7 @@ public sealed class CalendarEntityCreateServiceTests
 
         foreach (var fields in invalidFields)
         {
-            var result = await sut.CreateTodoAsync(
+            var result = await CreateTodoService(client).CreateTodoAsync(
                 new CalendarTodoCreateRequest(CalendarCreateDestination.Default, "invalid-todo", fields),
                 CancellationToken.None);
             result.Code.ShouldBe(CalendarEntityCreateCode.InvalidCalendarData);

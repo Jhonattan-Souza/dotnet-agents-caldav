@@ -103,6 +103,32 @@ public class DavResponseParserTests
     }
 
     [Fact]
+    public void ParseCalendars_PreservesUnavailablePropertyEvidence()
+    {
+        var response = BuildResponseElement(
+            "/calendars/user/events/",
+            new XElement(Dav + "resourcetype", new XElement(CalDav + "calendar")));
+        response.Add(new XElement(
+            Dav + "propstat",
+            new XElement(Dav + "status", "HTTP/1.1 404 Not Found"),
+            new XElement(
+                Dav + "prop",
+                new XElement(Dav + "displayname"),
+                new XElement(CalDav + "supported-calendar-component-set"))));
+        var xml = BuildMultistatusXml(document => document.Element(Dav + "multistatus")!.Add(response));
+
+        var result = DavResponseParser.ParseCalendars(xml);
+
+        result.ShouldHaveSingleItem().UnavailableProperties.ShouldBe([
+            new CalendarUnavailableProperty("DAV:", "displayname", 404),
+            new CalendarUnavailableProperty(
+                "urn:ietf:params:xml:ns:caldav",
+                "supported-calendar-component-set",
+                404)
+        ]);
+    }
+
+    [Fact]
     public void ParseCalendarHomeSet_ValidResponse_ReturnsHref()
     {
         // Arrange

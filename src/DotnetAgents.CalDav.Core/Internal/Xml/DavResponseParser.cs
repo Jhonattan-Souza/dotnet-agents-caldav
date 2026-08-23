@@ -212,7 +212,8 @@ internal static class DavResponseParser
             EventSupport = GetComponentSupport(componentsProperty, components, "VEVENT"),
             TodoSupport = GetComponentSupport(componentsProperty, components, "VTODO"),
             EventEvidence = GetComponentEvidence(componentsProperty, components),
-            TodoEvidence = GetComponentEvidence(componentsProperty, components)
+            TodoEvidence = GetComponentEvidence(componentsProperty, components),
+            UnavailableProperties = GetUnavailableProperties(response)
         };
     }
 
@@ -258,6 +259,24 @@ internal static class DavResponseParser
 
         return [new CapabilityEvidence("supported-calendar-component-set", string.Join(',', components))];
     }
+
+    private static IReadOnlyList<CalendarUnavailableProperty> GetUnavailableProperties(XElement response) => response
+        .Elements(Dav + "propstat")
+        .Select(propStat => (
+            Status: ParseStatusCode(propStat.Element(Dav + "status")?.Value
+                ?? throw new XmlException("A WebDAV propstat is missing its status.")),
+            Properties: propStat.Element(Dav + "prop")?.Elements()
+                ?? throw new XmlException("A WebDAV propstat is missing its properties.")))
+        .Where(item => item.Status is < 200 or > 299)
+        .SelectMany(item => item.Properties.Select(property => new CalendarUnavailableProperty(
+            property.Name.NamespaceName,
+            property.Name.LocalName,
+            item.Status)))
+        .Distinct()
+        .OrderBy(item => item.NamespaceUri, StringComparer.Ordinal)
+        .ThenBy(item => item.LocalName, StringComparer.Ordinal)
+        .ThenBy(item => item.StatusCode)
+        .ToArray();
 
     private static string? GetPropValue(XElement response, XName propertyName)
     {
