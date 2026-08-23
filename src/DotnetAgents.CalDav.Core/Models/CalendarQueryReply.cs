@@ -17,6 +17,20 @@ public abstract record CalendarEntityQueryRequest
     public sealed record Continue(string Cursor, int? PageSize = null) : CalendarEntityQueryRequest;
 }
 
+/// <summary>Closed Occurrence query request.</summary>
+public abstract record CalendarOccurrenceQueryRequest
+{
+    private CalendarOccurrenceQueryRequest()
+    {
+    }
+
+    /// <summary>Completes recurrence evaluation once and starts immutable pagination.</summary>
+    public sealed record Start(CalendarOccurrenceQuery Query, int PageSize = 50) : CalendarOccurrenceQueryRequest;
+
+    /// <summary>Reads only an authenticated position in an immutable Query Result Snapshot.</summary>
+    public sealed record Continue(string Cursor, int? PageSize = null) : CalendarOccurrenceQueryRequest;
+}
+
 /// <summary>Closed query result containing either one complete page or one typed failure.</summary>
 public abstract record QueryReply<T>
 {
@@ -42,6 +56,9 @@ public sealed record QueryPage<T>(
 
 /// <summary>One final projected Calendar Entity result retained without authoritative content.</summary>
 public sealed record CalendarEntityQueryItem(JsonElement Value);
+
+/// <summary>One final projected Occurrence retained without authoritative content.</summary>
+public sealed record CalendarOccurrenceQueryItem(JsonElement Value);
 
 /// <summary>Bounded content-safe diagnostic frozen across all pages.</summary>
 public sealed record QueryDiagnostic(

@@ -9,4 +9,9 @@ public interface ICalendarQueryModule
     Task<QueryReply<CalendarEntityQueryItem>> QueryEntitiesAsync(
         CalendarEntityQueryRequest request,
         CancellationToken cancellationToken);
+
+    /// <summary>Starts one complete Occurrence query or reads its retained immutable result.</summary>
+    Task<QueryReply<CalendarOccurrenceQueryItem>> QueryOccurrencesAsync(
+        CalendarOccurrenceQueryRequest request,
+        CancellationToken cancellationToken);
 }
