@@ -20,8 +20,7 @@ namespace DotnetAgents.CalDav.Core.Internal;
 /// HttpClient-based CalDAV client for Calendar Object Resources.
 /// Handles PROPFIND, REPORT, GET, PUT, DELETE verbs with XML/iCalendar encoding.
 /// </summary>
-internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport, ICalendarResourcePresenceTransport,
-    ICalendarMoveResourceTransport
+internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport, ICalendarMoveResourceTransport
 {
     private const int MaximumCalendarResourceBytes = 4 * 1024 * 1024;
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
@@ -205,25 +204,6 @@ internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport, 
             href,
             absenceProbe: true,
             cancellationToken);
-
-    /// <inheritdoc />
-    public async Task<CalendarResourceRead> ProbeCalendarResourcePresenceAsync(
-        string href,
-        CancellationToken cancellationToken)
-    {
-        CalendarOperationProgress.SetPhase(CalendarOperationPhase.Fetch);
-        if (!TryValidateAbsoluteResourceHref(href, out var resourceUri))
-            return new CalendarResourceRead(CalendarResourceReadCode.InvalidInput);
-
-        using var response = await SendGetWithRedirectHandlingAsync(
-            resourceUri,
-            absenceProbe: true,
-            cancellationToken);
-        if (response.StatusCode == HttpStatusCode.NotFound)
-            return new CalendarResourceRead(CalendarResourceReadCode.NotFound);
-        response.EnsureSuccessStatusCode();
-        return new CalendarResourceRead(CalendarResourceReadCode.Success, resourceUri.AbsoluteUri);
-    }
 
     async Task<CalendarResourceRead> ICalendarMoveResourceTransport.ReadMoveResourceAsync(
         string authorizedCalendarHref,

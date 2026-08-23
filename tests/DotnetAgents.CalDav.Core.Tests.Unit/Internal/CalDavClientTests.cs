@@ -1828,7 +1828,7 @@ public class CalDavClientTests
     }
 
     [Fact]
-    public async Task ProbeCalendarResourcePresenceAsync_UsesHeadersOnlyAndMarksExpectedAbsencePurpose()
+    public async Task MovePresenceProbe_UsesHeadersOnlyAndMarksExpectedAbsencePurpose()
     {
         string? purpose = null;
         var handler = new StubHttpMessageHandler(request =>
@@ -1842,7 +1842,8 @@ public class CalDavClientTests
         });
         var sut = CreateSut(handler);
 
-        var result = await ((ICalendarResourcePresenceTransport)sut).ProbeCalendarResourcePresenceAsync(
+        var result = await ((ICalendarMoveResourceTransport)sut).ProbeMoveResourcePresenceAsync(
+            "https://example.com/calendars/user/events/",
             "https://example.com/calendars/user/events/present.ics",
             CancellationToken.None);
 
@@ -1850,6 +1851,20 @@ public class CalDavClientTests
         result.AuthoritativeUtf8.IsEmpty.ShouldBeTrue();
         result.EntityTag.ShouldBeNull();
         purpose.ShouldBe(CalendarHttpTelemetry.AbsenceProbe);
+    }
+
+    [Fact]
+    public void MovePresenceTransport_HasNoUnscopedProductionSeam()
+    {
+        typeof(CalDavClient).Assembly.GetType(
+                "DotnetAgents.CalDav.Core.Internal.ICalendarResourcePresenceTransport")
+            .ShouldBeNull();
+        typeof(CalDavClient).GetMethod(
+                "ProbeCalendarResourcePresenceAsync",
+                System.Reflection.BindingFlags.Instance
+                | System.Reflection.BindingFlags.Public
+                | System.Reflection.BindingFlags.NonPublic)
+            .ShouldBeNull();
     }
 
     [Fact]
