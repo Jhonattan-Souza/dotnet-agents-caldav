@@ -2,9 +2,9 @@
 
 Date: 2026-08-23
 
-Baseline revision: `4df75347477ca6dae463d60b938c7d28ab9b6ea6`
+Baseline revision: `6a9a8883e9e8e2ae92fb762b4073e8b8e615971d`
 
-Changed revision: `932cf9f`
+Changed revision: `04187c3969e01cec30b00aaf4b09ebc660112c6a`
 
 ## Claim
 
@@ -47,4 +47,4 @@ Every integration case uses unique resources in a disposable Radicale container 
 
 This change removes scan work only from Semantic Move. Exact Move's MRTR planning and Exact-only scan cleanup remain assigned to issue #115. The shared dispatch truth introduced here is intentionally reused rather than duplicated.
 
-The architectural rationale is recorded in [ADR 0004](adr/0004-server-authoritative-semantic-move.md), and the canonical requirement mapping is in [requirement-to-evidence.md](requirement-to-evidence.md).
+The architectural rationale is recorded in [ADR 0006](adr/0006-server-authoritative-semantic-move.md), and the canonical requirement mapping is in [requirement-to-evidence.md](requirement-to-evidence.md).
