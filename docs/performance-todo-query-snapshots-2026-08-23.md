@@ -2,7 +2,7 @@
 
 Date: 2026-08-23
 Baseline revision: `e63ea4d`
-Implementation revision: `c62422604c5dc62f5d7768a2217886575cfe7e9c`
+Implementation revision: `13e272159a8ff4d972da17b25974503fc84247c6`
 Configuration: .NET 10 Release; deterministic typed query transport for work counts; real built MCP stdio and Radicale 3.7.8 pinned as `ghcr.io/kozea/radicale@sha256:3a0080ea51ac69dcd74e345b9587dc14a8c8af0652046069005749f9a75c5c80`; loopback OTLP receiver for export privacy
 
 ## Before
