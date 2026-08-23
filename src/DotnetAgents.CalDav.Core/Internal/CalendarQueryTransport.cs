@@ -21,7 +21,7 @@ internal sealed class CalendarQueryTransport(
         CalendarEntityKind entityKind,
         DateTimeOffset? from,
         DateTimeOffset? to,
-        CancellationToken cancellationToken) => await discovery.QueryCalendarResourceHrefsAsync(
+        CancellationToken cancellationToken) => await client.QueryCandidateHrefsAsync(
             calendarHref,
             entityKind,
             from,

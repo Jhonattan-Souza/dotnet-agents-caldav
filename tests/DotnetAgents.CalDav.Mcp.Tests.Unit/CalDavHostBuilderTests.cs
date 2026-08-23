@@ -595,7 +595,7 @@ public class CalDavHostBuilderTests
         exactDescriptions["calendar_resources.exact_replace"].ShouldBe(
             "Confirm and replace one revision-bound resource at its explicitly provided absolute href with a complete caller-authored Calendar Object Resource.");
         exactDescriptions["calendar_resources.exact_move"].ShouldBe(
-            "Confirm and move one revision-bound resource to an explicitly provided absolute destination href.");
+            "Review, confirm, and atomically move one strong-revision-bound complete resource to an explicitly provided absolute destination href with constant work and authoritative-byte verification.");
     }
 
     [Fact]

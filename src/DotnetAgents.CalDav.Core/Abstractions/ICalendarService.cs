@@ -41,14 +41,15 @@ public interface ICalendarService
         CalendarExactReplaceRequest request,
         CancellationToken cancellationToken);
 
-    /// <summary>Atomically moves one reviewed resource to one explicit destination href.</summary>
-    Task<CalendarExactResourceResult> ExactMoveResourceAsync(
+    /// <summary>Validates an Exact Move without dispatch and returns stable confirmation evidence.</summary>
+    Task<CalendarExactMoveReviewResult> ReviewExactMoveResourceAsync(
         CalendarExactMoveRequest request,
         CancellationToken cancellationToken);
 
-    /// <summary>Validates an exact move without dispatching a write.</summary>
-    Task<CalendarExactResourceReviewResult> ReviewExactMoveResourceAsync(
+    /// <summary>Freshly reviews and immediately executes one confirmed Exact Move.</summary>
+    Task<CalendarExactResourceResult> ExecuteConfirmedExactMoveResourceAsync(
         CalendarExactMoveRequest request,
+        CalendarExactMoveReviewBinding priorBinding,
         CancellationToken cancellationToken);
 
     /// <summary>Creates one complete Event, including typed recurrence, and returns the observed server revision.</summary>

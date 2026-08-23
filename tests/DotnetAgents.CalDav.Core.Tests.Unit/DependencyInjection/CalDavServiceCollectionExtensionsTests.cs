@@ -119,9 +119,9 @@ public sealed class CalDavServiceCollectionExtensionsTests
     {
         var handler = new CountingUnavailableHandler();
         using var provider = BuildProvider(handler);
-        var client = provider.GetRequiredService<ICalendarClient>();
+        var transport = provider.GetRequiredService<ICalendarQueryTransport>();
 
-        await Should.ThrowAsync<HttpRequestException>(() => client.QueryCalendarResourceHrefsAsync(
+        await Should.ThrowAsync<HttpRequestException>(() => transport.QueryCandidateHrefsAsync(
             "https://cal.example/events/",
             CalendarEntityKind.Event,
             null,

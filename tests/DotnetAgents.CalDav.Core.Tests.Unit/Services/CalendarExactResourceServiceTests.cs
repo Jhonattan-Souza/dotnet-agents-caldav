@@ -2,6 +2,7 @@ using System.Text;
 using System.Xml;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Configuration;
+using DotnetAgents.CalDav.Core.Internal;
 using DotnetAgents.CalDav.Core.Models;
 using DotnetAgents.CalDav.Core.Services;
 using Microsoft.Extensions.Logging;
@@ -60,9 +61,6 @@ public sealed class CalendarExactResourceServiceTests
             operation == "create"
                 ? new CalendarResourceRead(CalendarResourceReadCode.NotFound)
                 : CalendarResourceRead.Success(href, "\"r1\"", EventResource("depth", "Before")));
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref, Arg.Any<CalendarEntityKind>(), null, null, Arg.Any<CancellationToken>())
-            .Returns([]);
         var service = CreateService(client, calendarHref);
 
         var result = operation == "create"
@@ -116,27 +114,19 @@ public sealed class CalendarExactResourceServiceTests
         await client.DidNotReceive().GetCalendarsAsync(Arg.Any<CancellationToken>());
     }
 
-    [Theory]
-    [InlineData("replace")]
-    [InlineData("move")]
-    public async Task ExactExistingResourceWrite_RejectsConfiguredScopeMissBeforeDiscovery(string operation)
+    [Fact]
+    public async Task ExactReplaceResourceAsync_RejectsConfiguredScopeMissBeforeDiscovery()
     {
         const string scopedCalendarHref = "https://cal.example/events/";
         const string outsideHref = "https://cal.example/outside/source.ics";
         var client = Substitute.For<ICalendarClient>();
         var service = CreateService(client, scopedCalendarHref);
 
-        var result = operation == "replace"
-            ? await service.ExactReplaceResourceAsync(
-                new CalendarExactReplaceRequest(
-                    Revision(outsideHref, "outside"),
-                    EventResource("outside", "After")),
-                CancellationToken.None)
-            : await service.ExactMoveResourceAsync(
-                new CalendarExactMoveRequest(
-                    Revision("https://cal.example/events/source.ics", "outside"),
-                    "https://cal.example/outside/destination.ics"),
-                CancellationToken.None);
+        var result = await service.ExactReplaceResourceAsync(
+            new CalendarExactReplaceRequest(
+                Revision(outsideHref, "outside"),
+                EventResource("outside", "After")),
+            CancellationToken.None);
 
         result.Code.ShouldBe(CalendarExactResourceCode.OutsideScope);
         result.Phase.ShouldBe(CalendarExactResourcePhase.OriginScopeAuthorization);
@@ -311,22 +301,16 @@ public sealed class CalendarExactResourceServiceTests
         await client.DidNotReceive().GetCalendarsAsync(Arg.Any<CancellationToken>());
     }
 
-    [Theory]
-    [InlineData("replace")]
-    [InlineData("move")]
-    public async Task ExactExistingResourceWrite_RejectsForeignOriginSourceInAuthorizationPhase(string operation)
+    [Fact]
+    public async Task ExactReplaceResourceAsync_RejectsForeignOriginSourceInAuthorizationPhase()
     {
         var client = Substitute.For<ICalendarClient>();
         var revision = Revision("https://other.example/events/source.ics", "foreign");
         var service = CreateService(client, "https://cal.example/events/");
 
-        var result = operation == "replace"
-            ? await service.ExactReplaceResourceAsync(
-                new CalendarExactReplaceRequest(revision, EventResource("foreign", "After")),
-                CancellationToken.None)
-            : await service.ExactMoveResourceAsync(
-                new CalendarExactMoveRequest(revision, "https://cal.example/events/destination.ics"),
-                CancellationToken.None);
+        var result = await service.ExactReplaceResourceAsync(
+            new CalendarExactReplaceRequest(revision, EventResource("foreign", "After")),
+            CancellationToken.None);
 
         result.Code.ShouldBe(CalendarExactResourceCode.InvalidInput);
         result.Phase.ShouldBe(CalendarExactResourcePhase.OriginScopeAuthorization);
@@ -346,13 +330,6 @@ public sealed class CalendarExactResourceServiceTests
         client.GetCalendarResourceAsync(destinationHref, Arg.Any<CancellationToken>()).Returns(
             new CalendarResourceRead(CalendarResourceReadCode.NotFound),
             CalendarResourceRead.Success(destinationHref, "\"r1\"", observed));
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                Arg.Any<CalendarEntityKind>(),
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
         client.CreateCalendarResourceAsync(
                 Arg.Any<CalendarResourceCreateRequest>(),
                 Arg.Any<CancellationToken>())
@@ -557,9 +534,6 @@ public sealed class CalendarExactResourceServiceTests
         var content = OpaqueRfc9253Resource("opaque-write");
         var client = Substitute.For<ICalendarClient>();
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref)]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref, Arg.Any<CalendarEntityKind>(), null, null, Arg.Any<CancellationToken>())
-            .Returns([]);
         client.GetCalendarResourceAsync(resourceHref, Arg.Any<CancellationToken>()).Returns(
             operation == "create"
                 ? new CalendarResourceRead(CalendarResourceReadCode.NotFound)
@@ -605,9 +579,6 @@ public sealed class CalendarExactResourceServiceTests
             : FoldedHeaderResource("folded-write", fold);
         var client = Substitute.For<ICalendarClient>();
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref)]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref, Arg.Any<CalendarEntityKind>(), null, null, Arg.Any<CancellationToken>())
-            .Returns([]);
         client.GetCalendarResourceAsync(resourceHref, Arg.Any<CancellationToken>()).Returns(
             operation == "create"
                 ? new CalendarResourceRead(CalendarResourceReadCode.NotFound)
@@ -1091,9 +1062,6 @@ public sealed class CalendarExactResourceServiceTests
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref)]);
         client.GetCalendarResourceAsync(destinationHref, Arg.Any<CancellationToken>()).Returns(
             new CalendarResourceRead(CalendarResourceReadCode.NotFound));
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref, Arg.Any<CalendarEntityKind>(), null, null, Arg.Any<CancellationToken>())
-            .Returns(Enumerable.Range(0, 5_001).Select(index => $"{candidateHref}-{index}").ToArray());
         client.CreateCalendarResourceAsync(
                 Arg.Any<CalendarResourceCreateRequest>(), Arg.Any<CancellationToken>())
             .Returns(new CalendarResourceCreateResult(CalendarResourceCreateCode.UidConflict, destinationHref));
@@ -1103,8 +1071,6 @@ public sealed class CalendarExactResourceServiceTests
             CancellationToken.None);
 
         result.Code.ShouldBe(CalendarExactResourceCode.Conflict);
-        await client.DidNotReceive().QueryCalendarResourceHrefsAsync(
-            Arg.Any<string>(), Arg.Any<CalendarEntityKind>(), null, null, Arg.Any<CancellationToken>());
         await client.DidNotReceive().GetCalendarResourceAsync(candidateHref, Arg.Any<CancellationToken>());
         await client.Received(1).CreateCalendarResourceAsync(
             Arg.Any<CalendarResourceCreateRequest>(), Arg.Any<CancellationToken>());
@@ -1389,83 +1355,13 @@ public sealed class CalendarExactResourceServiceTests
         result.Snapshot.ShouldNotBeNull().EntityTag.ShouldBe("\"r2\"");
     }
 
-    [Fact]
-    public async Task ExactMoveResourceAsync_RenamesOpaqueResourceAtomicallyWithinItsCalendar()
-    {
-        const string calendarHref = "https://cal.example/events/";
-        const string sourceHref = "https://cal.example/events/before.ics";
-        const string destinationHref = "https://cal.example/events/after.ics";
-        var content = Encoding.UTF8.GetBytes(
-            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Exact Tests//EN\r\nCALSCALE:X-CUSTOM\r\n"
-            + "BEGIN:VEVENT\r\nUID:exact-move-1\r\nDTSTAMP:20260817T120000Z\r\n"
-            + "DTSTART:20260818T120000Z\r\nSUMMARY:Opaque move\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n");
-        var client = Substitute.For<ICalendarClient>();
-        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref)]);
-        client.GetCalendarResourceAsync(sourceHref, Arg.Any<CancellationToken>()).Returns(
-            CalendarResourceRead.Success(sourceHref, "\"r1\"", content),
-            new CalendarResourceRead(CalendarResourceReadCode.NotFound));
-        client.GetCalendarResourceAsync(destinationHref, Arg.Any<CancellationToken>()).Returns(
-            new CalendarResourceRead(CalendarResourceReadCode.NotFound),
-            CalendarResourceRead.Success(destinationHref, "\"r2\"", content));
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                Arg.Any<CalendarEntityKind>(),
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
-        client.MoveCalendarResourceAsync(
-                Arg.Any<CalendarResourceMoveDispatchRequest>(),
-                Arg.Any<CancellationToken>())
-            .Returns(new CalendarResourceMoveDispatchResult(CalendarResourceMoveDispatchCode.Dispatched));
-        var sut = CreateService(client, calendarHref);
-
-        var result = await sut.ExactMoveResourceAsync(
-            new CalendarExactMoveRequest(
-                new CalendarResourceRevisionReference(
-                    sourceHref,
-                    "exact-move-1",
-                    CalendarEntityKind.Event,
-                    "\"r1\""),
-                destinationHref),
-            CancellationToken.None);
-
-        result.Code.ShouldBe(CalendarExactResourceCode.Success);
-        result.Snapshot.ShouldNotBeNull().Projection.Kind.ShouldBe(CalendarResourceProjectionKind.Opaque);
-        await client.Received(1).MoveCalendarResourceAsync(
-            new CalendarResourceMoveDispatchRequest(sourceHref, destinationHref, "\"r1\""),
-            Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task ReviewExactMoveResourceAsync_ValidatesTwoSidedIntentWithoutDispatch()
-    {
-        const string calendarHref = "https://cal.example/events/";
-        const string sourceHref = "https://cal.example/events/review-source.ics";
-        const string destinationHref = "https://cal.example/events/review-destination.ics";
-        var client = PreparedMoveClient(calendarHref, sourceHref, destinationHref, "review-move");
-        var revision = Revision(sourceHref, "review-move");
-
-        var review = await CreateService(client, calendarHref).ReviewExactMoveResourceAsync(
-            new CalendarExactMoveRequest(revision, destinationHref),
-            CancellationToken.None);
-
-        review.Outcome.ShouldBeNull();
-        review.BindingRevision.ShouldBe(revision);
-        review.IntentDigest.Length.ShouldBe(32);
-        await client.DidNotReceive().MoveCalendarResourceAsync(
-            Arg.Any<CalendarResourceMoveDispatchRequest>(), Arg.Any<CancellationToken>());
-    }
-
     [Theory]
     [InlineData("create", System.Net.HttpStatusCode.Unauthorized, CalendarExactResourceCode.UpstreamUnauthorized, false)]
     [InlineData("create", System.Net.HttpStatusCode.Forbidden, CalendarExactResourceCode.UpstreamForbidden, false)]
     [InlineData("create", System.Net.HttpStatusCode.TooManyRequests, CalendarExactResourceCode.UpstreamRateLimited, true)]
     [InlineData("replace", System.Net.HttpStatusCode.Forbidden, CalendarExactResourceCode.UpstreamForbidden, false)]
-    [InlineData("move", System.Net.HttpStatusCode.TooManyRequests, CalendarExactResourceCode.UpstreamRateLimited, true)]
     [InlineData("create", System.Net.HttpStatusCode.ServiceUnavailable, CalendarExactResourceCode.UpstreamUnavailable, true)]
     [InlineData("create", System.Net.HttpStatusCode.BadRequest, CalendarExactResourceCode.UpstreamProtocolError, false)]
-    [InlineData("move", System.Net.HttpStatusCode.BadGateway, CalendarExactResourceCode.UpstreamUnavailable, true)]
     [InlineData("replace", System.Net.HttpStatusCode.BadRequest, CalendarExactResourceCode.UpstreamProtocolError, false)]
     public async Task ExactWriteReview_MapsHttpFailureWithoutDispatch(
         string operation,
@@ -1484,10 +1380,8 @@ public sealed class CalendarExactResourceServiceTests
         {
             "create" => (await service.ReviewExactCreateResourceAsync(
                 new CalendarExactCreateRequest(sourceHref, EventResource("review-http", "Review")), CancellationToken.None)).Outcome,
-            "replace" => (await service.ReviewExactReplaceResourceAsync(
-                new CalendarExactReplaceRequest(Revision(sourceHref, "review-http"), EventResource("review-http", "After")), CancellationToken.None)).Outcome,
-            _ => (await service.ReviewExactMoveResourceAsync(
-                new CalendarExactMoveRequest(Revision(sourceHref, "review-http"), "https://cal.example/events/destination.ics"), CancellationToken.None)).Outcome
+            _ => (await service.ReviewExactReplaceResourceAsync(
+                new CalendarExactReplaceRequest(Revision(sourceHref, "review-http"), EventResource("review-http", "After")), CancellationToken.None)).Outcome
         };
 
         outcome.ShouldNotBeNull().Code.ShouldBe(expectedCode);
@@ -1498,7 +1392,6 @@ public sealed class CalendarExactResourceServiceTests
     [Theory]
     [InlineData("create", System.Net.HttpStatusCode.Unauthorized, CalendarExactResourceCode.UpstreamUnauthorized)]
     [InlineData("replace", System.Net.HttpStatusCode.Forbidden, CalendarExactResourceCode.UpstreamForbidden)]
-    [InlineData("move", System.Net.HttpStatusCode.Unauthorized, CalendarExactResourceCode.UpstreamUnauthorized)]
     public async Task ExactWriteReview_AttributesTargetGetHttpFailureToRevisionPhase(
         string operation,
         System.Net.HttpStatusCode statusCode,
@@ -1516,10 +1409,8 @@ public sealed class CalendarExactResourceServiceTests
         {
             "create" => (await service.ReviewExactCreateResourceAsync(
                 new CalendarExactCreateRequest(sourceHref, EventResource("review-target", "Review")), CancellationToken.None)).Outcome,
-            "replace" => (await service.ReviewExactReplaceResourceAsync(
-                new CalendarExactReplaceRequest(Revision(sourceHref, "review-target"), EventResource("review-target", "After")), CancellationToken.None)).Outcome,
-            _ => (await service.ReviewExactMoveResourceAsync(
-                new CalendarExactMoveRequest(Revision(sourceHref, "review-target"), "https://cal.example/events/destination.ics"), CancellationToken.None)).Outcome
+            _ => (await service.ReviewExactReplaceResourceAsync(
+                new CalendarExactReplaceRequest(Revision(sourceHref, "review-target"), EventResource("review-target", "After")), CancellationToken.None)).Outcome
         };
 
         outcome.ShouldNotBeNull().Code.ShouldBe(expectedCode);
@@ -1529,17 +1420,13 @@ public sealed class CalendarExactResourceServiceTests
     [Theory]
     [InlineData("create", "io", CalendarExactResourceCode.UpstreamUnavailable, true)]
     [InlineData("replace", "io", CalendarExactResourceCode.UpstreamUnavailable, true)]
-    [InlineData("move", "io", CalendarExactResourceCode.UpstreamUnavailable, true)]
     [InlineData("create", "timeout", CalendarExactResourceCode.UpstreamUnavailable, true)]
     [InlineData("replace", "timeout", CalendarExactResourceCode.UpstreamUnavailable, true)]
-    [InlineData("move", "timeout", CalendarExactResourceCode.UpstreamUnavailable, true)]
     [InlineData("create", "cancel", CalendarExactResourceCode.UpstreamUnavailable, true)]
     [InlineData("replace", "cancel", CalendarExactResourceCode.UpstreamUnavailable, true)]
-    [InlineData("move", "cancel", CalendarExactResourceCode.UpstreamUnavailable, true)]
     [InlineData("create", "xml", CalendarExactResourceCode.UpstreamProtocolError, false)]
     [InlineData("create", "discovery", CalendarExactResourceCode.UpstreamProtocolError, false)]
     [InlineData("replace", "discovery", CalendarExactResourceCode.UpstreamProtocolError, false)]
-    [InlineData("move", "xml", CalendarExactResourceCode.UpstreamProtocolError, false)]
     public async Task ExactWriteReview_MapsNonHttpFailureWithoutDispatch(
         string operation,
         string failure,
@@ -1557,10 +1444,8 @@ public sealed class CalendarExactResourceServiceTests
         {
             "create" => (await service.ReviewExactCreateResourceAsync(
                 new CalendarExactCreateRequest(sourceHref, EventResource("review-failure", "Review")), CancellationToken.None)).Outcome,
-            "replace" => (await service.ReviewExactReplaceResourceAsync(
-                new CalendarExactReplaceRequest(Revision(sourceHref, "review-failure"), EventResource("review-failure", "After")), CancellationToken.None)).Outcome,
-            _ => (await service.ReviewExactMoveResourceAsync(
-                new CalendarExactMoveRequest(Revision(sourceHref, "review-failure"), "https://cal.example/events/destination.ics"), CancellationToken.None)).Outcome
+            _ => (await service.ReviewExactReplaceResourceAsync(
+                new CalendarExactReplaceRequest(Revision(sourceHref, "review-failure"), EventResource("review-failure", "After")), CancellationToken.None)).Outcome
         };
 
         outcome.ShouldNotBeNull().Code.ShouldBe(expectedCode);
@@ -1570,8 +1455,6 @@ public sealed class CalendarExactResourceServiceTests
             Arg.Any<CalendarResourceCreateRequest>(), Arg.Any<CancellationToken>());
         await client.DidNotReceive().UpdateCalendarResourceAsync(
             Arg.Any<CalendarResourceUpdateRequest>(), Arg.Any<CancellationToken>());
-        await client.DidNotReceive().MoveCalendarResourceAsync(
-            Arg.Any<CalendarResourceMoveDispatchRequest>(), Arg.Any<CancellationToken>());
     }
 
     [Theory]
@@ -1606,16 +1489,12 @@ public sealed class CalendarExactResourceServiceTests
     [Theory]
     [InlineData("create", "http", CalendarExactResourceCode.UpstreamUnauthorized, false)]
     [InlineData("replace", "http", CalendarExactResourceCode.UpstreamUnauthorized, false)]
-    [InlineData("move", "http", CalendarExactResourceCode.UpstreamUnauthorized, false)]
     [InlineData("create", "io", CalendarExactResourceCode.UpstreamUnavailable, true)]
     [InlineData("replace", "io", CalendarExactResourceCode.UpstreamUnavailable, true)]
-    [InlineData("move", "io", CalendarExactResourceCode.UpstreamUnavailable, true)]
     [InlineData("create", "cancel", CalendarExactResourceCode.UpstreamUnavailable, true)]
     [InlineData("replace", "cancel", CalendarExactResourceCode.UpstreamUnavailable, true)]
-    [InlineData("move", "cancel", CalendarExactResourceCode.UpstreamUnavailable, true)]
     [InlineData("create", "xml", CalendarExactResourceCode.UpstreamProtocolError, false)]
     [InlineData("replace", "xml", CalendarExactResourceCode.UpstreamProtocolError, false)]
-    [InlineData("move", "xml", CalendarExactResourceCode.UpstreamProtocolError, false)]
     public async Task ExactWriteExecution_MapsPreDispatchFailure(
         string operation,
         string failure,
@@ -1633,255 +1512,13 @@ public sealed class CalendarExactResourceServiceTests
         {
             "create" => await service.ExactCreateResourceAsync(
                 new CalendarExactCreateRequest(sourceHref, EventResource("execution", "Execution")), CancellationToken.None),
-            "replace" => await service.ExactReplaceResourceAsync(
-                new CalendarExactReplaceRequest(Revision(sourceHref, "execution"), EventResource("execution", "After")), CancellationToken.None),
-            _ => await service.ExactMoveResourceAsync(
-                new CalendarExactMoveRequest(Revision(sourceHref, "execution"), "https://cal.example/events/destination.ics"), CancellationToken.None)
+            _ => await service.ExactReplaceResourceAsync(
+                new CalendarExactReplaceRequest(Revision(sourceHref, "execution"), EventResource("execution", "After")), CancellationToken.None)
         };
 
         result.Code.ShouldBe(expectedCode);
         result.Retryable.ShouldBe(retryable);
         result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
-    }
-
-    [Fact]
-    public async Task ExactMoveResourceAsync_DestinationCollisionWritesNothing()
-    {
-        const string calendarHref = "https://cal.example/events/";
-        const string sourceHref = "https://cal.example/events/source.ics";
-        const string destinationHref = "https://cal.example/events/existing.ics";
-        var content = EventResource("exact-move-collision", "Source");
-        var client = Substitute.For<ICalendarClient>();
-        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref)]);
-        client.GetCalendarResourceAsync(sourceHref, Arg.Any<CancellationToken>()).Returns(
-            CalendarResourceRead.Success(sourceHref, "\"r1\"", content));
-        client.GetCalendarResourceAsync(destinationHref, Arg.Any<CancellationToken>()).Returns(
-            CalendarResourceRead.Success(destinationHref, "\"other\"", EventResource("other", "Existing")));
-
-        var result = await CreateService(client, calendarHref).ExactMoveResourceAsync(
-            new CalendarExactMoveRequest(Revision(sourceHref, "exact-move-collision"), destinationHref),
-            CancellationToken.None);
-
-        result.Code.ShouldBe(CalendarExactResourceCode.DestinationConflict);
-        await client.DidNotReceive().MoveCalendarResourceAsync(
-            Arg.Any<CalendarResourceMoveDispatchRequest>(), Arg.Any<CancellationToken>());
-    }
-
-    [Theory]
-    [InlineData("same")]
-    [InlineData("relative")]
-    public async Task ExactMoveResourceAsync_RejectsInvalidDestinationBeforeDiscovery(string scenario)
-    {
-        const string sourceHref = "https://cal.example/events/source.ics";
-        var destinationHref = scenario == "same" ? sourceHref : "relative.ics";
-        var client = Substitute.For<ICalendarClient>();
-
-        var result = await CreateService(client, "https://cal.example/events/").ExactMoveResourceAsync(
-            new CalendarExactMoveRequest(Revision(sourceHref, "move-shape"), destinationHref),
-            CancellationToken.None);
-
-        result.Code.ShouldBe(CalendarExactResourceCode.InvalidInput);
-        await client.DidNotReceive().GetCalendarsAsync(Arg.Any<CancellationToken>());
-    }
-
-    [Theory]
-    [InlineData(CalendarResourceMoveDispatchCode.DestinationConflict, CalendarExactResourceCode.DestinationConflict)]
-    [InlineData(CalendarResourceMoveDispatchCode.NotFound, CalendarExactResourceCode.NotFound)]
-    [InlineData(CalendarResourceMoveDispatchCode.InvalidInput, CalendarExactResourceCode.InvalidInput)]
-    [InlineData(CalendarResourceMoveDispatchCode.UnsupportedCapability, CalendarExactResourceCode.UnsupportedCapability)]
-    [InlineData(CalendarResourceMoveDispatchCode.PayloadTooLarge, CalendarExactResourceCode.PayloadTooLarge)]
-    [InlineData(CalendarResourceMoveDispatchCode.UpstreamUnauthorized, CalendarExactResourceCode.UpstreamUnauthorized)]
-    [InlineData(CalendarResourceMoveDispatchCode.UpstreamForbidden, CalendarExactResourceCode.UpstreamForbidden)]
-    [InlineData(CalendarResourceMoveDispatchCode.UpstreamRateLimited, CalendarExactResourceCode.UpstreamRateLimited)]
-    [InlineData(CalendarResourceMoveDispatchCode.UpstreamUnavailable, CalendarExactResourceCode.UpstreamUnavailable)]
-    [InlineData(CalendarResourceMoveDispatchCode.UpstreamProtocolError, CalendarExactResourceCode.UpstreamProtocolError)]
-    public async Task ExactMoveResourceAsync_MapsRejectedDispatch(
-        CalendarResourceMoveDispatchCode dispatchCode,
-        CalendarExactResourceCode expectedCode)
-    {
-        const string calendarHref = "https://cal.example/events/";
-        const string sourceHref = "https://cal.example/events/source.ics";
-        const string destinationHref = "https://cal.example/events/destination.ics";
-        var client = PreparedMoveClient(calendarHref, sourceHref, destinationHref, "exact-move-rejected");
-        client.MoveCalendarResourceAsync(
-                Arg.Any<CalendarResourceMoveDispatchRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CalendarResourceMoveDispatchResult(dispatchCode));
-
-        var result = await CreateService(client, calendarHref).ExactMoveResourceAsync(
-            new CalendarExactMoveRequest(Revision(sourceHref, "exact-move-rejected"), destinationHref),
-            CancellationToken.None);
-
-        result.Code.ShouldBe(expectedCode);
-        result.MutationState.ShouldBe(CalendarMutationState.NotCommitted);
-    }
-
-    [Theory]
-    [InlineData(CalendarResourceMoveDispatchCode.Dispatched, CalendarResourceReadCode.Success, "same", CalendarResourceReadCode.NotFound, CalendarExactResourceCode.Success, CalendarMutationState.Committed)]
-    [InlineData(CalendarResourceMoveDispatchCode.Dispatched, CalendarResourceReadCode.Success, "different", CalendarResourceReadCode.NotFound, CalendarExactResourceCode.FidelityFailure, CalendarMutationState.Committed)]
-    [InlineData(CalendarResourceMoveDispatchCode.Dispatched, CalendarResourceReadCode.ConcurrencyUnavailable, "same", CalendarResourceReadCode.NotFound, CalendarExactResourceCode.CommittedButConcurrencyUnavailable, CalendarMutationState.Committed)]
-    [InlineData(CalendarResourceMoveDispatchCode.Dispatched, CalendarResourceReadCode.ConcurrencyUnavailable, "different", CalendarResourceReadCode.NotFound, CalendarExactResourceCode.FidelityFailure, CalendarMutationState.Committed)]
-    [InlineData(CalendarResourceMoveDispatchCode.PossiblyDispatched, CalendarResourceReadCode.ConcurrencyUnavailable, "different", CalendarResourceReadCode.NotFound, CalendarExactResourceCode.Indeterminate, CalendarMutationState.Unknown)]
-    [InlineData(CalendarResourceMoveDispatchCode.PossiblyDispatched, CalendarResourceReadCode.Success, "different", CalendarResourceReadCode.NotFound, CalendarExactResourceCode.Indeterminate, CalendarMutationState.Unknown)]
-    [InlineData(CalendarResourceMoveDispatchCode.PossiblyDispatched, CalendarResourceReadCode.NotFound, "same", CalendarResourceReadCode.Success, CalendarExactResourceCode.UpstreamUnavailable, CalendarMutationState.NotCommitted)]
-    [InlineData(CalendarResourceMoveDispatchCode.PossiblyDispatched, CalendarResourceReadCode.Success, "same", CalendarResourceReadCode.Success, CalendarExactResourceCode.Indeterminate, CalendarMutationState.Unknown)]
-    [InlineData(CalendarResourceMoveDispatchCode.PossiblyDispatched, CalendarResourceReadCode.NotFound, "same", CalendarResourceReadCode.NotFound, CalendarExactResourceCode.Indeterminate, CalendarMutationState.Unknown)]
-    [InlineData(CalendarResourceMoveDispatchCode.Dispatched, CalendarResourceReadCode.NotFound, "same", CalendarResourceReadCode.NotFound, CalendarExactResourceCode.CommittedButUnverified, CalendarMutationState.Committed)]
-    public async Task ExactMoveResourceAsync_ClassifiesTwoSidedObservation(
-        CalendarResourceMoveDispatchCode dispatchCode,
-        CalendarResourceReadCode destinationCode,
-        string destinationPayload,
-        CalendarResourceReadCode sourceCode,
-        CalendarExactResourceCode expectedCode,
-        CalendarMutationState expectedState)
-    {
-        const string calendarHref = "https://cal.example/events/";
-        const string sourceHref = "https://cal.example/events/source.ics";
-        const string destinationHref = "https://cal.example/events/destination.ics";
-        var source = EventResource("move-truth", "Source");
-        var destination = destinationPayload == "same" ? source : EventResource("move-truth", "Drifted");
-        var client = Substitute.For<ICalendarClient>();
-        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref)]);
-        client.GetCalendarResourceAsync(sourceHref, Arg.Any<CancellationToken>()).Returns(
-            CalendarResourceRead.Success(sourceHref, "\"r1\"", source),
-            new CalendarResourceRead(sourceCode) { ResourceHref = sourceHref, EntityTag = "\"r1\"", AuthoritativeUtf8 = source });
-        client.GetCalendarResourceAsync(destinationHref, Arg.Any<CancellationToken>()).Returns(
-            new CalendarResourceRead(CalendarResourceReadCode.NotFound),
-            new CalendarResourceRead(destinationCode)
-            {
-                ResourceHref = destinationHref,
-                EntityTag = "\"r2\"",
-                AuthoritativeUtf8 = destination
-            });
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref, Arg.Any<CalendarEntityKind>(), null, null, Arg.Any<CancellationToken>())
-            .Returns([]);
-        client.MoveCalendarResourceAsync(
-                Arg.Any<CalendarResourceMoveDispatchRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CalendarResourceMoveDispatchResult(dispatchCode));
-
-        var result = await CreateService(client, calendarHref).ExactMoveResourceAsync(
-            new CalendarExactMoveRequest(Revision(sourceHref, "move-truth"), destinationHref), CancellationToken.None);
-
-        result.Code.ShouldBe(expectedCode);
-        result.MutationState.ShouldBe(expectedState);
-    }
-
-    [Fact]
-    public async Task ExactMoveResourceAsync_LexicalNormalizationRemainsFidelityFailure()
-    {
-        const string calendarHref = "https://cal.example/events/";
-        const string sourceHref = "https://cal.example/events/source.ics";
-        const string destinationHref = "https://cal.example/events/destination.ics";
-        const string uid = "exact-move-lexical";
-        var source = Encoding.UTF8.GetBytes(
-            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Exact Tests//EN\r\n"
-            + $"BEGIN:VEVENT\r\nUID:{uid}\r\nDTSTAMP:20260817T120000Z\r\nDTSTART:20260818T120000Z\r\n"
-            + "SUMMARY;LANGUAGE=en;ALTREP=\"cid:part1\":Quarterly review\r\n"
-            + "END:VEVENT\r\nEND:VCALENDAR\r\n");
-        var normalized = Encoding.UTF8.GetBytes(
-            "BEGIN:VCALENDAR\r\nPRODID:-//Exact Tests//EN\r\nVERSION:2.0\r\n"
-            + "BEGIN:VEVENT\r\nSUMMARY;VALUE=TEXT;ALTREP=\"cid:part1\";LANGUAGE=EN:Quarterly \r\n review\r\n"
-            + $"DTSTART:20260818T120000Z\r\nDTSTAMP:20260817T120000Z\r\nUID:{uid}\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n");
-        var client = Substitute.For<ICalendarClient>();
-        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref)]);
-        client.GetCalendarResourceAsync(sourceHref, Arg.Any<CancellationToken>()).Returns(
-            CalendarResourceRead.Success(sourceHref, "\"r1\"", source),
-            new CalendarResourceRead(CalendarResourceReadCode.NotFound));
-        client.GetCalendarResourceAsync(destinationHref, Arg.Any<CancellationToken>()).Returns(
-            new CalendarResourceRead(CalendarResourceReadCode.NotFound),
-            CalendarResourceRead.Success(destinationHref, "\"r2\"", normalized));
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref, Arg.Any<CalendarEntityKind>(), null, null, Arg.Any<CancellationToken>())
-            .Returns([]);
-        client.MoveCalendarResourceAsync(
-                Arg.Any<CalendarResourceMoveDispatchRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CalendarResourceMoveDispatchResult(CalendarResourceMoveDispatchCode.Dispatched));
-
-        var result = await CreateService(client, calendarHref).ExactMoveResourceAsync(
-            new CalendarExactMoveRequest(Revision(sourceHref, uid), destinationHref), CancellationToken.None);
-
-        result.Code.ShouldBe(CalendarExactResourceCode.FidelityFailure);
-        result.MutationState.ShouldBe(CalendarMutationState.Committed);
-    }
-
-    [Theory]
-    [InlineData(CalendarResourceReadCode.Success, CalendarExactResourceCode.DestinationConflict)]
-    [InlineData(CalendarResourceReadCode.NotFound, CalendarExactResourceCode.Conflict)]
-    public async Task ExactMoveResourceAsync_DispatchConflictReconcilesDestinationBeforeSource(
-        CalendarResourceReadCode destinationObservation,
-        CalendarExactResourceCode expectedCode)
-    {
-        const string calendarHref = "https://cal.example/events/";
-        const string sourceHref = "https://cal.example/events/source.ics";
-        const string destinationHref = "https://cal.example/events/destination.ics";
-        var content = EventResource("move-conflict", "Source");
-        var client = Substitute.For<ICalendarClient>();
-        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref)]);
-        client.GetCalendarResourceAsync(sourceHref, Arg.Any<CancellationToken>()).Returns(
-            CalendarResourceRead.Success(sourceHref, "\"r1\"", content),
-            CalendarResourceRead.Success(sourceHref, "\"r2\"", content));
-        client.GetCalendarResourceAsync(destinationHref, Arg.Any<CancellationToken>()).Returns(
-            new CalendarResourceRead(CalendarResourceReadCode.NotFound),
-            new CalendarResourceRead(destinationObservation)
-            {
-                ResourceHref = destinationHref,
-                EntityTag = "\"destination\"",
-                AuthoritativeUtf8 = content
-            });
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref, Arg.Any<CalendarEntityKind>(), null, null, Arg.Any<CancellationToken>())
-            .Returns([]);
-        client.MoveCalendarResourceAsync(
-                Arg.Any<CalendarResourceMoveDispatchRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CalendarResourceMoveDispatchResult(CalendarResourceMoveDispatchCode.Conflict));
-
-        var result = await CreateService(client, calendarHref).ExactMoveResourceAsync(
-            new CalendarExactMoveRequest(Revision(sourceHref, "move-conflict"), destinationHref), CancellationToken.None);
-
-        result.Code.ShouldBe(expectedCode);
-    }
-
-    [Theory]
-    [InlineData("destination")]
-    [InlineData("source")]
-    public async Task ExactMoveResourceAsync_DispatchConflictUsesOneDeadlineAcrossBothObservations(
-        string stalledObservation)
-    {
-        const string calendarHref = "https://cal.example/events/";
-        const string sourceHref = "https://cal.example/events/source.ics";
-        const string destinationHref = "https://cal.example/events/destination.ics";
-        var content = EventResource("move-conflict-deadline", "Source");
-        var observationStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var time = new ManualTimeProvider(DateTimeOffset.Parse("2026-08-17T12:00:00Z"));
-        var client = Substitute.For<ICalendarClient>();
-        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref)]);
-        client.GetCalendarResourceAsync(sourceHref, Arg.Any<CancellationToken>()).Returns(
-            _ => Task.FromResult(CalendarResourceRead.Success(sourceHref, "\"r1\"", content)),
-            call => stalledObservation == "source"
-                ? StallObservation(call.ArgAt<CancellationToken>(1), observationStarted)
-                : Task.FromResult(CalendarResourceRead.Success(sourceHref, "\"r2\"", content)));
-        client.GetCalendarResourceAsync(destinationHref, Arg.Any<CancellationToken>()).Returns(
-            _ => Task.FromResult(new CalendarResourceRead(CalendarResourceReadCode.NotFound)),
-            call => stalledObservation == "destination"
-                ? StallObservation(call.ArgAt<CancellationToken>(1), observationStarted)
-                : Task.FromResult(new CalendarResourceRead(CalendarResourceReadCode.NotFound)));
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref, Arg.Any<CalendarEntityKind>(), null, null, Arg.Any<CancellationToken>())
-            .Returns([]);
-        client.MoveCalendarResourceAsync(
-                Arg.Any<CalendarResourceMoveDispatchRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CalendarResourceMoveDispatchResult(CalendarResourceMoveDispatchCode.Conflict));
-
-        var pending = CreateService(client, calendarHref, time).ExactMoveResourceAsync(
-            new CalendarExactMoveRequest(Revision(sourceHref, "move-conflict-deadline"), destinationHref),
-            TestContext.Current.CancellationToken);
-        await observationStarted.Task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
-
-        time.Advance(TimeSpan.FromSeconds(30));
-        var result = await pending.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
-
-        result.Code.ShouldBe(CalendarExactResourceCode.Conflict);
-        result.MutationState.ShouldBe(CalendarMutationState.NotCommitted);
     }
 
     [Fact]
@@ -1936,7 +1573,8 @@ public sealed class CalendarExactResourceServiceTests
             BaseUrl = "https://cal.example",
             Username = "user",
             Password = "secret",
-            CalendarHrefs = calendarHref
+            CalendarHrefs = calendarHref,
+            InteroperabilityProfile = CalDavInteroperabilityProfiles.Radicale_3_7_8
         }),
         Substitute.For<ILogger<CalendarService>>(),
         timeProvider ?? TimeProvider.System,
@@ -1967,27 +1605,6 @@ public sealed class CalendarExactResourceServiceTests
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref)]);
         client.GetCalendarResourceAsync(destinationHref, Arg.Any<CancellationToken>()).Returns(
             new CalendarResourceRead(CalendarResourceReadCode.NotFound));
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref, Arg.Any<CalendarEntityKind>(), null, null, Arg.Any<CancellationToken>())
-            .Returns([]);
-        return client;
-    }
-
-    private static ICalendarClient PreparedMoveClient(
-        string calendarHref,
-        string sourceHref,
-        string destinationHref,
-        string uid)
-    {
-        var client = Substitute.For<ICalendarClient>();
-        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref)]);
-        client.GetCalendarResourceAsync(sourceHref, Arg.Any<CancellationToken>()).Returns(
-            CalendarResourceRead.Success(sourceHref, "\"r1\"", EventResource(uid, "Source")));
-        client.GetCalendarResourceAsync(destinationHref, Arg.Any<CancellationToken>()).Returns(
-            new CalendarResourceRead(CalendarResourceReadCode.NotFound));
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref, Arg.Any<CalendarEntityKind>(), null, null, Arg.Any<CancellationToken>())
-            .Returns([]);
         return client;
     }
 

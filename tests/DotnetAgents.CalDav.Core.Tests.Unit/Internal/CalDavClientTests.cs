@@ -1234,7 +1234,7 @@ public class CalDavClientTests
     }
 
     [Fact]
-    public async Task QueryCalendarResourceHrefsAsync_UsesMinimalBoundedReportAndCanonicalizesCandidates()
+    public async Task QueryCandidateHrefsAsync_UsesMinimalBoundedReportAndCanonicalizesCandidates()
     {
         HttpRequestMessage? captured = null;
         var handler = new StubHttpMessageHandler(request =>
@@ -1252,7 +1252,7 @@ public class CalDavClientTests
         var from = DateTimeOffset.Parse("2026-08-16T10:00:00Z");
         var to = DateTimeOffset.Parse("2026-08-17T10:00:00Z");
 
-        var result = await sut.QueryCalendarResourceHrefsAsync(
+        var result = await sut.QueryCandidateHrefsAsync(
             "https://example.com/calendars/user/events/",
             CalendarEntityKind.Event,
             from,
@@ -1270,7 +1270,7 @@ public class CalDavClientTests
     }
 
     [Fact]
-    public async Task QueryCalendarResourceHrefsAsync_UsesSecondResolutionSupersetForFractionalBounds()
+    public async Task QueryCandidateHrefsAsync_UsesSecondResolutionSupersetForFractionalBounds()
     {
         string? body = null;
         var handler = new AsyncStubHttpMessageHandler(async request =>
@@ -1283,7 +1283,7 @@ public class CalDavClientTests
         });
         var sut = CreateSut(handler);
 
-        await sut.QueryCalendarResourceHrefsAsync(
+        await sut.QueryCandidateHrefsAsync(
             "https://example.com/calendars/user/events/",
             CalendarEntityKind.Event,
             DateTimeOffset.Parse("2026-08-16T10:00:00.1234567Z"),
@@ -1296,7 +1296,7 @@ public class CalDavClientTests
     }
 
     [Fact]
-    public async Task QueryCalendarResourceHrefsAsync_OmitsUnsafeNearLimitRanges()
+    public async Task QueryCandidateHrefsAsync_OmitsUnsafeNearLimitRanges()
     {
         var bodies = new List<string>();
         var handler = new AsyncStubHttpMessageHandler(async request =>
@@ -1320,7 +1320,7 @@ public class CalDavClientTests
 
         foreach (var range in ranges)
         {
-            await sut.QueryCalendarResourceHrefsAsync(
+            await sut.QueryCandidateHrefsAsync(
                 "https://example.com/calendars/user/events/",
                 CalendarEntityKind.Event,
                 range.From,
@@ -1333,7 +1333,7 @@ public class CalDavClientTests
     }
 
     [Fact]
-    public async Task QueryCalendarResourceHrefsAsync_FallsBackFromRejectedTimeRangeToKindOnlyReport()
+    public async Task QueryCandidateHrefsAsync_FallsBackFromRejectedTimeRangeToKindOnlyReport()
     {
         var bodies = new List<string>();
         var handler = new AsyncStubHttpMessageHandler(async request =>
@@ -1353,7 +1353,7 @@ public class CalDavClientTests
         });
         var sut = CreateSut(handler);
 
-        var result = await sut.QueryCalendarResourceHrefsAsync(
+        var result = await sut.QueryCandidateHrefsAsync(
             "https://example.com/calendars/user/events/",
             CalendarEntityKind.Event,
             DateTimeOffset.Parse("2026-08-16T10:00:00Z"),
@@ -1369,7 +1369,7 @@ public class CalDavClientTests
     [Theory]
     [InlineData("")]
     [InlineData("not xml")]
-    public async Task QueryCalendarResourceHrefsAsync_UnrelatedForbiddenPreservesHttpStatus(string responseBody)
+    public async Task QueryCandidateHrefsAsync_UnrelatedForbiddenPreservesHttpStatus(string responseBody)
     {
         var requestCount = 0;
         var handler = new StubHttpMessageHandler(_ =>
@@ -1383,7 +1383,7 @@ public class CalDavClientTests
         var sut = CreateSut(handler);
 
         var exception = await Should.ThrowAsync<HttpRequestException>(() =>
-            sut.QueryCalendarResourceHrefsAsync(
+            sut.QueryCandidateHrefsAsync(
                 "https://example.com/calendars/user/events/",
                 CalendarEntityKind.Event,
                 DateTimeOffset.Parse("2026-08-16T10:00:00Z"),
@@ -1395,7 +1395,7 @@ public class CalDavClientTests
     }
 
     [Fact]
-    public async Task QueryCalendarResourceHrefsAsync_MandatoryMinimalReportUnsupportedFailsCapability()
+    public async Task QueryCandidateHrefsAsync_MandatoryMinimalReportUnsupportedFailsCapability()
     {
         var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.Forbidden)
         {
@@ -1405,7 +1405,7 @@ public class CalDavClientTests
         var sut = CreateSut(handler);
 
         await Should.ThrowAsync<CalendarDiscoveryUnsupportedCapabilityException>(() =>
-            sut.QueryCalendarResourceHrefsAsync(
+            sut.QueryCandidateHrefsAsync(
                 "https://example.com/calendars/user/events/",
                 CalendarEntityKind.Event,
                 null,
@@ -1414,7 +1414,7 @@ public class CalDavClientTests
     }
 
     [Fact]
-    public async Task QueryCalendarResourceHrefsAsync_FallbackMinimalReportUnsupportedFailsCapability()
+    public async Task QueryCandidateHrefsAsync_FallbackMinimalReportUnsupportedFailsCapability()
     {
         var requestCount = 0;
         var handler = new StubHttpMessageHandler(_ =>
@@ -1429,7 +1429,7 @@ public class CalDavClientTests
         var sut = CreateSut(handler);
 
         await Should.ThrowAsync<CalendarDiscoveryUnsupportedCapabilityException>(() =>
-            sut.QueryCalendarResourceHrefsAsync(
+            sut.QueryCandidateHrefsAsync(
                 "https://example.com/calendars/user/events/",
                 CalendarEntityKind.Event,
                 DateTimeOffset.Parse("2026-08-16T10:00:00Z"),
@@ -1440,7 +1440,7 @@ public class CalDavClientTests
     }
 
     [Fact]
-    public async Task QueryCalendarResourceHrefsAsync_UnavailableMinimalCapabilityIsRetainedWithoutAnotherRequest()
+    public async Task QueryCandidateHrefsAsync_UnavailableMinimalCapabilityIsRetainedWithoutAnotherRequest()
     {
         var requestCount = 0;
         var handler = new StubHttpMessageHandler(_ =>
@@ -1451,14 +1451,14 @@ public class CalDavClientTests
         var sut = CreateSut(handler);
 
         await Should.ThrowAsync<CalendarDiscoveryUnsupportedCapabilityException>(() =>
-            sut.QueryCalendarResourceHrefsAsync(
+            sut.QueryCandidateHrefsAsync(
                 "https://example.com/calendars/user/events/",
                 CalendarEntityKind.Event,
                 null,
                 null,
                 CancellationToken.None));
         await Should.ThrowAsync<CalendarDiscoveryUnsupportedCapabilityException>(() =>
-            sut.QueryCalendarResourceHrefsAsync(
+            sut.QueryCandidateHrefsAsync(
                 "https://example.com/calendars/user/events/",
                 CalendarEntityKind.Event,
                 null,
@@ -1469,7 +1469,7 @@ public class CalDavClientTests
     }
 
     [Fact]
-    public async Task QueryCalendarResourceHrefsAsync_TransientFailureDoesNotDowngradeCapability()
+    public async Task QueryCandidateHrefsAsync_TransientFailureDoesNotDowngradeCapability()
     {
         var requestCount = 0;
         var handler = new StubHttpMessageHandler(_ =>
@@ -1485,13 +1485,13 @@ public class CalDavClientTests
         var sut = CreateSut(handler);
 
         await Should.ThrowAsync<HttpRequestException>(() =>
-            sut.QueryCalendarResourceHrefsAsync(
+            sut.QueryCandidateHrefsAsync(
                 "https://example.com/calendars/user/events/",
                 CalendarEntityKind.Event,
                 null,
                 null,
                 CancellationToken.None));
-        var result = await sut.QueryCalendarResourceHrefsAsync(
+        var result = await sut.QueryCandidateHrefsAsync(
             "https://example.com/calendars/user/events/",
             CalendarEntityKind.Event,
             null,
@@ -1503,7 +1503,7 @@ public class CalDavClientTests
     }
 
     [Fact]
-    public async Task QueryCalendarResourceHrefsAsync_ConfigurationChangeInvalidatesUnavailableCapability()
+    public async Task QueryCandidateHrefsAsync_ConfigurationChangeInvalidatesUnavailableCapability()
     {
         var requestCount = 0;
         var options = new CalDavOptions { BaseUrl = "https://example.com/", Username = "first" };
@@ -1522,7 +1522,7 @@ public class CalDavClientTests
     }
 
     [Fact]
-    public async Task QueryCalendarResourceHrefsAsync_ExplicitRediscoveryInvalidatesUnavailableCapability()
+    public async Task QueryCandidateHrefsAsync_ExplicitRediscoveryInvalidatesUnavailableCapability()
     {
         var requestCount = 0;
         var handler = new StubHttpMessageHandler(_ =>
@@ -1540,7 +1540,7 @@ public class CalDavClientTests
     }
 
     [Fact]
-    public async Task QueryCalendarResourceHrefsAsync_StaleInFlightObservationCannotRepopulateAfterRediscovery()
+    public async Task QueryCandidateHrefsAsync_StaleInFlightObservationCannotRepopulateAfterRediscovery()
     {
         var requestStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseResponse = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1568,7 +1568,7 @@ public class CalDavClientTests
     }
 
     [Fact]
-    public async Task QueryCalendarResourceHrefsAsync_CapabilityKeysSeparateCalendarAndOperation()
+    public async Task QueryCandidateHrefsAsync_CapabilityKeysSeparateCalendarAndOperation()
     {
         var requestCount = 0;
         var handler = new StubHttpMessageHandler(_ =>
@@ -1581,7 +1581,7 @@ public class CalDavClientTests
         await AssertMinimalQueryUnsupportedAsync(sut, "https://example.com/calendars/user/events/");
         await AssertMinimalQueryUnsupportedAsync(sut, "https://example.com/calendars/user/todos/");
         await Should.ThrowAsync<CalendarDiscoveryUnsupportedCapabilityException>(() =>
-            sut.QueryCalendarResourceHrefsAsync(
+            sut.QueryCandidateHrefsAsync(
                 "https://example.com/calendars/user/events/",
                 CalendarEntityKind.Todo,
                 null,
@@ -1592,7 +1592,7 @@ public class CalDavClientTests
     }
 
     [Fact]
-    public async Task QueryCalendarResourceHrefsAsync_IgnoresSuccessfulCollectionSelfResponse()
+    public async Task QueryCandidateHrefsAsync_IgnoresSuccessfulCollectionSelfResponse()
     {
         var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.MultiStatus)
         {
@@ -1603,7 +1603,7 @@ public class CalDavClientTests
         });
         var sut = CreateSut(handler);
 
-        var result = await sut.QueryCalendarResourceHrefsAsync(
+        var result = await sut.QueryCandidateHrefsAsync(
             "https://example.com/calendars/user/events/",
             CalendarEntityKind.Event,
             null,
@@ -1621,7 +1621,7 @@ public class CalDavClientTests
     [InlineData("/calendars/user/events/%2e/a.ics")]
     [InlineData("/calendars/user/events/%2E%2E/a.ics")]
     [InlineData("/calendars/user/events/%2e%2E/private.ics")]
-    public async Task QueryCalendarResourceHrefsAsync_RejectsUnsafeReportCandidateBeforeAnyGet(string candidateHref)
+    public async Task QueryCandidateHrefsAsync_RejectsUnsafeReportCandidateBeforeAnyGet(string candidateHref)
     {
         var requests = new List<HttpRequestMessage>();
         var handler = new StubHttpMessageHandler(request =>
@@ -1637,7 +1637,7 @@ public class CalDavClientTests
         });
         var sut = CreateSut(handler);
 
-        await Should.ThrowAsync<CalendarDiscoveryProtocolException>(() => sut.QueryCalendarResourceHrefsAsync(
+        await Should.ThrowAsync<CalendarDiscoveryProtocolException>(() => sut.QueryCandidateHrefsAsync(
             "https://example.com/calendars/user/events/",
             CalendarEntityKind.Event,
             null,
@@ -1648,7 +1648,7 @@ public class CalDavClientTests
     }
 
     [Fact]
-    public async Task QueryCalendarResourceHrefsAsync_RejectsCrossOriginCalendarBeforeNetwork()
+    public async Task QueryCandidateHrefsAsync_RejectsCrossOriginCalendarBeforeNetwork()
     {
         var requests = new List<HttpRequestMessage>();
         var sut = CreateSut(new StubHttpMessageHandler(request =>
@@ -1657,7 +1657,7 @@ public class CalDavClientTests
             return new HttpResponseMessage(HttpStatusCode.MultiStatus);
         }));
 
-        await Should.ThrowAsync<CalendarDiscoveryProtocolException>(() => sut.QueryCalendarResourceHrefsAsync(
+        await Should.ThrowAsync<CalendarDiscoveryProtocolException>(() => sut.QueryCandidateHrefsAsync(
             "https://other.example/calendars/user/events/",
             CalendarEntityKind.Event,
             null,
@@ -1668,7 +1668,7 @@ public class CalDavClientTests
     }
 
     [Fact]
-    public async Task QueryCalendarResourceHrefsAsync_RejectsSeeOtherWithoutFollowing()
+    public async Task QueryCandidateHrefsAsync_RejectsSeeOtherWithoutFollowing()
     {
         var requests = new List<HttpRequestMessage>();
         var sut = CreateSut(new StubHttpMessageHandler(request =>
@@ -1680,7 +1680,7 @@ public class CalDavClientTests
             };
         }));
 
-        await Should.ThrowAsync<CalendarDiscoveryProtocolException>(() => sut.QueryCalendarResourceHrefsAsync(
+        await Should.ThrowAsync<CalendarDiscoveryProtocolException>(() => sut.QueryCandidateHrefsAsync(
             "https://example.com/calendars/user/events/",
             CalendarEntityKind.Event,
             null,
@@ -1695,7 +1695,7 @@ public class CalDavClientTests
     [InlineData(HttpStatusCode.Redirect)]
     [InlineData(HttpStatusCode.TemporaryRedirect)]
     [InlineData(HttpStatusCode.PermanentRedirect)]
-    public async Task QueryCalendarResourceHrefsAsync_FollowsRedirectButRejectsCandidateOutsideAuthorizedCalendarIdentity(
+    public async Task QueryCandidateHrefsAsync_FollowsRedirectButRejectsCandidateOutsideAuthorizedCalendarIdentity(
         HttpStatusCode statusCode)
     {
         var requests = new List<(HttpMethod Method, string Uri, string Body)>();
@@ -1720,7 +1720,7 @@ public class CalDavClientTests
         });
         var sut = CreateSut(handler);
 
-        await Should.ThrowAsync<CalendarDiscoveryProtocolException>(() => sut.QueryCalendarResourceHrefsAsync(
+        await Should.ThrowAsync<CalendarDiscoveryProtocolException>(() => sut.QueryCandidateHrefsAsync(
             "https://example.com/calendars/user/events/",
             CalendarEntityKind.Event,
             null,
@@ -1734,7 +1734,7 @@ public class CalDavClientTests
     }
 
     [Fact]
-    public async Task QueryCalendarResourceHrefsAsync_RejectsOversizedContentLength()
+    public async Task QueryCandidateHrefsAsync_RejectsOversizedContentLength()
     {
         var content = new ByteArrayContent(new byte[4 * 1024 * 1024 + 1]);
         var sut = CreateSut(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.MultiStatus)
@@ -1742,7 +1742,7 @@ public class CalDavClientTests
             Content = content
         }));
 
-        var exception = await Should.ThrowAsync<HttpRequestException>(() => sut.QueryCalendarResourceHrefsAsync(
+        var exception = await Should.ThrowAsync<HttpRequestException>(() => sut.QueryCandidateHrefsAsync(
             "https://example.com/calendars/user/events/",
             CalendarEntityKind.Event,
             null,
@@ -1753,7 +1753,7 @@ public class CalDavClientTests
     }
 
     [Fact]
-    public async Task QueryCalendarResourceHrefsAsync_StopsUnknownLengthBodyAtLimitPlusOne()
+    public async Task QueryCandidateHrefsAsync_StopsUnknownLengthBodyAtLimitPlusOne()
     {
         var stream = new CountingNonSeekableStream(new byte[4 * 1024 * 1024 + 8192]);
         var sut = CreateSut(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.MultiStatus)
@@ -1761,7 +1761,7 @@ public class CalDavClientTests
             Content = new StreamContent(stream)
         }));
 
-        var exception = await Should.ThrowAsync<HttpRequestException>(() => sut.QueryCalendarResourceHrefsAsync(
+        var exception = await Should.ThrowAsync<HttpRequestException>(() => sut.QueryCandidateHrefsAsync(
             "https://example.com/calendars/user/events/",
             CalendarEntityKind.Event,
             null,
@@ -2481,7 +2481,7 @@ public class CalDavClientTests
 
     private static async Task AssertMinimalQueryUnsupportedAsync(CalDavClient sut, string calendarHref) =>
         await Should.ThrowAsync<CalendarDiscoveryUnsupportedCapabilityException>(() =>
-            sut.QueryCalendarResourceHrefsAsync(
+            sut.QueryCandidateHrefsAsync(
                 calendarHref,
                 CalendarEntityKind.Event,
                 null,
@@ -2639,13 +2639,6 @@ public class CalDavClientTests
     {
         public Task<IReadOnlyList<CalendarDescriptor>> GetCalendarsAsync(CancellationToken cancellationToken) =>
             throw new NotSupportedException();
-
-        public Task<IReadOnlyList<string>> QueryCalendarResourceHrefsAsync(
-            string calendarHref,
-            CalendarEntityKind entityKind,
-            DateTimeOffset? from,
-            DateTimeOffset? to,
-            CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task<CalendarResourceRead> GetCalendarResourceAsync(
             string href,

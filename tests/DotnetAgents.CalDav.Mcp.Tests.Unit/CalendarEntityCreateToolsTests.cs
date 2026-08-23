@@ -688,13 +688,6 @@ public sealed class CalendarEntityCreateToolsTests
                 TodoSupport = EntityKindSupport.NotAdvertised
             }
         ]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
         client.CreateCalendarResourceAsync(
                 Arg.Any<CalendarResourceCreateRequest>(),
                 Arg.Any<CancellationToken>())
@@ -908,13 +901,6 @@ public sealed class CalendarEntityCreateToolsTests
                 TodoSupport = EntityKindSupport.NotAdvertised
             }
         ]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
         CalendarResourceCreateRequest? dispatched = null;
         client.CreateCalendarResourceAsync(
                 Arg.Do<CalendarResourceCreateRequest>(request => dispatched = request),
@@ -993,12 +979,6 @@ public sealed class CalendarEntityCreateToolsTests
         result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("unsupported_capability");
         result.StructuredContent.Value.GetProperty("mutationState").GetString().ShouldBe("not_attempted");
         await client.DidNotReceive().GetCalendarsAsync(Arg.Any<CancellationToken>());
-        await client.DidNotReceive().QueryCalendarResourceHrefsAsync(
-            Arg.Any<string>(),
-            Arg.Any<CalendarEntityKind>(),
-            Arg.Any<DateTimeOffset?>(),
-            Arg.Any<DateTimeOffset?>(),
-            Arg.Any<CancellationToken>());
         await client.DidNotReceive().CreateCalendarResourceAsync(
             Arg.Any<CalendarResourceCreateRequest>(),
             Arg.Any<CancellationToken>());
@@ -1062,13 +1042,6 @@ public sealed class CalendarEntityCreateToolsTests
                 TodoSupport = EntityKindSupport.NotAdvertised
             }
         ]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
         CalendarResourceCreateRequest? dispatched = null;
         client.CreateCalendarResourceAsync(
                 Arg.Do<CalendarResourceCreateRequest>(request => dispatched = request),

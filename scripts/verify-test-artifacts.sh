@@ -72,9 +72,9 @@ if [[ ${#root_trx[@]} -ne ${#expected_trx[@]} ]]; then
 fi
 
 declare -A expected_test_counts=(
-  [main-core.trx]=2082
-  [main-mcp.trx]=922
-  [main-integration.trx]=100
+  [main-core.trx]=2279
+  [main-mcp.trx]=964
+  [main-integration.trx]=109
   [strict-preconditions.trx]=11
   [alternate-time-zone.trx]=11
 )

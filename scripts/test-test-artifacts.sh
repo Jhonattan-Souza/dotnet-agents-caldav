@@ -29,9 +29,9 @@ seed_main_artifacts() {
     printf '<coverage />\n' > "$directory/$prefix.coverage.opencover.260821000000001.xml"
   done
 
-  write_successful_trx "$directory/main-core.trx" 2082
-  write_successful_trx "$directory/main-mcp.trx" 922
-  write_successful_trx "$directory/main-integration.trx" 100
+  write_successful_trx "$directory/main-core.trx" 2279
+  write_successful_trx "$directory/main-mcp.trx" 964
+  write_successful_trx "$directory/main-integration.trx" 109
 }
 
 current_run="$fixture_root/current-run"
@@ -115,7 +115,7 @@ echo "PASS unknown root coverage reports are rejected"
 
 below_minimum="$fixture_root/below-minimum"
 seed_main_artifacts "$below_minimum"
-write_successful_trx "$below_minimum/main-core.trx" 2081
+write_successful_trx "$below_minimum/main-core.trx" 2278
 if "$verifier" "$below_minimum" main >/dev/null 2>&1; then
   echo "Expected a main test result below its discovery baseline to be rejected." >&2
   exit 1
@@ -125,9 +125,9 @@ echo "PASS main test evidence enforces discovery baselines"
 
 above_minimum="$fixture_root/above-minimum"
 seed_main_artifacts "$above_minimum"
-write_successful_trx "$above_minimum/main-core.trx" 2083
-write_successful_trx "$above_minimum/main-mcp.trx" 923
-write_successful_trx "$above_minimum/main-integration.trx" 101
+write_successful_trx "$above_minimum/main-core.trx" 2280
+write_successful_trx "$above_minimum/main-mcp.trx" 965
+write_successful_trx "$above_minimum/main-integration.trx" 110
 "$verifier" "$above_minimum" main >/dev/null
 
 echo "PASS main test evidence accepts counts above discovery baselines"

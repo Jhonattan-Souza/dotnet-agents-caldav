@@ -16,6 +16,7 @@ internal sealed class CalendarMutationRequestStateProtector
     private readonly byte[] _encryptionKey;
     private readonly byte[] _bindingKey;
     private readonly string _credentialContext;
+    private readonly string _configurationContext;
     private readonly TimeProvider _timeProvider;
 
     public CalendarMutationRequestStateProtector(TimeProvider timeProvider, IOptions<CalDavOptions> options)
@@ -38,9 +39,14 @@ internal sealed class CalendarMutationRequestStateProtector
         _bindingKey = keyMaterial[32..];
         var configured = options.Value;
         _credentialContext = Bind(JsonSerializer.SerializeToUtf8Bytes(new CredentialBinding(
-            configured.BaseUrl,
             configured.Username,
             configured.Password)));
+        _configurationContext = Bind(JsonSerializer.SerializeToUtf8Bytes(new ConfigurationBinding(
+            NormalizeEndpoint(configured.BaseUrl),
+            NormalizeOrigin(configured.BaseUrl),
+            NormalizeScope(configured.CalendarHrefs),
+            configured.InteroperabilityProfile ?? string.Empty,
+            configured.RequestTimeout.Ticks)));
     }
 
     public string Protect(CalendarResourceRevisionReference revision)
@@ -70,20 +76,33 @@ internal sealed class CalendarMutationRequestStateProtector
             requestBinding,
             SerializeExactCreateBinding(binding));
 
+    public string ProtectExactMove(
+        string operation,
+        ReadOnlySpan<byte> requestBinding,
+        CalendarExactMoveReviewBinding binding) => ProtectCore(
+            operation,
+            BindRevision(binding.Revision),
+            requestBinding,
+            SerializeExactMoveBinding(binding),
+            ToProtectedExactMoveBinding(binding));
+
     private string ProtectCore(
         string operation,
         string targetBinding,
         ReadOnlySpan<byte> requestBinding,
-        ReadOnlySpan<byte> intentDigest)
+        ReadOnlySpan<byte> intentDigest,
+        ProtectedExactMoveBinding? exactMoveBinding = null)
     {
         var payload = JsonSerializer.SerializeToUtf8Bytes(new MutationPayload(
-            2,
+            3,
             _timeProvider.GetUtcNow().Add(Lifetime).ToUnixTimeSeconds(),
             operation,
             targetBinding,
             Bind(requestBinding),
             Bind(intentDigest),
-            _credentialContext));
+            _credentialContext,
+            _configurationContext,
+            exactMoveBinding));
         var nonce = RandomNumberGenerator.GetBytes(12);
         var cipherText = new byte[payload.Length];
         var tag = new byte[16];
@@ -147,16 +166,57 @@ internal sealed class CalendarMutationRequestStateProtector
             out intentBinding,
             out expired);
 
+    public bool TryUnprotectExactMove(
+        string state,
+        string operation,
+        CalendarExactMoveRequest request,
+        ReadOnlySpan<byte> requestBinding,
+        out CalendarExactMoveReviewBinding binding,
+        out bool expired)
+    {
+        binding = null!;
+        if (!TryUnprotectCore(
+                state,
+                operation,
+                BindRevision(request.Revision),
+                requestBinding,
+                out var intentBinding,
+                out expired,
+                out var protectedBinding)
+            || !TryRestoreExactMoveBinding(request, protectedBinding, out binding))
+        {
+            return false;
+        }
+        return MatchesExactMoveBinding(intentBinding, binding);
+    }
+
     private bool TryUnprotectCore(
         string state,
         string operation,
         string targetBinding,
         ReadOnlySpan<byte> requestBinding,
         out string intentBinding,
-        out bool expired)
+        out bool expired) => TryUnprotectCore(
+            state,
+            operation,
+            targetBinding,
+            requestBinding,
+            out intentBinding,
+            out expired,
+            out _);
+
+    private bool TryUnprotectCore(
+        string state,
+        string operation,
+        string targetBinding,
+        ReadOnlySpan<byte> requestBinding,
+        out string intentBinding,
+        out bool expired,
+        out ProtectedExactMoveBinding? exactMoveBinding)
     {
         intentBinding = string.Empty;
         expired = false;
+        exactMoveBinding = null;
         if (!TryDecode(state, out var protectedBytes))
             return false;
 
@@ -170,18 +230,20 @@ internal sealed class CalendarMutationRequestStateProtector
             cipher.Decrypt(nonce, cipherText, tag, payload);
             var decoded = JsonSerializer.Deserialize<MutationPayload>(payload);
             if (decoded is null
-                || decoded.Version != 2
+                || decoded.Version != 3
                 || !string.Equals(decoded.Operation, operation, StringComparison.Ordinal)
                 || !HasFixedTimeMatch(decoded.RevisionBinding, targetBinding)
                 || !HasFixedTimeMatch(decoded.RequestBinding, Bind(requestBinding))
                 || string.IsNullOrEmpty(decoded.IntentBinding)
-                || !HasFixedTimeMatch(decoded.CredentialContext, _credentialContext))
+                || !HasFixedTimeMatch(decoded.CredentialContext, _credentialContext)
+                || !HasFixedTimeMatch(decoded.ConfigurationContext, _configurationContext))
             {
                 return false;
             }
 
             expired = _timeProvider.GetUtcNow().ToUnixTimeSeconds() >= decoded.ExpiresAtUnixSeconds;
             intentBinding = decoded.IntentBinding;
+            exactMoveBinding = decoded.ExactMoveBinding;
             return !expired;
         }
         catch (Exception exception) when (exception is CryptographicException or JsonException)
@@ -207,6 +269,11 @@ internal sealed class CalendarMutationRequestStateProtector
         CalendarExactCreateReviewBinding binding) =>
         HasFixedTimeMatch(intentBinding, Bind(SerializeExactCreateBinding(binding)));
 
+    public bool MatchesExactMoveBinding(
+        string intentBinding,
+        CalendarExactMoveReviewBinding binding) =>
+        HasFixedTimeMatch(intentBinding, Bind(SerializeExactMoveBinding(binding)));
+
     private static byte[] SerializeExactCreateBinding(CalendarExactCreateReviewBinding binding) =>
         JsonSerializer.SerializeToUtf8Bytes(new ExactCreateBinding(
             binding.DestinationHref,
@@ -214,6 +281,59 @@ internal sealed class CalendarMutationRequestStateProtector
             binding.EntityKind == CalendarEntityKind.Event ? "event" : "todo",
             Convert.ToHexStringLower(binding.IntentDigest.Span),
             binding.PolicyVersion));
+
+    private static byte[] SerializeExactMoveBinding(CalendarExactMoveReviewBinding binding) =>
+        JsonSerializer.SerializeToUtf8Bytes(ToProtectedExactMoveBinding(binding));
+
+    private static ProtectedExactMoveBinding ToProtectedExactMoveBinding(CalendarExactMoveReviewBinding binding) => new(
+            Convert.ToHexStringLower(binding.SourceIntentDigest.Span),
+            binding.PolicyVersion);
+
+    private static bool TryRestoreExactMoveBinding(
+        CalendarExactMoveRequest request,
+        ProtectedExactMoveBinding? protectedBinding,
+        out CalendarExactMoveReviewBinding binding)
+    {
+        binding = null!;
+        if (protectedBinding is null
+            || protectedBinding.SourceIntentDigest.Length != SHA256.HashSizeInBytes * 2)
+        {
+            return false;
+        }
+        try
+        {
+            var digest = Convert.FromHexString(protectedBinding.SourceIntentDigest);
+            binding = new CalendarExactMoveReviewBinding(
+                request.Revision,
+                request.DestinationHref,
+                digest,
+                protectedBinding.PolicyVersion);
+            return true;
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+    }
+
+    private static string NormalizeEndpoint(string value)
+    {
+        var endpoint = value.EndsWith("/", StringComparison.Ordinal) ? value : value + '/';
+        return new Uri(endpoint, UriKind.Absolute).AbsoluteUri;
+    }
+
+    private static string NormalizeOrigin(string value)
+    {
+        var uri = new Uri(value, UriKind.Absolute);
+        return uri.GetLeftPart(UriPartial.Authority).ToLowerInvariant();
+    }
+
+    private static string[] NormalizeScope(string? value) => value is null
+        ? []
+        : value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
 
     private static bool HasFixedTimeMatch(string left, string right) => CryptographicOperations.FixedTimeEquals(
         Encoding.UTF8.GetBytes(left),
@@ -253,9 +373,18 @@ internal sealed class CalendarMutationRequestStateProtector
         string RevisionBinding,
         string RequestBinding,
         string IntentBinding,
-        string CredentialContext);
+        string CredentialContext,
+        string ConfigurationContext,
+        ProtectedExactMoveBinding? ExactMoveBinding);
 
-    private sealed record CredentialBinding(string BaseUrl, string Username, string Password);
+    private sealed record CredentialBinding(string Username, string Password);
+
+    private sealed record ConfigurationBinding(
+        string Endpoint,
+        string Origin,
+        IReadOnlyList<string> CalendarScope,
+        string InteroperabilityProfile,
+        long RequestTimeoutTicks);
 
     private sealed record RevisionBinding(string Href, string EntityUid, string EntityKind, string EntityTag);
 
@@ -264,5 +393,9 @@ internal sealed class CalendarMutationRequestStateProtector
         string EntityUid,
         string EntityKind,
         string IntentDigest,
+        string PolicyVersion);
+
+    private sealed record ProtectedExactMoveBinding(
+        string SourceIntentDigest,
         string PolicyVersion);
 }

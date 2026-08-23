@@ -1368,7 +1368,7 @@ public sealed class CalendarMcpStdioIntegrationTests
     }
 
     [Fact]
-    public async Task ExactWrites_PreserveCallerResourceAcrossMrtrCreateReplaceAndAtomicMove()
+    public async Task ExactWrites_PreserveOpaqueCallerResourceAcrossMrtrAndSameCalendarMove()
     {
         var suffix = Guid.NewGuid().ToString("N");
         var uid = $"exact-write-{suffix}";
@@ -1376,7 +1376,7 @@ public sealed class CalendarMcpStdioIntegrationTests
         var sourceHref = $"{calendarHref}exact-source-{suffix}.ics";
         var destinationHref = $"{calendarHref}exact-destination-{suffix}.ics";
         var createdContent = ExactEvent(uid, "Created", "X-INERT:<script>alert(1)</script>");
-        var replacedContent = ExactEvent(uid, "Replaced", "X-INERT:<script>alert(2)</script>");
+        var replacedContent = ExactOpaqueEvent(uid, "Replaced", "X-INERT:<script>alert(2)</script>");
         var stderr = new ConcurrentQueue<string>();
         await using var client = await CreateClientAsync(
             stderr,
@@ -1392,6 +1392,7 @@ public sealed class CalendarMcpStdioIntegrationTests
                 ["utf8Resource"] = createdContent
             },
             cancellationToken: TestContext.Current.CancellationToken);
+        created.IsError.ShouldBe(false, created.StructuredContent?.ToString());
         var createdRevision = created.StructuredContent!.Value.GetProperty("snapshot")
             .GetProperty("entityRevision");
         var replaced = await client.CallToolAsync(
@@ -1402,24 +1403,39 @@ public sealed class CalendarMcpStdioIntegrationTests
                 ["utf8Resource"] = replacedContent
             },
             cancellationToken: TestContext.Current.CancellationToken);
-        var replacedRevision = replaced.StructuredContent!.Value.GetProperty("snapshot")
-            .GetProperty("entityRevision");
+        replaced.IsError.ShouldBe(false, replaced.StructuredContent?.ToString());
+        var replacedSnapshot = replaced.StructuredContent!.Value.GetProperty("snapshot");
+        replacedSnapshot.TryGetProperty("entityRevision", out _).ShouldBeFalse();
+        replacedSnapshot.GetProperty("projection").GetProperty("kind").GetString().ShouldBe("opaque");
+        var replacedRevision = replacedSnapshot.GetProperty("resourceRevision");
+        var sourceBeforeMove = await GetResourceAsync(sourceHref);
+        sourceBeforeMove.EntityTag.ShouldBe(replacedRevision.GetProperty("entityTag").GetString());
+        var authoritativeSource = Encoding.UTF8.GetString(sourceBeforeMove.Utf8);
+        authoritativeSource.ShouldContain("CALSCALE:X-CUSTOM");
+        authoritativeSource.ShouldContain("SUMMARY:Replaced");
+        authoritativeSource.ShouldContain("X-INERT:<script>alert(2)</script>");
         var moved = await client.CallToolAsync(
             "calendar_resources.exact_move",
             new Dictionary<string, object?>
             {
-                ["revision"] = ExactRevisionArguments(replacedRevision),
+                ["revision"] = new Dictionary<string, object?>
+                {
+                    ["href"] = sourceHref,
+                    ["entityUid"] = uid,
+                    ["entityKind"] = "event",
+                    ["entityTag"] = sourceBeforeMove.EntityTag
+                },
                 ["destinationHref"] = destinationHref
             },
             cancellationToken: TestContext.Current.CancellationToken);
 
-        created.IsError.ShouldBe(false);
-        replaced.IsError.ShouldBe(false);
-        moved.IsError.ShouldBe(false);
-        moved.StructuredContent!.Value.GetProperty("snapshot").GetProperty("resourceRevision")
-            .GetProperty("href").GetString().ShouldBe(destinationHref);
+        moved.IsError.ShouldBe(false, moved.StructuredContent?.ToString());
+        var movedRevision = moved.StructuredContent!.Value.GetProperty("snapshot").GetProperty("resourceRevision");
+        movedRevision.GetProperty("href").GetString().ShouldBe(destinationHref);
         (await GetStatusAsync(sourceHref)).ShouldBe(HttpStatusCode.NotFound);
         var observed = await GetResourceAsync(destinationHref);
+        observed.EntityTag.ShouldBe(movedRevision.GetProperty("entityTag").GetString());
+        observed.Utf8.ShouldBe(sourceBeforeMove.Utf8);
         Encoding.UTF8.GetString(observed.Utf8).ShouldContain("SUMMARY:Replaced");
         Encoding.UTF8.GetString(observed.Utf8).ShouldContain("X-INERT:<script>alert(2)</script>");
         stderr.ShouldBeEmpty();
@@ -1747,6 +1763,12 @@ public sealed class CalendarMcpStdioIntegrationTests
 
     private static string ExactEvent(string uid, string summary, string inertLine) =>
         "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Exact Integration//EN\r\n"
+        + $"BEGIN:VEVENT\r\nUID:{uid}\r\nDTSTAMP:20260817T120000Z\r\n"
+        + $"DTSTART:20260818T120000Z\r\nSUMMARY:{summary}\r\n{inertLine}\r\n"
+        + "END:VEVENT\r\nEND:VCALENDAR\r\n";
+
+    private static string ExactOpaqueEvent(string uid, string summary, string inertLine) =>
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Exact Integration//EN\r\nCALSCALE:X-CUSTOM\r\n"
         + $"BEGIN:VEVENT\r\nUID:{uid}\r\nDTSTAMP:20260817T120000Z\r\n"
         + $"DTSTART:20260818T120000Z\r\nSUMMARY:{summary}\r\n{inertLine}\r\n"
         + "END:VEVENT\r\nEND:VCALENDAR\r\n";

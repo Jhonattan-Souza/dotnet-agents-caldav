@@ -308,7 +308,7 @@ public sealed class CalendarMoveModuleTests
     }
 
     [Fact]
-    public async Task NullDispatchIsRejectedAsProtocolFailure()
+    public async Task NullDispatchUsesPossiblyDispatchedBilateralTruth()
     {
         var transport = ScriptedTransport(Resource(SourceHref, "\"r1\"", Uid)) with
         {
@@ -317,9 +317,10 @@ public sealed class CalendarMoveModuleTests
 
         var result = await Module(transport).MoveAsync(Request(), CancellationToken.None);
 
-        result.Code.ShouldBe(CalendarResourceMoveCode.UpstreamProtocolError);
-        result.MutationState.ShouldBe(CalendarMutationState.NotCommitted);
-        transport.Trace.ShouldBe(["discover", "read-source", "probe-destination", "dispatch"]);
+        result.Code.ShouldBe(CalendarResourceMoveCode.Indeterminate);
+        result.MutationState.ShouldBe(CalendarMutationState.Unknown);
+        transport.Trace.ShouldBe(
+            ["discover", "read-source", "probe-destination", "dispatch", "observe-destination", "observe-source"]);
     }
 
     [Fact]
@@ -510,6 +511,11 @@ public sealed class CalendarMoveModuleTests
     [Theory]
     [InlineData("not-an-absolute-calendar-href")]
     [InlineData("https://cal.example/tasks/nested/")]
+    [InlineData("https://cal.example/tasks/?query=1")]
+    [InlineData("https://cal.example/tasks/#fragment")]
+    [InlineData("https://cal.example/tasks%2F/")]
+    [InlineData("https://cal.example/tasks/../tasks/")]
+    [InlineData("https://other.example/tasks/")]
     public async Task DiscoveryCannotAuthorizeAnInvalidOrNonDirectSourceCalendar(string sourceCalendarHref)
     {
         var destination = TodoCalendar(DestinationCalendarHref, "Archive");

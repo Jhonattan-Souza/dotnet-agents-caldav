@@ -96,7 +96,7 @@ internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport, 
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<string>> QueryCalendarResourceHrefsAsync(
+    internal async Task<IReadOnlyList<string>> QueryCandidateHrefsAsync(
         string calendarHref,
         CalendarEntityKind entityKind,
         DateTimeOffset? from,

@@ -56,18 +56,6 @@ internal sealed class CalendarOperationDiscovery : ICalendarClient, ICalendarCre
         };
     }
 
-    public Task<IReadOnlyList<string>> QueryCalendarResourceHrefsAsync(
-        string calendarHref,
-        CalendarEntityKind entityKind,
-        DateTimeOffset? from,
-        DateTimeOffset? to,
-        CancellationToken cancellationToken) => _transport.QueryCalendarResourceHrefsAsync(
-            calendarHref,
-            entityKind,
-            from,
-            to,
-            cancellationToken);
-
     public Task<CalendarResourceRead> GetCalendarResourceAsync(
         string href,
         CancellationToken cancellationToken) => _transport.GetCalendarResourceAsync(href, cancellationToken);

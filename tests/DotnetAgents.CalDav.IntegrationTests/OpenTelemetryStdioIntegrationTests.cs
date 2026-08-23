@@ -493,6 +493,82 @@ public sealed class OpenTelemetryStdioIntegrationTests
     }
 
     [Fact]
+    public async Task ExactMoveMrtr_ExportsConstantFreshReviewAndOneMoveOverStdio()
+    {
+        await using var server = new PossiblyDispatchedMoveServer();
+        await using var receiver = OtlpLoopbackReceiver.Start();
+        var stderr = new ConcurrentQueue<string>();
+
+        await using (var client = await CreateClientAsync(
+                         receiver.Endpoint,
+                         stderr,
+                         baseUrl: server.BaseUrl,
+                         calendarHrefs: $"{server.SourceCalendarHref},{server.DestinationCalendarHref}",
+                         exposeExact: true,
+                         confirmMutations: true))
+        {
+            var result = await client.CallToolAsync(
+                "calendar_resources.exact_move",
+                ExactMoveArguments(
+                    server.SourceHref,
+                    PossiblyDispatchedMoveServer.PrivateUid,
+                    PossiblyDispatchedMoveServer.SourceEntityTag,
+                    server.DestinationHref),
+                cancellationToken: TestContext.Current.CancellationToken);
+            result.IsError.ShouldBe(false, result.StructuredContent?.ToString());
+            result.StructuredContent!.Value.GetProperty("mutationState").GetString().ShouldBe("committed");
+            result.StructuredContent.Value.GetProperty("snapshot").GetProperty("resourceRevision")
+                .GetProperty("href").GetString().ShouldBe(server.DestinationHref);
+        }
+
+        await receiver.WaitForPathsAsync(["/v1/traces"], TestContext.Current.CancellationToken);
+        var spans = OtlpProtobufReader.ReadSpans(receiver.Requests);
+        AssertExactMoveMrtrTelemetry(spans);
+        AssertProhibitedDataAbsent(
+            receiver.Requests,
+            PossiblyDispatchedMoveServer.PrivateUid,
+            PossiblyDispatchedMoveServer.PrivateContent,
+            PossiblyDispatchedMoveServer.SourceEntityTag,
+            server.SourceHref,
+            server.DestinationHref);
+        server.GetCount.ShouldBe(6);
+        server.ReportCount.ShouldBe(0);
+        server.MoveCount.ShouldBe(1);
+        stderr.ShouldBeEmpty();
+    }
+
+    private static void AssertExactMoveMrtrTelemetry(IReadOnlyList<OtlpSpan> spans)
+    {
+        var operations = spans.Where(span =>
+            span.Name == "caldav.operation"
+            && Equals(span.Attributes.GetValueOrDefault("caldav.tool.name"), "calendar_resources.exact_move"))
+            .ToArray();
+        var initial = operations.Single(operation =>
+            Equals(operation.Attributes.GetValueOrDefault("caldav.outcome"), "input_required"));
+        initial.Attributes.GetValueOrDefault("caldav.mutation.state").ShouldBe("not_attempted");
+        initial.Attributes.GetValueOrDefault("caldav.move.dispatch").ShouldBe("not_attempted");
+        initial.Attributes.GetValueOrDefault("caldav.move.reconciliation").ShouldBe("not_run");
+        var confirmed = operations.Single(operation =>
+            Equals(operation.Attributes.GetValueOrDefault("caldav.outcome"), "success"));
+        confirmed.Attributes.GetValueOrDefault("caldav.mutation.state").ShouldBe("committed");
+        confirmed.Attributes.GetValueOrDefault("caldav.move.dispatch").ShouldBe("possibly_dispatched");
+        confirmed.Attributes.GetValueOrDefault("caldav.move.collision").ShouldBe("none");
+        confirmed.Attributes.GetValueOrDefault("caldav.move.reconciliation")
+            .ShouldBe("faithful_destination_source_absent");
+        spans.Count(span =>
+                span.ScopeName == "DotnetAgents.CalDav.Http"
+                && Equals(span.Attributes.GetValueOrDefault("http.request.method"), "MOVE"))
+            .ShouldBe(1);
+        spans.Count(span =>
+                span.ScopeName == "DotnetAgents.CalDav.Http"
+                && Equals(span.Attributes.GetValueOrDefault("http.request.method"), "GET")
+                && Equals(span.Attributes.GetValueOrDefault("caldav.http.request_purpose"), "absence_probe")
+                && Equals(span.Attributes.GetValueOrDefault("caldav.http.observation"), "expected_absence"))
+            .ShouldBe(3);
+        spans.ShouldAllBe(span => span.EventCount == 0);
+    }
+
+    [Fact]
     public async Task InvalidClientDimensionsTraceStateAndPayloadMarkersAreRedacted()
     {
         var suffix = Guid.NewGuid().ToString("N");
@@ -1369,7 +1445,9 @@ public sealed class OpenTelemetryStdioIntegrationTests
         string? baseUrl = null,
         string? calendarHrefs = null,
         string? defaultTodoCalendarName = null,
-        string? evaluationTimeZone = null)
+        string? evaluationTimeZone = null,
+        bool exposeExact = false,
+        bool confirmMutations = false)
     {
         baseUrl ??= _fixture.BaseUrl;
         var eventCalendarHref = $"{baseUrl}{_fixture.EventCalendarHref}";
@@ -1390,6 +1468,7 @@ public sealed class OpenTelemetryStdioIntegrationTests
                 ["CALDAV_CALENDAR_HREFS"] = calendarHrefs,
                 ["CALDAV_DEFAULT_TODO_CALENDAR_NAME"] = defaultTodoCalendarName,
                 ["CALDAV_EVALUATION_TIME_ZONE"] = evaluationTimeZone,
+                ["CALDAV_EXPOSE_EXACT_TOOLS"] = exposeExact ? "true" : "false",
                 ["OTEL_EXPORTER_OTLP_ENDPOINT"] = endpoint.GetLeftPart(UriPartial.Authority),
                 ["OTEL_EXPORTER_OTLP_PROTOCOL"] = "http/protobuf",
                 ["OTEL_EXPORTER_OTLP_HEADERS"] = "authorization=Bearer otlp-private-header",
@@ -1401,13 +1480,28 @@ public sealed class OpenTelemetryStdioIntegrationTests
             },
             StandardErrorLines = stderr.Enqueue
         });
+        var options = new McpClientOptions
+        {
+            ProtocolVersion = "2026-07-28",
+            DiscoverProbeTimeout = TimeSpan.FromSeconds(10)
+        };
+        if (confirmMutations)
+        {
+            options.Handlers = new McpClientHandlers
+            {
+                ElicitationHandler = (_, _) => ValueTask.FromResult(new ElicitResult
+                {
+                    Action = "accept",
+                    Content = new Dictionary<string, JsonElement>
+                    {
+                        ["confirm"] = JsonSerializer.SerializeToElement(true)
+                    }
+                })
+            };
+        }
         return await McpClient.CreateAsync(
             transport,
-            new McpClientOptions
-            {
-                ProtocolVersion = "2026-07-28",
-                DiscoverProbeTimeout = TimeSpan.FromSeconds(10)
-            },
+            options,
             cancellationToken: TestContext.Current.CancellationToken);
     }
 
@@ -1489,6 +1583,22 @@ public sealed class OpenTelemetryStdioIntegrationTests
                 ["href"] = destinationCalendarHref
             }
         }
+    };
+
+    private static Dictionary<string, object?> ExactMoveArguments(
+        string sourceHref,
+        string uid,
+        string entityTag,
+        string destinationHref) => new()
+    {
+        ["revision"] = new Dictionary<string, object?>
+        {
+            ["href"] = sourceHref,
+            ["entityUid"] = uid,
+            ["entityKind"] = "todo",
+            ["entityTag"] = entityTag
+        },
+        ["destinationHref"] = destinationHref
     };
 
     private static string RecurringTodo(string uid) =>
@@ -1784,7 +1894,9 @@ public sealed class OpenTelemetryStdioIntegrationTests
         private readonly CancellationTokenSource _stopping = new();
         private readonly Task _serve;
         private int _moved;
+        private int _getCount;
         private int _moveCount;
+        private int _reportCount;
 
         internal PossiblyDispatchedMoveServer()
         {
@@ -1813,6 +1925,10 @@ public sealed class OpenTelemetryStdioIntegrationTests
         internal string DestinationHref { get; }
 
         internal int MoveCount => Volatile.Read(ref _moveCount);
+
+        internal int GetCount => Volatile.Read(ref _getCount);
+
+        internal int ReportCount => Volatile.Read(ref _reportCount);
 
         public async ValueTask DisposeAsync()
         {
@@ -1847,6 +1963,7 @@ public sealed class OpenTelemetryStdioIntegrationTests
             "PROPFIND" => RespondDiscoveryAsync(context),
             "GET" => RespondGetAsync(context),
             "MOVE" => RespondMoveAsync(context),
+            "REPORT" => RespondReportAsync(context),
             _ => CompleteAsync(context, HttpStatusCode.MethodNotAllowed)
         };
 
@@ -1867,6 +1984,7 @@ public sealed class OpenTelemetryStdioIntegrationTests
 
         private Task RespondGetAsync(HttpListenerContext context)
         {
+            Interlocked.Increment(ref _getCount);
             var href = context.Request.Url!.AbsoluteUri;
             var moved = Volatile.Read(ref _moved) == 1;
             if ((!moved && href == SourceHref) || (moved && href == DestinationHref))
@@ -1887,6 +2005,12 @@ public sealed class OpenTelemetryStdioIntegrationTests
             if (valid)
                 Volatile.Write(ref _moved, 1);
             return CompleteAsync(context, valid ? HttpStatusCode.Accepted : HttpStatusCode.BadRequest);
+        }
+
+        private Task RespondReportAsync(HttpListenerContext context)
+        {
+            Interlocked.Increment(ref _reportCount);
+            return CompleteAsync(context, HttpStatusCode.MethodNotAllowed);
         }
 
         private static async Task CompleteAsync(

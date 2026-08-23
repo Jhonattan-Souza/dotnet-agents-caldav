@@ -16,7 +16,6 @@ internal sealed class CalendarMoveModule(
 {
     private const int MaximumDiagnostics = 32;
     private static readonly TimeSpan PreDispatchTimeout = TimeSpan.FromSeconds(30);
-    private static readonly TimeSpan ReconciliationTimeout = TimeSpan.FromSeconds(30);
 
     public async Task<CalendarResourceMoveResult> MoveAsync(
         CalendarResourceMoveRequest request,
@@ -126,26 +125,15 @@ internal sealed class CalendarMoveModule(
             return RecordDestinationPreflightFailure(destinationRead);
         CalendarOperationProgress.SetMoveCollision(CalendarMoveCollisionClassification.None);
 
-        var dispatch = await transport.DispatchAsync(
-            sourceCalendar.Href,
-            destinationCalendar.Href,
-            new CalendarResourceMoveDispatchRequest(
-                request.Revision.Href,
-                destinationHref,
-                request.Revision.EntityTag),
-            cancellationToken);
-        if (dispatch is null)
-        {
-            CalendarOperationProgress.SetMoveDispatch(CalendarMoveDispatchClassification.Rejected);
-            return Rejected(CalendarResourceMoveCode.UpstreamProtocolError);
-        }
-        RecordDispatch(dispatch);
-        return await CompleteDispatchAsync(
+        var plan = new CalendarReviewedMovePlan(new CalendarReviewedMovePreparation(
             request.Revision,
             sourceRead.Snapshot,
+            sourceCalendar.Href,
             destinationCalendar.Href,
             destinationHref,
-            dispatch);
+            CalendarMoveFidelityMode.Semantic));
+        return await new CalendarMoveDispatcher(transport, timeProvider)
+            .DispatchAsync(plan, cancellationToken);
     }
 
     private async Task<ResolvedMoveDestination> ResolveDestinationAsync(
@@ -156,7 +144,8 @@ internal sealed class CalendarMoveModule(
         var scoped = discovery.ScopedDiscovery.Items;
         var sourceUri = new Uri(request.Revision.Href, UriKind.Absolute);
         var sourceCalendar = scoped
-            .Where(calendar => IsDirectResourceOf(sourceUri, calendar.Href))
+            .Where(calendar => CalendarMoveHrefPolicy.IsSafeCalendarHref(calendar.Href, options.BaseUrl)
+                && CalendarMoveHrefPolicy.IsDirectResourceOf(sourceUri, calendar.Href))
             .OrderByDescending(calendar => calendar.Href.Length)
             .FirstOrDefault();
         if (sourceCalendar is null)
@@ -182,172 +171,6 @@ internal sealed class CalendarMoveModule(
         return Advertises(calendar, request.Revision.EntityKind)
             ? new(calendar, sourceCalendar, null)
             : new(null, sourceCalendar, Failure(CalendarResourceMoveCode.UnsupportedCapability, candidates: [calendar]));
-    }
-
-    private async Task<CalendarResourceMoveResult> CompleteDispatchAsync(
-        CalendarResourceRevisionReference revision,
-        CalendarResourceSnapshot source,
-        string destinationCalendarHref,
-        string destinationHref,
-        CalendarResourceMoveDispatchResult dispatch)
-    {
-        if (dispatch.Code is not (CalendarResourceMoveDispatchCode.Dispatched
-            or CalendarResourceMoveDispatchCode.PossiblyDispatched))
-        {
-            return FromDispatchFailure(dispatch);
-        }
-
-        var observation = await ObserveAfterDispatchAsync(
-            destinationCalendarHref,
-            destinationHref,
-            source.CalendarHref,
-            revision.Href);
-        return dispatch.Code == CalendarResourceMoveDispatchCode.Dispatched
-            ? ClassifyDispatched(revision, source, observation)
-            : ClassifyPossiblyDispatched(revision, source, observation);
-    }
-
-    private async Task<MoveObservation> ObserveAfterDispatchAsync(
-        string destinationCalendarHref,
-        string destinationHref,
-        string sourceCalendarHref,
-        string sourceHref)
-    {
-        CalendarOperationProgress.SetPhase(CalendarOperationPhase.Reconcile);
-        using var verification = new CancellationTokenSource(ReconciliationTimeout, timeProvider);
-        var destinationTask = ObserveResourceAsync(
-            destinationCalendarHref,
-            destinationHref,
-            verification.Token);
-        var sourceTask = ObserveResourceAsync(sourceCalendarHref, sourceHref, verification.Token);
-        await Task.WhenAll(destinationTask, sourceTask);
-        return new MoveObservation(await destinationTask, await sourceTask);
-    }
-
-    private async Task<CalendarResourceRead?> ObserveResourceAsync(
-        string calendarHref,
-        string resourceHref,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            return Attach(
-                calendarHref,
-                await transport.ObserveResourceAsync(calendarHref, resourceHref, cancellationToken));
-        }
-        catch (Exception)
-        {
-            return null;
-        }
-    }
-
-    private static CalendarResourceMoveResult ClassifyDispatched(
-        CalendarResourceRevisionReference _,
-        CalendarResourceSnapshot source,
-        MoveObservation observation)
-    {
-        var verified = VerifiedMoveResult(source, observation);
-        if (verified is not null)
-            return verified;
-        if (HasUnavailableObservation(observation))
-        {
-            CalendarOperationProgress.SetMoveReconciliation(
-                CalendarMoveReconciliationClassification.ObservationUnavailable);
-            return PostWrite(CalendarResourceMoveCode.CommittedButUnverified);
-        }
-        CalendarOperationProgress.SetMoveReconciliation(CalendarMoveReconciliationClassification.Indeterminate);
-        return Unknown(observation.Source?.Snapshot);
-    }
-
-    private static CalendarResourceMoveResult ClassifyPossiblyDispatched(
-        CalendarResourceRevisionReference revision,
-        CalendarResourceSnapshot source,
-        MoveObservation observation)
-    {
-        if (IsFaithfulDestinationWithAbsentSource(source, observation))
-        {
-            CalendarOperationProgress.SetMoveReconciliation(
-                CalendarMoveReconciliationClassification.FaithfulDestinationSourceAbsent);
-            return CalendarResourceMoveResult.Success(observation.Destination!.Snapshot!);
-        }
-        if (IsSourceUnchangedAfterPossibleDispatch(revision, observation))
-        {
-            CalendarOperationProgress.SetMoveReconciliation(
-                CalendarMoveReconciliationClassification.UnchangedSourceDestinationAbsent);
-            return Rejected(CalendarResourceMoveCode.UpstreamUnavailable, observation.Source!.Snapshot, retryable: true);
-        }
-        CalendarOperationProgress.SetMoveReconciliation(ReconciliationObservation(observation));
-        return Unknown(observation.Source?.Snapshot);
-    }
-
-    private static CalendarResourceMoveResult? VerifiedMoveResult(
-        CalendarResourceSnapshot source,
-        MoveObservation observation)
-    {
-        if (observation.Destination?.Snapshot is not { } destination
-            || observation.Source?.Code != CalendarResourceReadCode.NotFound)
-        {
-            return null;
-        }
-        if (CalendarResourceMoveFidelity.IsCompleteMatch(source, destination))
-        {
-            CalendarOperationProgress.SetMoveReconciliation(
-                CalendarMoveReconciliationClassification.FaithfulDestinationSourceAbsent);
-            return CalendarResourceMoveResult.Success(destination);
-        }
-        CalendarOperationProgress.SetMoveReconciliation(
-            CalendarMoveReconciliationClassification.DivergentDestinationSourceAbsent);
-        return PostWrite(CalendarResourceMoveCode.FidelityFailure, destination);
-    }
-
-    private static bool IsSourceUnchangedAfterPossibleDispatch(
-        CalendarResourceRevisionReference revision,
-        MoveObservation observation) =>
-        observation.Destination?.Code == CalendarResourceReadCode.NotFound
-        && IsSameRevision(revision, observation.Source?.Snapshot);
-
-    private static bool IsFaithfulDestinationWithAbsentSource(
-        CalendarResourceSnapshot source,
-        MoveObservation observation) =>
-        observation.Destination?.Snapshot is { } destination
-        && observation.Source?.Code == CalendarResourceReadCode.NotFound
-        && CalendarResourceMoveFidelity.IsCompleteMatch(source, destination);
-
-    private static bool HasUnavailableObservation(MoveObservation observation) =>
-        observation.Destination?.Code is not (CalendarResourceReadCode.Success or CalendarResourceReadCode.NotFound)
-        || observation.Source?.Code is not (CalendarResourceReadCode.Success or CalendarResourceReadCode.NotFound);
-
-    private static CalendarMoveReconciliationClassification ReconciliationObservation(MoveObservation observation)
-    {
-        if (HasUnavailableObservation(observation))
-            return CalendarMoveReconciliationClassification.ObservationUnavailable;
-        if (observation.Destination?.Snapshot is not null
-            && observation.Source?.Code == CalendarResourceReadCode.NotFound)
-        {
-            return CalendarMoveReconciliationClassification.DivergentDestinationSourceAbsent;
-        }
-        return CalendarMoveReconciliationClassification.Indeterminate;
-    }
-
-    private static void RecordDispatch(CalendarResourceMoveDispatchResult dispatch)
-    {
-        CalendarOperationProgress.SetMoveDispatch(dispatch.Code switch
-        {
-            CalendarResourceMoveDispatchCode.Dispatched => CalendarMoveDispatchClassification.Dispatched,
-            CalendarResourceMoveDispatchCode.PossiblyDispatched => CalendarMoveDispatchClassification.PossiblyDispatched,
-            _ => CalendarMoveDispatchClassification.Rejected
-        });
-        CalendarOperationProgress.SetMoveCollision(dispatch.Code switch
-        {
-            CalendarResourceMoveDispatchCode.DestinationConflict => CalendarMoveCollisionClassification.DestinationHref,
-            CalendarResourceMoveDispatchCode.Conflict => dispatch.CollisionKind switch
-            {
-                CalendarResourceMoveDispatchCollisionKind.DestinationHref => CalendarMoveCollisionClassification.DestinationHref,
-                CalendarResourceMoveDispatchCollisionKind.Uid => CalendarMoveCollisionClassification.Uid,
-                _ => CalendarMoveCollisionClassification.Unclassified
-            },
-            _ => CalendarMoveCollisionClassification.None
-        });
     }
 
     private static CalendarSelectionResult SelectCalendar(
@@ -417,19 +240,18 @@ internal sealed class CalendarMoveModule(
 
     private bool TryValidateCalendarHref(string href)
     {
-        return TryParseSafeHref(href, requireTrailingSlash: true, out var candidate)
-            && HasSameOrigin(new Uri(options.BaseUrl, UriKind.Absolute), candidate);
+        return CalendarMoveHrefPolicy.IsSafeCalendarHref(href, options.BaseUrl);
     }
 
     private CalendarResourceMoveResult? ValidateResourceHrefScope(string href)
     {
         if (!TryParseSafeHref(href, requireTrailingSlash: false, out var resource)
-            || !HasSameOrigin(new Uri(options.BaseUrl, UriKind.Absolute), resource))
+            || !CalendarMoveHrefPolicy.HasSameOrigin(new Uri(options.BaseUrl, UriKind.Absolute), resource))
         {
             return Failure(CalendarResourceMoveCode.InvalidInput);
         }
         var scope = ParseScope(options.CalendarHrefs);
-        return scope.Count > 0 && !scope.Any(calendarHref => IsDirectResourceOf(resource, calendarHref))
+        return scope.Count > 0 && !scope.Any(calendarHref => CalendarMoveHrefPolicy.IsDirectResourceOf(resource, calendarHref))
             ? Failure(CalendarResourceMoveCode.OutsideScope)
             : null;
     }
@@ -451,21 +273,6 @@ internal sealed class CalendarMoveModule(
         }
         uri = candidate;
         return true;
-    }
-
-    private static bool IsDirectResourceOf(Uri resource, string calendarHref)
-    {
-        if (!Uri.TryCreate(calendarHref, UriKind.Absolute, out var calendar)
-            || !HasSameOrigin(resource, calendar)
-            || !calendar.AbsolutePath.EndsWith('/'))
-        {
-            return false;
-        }
-        if (!resource.AbsolutePath.StartsWith(calendar.AbsolutePath, StringComparison.Ordinal))
-            return false;
-        var relative = resource.AbsolutePath[calendar.AbsolutePath.Length..];
-        return relative.Length > 0
-            && !relative.Contains('/');
     }
 
     private static CalendarResourceMoveResult? ValidateRevision(
@@ -538,28 +345,6 @@ internal sealed class CalendarMoveModule(
             phase: CalendarResourceMovePhase.TargetRevision)
     };
 
-    private static CalendarResourceMoveResult FromDispatchFailure(
-        CalendarResourceMoveDispatchResult dispatch) => Rejected(
-        dispatch.Code switch
-        {
-            CalendarResourceMoveDispatchCode.NotFound => CalendarResourceMoveCode.NotFound,
-            CalendarResourceMoveDispatchCode.Conflict => CalendarResourceMoveCode.Conflict,
-            CalendarResourceMoveDispatchCode.DestinationConflict => CalendarResourceMoveCode.DestinationConflict,
-            CalendarResourceMoveDispatchCode.InvalidInput => CalendarResourceMoveCode.InvalidInput,
-            CalendarResourceMoveDispatchCode.UnsupportedCapability => CalendarResourceMoveCode.UnsupportedCapability,
-            CalendarResourceMoveDispatchCode.PayloadTooLarge => CalendarResourceMoveCode.PayloadTooLarge,
-            CalendarResourceMoveDispatchCode.UpstreamUnauthorized => CalendarResourceMoveCode.UpstreamUnauthorized,
-            CalendarResourceMoveDispatchCode.UpstreamForbidden => CalendarResourceMoveCode.UpstreamForbidden,
-            CalendarResourceMoveDispatchCode.UpstreamRateLimited => CalendarResourceMoveCode.UpstreamRateLimited,
-            CalendarResourceMoveDispatchCode.UpstreamProtocolError => CalendarResourceMoveCode.UpstreamProtocolError,
-            _ => CalendarResourceMoveCode.UpstreamUnavailable
-        },
-        retryAfterMilliseconds: dispatch.Code == CalendarResourceMoveDispatchCode.UpstreamRateLimited
-            ? dispatch.RetryAfterMilliseconds
-            : null,
-        retryable: dispatch.Code == CalendarResourceMoveDispatchCode.UpstreamRateLimited,
-        phase: CalendarResourceMovePhase.Execution);
-
     private static CalendarResourceMoveResult FromPreflightHttpFailure(
         System.Net.HttpStatusCode? statusCode,
         CalendarResourceMovePhase phase) =>
@@ -627,46 +412,6 @@ internal sealed class CalendarMoveModule(
         _ => false
     };
 
-    private static bool IsSameRevision(
-        CalendarResourceRevisionReference revision,
-        CalendarResourceSnapshot? snapshot) => snapshot is not null
-        && string.Equals(snapshot.ResourceHref, revision.Href, StringComparison.Ordinal)
-        && string.Equals(snapshot.Projection.EntityUid, revision.EntityUid, StringComparison.Ordinal)
-        && string.Equals(snapshot.EntityTag, revision.EntityTag, StringComparison.Ordinal)
-        && snapshot.Projection.Kind == (revision.EntityKind == CalendarEntityKind.Event
-            ? CalendarResourceProjectionKind.Event
-            : CalendarResourceProjectionKind.Todo);
-
-    private static CalendarResourceMoveResult PostWrite(
-        CalendarResourceMoveCode code,
-        CalendarResourceSnapshot? snapshot = null) =>
-        new(
-            code,
-            CalendarMutationState.Committed,
-            snapshot,
-            Phase: CalendarResourceMovePhase.PostWriteVerificationOrReconciliation);
-
-    private static CalendarResourceMoveResult Unknown(CalendarResourceSnapshot? snapshot = null) =>
-        new(
-            CalendarResourceMoveCode.Indeterminate,
-            CalendarMutationState.Unknown,
-            snapshot,
-            Phase: CalendarResourceMovePhase.PostWriteVerificationOrReconciliation);
-
-    private static CalendarResourceMoveResult Rejected(
-        CalendarResourceMoveCode code,
-        CalendarResourceSnapshot? snapshot = null,
-        int? retryAfterMilliseconds = null,
-        bool retryable = false,
-        CalendarResourceMovePhase phase = CalendarResourceMovePhase.Execution) =>
-        new(
-            code,
-            CalendarMutationState.NotCommitted,
-            snapshot,
-            RetryAfterMilliseconds: retryAfterMilliseconds,
-            Retryable: retryable,
-            Phase: phase);
-
     private static CalendarResourceMoveResult Failure(
         CalendarResourceMoveCode code,
         CalendarResourceSnapshot? snapshot = null,
@@ -688,15 +433,6 @@ internal sealed class CalendarMoveModule(
     private static IReadOnlyList<string> ParseScope(string? calendarHrefs) => calendarHrefs is null
         ? []
         : calendarHrefs.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-    private static bool HasSameOrigin(Uri left, Uri right) =>
-        string.Equals(left.Scheme, right.Scheme, StringComparison.OrdinalIgnoreCase)
-        && string.Equals(left.Host, right.Host, StringComparison.OrdinalIgnoreCase)
-        && left.Port == right.Port;
-
-    private sealed record MoveObservation(
-        CalendarResourceRead? Destination,
-        CalendarResourceRead? Source);
 
     private sealed record ResolvedMoveDestination(
         CalendarDescriptor? Calendar,

@@ -271,7 +271,7 @@ public sealed class ExactCalendarResourceTests
         var revision = ExactRevision();
         service.ReviewExactMoveResourceAsync(
                 Arg.Any<CalendarExactMoveRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CalendarExactResourceReviewResult(null, revision, new byte[32]));
+            .Returns(SuccessfulMoveReview(revision));
         var sut = CreateWriteTools(service);
 
         await Should.ThrowAsync<InputRequiredException>(() => sut.MoveRawAsync(
@@ -279,8 +279,720 @@ public sealed class ExactCalendarResourceTests
 
         await service.Received(1).ReviewExactMoveResourceAsync(
             Arg.Any<CalendarExactMoveRequest>(), Arg.Any<CancellationToken>());
-        await service.DidNotReceive().ExactMoveResourceAsync(
+        await service.DidNotReceive().ExecuteConfirmedExactMoveResourceAsync(
+            Arg.Any<CalendarExactMoveRequest>(),
+            Arg.Any<CalendarExactMoveReviewBinding>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("missing-binding")]
+    [InlineData("revision")]
+    [InlineData("destination")]
+    [InlineData("digest")]
+    [InlineData("policy")]
+    public async Task ExactMoveRawAsync_RejectsMalformedCoreReviewEvidence(string scenario)
+    {
+        var revision = ExactRevision();
+        var service = Substitute.For<ICalendarService>();
+        service.ReviewExactMoveResourceAsync(
+                Arg.Any<CalendarExactMoveRequest>(), Arg.Any<CancellationToken>())
+            .Returns(InvalidMoveReview(scenario, revision));
+
+        var result = await CreateWriteTools(service).MoveRawAsync(
+            MoveArguments(revision),
+            null,
+            null,
+            true,
+            TestContext.Current.CancellationToken);
+
+        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("upstream_protocol_error");
+        await service.DidNotReceive().ExecuteConfirmedExactMoveResourceAsync(
+            Arg.Any<CalendarExactMoveRequest>(),
+            Arg.Any<CalendarExactMoveReviewBinding>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ExactMoveRawAsync_AcceptedStateCallsOneConfirmedCoreBoundary()
+    {
+        var revision = ExactRevision();
+        var binding = SuccessfulMoveReview(revision).Binding!;
+        var service = Substitute.For<ICalendarService>();
+        service.ReviewExactMoveResourceAsync(
+                Arg.Any<CalendarExactMoveRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CalendarExactMoveReviewResult(null, binding));
+        service.ExecuteConfirmedExactMoveResourceAsync(
+                Arg.Any<CalendarExactMoveRequest>(),
+                Arg.Any<CalendarExactMoveReviewBinding>(),
+                Arg.Any<CancellationToken>())
+            .Returns(CalendarExactResourceResult.Success(CreateSnapshot("\"moved\"")));
+        var sut = CreateWriteTools(service);
+        var arguments = MoveArguments(revision);
+        var first = await Should.ThrowAsync<InputRequiredException>(() => sut.MoveRawAsync(
+            arguments, null, null, true, TestContext.Current.CancellationToken));
+
+        var result = await sut.MoveRawAsync(
+            arguments,
+            first.Result.RequestState,
+            AcceptedConfirmation(),
+            true,
+            TestContext.Current.CancellationToken);
+
+        result.IsError.ShouldBe(false);
+        await service.Received(1).ReviewExactMoveResourceAsync(
             Arg.Any<CalendarExactMoveRequest>(), Arg.Any<CancellationToken>());
+        await service.Received(1).ExecuteConfirmedExactMoveResourceAsync(
+            Arg.Any<CalendarExactMoveRequest>(),
+            Arg.Is<CalendarExactMoveReviewBinding>(value =>
+                value.Revision == binding.Revision
+                && value.DestinationHref == binding.DestinationHref
+                && value.PolicyVersion == binding.PolicyVersion
+                && value.SourceIntentDigest.ToArray().SequenceEqual(binding.SourceIntentDigest.ToArray())),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ExactMoveRawAsync_UnsupportedMrtrPerformsNoCoreIo()
+    {
+        var service = Substitute.For<ICalendarService>();
+
+        var result = await CreateWriteTools(service).MoveRawAsync(
+            MoveArguments(ExactRevision()),
+            null,
+            null,
+            mrtrSupported: false,
+            TestContext.Current.CancellationToken);
+
+        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("unsupported_capability");
+        await service.DidNotReceive().ReviewExactMoveResourceAsync(
+            Arg.Any<CalendarExactMoveRequest>(), Arg.Any<CancellationToken>());
+        await service.DidNotReceive().ExecuteConfirmedExactMoveResourceAsync(
+            Arg.Any<CalendarExactMoveRequest>(),
+            Arg.Any<CalendarExactMoveReviewBinding>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ExactMoveRawAsync_ContinuationWithoutMrtrPerformsNoFreshCoreIo()
+    {
+        var revision = ExactRevision();
+        var service = Substitute.For<ICalendarService>();
+        service.ReviewExactMoveResourceAsync(
+                Arg.Any<CalendarExactMoveRequest>(), Arg.Any<CancellationToken>())
+            .Returns(SuccessfulMoveReview(revision));
+        var sut = CreateWriteTools(service);
+        var arguments = MoveArguments(revision);
+        var first = await Should.ThrowAsync<InputRequiredException>(() => sut.MoveRawAsync(
+            arguments, null, null, true, TestContext.Current.CancellationToken));
+
+        var result = await sut.MoveRawAsync(
+            arguments,
+            first.Result.RequestState,
+            AcceptedConfirmation(),
+            mrtrSupported: false,
+            TestContext.Current.CancellationToken);
+
+        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("unsupported_capability");
+        result.StructuredContent.Value.GetProperty("phase").GetString().ShouldBe("mrtr");
+        await service.Received(1).ReviewExactMoveResourceAsync(
+            Arg.Any<CalendarExactMoveRequest>(), Arg.Any<CancellationToken>());
+        await service.DidNotReceive().ExecuteConfirmedExactMoveResourceAsync(
+            Arg.Any<CalendarExactMoveRequest>(),
+            Arg.Any<CalendarExactMoveReviewBinding>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("tamper", "confirmation_mismatch")]
+    [InlineData("key", "confirmation_mismatch")]
+    [InlineData("request", "confirmation_mismatch")]
+    [InlineData("expired", "confirmation_expired")]
+    public async Task ExactMoveRawAsync_ProtectedStateMismatchNeverFreshReviews(
+        string mismatch,
+        string expectedCode)
+    {
+        var revision = ExactRevision();
+        var service = Substitute.For<ICalendarService>();
+        service.ReviewExactMoveResourceAsync(
+                Arg.Any<CalendarExactMoveRequest>(), Arg.Any<CancellationToken>())
+            .Returns(SuccessfulMoveReview(revision));
+        var time = new MutableTimeProvider(DateTimeOffset.Parse("2026-08-23T12:00:00Z"));
+        var key = Enumerable.Range(0, 64).Select(value => (byte)value).ToArray();
+        var sut = CreateWriteTools(service, time, key, MoveStateOptions());
+        var arguments = MoveArguments(revision);
+        var first = await Should.ThrowAsync<InputRequiredException>(() => sut.MoveRawAsync(
+            arguments, null, null, true, TestContext.Current.CancellationToken));
+        var state = first.Result.RequestState!;
+        if (mismatch == "tamper")
+            state = state[..^1] + (state[^1] == 'A' ? 'B' : 'A');
+        if (mismatch == "key")
+        {
+            var rotated = key.ToArray();
+            rotated[0] ^= 0xff;
+            sut = CreateWriteTools(service, time, rotated, MoveStateOptions());
+        }
+        if (mismatch == "request")
+            arguments = MoveArguments(revision, "https://cal.example/events/changed.ics");
+        if (mismatch == "expired")
+            time.Advance(TimeSpan.FromMinutes(10));
+
+        var result = await sut.MoveRawAsync(
+            arguments,
+            state,
+            AcceptedConfirmation(),
+            true,
+            TestContext.Current.CancellationToken);
+
+        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe(expectedCode);
+        result.StructuredContent.Value.GetProperty("phase").GetString().ShouldBe("mrtr");
+        await service.Received(1).ReviewExactMoveResourceAsync(
+            Arg.Any<CalendarExactMoveRequest>(), Arg.Any<CancellationToken>());
+        await service.DidNotReceive().ExecuteConfirmedExactMoveResourceAsync(
+            Arg.Any<CalendarExactMoveRequest>(),
+            Arg.Any<CalendarExactMoveReviewBinding>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ExactMoveRawAsync_DeclinedConfirmationPerformsNoFreshCoreIo()
+    {
+        var revision = ExactRevision();
+        var service = Substitute.For<ICalendarService>();
+        service.ReviewExactMoveResourceAsync(
+                Arg.Any<CalendarExactMoveRequest>(), Arg.Any<CancellationToken>())
+            .Returns(SuccessfulMoveReview(revision));
+        var sut = CreateWriteTools(service);
+        var arguments = MoveArguments(revision);
+        var first = await Should.ThrowAsync<InputRequiredException>(() => sut.MoveRawAsync(
+            arguments, null, null, true, TestContext.Current.CancellationToken));
+
+        var result = await sut.MoveRawAsync(
+            arguments,
+            first.Result.RequestState,
+            Confirmation("decline", confirmed: null),
+            true,
+            TestContext.Current.CancellationToken);
+
+        result.StructuredContent!.Value.GetProperty("outcome").GetString().ShouldBe("confirmation_declined");
+        await service.DidNotReceive().ExecuteConfirmedExactMoveResourceAsync(
+            Arg.Any<CalendarExactMoveRequest>(),
+            Arg.Any<CalendarExactMoveReviewBinding>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("cancelled", "upstream_unavailable", "not_attempted", true)]
+    [InlineData("fault", "indeterminate", "unknown", false)]
+    public async Task ExactMoveRawAsync_MapsConfirmedBoundaryFaultsWithoutAnotherReview(
+        string failure,
+        string expectedCode,
+        string expectedMutationState,
+        bool retryable)
+    {
+        var revision = ExactRevision();
+        var service = Substitute.For<ICalendarService>();
+        service.ReviewExactMoveResourceAsync(
+                Arg.Any<CalendarExactMoveRequest>(), Arg.Any<CancellationToken>())
+            .Returns(SuccessfulMoveReview(revision));
+        service.ExecuteConfirmedExactMoveResourceAsync(
+                Arg.Any<CalendarExactMoveRequest>(),
+                Arg.Any<CalendarExactMoveReviewBinding>(),
+                Arg.Any<CancellationToken>())
+            .Returns<Task<CalendarExactResourceResult>>(_ => failure == "cancelled"
+                ? throw new OperationCanceledException()
+                : throw new IOException("confirmed boundary fault"));
+        var sut = CreateWriteTools(service);
+        var arguments = MoveArguments(revision);
+        var first = await Should.ThrowAsync<InputRequiredException>(() => sut.MoveRawAsync(
+            arguments, null, null, true, TestContext.Current.CancellationToken));
+
+        var result = await sut.MoveRawAsync(
+            arguments,
+            first.Result.RequestState,
+            AcceptedConfirmation(),
+            true,
+            TestContext.Current.CancellationToken);
+
+        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe(expectedCode);
+        result.StructuredContent.Value.GetProperty("mutationState").GetString().ShouldBe(expectedMutationState);
+        result.StructuredContent.Value.GetProperty("retryable").GetBoolean().ShouldBe(retryable);
+        await service.Received(1).ReviewExactMoveResourceAsync(
+            Arg.Any<CalendarExactMoveRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("success-without-snapshot", "upstream_protocol_error")]
+    [InlineData("confirmation-mismatch", "confirmation_mismatch")]
+    public async Task ExactMoveRawAsync_MapsConfirmedCoreEvidenceWithoutAnotherReview(
+        string scenario,
+        string expectedCode)
+    {
+        var revision = ExactRevision();
+        var service = Substitute.For<ICalendarService>();
+        service.ReviewExactMoveResourceAsync(
+                Arg.Any<CalendarExactMoveRequest>(), Arg.Any<CancellationToken>())
+            .Returns(SuccessfulMoveReview(revision));
+        service.ExecuteConfirmedExactMoveResourceAsync(
+                Arg.Any<CalendarExactMoveRequest>(),
+                Arg.Any<CalendarExactMoveReviewBinding>(),
+                Arg.Any<CancellationToken>())
+            .Returns(scenario == "confirmation-mismatch"
+                ? new CalendarExactResourceResult(
+                    CalendarExactResourceCode.ConfirmationMismatch,
+                    CalendarMutationState.NotAttempted,
+                    Phase: CalendarExactResourcePhase.Mrtr)
+                : new CalendarExactResourceResult(
+                    CalendarExactResourceCode.Success,
+                    CalendarMutationState.Committed));
+        var sut = CreateWriteTools(service);
+        var arguments = MoveArguments(revision);
+        var first = await Should.ThrowAsync<InputRequiredException>(() => sut.MoveRawAsync(
+            arguments, null, null, true, TestContext.Current.CancellationToken));
+
+        var result = await sut.MoveRawAsync(
+            arguments,
+            first.Result.RequestState,
+            AcceptedConfirmation(),
+            true,
+            TestContext.Current.CancellationToken);
+
+        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe(expectedCode);
+        await service.Received(1).ReviewExactMoveResourceAsync(
+            Arg.Any<CalendarExactMoveRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData(CalendarEntityKind.Event, CalendarResourceProjectionKind.Event, "event")]
+    [InlineData(CalendarEntityKind.Todo, CalendarResourceProjectionKind.Todo, "todo")]
+    public async Task ExactMoveRawAsync_ConflictSnapshotCarriesOnlyTypedRevisionEvidence(
+        CalendarEntityKind entityKind,
+        CalendarResourceProjectionKind projectionKind,
+        string expectedKind)
+    {
+        var revision = ExactRevision() with { EntityKind = entityKind };
+        var service = Substitute.For<ICalendarService>();
+        service.ReviewExactMoveResourceAsync(
+                Arg.Any<CalendarExactMoveRequest>(), Arg.Any<CancellationToken>())
+            .Returns(SuccessfulMoveReview(revision));
+        service.ExecuteConfirmedExactMoveResourceAsync(
+                Arg.Any<CalendarExactMoveRequest>(),
+                Arg.Any<CalendarExactMoveReviewBinding>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new CalendarExactResourceResult(
+                CalendarExactResourceCode.Conflict,
+                CalendarMutationState.NotCommitted,
+                CreateProjectedSnapshot(projectionKind, revision.EntityUid),
+                Phase: CalendarExactResourcePhase.TargetRevision));
+        var sut = CreateWriteTools(service);
+        var arguments = MoveArguments(revision);
+        var first = await Should.ThrowAsync<InputRequiredException>(() => sut.MoveRawAsync(
+            arguments, null, null, true, TestContext.Current.CancellationToken));
+
+        var result = await sut.MoveRawAsync(
+            arguments,
+            first.Result.RequestState,
+            AcceptedConfirmation(),
+            true,
+            TestContext.Current.CancellationToken);
+
+        var current = result.StructuredContent!.Value.GetProperty("currentSnapshot");
+        current.GetProperty("entityRevision").GetProperty("entityKind").GetString().ShouldBe(expectedKind);
+        current.TryGetProperty("authoritativePayload", out _).ShouldBeFalse();
+        current.TryGetProperty("projection", out _).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task ExactMoveRawAsync_PropagatesCallerCancellationFromConfirmedCoreBoundary()
+    {
+        var revision = ExactRevision();
+        using var callerCancellation = new CancellationTokenSource();
+        var service = Substitute.For<ICalendarService>();
+        service.ReviewExactMoveResourceAsync(
+                Arg.Any<CalendarExactMoveRequest>(), Arg.Any<CancellationToken>())
+            .Returns(SuccessfulMoveReview(revision));
+        service.ExecuteConfirmedExactMoveResourceAsync(
+                Arg.Any<CalendarExactMoveRequest>(),
+                Arg.Any<CalendarExactMoveReviewBinding>(),
+                Arg.Any<CancellationToken>())
+            .Returns<Task<CalendarExactResourceResult>>(_ =>
+            {
+                callerCancellation.Cancel();
+                throw new OperationCanceledException(callerCancellation.Token);
+            });
+        var sut = CreateWriteTools(service);
+        var arguments = MoveArguments(revision);
+        var first = await Should.ThrowAsync<InputRequiredException>(() => sut.MoveRawAsync(
+            arguments, null, null, true, TestContext.Current.CancellationToken));
+
+        await Should.ThrowAsync<OperationCanceledException>(() => sut.MoveRawAsync(
+            arguments,
+            first.Result.RequestState,
+            AcceptedConfirmation(),
+            true,
+            callerCancellation.Token));
+
+        await service.Received(1).ReviewExactMoveResourceAsync(
+            Arg.Any<CalendarExactMoveRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ExactMoveRawAsync_ConfirmedBoundaryDeadlineMapsLimitExhausted()
+    {
+        var revision = ExactRevision();
+        var time = new MutableTimeProvider(DateTimeOffset.Parse("2026-08-23T12:00:00Z"));
+        var executionStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var service = Substitute.For<ICalendarService>();
+        service.ReviewExactMoveResourceAsync(
+                Arg.Any<CalendarExactMoveRequest>(), Arg.Any<CancellationToken>())
+            .Returns(SuccessfulMoveReview(revision));
+        service.ExecuteConfirmedExactMoveResourceAsync(
+                Arg.Any<CalendarExactMoveRequest>(),
+                Arg.Any<CalendarExactMoveReviewBinding>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call => WaitForCancellationAsync(call.ArgAt<CancellationToken>(2), executionStarted));
+        var sut = CreateWriteTools(service, time);
+        var arguments = MoveArguments(revision);
+        var first = await Should.ThrowAsync<InputRequiredException>(() => sut.MoveRawAsync(
+            arguments, null, null, true, TestContext.Current.CancellationToken));
+        var pending = sut.MoveRawAsync(
+            arguments,
+            first.Result.RequestState,
+            AcceptedConfirmation(),
+            true,
+            TestContext.Current.CancellationToken);
+        await executionStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
+
+        time.Advance(TimeSpan.FromSeconds(30));
+        var result = await pending.WaitAsync(TestContext.Current.CancellationToken);
+
+        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("limit_exhausted");
+        result.StructuredContent.Value.GetProperty("mutationState").GetString().ShouldBe("not_attempted");
+    }
+
+    [Fact]
+    public async Task ExactMoveRawAsync_CallerCancellationWinsWhenDeadlineAlsoElapses()
+    {
+        var revision = ExactRevision();
+        var time = new MutableTimeProvider(DateTimeOffset.Parse("2026-08-23T12:00:00Z"));
+        using var callerCancellation = new CancellationTokenSource();
+        var executionStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var service = Substitute.For<ICalendarService>();
+        service.ReviewExactMoveResourceAsync(
+                Arg.Any<CalendarExactMoveRequest>(), Arg.Any<CancellationToken>())
+            .Returns(SuccessfulMoveReview(revision));
+        service.ExecuteConfirmedExactMoveResourceAsync(
+                Arg.Any<CalendarExactMoveRequest>(),
+                Arg.Any<CalendarExactMoveReviewBinding>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call => WaitForCancellationAsync(call.ArgAt<CancellationToken>(2), executionStarted));
+        var sut = CreateWriteTools(service, time);
+        var arguments = MoveArguments(revision);
+        var first = await Should.ThrowAsync<InputRequiredException>(() => sut.MoveRawAsync(
+            arguments, null, null, true, TestContext.Current.CancellationToken));
+        var pending = sut.MoveRawAsync(
+            arguments,
+            first.Result.RequestState,
+            AcceptedConfirmation(),
+            true,
+            callerCancellation.Token);
+        await executionStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
+
+        callerCancellation.Cancel();
+        time.Advance(TimeSpan.FromSeconds(30));
+
+        await Should.ThrowAsync<OperationCanceledException>(() => pending);
+    }
+
+    [Theory]
+    [InlineData("empty-state")]
+    [InlineData("null-responses")]
+    [InlineData("two-responses")]
+    [InlineData("wrong-key")]
+    [InlineData("null-response")]
+    [InlineData("two-content")]
+    [InlineData("wrong-content-key")]
+    [InlineData("non-boolean")]
+    public async Task ExactMoveRawAsync_MalformedConfirmationEnvelopeNeverExecutes(string scenario)
+    {
+        var revision = ExactRevision();
+        var service = Substitute.For<ICalendarService>();
+        service.ReviewExactMoveResourceAsync(
+                Arg.Any<CalendarExactMoveRequest>(), Arg.Any<CancellationToken>())
+            .Returns(SuccessfulMoveReview(revision));
+        var sut = CreateWriteTools(service);
+        var arguments = MoveArguments(revision);
+        var first = await Should.ThrowAsync<InputRequiredException>(() => sut.MoveRawAsync(
+            arguments, null, null, true, TestContext.Current.CancellationToken));
+
+        var result = await sut.MoveRawAsync(
+            arguments,
+            scenario == "empty-state" ? string.Empty : first.Result.RequestState,
+            MalformedConfirmationEnvelope(scenario),
+            true,
+            TestContext.Current.CancellationToken);
+
+        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("confirmation_mismatch");
+        await service.DidNotReceive().ExecuteConfirmedExactMoveResourceAsync(
+            Arg.Any<CalendarExactMoveRequest>(),
+            Arg.Any<CalendarExactMoveReviewBinding>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("credential")]
+    [InlineData("origin")]
+    [InlineData("endpoint")]
+    [InlineData("scope")]
+    [InlineData("profile")]
+    [InlineData("timeout")]
+    public async Task ExactMoveRawAsync_ConfigurationBoundStateMismatchPerformsNoFreshReview(string changed)
+    {
+        var revision = ExactRevision();
+        var service = Substitute.For<ICalendarService>();
+        service.ReviewExactMoveResourceAsync(
+                Arg.Any<CalendarExactMoveRequest>(), Arg.Any<CancellationToken>())
+            .Returns(SuccessfulMoveReview(revision));
+        var time = new FixedTimeProvider(new DateTimeOffset(2026, 8, 17, 12, 0, 0, TimeSpan.Zero));
+        var key = Enumerable.Range(0, 64).Select(value => (byte)value).ToArray();
+        var original = MoveStateOptions();
+        var firstTools = CreateWriteTools(service, time, key, original);
+        var arguments = MoveArguments(revision);
+        var first = await Should.ThrowAsync<InputRequiredException>(() => firstTools.MoveRawAsync(
+            arguments, null, null, true, TestContext.Current.CancellationToken));
+        var current = MoveStateOptions();
+        switch (changed)
+        {
+            case "credential": current.Password = "changed"; break;
+            case "origin": current.BaseUrl = "https://other.example"; break;
+            case "endpoint": current.BaseUrl = "https://cal.example/other-caldav"; break;
+            case "scope": current.CalendarHrefs = "https://cal.example/archive/"; break;
+            case "profile": current.InteroperabilityProfile = null; break;
+            default: current.RequestTimeout = TimeSpan.FromSeconds(20); break;
+        }
+        var secondTools = CreateWriteTools(service, time, key, current);
+
+        var result = await secondTools.MoveRawAsync(
+            arguments,
+            first.Result.RequestState,
+            AcceptedConfirmation(),
+            true,
+            TestContext.Current.CancellationToken);
+
+        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("confirmation_mismatch");
+        await service.Received(1).ReviewExactMoveResourceAsync(
+            Arg.Any<CalendarExactMoveRequest>(), Arg.Any<CancellationToken>());
+        await service.DidNotReceive().ExecuteConfirmedExactMoveResourceAsync(
+            Arg.Any<CalendarExactMoveRequest>(),
+            Arg.Any<CalendarExactMoveReviewBinding>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public void ExactMoveState_StaysBoundedAndPrivateForMaximumValidRequestMetadata()
+    {
+        var uid = new string('u', (64 * 1024) - 512);
+        var revision = ExactRevision() with { EntityUid = uid };
+        var request = new CalendarExactMoveRequest(revision, "https://cal.example/events/destination.ics");
+        var binding = new CalendarExactMoveReviewBinding(
+            revision,
+            request.DestinationHref,
+            Enumerable.Repeat((byte)0xab, 32).ToArray(),
+            "server-authoritative-exact-move/1");
+        var key = Enumerable.Range(0, 64).Select(value => (byte)value).ToArray();
+        var protector = new CalendarMutationRequestStateProtector(
+            TimeProvider.System,
+            Options.Create(MoveStateOptions()),
+            key);
+        byte[] requestBinding = [1, 2, 3, 4];
+
+        var state = protector.ProtectExactMove("calendar_resources.exact_move", requestBinding, binding);
+
+        state.Length.ShouldBeLessThanOrEqualTo(CalendarMutationRequestStateProtector.MaximumRequestStateCharacters);
+        state.ShouldNotContain(uid);
+        state.ShouldNotContain(revision.Href);
+        state.ShouldNotContain(revision.EntityTag);
+        state.ShouldNotContain(request.DestinationHref);
+        state.ShouldNotContain("secret");
+        protector.TryUnprotectExactMove(
+            state,
+            "calendar_resources.exact_move",
+            request,
+            requestBinding,
+            out var restored,
+            out var expired).ShouldBeTrue();
+        expired.ShouldBeFalse();
+        restored.Revision.ShouldBe(binding.Revision);
+        restored.DestinationHref.ShouldBe(binding.DestinationHref);
+        restored.PolicyVersion.ShouldBe(binding.PolicyVersion);
+        restored.SourceIntentDigest.Span.SequenceEqual(binding.SourceIntentDigest.Span).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void ExactMoveState_RejectsLegacyProtectedStateWithoutTypedReviewBinding()
+    {
+        var revision = ExactRevision();
+        var request = new CalendarExactMoveRequest(revision, "https://cal.example/events/destination.ics");
+        var protector = new CalendarMutationRequestStateProtector(
+            TimeProvider.System,
+            Options.Create(MoveStateOptions()),
+            Enumerable.Range(0, 64).Select(value => (byte)value).ToArray());
+        byte[] requestBinding = [1, 2, 3, 4];
+        var state = protector.Protect(
+            "calendar_resources.exact_move",
+            revision,
+            requestBinding,
+            [5, 6, 7, 8]);
+
+        protector.TryUnprotectExactMove(
+            state,
+            "calendar_resources.exact_move",
+            request,
+            requestBinding,
+            out _,
+            out var expired).ShouldBeFalse();
+        expired.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void ExactMoveState_RejectsProtectedBindingWithInvalidDigestLength()
+    {
+        var revision = ExactRevision();
+        var request = new CalendarExactMoveRequest(revision, "https://cal.example/events/destination.ics");
+        var invalidBinding = new CalendarExactMoveReviewBinding(
+            revision,
+            request.DestinationHref,
+            new byte[31],
+            "server-authoritative-exact-move/1");
+        var protector = new CalendarMutationRequestStateProtector(
+            TimeProvider.System,
+            Options.Create(MoveStateOptions()),
+            Enumerable.Range(0, 64).Select(value => (byte)value).ToArray());
+        byte[] requestBinding = [1, 2, 3, 4];
+        var state = protector.ProtectExactMove(
+            "calendar_resources.exact_move",
+            requestBinding,
+            invalidBinding);
+
+        protector.TryUnprotectExactMove(
+            state,
+            "calendar_resources.exact_move",
+            request,
+            requestBinding,
+            out _,
+            out var expired).ShouldBeFalse();
+        expired.ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData("AA")]
+    [InlineData("A")]
+    public void ExactMoveState_RejectsShortOrMalformedCiphertextBeforeDecryption(string state)
+    {
+        var revision = ExactRevision();
+        var request = new CalendarExactMoveRequest(revision, "https://cal.example/events/destination.ics");
+        var protector = new CalendarMutationRequestStateProtector(
+            TimeProvider.System,
+            Options.Create(MoveStateOptions()),
+            Enumerable.Range(0, 64).Select(value => (byte)value).ToArray());
+
+        protector.TryUnprotectExactMove(
+            state,
+            "calendar_resources.exact_move",
+            request,
+            [1, 2, 3, 4],
+            out _,
+            out var expired).ShouldBeFalse();
+        expired.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void ExactMoveState_RejectsOversizedProtectedPolicyMetadata()
+    {
+        var revision = ExactRevision();
+        var binding = new CalendarExactMoveReviewBinding(
+            revision,
+            "https://cal.example/events/destination.ics",
+            new byte[32],
+            new string('p', CalendarMutationRequestStateProtector.MaximumRequestStateCharacters));
+        var protector = new CalendarMutationRequestStateProtector(
+            TimeProvider.System,
+            Options.Create(MoveStateOptions()),
+            Enumerable.Range(0, 64).Select(value => (byte)value).ToArray());
+
+        Should.Throw<InvalidOperationException>(() => protector.ProtectExactMove(
+            "calendar_resources.exact_move",
+            [1, 2, 3, 4],
+            binding));
+    }
+
+    [Fact]
+    public void ExactMoveState_TreatsReorderedDuplicateScopeAsEquivalent()
+    {
+        var key = Enumerable.Range(0, 64).Select(value => (byte)value).ToArray();
+        var originalOptions = MoveStateOptions();
+        originalOptions.CalendarHrefs = "https://cal.example/events/,https://cal.example/tasks/";
+        var equivalentOptions = MoveStateOptions();
+        equivalentOptions.CalendarHrefs =
+            "https://cal.example/tasks/, https://cal.example/events/, https://cal.example/tasks/";
+        var original = new CalendarMutationRequestStateProtector(
+            TimeProvider.System,
+            Options.Create(originalOptions),
+            key);
+        var equivalent = new CalendarMutationRequestStateProtector(
+            TimeProvider.System,
+            Options.Create(equivalentOptions),
+            key);
+        var revision = ExactRevision();
+        var request = new CalendarExactMoveRequest(revision, "https://cal.example/events/destination.ics");
+        var binding = SuccessfulMoveReview(revision).Binding!;
+        byte[] requestBinding = [1, 2, 3, 4];
+        var state = original.ProtectExactMove("calendar_resources.exact_move", requestBinding, binding);
+
+        equivalent.TryUnprotectExactMove(
+            state,
+            "calendar_resources.exact_move",
+            request,
+            requestBinding,
+            out var restored,
+            out var expired).ShouldBeTrue();
+        expired.ShouldBeFalse();
+        restored.Revision.ShouldBe(binding.Revision);
+        restored.DestinationHref.ShouldBe(binding.DestinationHref);
+        restored.PolicyVersion.ShouldBe(binding.PolicyVersion);
+        restored.SourceIntentDigest.Span.SequenceEqual(binding.SourceIntentDigest.Span).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void ExactMoveState_DistinguishesMeaningfulEndpointPathChange()
+    {
+        var key = Enumerable.Range(0, 64).Select(value => (byte)value).ToArray();
+        var originalOptions = MoveStateOptions();
+        originalOptions.BaseUrl = "https://cal.example/caldav//";
+        var changedOptions = MoveStateOptions();
+        changedOptions.BaseUrl = "https://cal.example/caldav/";
+        var original = new CalendarMutationRequestStateProtector(
+            TimeProvider.System,
+            Options.Create(originalOptions),
+            key);
+        var changed = new CalendarMutationRequestStateProtector(
+            TimeProvider.System,
+            Options.Create(changedOptions),
+            key);
+        var revision = ExactRevision();
+        var request = new CalendarExactMoveRequest(revision, "https://cal.example/events/destination.ics");
+        var binding = SuccessfulMoveReview(revision).Binding!;
+        byte[] requestBinding = [1, 2, 3, 4];
+        var state = original.ProtectExactMove("calendar_resources.exact_move", requestBinding, binding);
+
+        changed.TryUnprotectExactMove(
+            state,
+            "calendar_resources.exact_move",
+            request,
+            requestBinding,
+            out _,
+            out var expired).ShouldBeFalse();
+        expired.ShouldBeFalse();
     }
 
     [Theory]
@@ -302,7 +1014,7 @@ public sealed class ExactCalendarResourceTests
             .Returns(failure);
         service.ReviewExactMoveResourceAsync(
                 Arg.Any<CalendarExactMoveRequest>(), Arg.Any<CancellationToken>())
-            .Returns(failure);
+            .Returns(new CalendarExactMoveReviewResult(failure.Outcome, null));
         var sut = CreateWriteTools(service);
 
         var result = operation == "replace"
@@ -322,8 +1034,10 @@ public sealed class ExactCalendarResourceTests
         result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("concurrency_unavailable");
         await service.DidNotReceive().ExactReplaceResourceAsync(
             Arg.Any<CalendarExactReplaceRequest>(), Arg.Any<CancellationToken>());
-        await service.DidNotReceive().ExactMoveResourceAsync(
-            Arg.Any<CalendarExactMoveRequest>(), Arg.Any<CancellationToken>());
+        await service.DidNotReceive().ExecuteConfirmedExactMoveResourceAsync(
+            Arg.Any<CalendarExactMoveRequest>(),
+            Arg.Any<CalendarExactMoveReviewBinding>(),
+            Arg.Any<CancellationToken>());
     }
 
     [Theory]
@@ -437,6 +1151,7 @@ public sealed class ExactCalendarResourceTests
     [InlineData(CalendarExactResourcePhase.OriginScopeAuthorization, "originScopeAuthorization")]
     [InlineData(CalendarExactResourcePhase.SelectionDiscoveryCapability, "selectionDiscoveryCapability")]
     [InlineData(CalendarExactResourcePhase.TargetRevision, "targetRevision")]
+    [InlineData(CalendarExactResourcePhase.Mrtr, "mrtr")]
     [InlineData(CalendarExactResourcePhase.PostWriteVerificationOrReconciliation, "postWriteVerificationOrReconciliation")]
     [InlineData(CalendarExactResourcePhase.Execution, "execution")]
     public async Task ExactCreateRawAsync_MapsEveryFrozenFailurePhase(
@@ -939,7 +1654,7 @@ public sealed class ExactCalendarResourceTests
             .Returns(failure);
         service.ReviewExactMoveResourceAsync(
                 Arg.Any<CalendarExactMoveRequest>(), Arg.Any<CancellationToken>())
-            .Returns(failure);
+            .Returns(new CalendarExactMoveReviewResult(failure.Outcome, null));
         var sut = CreateWriteTools(service);
 
         var result = operation switch
@@ -987,7 +1702,7 @@ public sealed class ExactCalendarResourceTests
             .Returns(review);
         service.ReviewExactMoveResourceAsync(
                 Arg.Any<CalendarExactMoveRequest>(), Arg.Any<CancellationToken>())
-            .Returns(review);
+            .Returns(SuccessfulMoveReview(reviewedRevision, destinationHref));
         var sut = CreateWriteTools(service);
 
         Task<CallToolResult> Invoke() => operation switch
@@ -996,10 +1711,10 @@ public sealed class ExactCalendarResourceTests
                 CreateArguments(destinationHref, ExactEvent("preview-budget")),
                 null, null, true, TestContext.Current.CancellationToken),
             "replace" => sut.ReplaceRawAsync(
-                ReplaceArguments(inputRevision, ExactEvent(inputRevision.EntityUid)),
+                ReplaceArguments(reviewedRevision, ExactEvent(reviewedRevision.EntityUid)),
                 null, null, true, TestContext.Current.CancellationToken),
             _ => sut.MoveRawAsync(
-                MoveArguments(inputRevision, destinationHref),
+                MoveArguments(reviewedRevision, destinationHref),
                 null, null, true, TestContext.Current.CancellationToken)
         };
 
@@ -1170,7 +1885,7 @@ public sealed class ExactCalendarResourceTests
         const string destinationHref = "https://cal.example/events/preview-destination.ics";
         var service = Substitute.For<ICalendarService>();
         service.ReviewExactMoveResourceAsync(Arg.Any<CalendarExactMoveRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CalendarExactResourceReviewResult(null, revision, new byte[32]));
+            .Returns(SuccessfulMoveReview(revision, destinationHref));
 
         var required = await Should.ThrowAsync<InputRequiredException>(() => CreateWriteTools(service).MoveRawAsync(
             MoveArguments(revision, destinationHref), null, null, true, CancellationToken.None));
@@ -1430,13 +2145,51 @@ public sealed class ExactCalendarResourceTests
             []);
     }
 
+    private static CalendarResourceSnapshot CreateProjectedSnapshot(
+        CalendarResourceProjectionKind kind,
+        string uid) => CreateSnapshot("\"projected\"") with
+        {
+            Projection = new CalendarResourceProjection(kind, uid, null)
+        };
+
     private static CalendarExactCreateReviewResult SuccessfulCreateReview(
         string destinationHref,
         string uid,
         byte[]? intentDigest = null) => CreateReview(
             destinationHref,
             uid,
-            intentDigest ?? new byte[32]);
+        intentDigest ?? new byte[32]);
+
+    private static CalendarExactMoveReviewResult SuccessfulMoveReview(
+        CalendarResourceRevisionReference revision,
+        string destinationHref = "https://cal.example/events/destination.ics") => new(
+            null,
+            new CalendarExactMoveReviewBinding(
+                revision,
+                destinationHref,
+                new byte[32],
+                "server-authoritative-exact-move/1"));
+
+    private static CalendarExactMoveReviewResult InvalidMoveReview(
+        string scenario,
+        CalendarResourceRevisionReference revision)
+    {
+        var binding = SuccessfulMoveReview(revision).Binding!;
+        return scenario switch
+        {
+            "missing-binding" => new CalendarExactMoveReviewResult(null, null),
+            "revision" => new CalendarExactMoveReviewResult(
+                null,
+                binding with { Revision = revision with { EntityTag = "\"r2\"" } }),
+            "destination" => new CalendarExactMoveReviewResult(
+                null,
+                binding with { DestinationHref = "https://cal.example/events/other.ics" }),
+            "digest" => new CalendarExactMoveReviewResult(
+                null,
+                binding with { SourceIntentDigest = new byte[31] }),
+            _ => new CalendarExactMoveReviewResult(null, binding with { PolicyVersion = " " })
+        };
+    }
 
     private static CalendarExactCreateReviewResult MalformedCreateReview(
         string destinationHref,
@@ -1518,6 +2271,33 @@ public sealed class ExactCalendarResourceTests
             new CalendarMutationAdmission(timeProvider));
     }
 
+    private static ExactCalendarResourceWriteTools CreateWriteTools(
+        ICalendarService service,
+        TimeProvider timeProvider,
+        byte[] keyMaterial,
+        CalDavOptions options)
+    {
+        var protector = new CalendarMutationRequestStateProtector(
+            timeProvider,
+            Options.Create(options),
+            keyMaterial);
+        return new ExactCalendarResourceWriteTools(
+            service,
+            protector,
+            timeProvider,
+            new CalendarMutationAdmission(timeProvider));
+    }
+
+    private static CalDavOptions MoveStateOptions() => new()
+    {
+        BaseUrl = "https://cal.example",
+        Username = "user",
+        Password = "secret",
+        CalendarHrefs = "https://cal.example/events/",
+        InteroperabilityProfile = CalDavInteroperabilityProfiles.Radicale_3_7_8,
+        RequestTimeout = TimeSpan.FromSeconds(30)
+    };
+
     private static CalendarResourceRevisionReference ExactRevision() => new(
         "https://cal.example/events/source.ics",
         "exact-write-1",
@@ -1565,7 +2345,7 @@ public sealed class ExactCalendarResourceTests
         {
             href = revision.Href,
             entityUid = revision.EntityUid,
-            entityKind = "event",
+            entityKind = revision.EntityKind == CalendarEntityKind.Event ? "event" : "todo",
             entityTag = revision.EntityTag
         });
 
@@ -1681,11 +2461,80 @@ public sealed class ExactCalendarResourceTests
         }).Length;
     }
 
+    private static async Task<CalendarExactResourceResult> WaitForCancellationAsync(
+        CancellationToken cancellationToken,
+        TaskCompletionSource executionStarted)
+    {
+        var stalled = new TaskCompletionSource<CalendarExactResourceResult>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        using var registration = cancellationToken.Register(() => stalled.TrySetCanceled(cancellationToken));
+        executionStarted.TrySetResult();
+        return await stalled.Task;
+    }
+
     private sealed class MutableTimeProvider(DateTimeOffset now) : TimeProvider
     {
+        private readonly List<MutableTimer> _timers = [];
+
         public override DateTimeOffset GetUtcNow() => now;
 
-        public void Advance(TimeSpan elapsed) => now += elapsed;
+        public override ITimer CreateTimer(
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime,
+            TimeSpan period)
+        {
+            var timer = new MutableTimer(this, callback, state, dueTime, period);
+            _timers.Add(timer);
+            return timer;
+        }
+
+        public void Advance(TimeSpan elapsed)
+        {
+            now += elapsed;
+            foreach (var timer in _timers.ToArray())
+                timer.FireIfDue();
+        }
+
+        private sealed class MutableTimer(
+            MutableTimeProvider owner,
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime,
+            TimeSpan period) : ITimer
+        {
+            private DateTimeOffset? _dueAt = dueTime == Timeout.InfiniteTimeSpan
+                ? null
+                : owner.GetUtcNow() + dueTime;
+            private bool _disposed;
+
+            public bool Change(TimeSpan newDueTime, TimeSpan newPeriod)
+            {
+                if (_disposed)
+                    return false;
+                period = newPeriod;
+                _dueAt = newDueTime == Timeout.InfiniteTimeSpan
+                    ? null
+                    : owner.GetUtcNow() + newDueTime;
+                return true;
+            }
+
+            public void Dispose() => _disposed = true;
+
+            public ValueTask DisposeAsync()
+            {
+                Dispose();
+                return ValueTask.CompletedTask;
+            }
+
+            public void FireIfDue()
+            {
+                if (_disposed || _dueAt is null || owner.GetUtcNow() < _dueAt)
+                    return;
+                _dueAt = period == Timeout.InfiniteTimeSpan ? null : owner.GetUtcNow() + period;
+                callback(state);
+            }
+        }
     }
 
     private static string Encode(string value) => Convert.ToBase64String(Encoding.UTF8.GetBytes(value))
