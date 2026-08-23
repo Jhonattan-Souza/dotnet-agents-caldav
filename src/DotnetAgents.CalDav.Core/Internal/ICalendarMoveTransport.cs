@@ -62,10 +62,3 @@ internal sealed record CalendarMoveDiscoveryResult(
         _ => CalendarSelectionResult.Failure(CalendarSelectionCode.NotFound)
     };
 }
-
-internal interface ICalendarResourcePresenceTransport
-{
-    Task<CalendarResourceRead> ProbeCalendarResourcePresenceAsync(
-        string href,
-        CancellationToken cancellationToken);
-}
