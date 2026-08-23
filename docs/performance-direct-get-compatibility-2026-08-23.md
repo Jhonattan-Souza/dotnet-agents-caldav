@@ -2,7 +2,7 @@
 
 Date: 2026-08-23
 Baseline revision: `05f4973c8d4c1423da1c55cde4dbb0ee3c89b2f8` (the #108 stack head; the original finding was measured from `ed316f9beb46a81d69e785006c0fe65d58c2298b`)
-Implementation revision: `9e6cc842cfa626d24ec5833ad47ae03c1ad818d7`
+Implementation revision: `077fe285b898998afe0bb6ed9e08f0cc52bb5612`
 Configuration: .NET 10 Release; deterministic typed query transport and HTTP handlers for the non-conforming path; digest-pinned Radicale 3.7.8 only for conforming multiget evidence
 
 ## Before
