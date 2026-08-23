@@ -306,6 +306,7 @@ internal sealed class CalendarQueryResourceRetriever
     private static QueryFailure? ReadFailure(CalendarResourceRead read) => read.Code switch
     {
         CalendarResourceReadCode.Success when HasStrongEntityTag(read.EntityTag) => null,
+        CalendarResourceReadCode.Success => CalendarQueryFailures.ConcurrencyUnavailable(),
         CalendarResourceReadCode.NotFound => null,
         CalendarResourceReadCode.ConcurrencyUnavailable => CalendarQueryFailures.ConcurrencyUnavailable(),
         CalendarResourceReadCode.PayloadTooLarge => CalendarQueryFailures.PayloadTooLarge(

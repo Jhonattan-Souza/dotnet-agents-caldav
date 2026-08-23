@@ -14,13 +14,13 @@ internal sealed record CalendarQueryAcquisitionRequest(
     DateTimeOffset? To);
 
 internal sealed record AcquiredCalendarQuery(
-    IReadOnlyList<CalendarResourceSnapshot> Snapshots,
+    IReadOnlyList<AcquiredCalendarResource> Resources,
     IReadOnlyList<QueryDiagnostic> Diagnostics,
     QueryFailure? Error)
 {
     internal static AcquiredCalendarQuery Success(
-        IReadOnlyList<CalendarResourceSnapshot> snapshots,
-        IReadOnlyList<QueryDiagnostic> diagnostics) => new(snapshots, diagnostics, null);
+        IReadOnlyList<AcquiredCalendarResource> resources,
+        IReadOnlyList<QueryDiagnostic> diagnostics) => new(resources, diagnostics, null);
 
     internal static AcquiredCalendarQuery Failure(QueryFailure error) => new([], [], error);
 }
@@ -68,7 +68,7 @@ internal sealed class CalendarQueryAcquisitionExecutor(
             fetched = await FetchSnapshotsAsync(transport, candidates, diagnostics, cancellationToken)
                 .ConfigureAwait(false);
         return fetched.Error is null
-            ? AcquiredCalendarQuery.Success(fetched.Snapshots, fetched.Diagnostics)
+            ? AcquiredCalendarQuery.Success(fetched.Resources, fetched.Diagnostics)
             : AcquiredCalendarQuery.Failure(fetched.Error);
     }
 
@@ -97,7 +97,7 @@ internal sealed class CalendarQueryAcquisitionExecutor(
             .ConfigureAwait(false);
         if (retrieval.Error is not null)
             return FetchResult.Failure(retrieval.Error);
-        var snapshots = new List<CalendarResourceSnapshot>();
+        var resources = new List<AcquiredCalendarResource>();
         foreach (var group in retrieval.Resources.GroupBy(resource => resource.Calendar.Href, StringComparer.Ordinal)
                      .OrderBy(group => group.Key, StringComparer.Ordinal))
         {
@@ -107,19 +107,19 @@ internal sealed class CalendarQueryAcquisitionExecutor(
                 calendar,
                 ordered.Select(resource => resource.RequestedHref).ToArray(),
                 ordered.Select(resource => resource.Read).ToArray(),
-                snapshots,
+                resources,
                 diagnostics);
             if (error is not null)
                 return FetchResult.Failure(error);
         }
-        return FetchResult.Success(snapshots, diagnostics);
+        return FetchResult.Success(resources, diagnostics);
     }
 
     private static QueryFailure? AccumulateBatch(
         CalendarDescriptor calendar,
         IReadOnlyList<string> requested,
         IReadOnlyList<CalendarResourceRead> reads,
-        ICollection<CalendarResourceSnapshot> snapshots,
+        ICollection<AcquiredCalendarResource> resources,
         ICollection<QueryDiagnostic> diagnostics)
     {
         if (reads.Count != requested.Count)
@@ -137,7 +137,7 @@ internal sealed class CalendarQueryAcquisitionExecutor(
             var error = ReadFailure(read);
             if (error is not null)
                 return error;
-            snapshots.Add(CalendarResourceProjector.AttachSnapshot(calendar.Href, read).Snapshot!);
+            resources.Add(CalendarQueryResourceMaterializer.Materialize(calendar.Href, read));
             CalendarQueryTelemetry.Add("caldav.query.snapshot_count");
         }
         return null;
@@ -263,6 +263,7 @@ internal sealed class CalendarQueryAcquisitionExecutor(
     private static QueryFailure? ReadFailure(CalendarResourceRead read) => read.Code switch
     {
         CalendarResourceReadCode.Success when HasStrongEntityTag(read.EntityTag) => null,
+        CalendarResourceReadCode.Success => CalendarQueryFailures.ConcurrencyUnavailable(),
         CalendarResourceReadCode.ConcurrencyUnavailable => CalendarQueryFailures.ConcurrencyUnavailable(),
         CalendarResourceReadCode.PayloadTooLarge => CalendarQueryFailures.PayloadTooLarge(
             "A Calendar Object Resource exceeds the safe payload limit.", read.ObservedByteCount),
@@ -405,13 +406,13 @@ internal sealed class CalendarQueryAcquisitionExecutor(
     }
 
     private sealed record FetchResult(
-        IReadOnlyList<CalendarResourceSnapshot> Snapshots,
+        IReadOnlyList<AcquiredCalendarResource> Resources,
         List<QueryDiagnostic> Diagnostics,
         QueryFailure? Error)
     {
         internal static FetchResult Success(
-            IReadOnlyList<CalendarResourceSnapshot> snapshots,
-            List<QueryDiagnostic> diagnostics) => new(snapshots, diagnostics, null);
+            IReadOnlyList<AcquiredCalendarResource> resources,
+            List<QueryDiagnostic> diagnostics) => new(resources, diagnostics, null);
 
         internal static FetchResult Failure(QueryFailure error) => new([], [], error);
     }

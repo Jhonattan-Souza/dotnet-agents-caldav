@@ -54,7 +54,22 @@ internal sealed class CalendarOccurrenceQueryEngine
             }
             if (snapshot.Projection.Kind == CalendarResourceProjectionKind.Opaque)
                 continue;
-            var evaluated = CalendarOccurrenceEvaluator.Evaluate(snapshot, query, cancellationToken);
+            CalendarOccurrenceEvaluation evaluated;
+            try
+            {
+                var document = CalendarContentDocument.Parse(snapshot.AuthoritativeUtf8.Span);
+                evaluated = CalendarOccurrenceEvaluator.Evaluate(
+                    snapshot,
+                    query,
+                    document,
+                    CalendarResourceProjector.LoadTypedCalendar(document),
+                    cancellationToken);
+            }
+            catch (Exception exception) when (exception is FormatException or ArgumentException or InvalidOperationException)
+            {
+                return CalendarOccurrenceQueryResult.Failure(
+                    CalendarOccurrenceQueryCode.RecurrenceUnevaluable);
+            }
             observedCount += evaluated.ObservedOccurrenceCount;
             if (evaluated.Code != CalendarOccurrenceQueryCode.Success)
             {

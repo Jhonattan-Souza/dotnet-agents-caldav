@@ -22,9 +22,11 @@ internal static class CalendarOccurrenceEvaluator
     private const int MaximumEntityOccurrences = 2000;
     private const int MaximumUnmatchedIncrements = 10_000;
 
-    public static CalendarOccurrenceEvaluation Evaluate(
+    internal static CalendarOccurrenceEvaluation Evaluate(
         CalendarResourceSnapshot snapshot,
         CalendarOccurrenceQuery query,
+        CalendarContentDocument document,
+        IcalCalendar? typedCalendar,
         CancellationToken cancellationToken)
     {
         try
@@ -36,7 +38,7 @@ internal static class CalendarOccurrenceEvaluator
 
             var resolver = new CalendarTemporalResolver(
                 snapshot.CalendarProperties,
-                snapshot.AuthoritativeUtf8.Span,
+                typedCalendar,
                 cancellationToken,
                 query.EvaluationTimeZone);
             var periodValidation = ValidatePeriodStructure(properties, resolver);
@@ -46,10 +48,9 @@ internal static class CalendarOccurrenceEvaluator
                 return Failure(CalendarOccurrenceQueryCode.TemporalUnresolved);
             var overrides = CreateOverrides(properties, snapshot.Projection.Kind);
 
-            var replay = CalendarContentDocument.Parse(snapshot.AuthoritativeUtf8.Span).ReplayForOccurrenceEvaluation();
-            var calendar = IcalCalendar.Load(Encoding.UTF8.GetString(replay));
-            if (calendar is null)
+            if (typedCalendar is null)
                 return Failure(CalendarOccurrenceQueryCode.RecurrenceUnevaluable);
+            var calendar = typedCalendar;
             var evaluated = snapshot.Projection.Kind == CalendarResourceProjectionKind.Event
                 ? EvaluateEvent(
                     snapshot,
@@ -1059,7 +1060,11 @@ internal static class CalendarOccurrenceEvaluator
         if (overrideStart.Value is null)
             return PeriodEvaluation.Failure(ToFailure(overrideStart));
         var effectiveStart = ToTemporalValue(definition.Start);
-        var overrideEnd = ResolveOverrideEnd(definition, effectiveStart, resolver, overrideStart.Value.Value);
+        var overrideEnd = ResolveOverrideEnd(
+            definition,
+            effectiveStart,
+            resolver,
+            overrideStart.Value.Value);
         if (overrideEnd.Instant is null)
             return PeriodEvaluation.Failure(overrideEnd.Code);
         if (!Overlaps(overrideStart.Value.Value, overrideEnd.Instant.Value, query.From, query.To))
@@ -1182,12 +1187,14 @@ internal static class CalendarOccurrenceEvaluator
                 ? new OverrideEndResolution(null, null, ToFailure(end))
                 : new OverrideEndResolution(ToTemporalValue(definition.End), end.Value, CalendarOccurrenceQueryCode.Success);
         }
-        if (definition.Duration is null)
-            return definition.DateEventDefaultsToOneDay
-                ? FromDuration(CalendarDurationArithmetic.Resolve(effectiveStart, start, "P1D", resolver))
-                : new OverrideEndResolution(null, start, CalendarOccurrenceQueryCode.Success);
-        return FromDuration(CalendarDurationArithmetic.Resolve(
-            effectiveStart, start, definition.Duration.RawEncodedValue, resolver));
+        if (definition.Duration is not null)
+        {
+            return FromDuration(CalendarDurationArithmetic.Resolve(
+                effectiveStart, start, definition.Duration.RawEncodedValue, resolver));
+        }
+        return definition.DateEventDefaultsToOneDay
+            ? FromDuration(CalendarDurationArithmetic.Resolve(effectiveStart, start, "P1D", resolver))
+            : new OverrideEndResolution(null, start, CalendarOccurrenceQueryCode.Success);
     }
 
     private static OverrideEndResolution FromDuration(CalendarDurationResolution duration) =>

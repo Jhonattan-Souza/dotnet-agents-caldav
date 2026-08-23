@@ -2478,7 +2478,7 @@
         "idempotentHint": true,
         "openWorldHint": true
       },
-      "description": "Query compact normalized To-do results in an explicitly selected Calendar Scope; use this for routine open To-do lists."
+      "description": "Start one compact To-do query or continue its immutable Query Result Snapshot. A Start resolves an explicit IANA Temporal Evaluation Context before CalDAV work and uses one VTODO-only authoritative corpus; Continue repeats the frozen page context without CalDAV or semantic work."
     },
     {
       "name": "calendar_resources.get",
@@ -3446,9 +3446,6 @@
     "todoQueryInput": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "scope"
-      ],
       "properties": {
         "scope": {
           "$ref": "#/$defs/todoScope"
@@ -3474,7 +3471,8 @@
         },
         "evaluationTimeZone": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "maxLength": 255
         },
         "dueFrom": {
           "$ref": "#/$defs/utcTemporalValue"
@@ -3508,56 +3506,144 @@
         },
         "cursor": {
           "type": "string",
+          "minLength": 1,
           "maxLength": 2048
         }
       },
-      "allOf": [
+      "oneOf": [
         {
-          "if": {
-            "required": [
-              "from"
-            ]
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "scope"
+          ],
+          "properties": {
+            "scope": {
+              "$ref": "#/$defs/todoScope"
+            },
+            "completionStates": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "open",
+                  "completed",
+                  "cancelled",
+                  "indeterminate"
+                ]
+              }
+            },
+            "from": {
+              "$ref": "#/$defs/utcTemporalValue"
+            },
+            "to": {
+              "$ref": "#/$defs/utcTemporalValue"
+            },
+            "evaluationTimeZone": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "dueFrom": {
+              "$ref": "#/$defs/utcTemporalValue"
+            },
+            "dueTo": {
+              "$ref": "#/$defs/utcTemporalValue"
+            },
+            "projection": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "summary",
+                  "status",
+                  "completedAt",
+                  "percentComplete",
+                  "due",
+                  "priority",
+                  "categories",
+                  "start",
+                  "description",
+                  "recurrence"
+                ]
+              }
+            },
+            "pageSize": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
           },
-          "then": {
-            "required": [
-              "to"
-            ]
-          }
+          "allOf": [
+            {
+              "if": {
+                "required": [
+                  "from"
+                ]
+              },
+              "then": {
+                "required": [
+                  "to"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "to"
+                ]
+              },
+              "then": {
+                "required": [
+                  "from"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "dueFrom"
+                ]
+              },
+              "then": {
+                "required": [
+                  "dueTo"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "dueTo"
+                ]
+              },
+              "then": {
+                "required": [
+                  "dueFrom"
+                ]
+              }
+            }
+          ]
         },
         {
-          "if": {
-            "required": [
-              "to"
-            ]
-          },
-          "then": {
-            "required": [
-              "from"
-            ]
-          }
-        },
-        {
-          "if": {
-            "required": [
-              "dueFrom"
-            ]
-          },
-          "then": {
-            "required": [
-              "dueTo"
-            ]
-          }
-        },
-        {
-          "if": {
-            "required": [
-              "dueTo"
-            ]
-          },
-          "then": {
-            "required": [
-              "dueFrom"
-            ]
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "cursor"
+          ],
+          "properties": {
+            "cursor": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            "pageSize": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
           }
         }
       ]
@@ -3679,6 +3765,7 @@
         "items",
         "diagnostics",
         "excludedIndeterminateCount",
+        "temporalEvaluationContext",
         "pagination"
       ],
       "properties": {
@@ -3701,8 +3788,29 @@
           "type": "integer",
           "minimum": 0
         },
+        "temporalEvaluationContext": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "timeZone",
+            "source"
+          ],
+          "properties": {
+            "timeZone": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "source": {
+              "enum": [
+                "caller",
+                "configuration"
+              ]
+            }
+          }
+        },
         "pagination": {
-          "$ref": "#/$defs/pagination"
+          "$ref": "#/$defs/entityQueryPagination"
         }
       }
     },

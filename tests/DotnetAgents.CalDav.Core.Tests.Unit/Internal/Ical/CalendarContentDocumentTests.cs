@@ -735,6 +735,25 @@ public sealed class CalendarContentDocumentTests
         result.Diagnostics.ShouldBeEmpty();
     }
 
+    [Fact]
+    public void ProjectParsedAuthority_PreservesFilteredExtensionAndPeriodRecurrenceFidelity()
+    {
+        const string content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\n"
+            + "BEGIN:VTODO\r\nUID:u1\r\nDTSTAMP:20260815T120000Z\r\nDTSTART:20260816T090000Z\r\n"
+            + "RDATE;VALUE=PERIOD:20260817T090000Z/PT1H\r\n"
+            + "CONFERENCE:https://example.test/conference\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+        var document = CalendarContentDocument.Parse(Encoding.UTF8.GetBytes(content));
+
+        var result = CalendarResourceProjector.Project(
+            document,
+            CalendarResourceProjector.LoadTypedCalendar(document));
+
+        result.Projection.Kind.ShouldBe(CalendarResourceProjectionKind.Todo);
+        result.Diagnostics.ShouldBeEmpty();
+        result.Properties.ShouldContain(property => property.Name == "CONFERENCE");
+        result.Properties.ShouldContain(property => property.Name == "RDATE");
+    }
+
     [Theory]
     [InlineData("ATTACH;VALUE=BINARY;ENCODING=BASE64:aGVsbG8=")]
     [InlineData("IMAGE;VALUE=BINARY;ENCODING=BASE64;FMTTYPE=image/png:aGVsbG8=")]

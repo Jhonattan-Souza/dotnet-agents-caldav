@@ -57,6 +57,13 @@ internal static class CalendarResourceSemanticProjectionMapper
         CalendarTemporalValue recurrenceIdentity) =>
         JsonSerializer.SerializeToElement(CreateTodoFieldsForOccurrence(snapshot, recurrenceIdentity), ProjectionJson);
 
+    internal static JsonElement TodoForComponent(
+        CalendarContentDocument document,
+        CalendarContentComponent component,
+        CalendarContentComponent recurrenceMaster) => JsonSerializer.SerializeToElement(
+        TodoFields(document, component, includeRecurrence: true, recurrenceComponent: recurrenceMaster),
+        ProjectionJson);
+
     private static CalendarTodoFieldsResult CreateTodoFields(CalendarResourceSnapshot snapshot)
     {
         if (!TryDocumentMaster(snapshot, "VTODO", out var document, out var master))
@@ -89,6 +96,14 @@ internal static class CalendarResourceSemanticProjectionMapper
         {
             return null;
         }
+    }
+
+    internal static JsonElement? TodoCompletedAt(
+        CalendarContentDocument document,
+        CalendarContentComponent component)
+    {
+        var completed = Temporal(Owned(document, component.Path), "COMPLETED");
+        return completed is null ? null : JsonSerializer.SerializeToElement(completed, ProjectionJson);
     }
 
     private static CalendarTodoFieldsResult CreateTodoFieldsForOccurrence(

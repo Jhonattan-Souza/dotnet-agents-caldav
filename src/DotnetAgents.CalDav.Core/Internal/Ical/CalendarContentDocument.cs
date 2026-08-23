@@ -213,6 +213,13 @@ internal sealed partial class CalendarContentDocument
         || ProjectionExtensionsUnsupportedByIcalNet.Contains(property.Name)
         || IsUnsupportedAttendeeAddressForIcalNet(property));
 
+    internal IReadOnlyList<CalendarContentProperty> ProjectionValidationProperties() => Properties.Where(property =>
+        property.ComponentPath.All(segment => IsTypedValidationComponent(segment.Name))
+        && IsTypedValidationProperty(property)
+        && !IsEntityPeriodRecurrenceDate(property)
+        && !ProjectionExtensionsUnsupportedByIcalNet.Contains(property.Name)
+        && !IsUnsupportedAttendeeAddressForIcalNet(property)).ToArray();
+
     public byte[] ReplayForOccurrenceEvaluation() => ReplayForTypedValidation(IsEntityPeriodRecurrenceDate);
 
     private static bool IsEntityPeriodRecurrenceDate(CalendarContentProperty property) =>

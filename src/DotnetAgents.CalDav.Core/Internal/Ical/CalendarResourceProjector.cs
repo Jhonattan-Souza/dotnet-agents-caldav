@@ -162,7 +162,7 @@ internal static class CalendarResourceProjector
         try
         {
             var document = CalendarContentDocument.Parse(authoritativeUtf8);
-            return ProjectDocument(document);
+            return Project(document);
         }
         catch (Exception exception) when (exception is FormatException or DecoderFallbackException)
         {
@@ -228,7 +228,15 @@ internal static class CalendarResourceProjector
         && HasValidRootOptionalCardinality(properties)
         && HasValidCalendarScale(properties);
 
-    private static CalendarProjectionResult ProjectDocument(CalendarContentDocument document)
+    internal static CalendarProjectionResult Project(CalendarContentDocument document)
+    {
+        var calendar = LoadTypedCalendar(document);
+        return Project(document, calendar);
+    }
+
+    internal static CalendarProjectionResult Project(
+        CalendarContentDocument document,
+        IcalCalendar? typedCalendar)
     {
         var properties = document.Properties.Select(ToPublicProperty).ToArray();
         try
@@ -255,7 +263,11 @@ internal static class CalendarResourceProjector
             if (diagnostic is not null)
                 return Opaque(properties, diagnostic);
 
-            if (!IcalNetCorroborates(document.ReplayForProjectionValidation(), entities[0].Kind, entities.Count))
+            if (!IcalNetCorroborates(
+                    document,
+                    typedCalendar,
+                    entities[0].Kind,
+                    entities.Count))
                 return Opaque(properties, "typed_projection_invalid");
 
             var master = entities.Single(entity => entity.RecurrenceIdentity is null);
@@ -1699,13 +1711,13 @@ internal static class CalendarResourceProjector
         .Sum(parameter => parameter.Values.Count);
 
     private static bool IcalNetCorroborates(
-        ReadOnlySpan<byte> authoritativeUtf8,
+        CalendarContentDocument source,
+        IcalCalendar? calendar,
         CalendarResourceProjectionKind kind,
         int entityCount)
     {
         try
         {
-            var calendar = IcalCalendar.Load(new UTF8Encoding(false, true).GetString(authoritativeUtf8));
             if (calendar is null)
                 return false;
             var entityCountsMatch = kind == CalendarResourceProjectionKind.Event
@@ -1715,7 +1727,7 @@ internal static class CalendarResourceProjector
                 return false;
             var roundTrip = new CalendarSerializer().SerializeToString(calendar);
             return roundTrip is not null && HasAllRegisteredOccurrences(
-                CalendarContentDocument.Parse(authoritativeUtf8),
+                source.ProjectionValidationProperties(),
                 CalendarContentDocument.Parse(Encoding.UTF8.GetBytes(roundTrip)));
         }
         catch (Exception exception) when (exception is ArgumentException
@@ -1726,11 +1738,26 @@ internal static class CalendarResourceProjector
         }
     }
 
+    internal static IcalCalendar? LoadTypedCalendar(CalendarContentDocument document)
+    {
+        try
+        {
+            return IcalCalendar.Load(new UTF8Encoding(false, true).GetString(
+                document.ReplayForProjectionValidation()));
+        }
+        catch (Exception exception) when (exception is ArgumentException
+            or InvalidOperationException
+            or System.Runtime.Serialization.SerializationException)
+        {
+            return null;
+        }
+    }
+
     private static bool HasAllRegisteredOccurrences(
-        CalendarContentDocument source,
+        IReadOnlyList<CalendarContentProperty> source,
         CalendarContentDocument roundTrip)
     {
-        var sourceCounts = GetRegisteredOccurrenceCounts(source.Properties);
+        var sourceCounts = GetRegisteredOccurrenceCounts(source);
         var roundTripCounts = GetRegisteredOccurrenceCounts(roundTrip.Properties);
         return sourceCounts.All(sourceCount => roundTripCounts.GetValueOrDefault(sourceCount.Key) >= sourceCount.Value);
     }
@@ -1827,6 +1854,8 @@ internal static class CalendarResourceProjector
         new CalendarResourceProjection(CalendarResourceProjectionKind.Opaque, null, null),
         properties,
         [new CalendarResourceDiagnostic(code, "The Calendar Object Resource is readable but cannot be projected safely.", CalendarResourceDiagnosticSeverity.Error)]);
+
+    internal static CalendarProjectionResult InvalidCalendarData() => Opaque([], "invalid_calendar_data");
 
     private sealed record EntityComponent(
         CalendarResourceProjectionKind Kind,
