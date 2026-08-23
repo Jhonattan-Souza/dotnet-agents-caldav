@@ -190,7 +190,7 @@ public sealed class CalendarOccurrenceQueryModuleTests
             new CalendarOccurrenceQueryRequest.Start(Query()),
             TestContext.Current.CancellationToken)).ShouldBeOfType<QueryReply<CalendarOccurrenceQueryItem>.Failure>();
 
-        failure.Error.Code.ShouldBe(QueryFailureCode.UpstreamProtocolError);
+        failure.Error.Code.ShouldBe(QueryFailureCode.ConcurrencyUnavailable);
         provider.GetRequiredService<CalendarQuerySnapshotStore>().ActiveSnapshotCount.ShouldBe(0);
     }
 
