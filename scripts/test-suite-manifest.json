@@ -23,7 +23,7 @@
       "name": "main-integration",
       "project": "tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj",
       "trx": "main-integration.trx",
-      "exactTests": 109,
+      "exactTests": 110,
       "coveragePrefix": "main-integration",
       "phase": "main",
       "environment": {
