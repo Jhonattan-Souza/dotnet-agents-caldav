@@ -101,10 +101,17 @@ public sealed class OpenTelemetryStdioIntegrationTests
                 Equals(span.Attributes.GetValueOrDefault("caldav.query.mode"), "start"));
             var continueOperation = operations.Single(span =>
                 Equals(span.Attributes.GetValueOrDefault("caldav.query.mode"), "continue"));
+            startOperation.Attributes.GetValueOrDefault("caldav.query.fetch_mode").ShouldBe("multiget");
+            Convert.ToInt64(startOperation.Attributes["caldav.query.multiget_resource_count"])
+                .ShouldBeGreaterThan(0);
+            startOperation.Attributes.GetValueOrDefault("caldav.query.direct_get_resource_count").ShouldBe(0L);
+            startOperation.Attributes.GetValueOrDefault("caldav.query.direct_get_attempt_count").ShouldBe(0L);
             var spans = OtlpProtobufReader.ReadSpans(receiver.Requests);
             var startTrace = spans.Where(span => span.TraceId.SequenceEqual(startOperation.TraceId)).ToArray();
             var continueTrace = spans.Where(span => span.TraceId.SequenceEqual(continueOperation.TraceId)).ToArray();
             startTrace.ShouldContain(span => span.ScopeName == "DotnetAgents.CalDav.Http");
+            startTrace.ShouldNotContain(span => span.ScopeName == "DotnetAgents.CalDav.Http"
+                && span.Name == "GET");
             continueTrace.ShouldNotContain(span => span.ScopeName == "DotnetAgents.CalDav.Http");
             continueTrace.Where(span => span.Name.StartsWith("caldav.query.phase.", StringComparison.Ordinal))
                 .ShouldAllBe(span => span.ParentSpanId.SequenceEqual(continueOperation.SpanId));
@@ -132,6 +139,59 @@ public sealed class OpenTelemetryStdioIntegrationTests
             await DeleteResourceAsync(firstHref, entityTag: null);
             await DeleteResourceAsync(secondHref, entityTag: null);
         }
+    }
+
+    [Fact]
+    public async Task QueryCompatibilityMode_ExportsMixedAndCachedDirectGetTruthOverBuiltStdio()
+    {
+        await using var server = new QueryCompatibilityServer();
+        await using var receiver = OtlpLoopbackReceiver.Start();
+        var stderr = new ConcurrentQueue<string>();
+        await using (var client = await CreateClientAsync(
+                         receiver.Endpoint,
+                         stderr,
+                         baseUrl: server.BaseUrl,
+                         calendarHrefs: $"{server.MultigetCalendarHref},{server.DirectCalendarHref}"))
+        {
+            var mixed = await client.CallToolAsync(
+                "calendar_entities.query",
+                StartEntityQueryArguments(),
+                cancellationToken: TestContext.Current.CancellationToken);
+            mixed.IsError.ShouldBe(false, mixed.StructuredContent?.ToString());
+            mixed.StructuredContent!.Value.GetProperty("items").GetArrayLength().ShouldBe(2);
+
+            var direct = await client.CallToolAsync(
+                "calendar_entities.query",
+                StartEntityQueryArguments(server.DirectCalendarHref),
+                cancellationToken: TestContext.Current.CancellationToken);
+            direct.IsError.ShouldBe(false, direct.StructuredContent?.ToString());
+            direct.StructuredContent!.Value.GetProperty("items").GetArrayLength().ShouldBe(1);
+        }
+
+        await receiver.WaitForPathsAsync(["/v1/traces"], TestContext.Current.CancellationToken);
+        var operations = await WaitForQueryOperationsAsync(receiver, expectedCount: 2);
+        operations.Length.ShouldBe(2);
+        var mixedOperation = operations.Single(span =>
+            Equals(span.Attributes.GetValueOrDefault("caldav.query.fetch_mode"), "mixed"));
+        var directOperation = operations.Single(span =>
+            Equals(span.Attributes.GetValueOrDefault("caldav.query.fetch_mode"), "direct_get_fallback"));
+        AssertFallbackOperation(mixedOperation, multigetResourceCount: 3);
+        AssertFallbackOperation(directOperation, multigetResourceCount: null);
+        var spans = OtlpProtobufReader.ReadSpans(receiver.Requests);
+        var mixedTrace = spans.Where(span => span.TraceId.SequenceEqual(mixedOperation.TraceId)).ToArray();
+        var directTrace = spans.Where(span => span.TraceId.SequenceEqual(directOperation.TraceId)).ToArray();
+        mixedTrace.ShouldContain(span => span.ScopeName == "DotnetAgents.CalDav.Http"
+            && span.Name == "REPORT"
+            && Equals(span.Attributes.GetValueOrDefault("http.response.status_code"), 501L)
+            && span.StatusCode == 2);
+        AssertDirectReadTrace(mixedTrace);
+        AssertDirectReadTrace(directTrace);
+        server.MultigetReportCount.ShouldBe(2);
+        server.DirectGetCount.ShouldBe(4);
+        stderr.ShouldBeEmpty();
+        foreach (var privateValue in server.PrivateValues)
+            OtlpProtobufReader.ContainsUtf8(receiver.Requests, privateValue).ShouldBeFalse();
+        spans.ShouldAllBe(span => span.EventCount == 0);
     }
 
     [Fact]
@@ -911,6 +971,79 @@ public sealed class OpenTelemetryStdioIntegrationTests
         }
     }
 
+    private static async Task<OtlpSpan[]> WaitForQueryOperationsAsync(
+        OtlpLoopbackReceiver receiver,
+        int expectedCount)
+    {
+        var deadline = TimeProvider.System.GetUtcNow() + TimeSpan.FromSeconds(15);
+        do
+        {
+            var operations = OtlpProtobufReader.ReadSpans(receiver.Requests).Where(span =>
+                span.Name == "caldav.operation"
+                && Equals(span.Attributes.GetValueOrDefault("caldav.tool.name"), "calendar_entities.query"))
+                .ToArray();
+            if (operations.Length == expectedCount)
+                return operations;
+            if (!await receiver.WaitForRequestAsync(TestContext.Current.CancellationToken))
+                return operations;
+        } while (TimeProvider.System.GetUtcNow() < deadline);
+        return OtlpProtobufReader.ReadSpans(receiver.Requests).Where(span =>
+            span.Name == "caldav.operation"
+            && Equals(span.Attributes.GetValueOrDefault("caldav.tool.name"), "calendar_entities.query"))
+            .ToArray();
+    }
+
+    private static Dictionary<string, object?> StartEntityQueryArguments(string? selectedCalendarHref = null)
+    {
+        var scope = selectedCalendarHref is null
+            ? new Dictionary<string, object?> { ["mode"] = "all" }
+            : new Dictionary<string, object?>
+            {
+                ["mode"] = "selected",
+                ["calendar"] = new Dictionary<string, object?>
+                {
+                    ["by"] = "href",
+                    ["href"] = selectedCalendarHref
+                }
+            };
+        return new Dictionary<string, object?>
+        {
+            ["scope"] = scope,
+            ["entityKinds"] = new[] { "event" },
+            ["pageSize"] = 10
+        };
+    }
+
+    private static void AssertFallbackOperation(OtlpSpan operation, long? multigetResourceCount)
+    {
+        operation.StatusCode.ShouldBe(0);
+        operation.Attributes.GetValueOrDefault("caldav.outcome").ShouldBe("success");
+        operation.Attributes.GetValueOrDefault("caldav.query.fallback_reason")
+            .ShouldBe("multiget_unavailable");
+        operation.Attributes.GetValueOrDefault("caldav.query.direct_get_resource_count").ShouldBe(2L);
+        operation.Attributes.GetValueOrDefault("caldav.query.direct_get_attempt_count").ShouldBe(2L);
+        operation.Attributes.GetValueOrDefault("caldav.query.disappeared_resource_count").ShouldBe(1L);
+        operation.Attributes.GetValueOrDefault("caldav.query.multiget_resource_count")
+            .ShouldBe(multigetResourceCount ?? 0L);
+    }
+
+    private static void AssertDirectReadTrace(IReadOnlyCollection<OtlpSpan> spans)
+    {
+        var directReads = spans.Where(span => span.ScopeName == "DotnetAgents.CalDav.Http"
+            && span.Name == "GET"
+            && Equals(span.Attributes.GetValueOrDefault("caldav.http.request_purpose"), "query_resource_read"))
+            .ToArray();
+        directReads.Length.ShouldBe(2);
+        directReads.ShouldContain(span =>
+            Equals(span.Attributes.GetValueOrDefault("http.response.status_code"), 200L)
+            && span.StatusCode == 0);
+        directReads.ShouldContain(span =>
+            Equals(span.Attributes.GetValueOrDefault("http.response.status_code"), 404L)
+            && Equals(span.Attributes.GetValueOrDefault("caldav.http.observation"), "resource_disappeared")
+            && span.StatusCode == 1
+            && !span.Attributes.ContainsKey("error.type"));
+    }
+
     private async Task<McpClient> CreateClientAsync(
         Uri endpoint,
         ConcurrentQueue<string> stderr,
@@ -1126,6 +1259,170 @@ public sealed class OpenTelemetryStdioIntegrationTests
                 return message.Clone();
         }
         throw new EndOfStreamException($"MCP process ended before response {expectedId}.");
+    }
+
+    private sealed class QueryCompatibilityServer : IAsyncDisposable
+    {
+        private const string MultigetUid = "private-multiget-event";
+        private const string DirectUid = "private-direct-event";
+        private const string PrivateSummary = "private compatibility event";
+        private readonly HttpListener _listener = new();
+        private readonly CancellationTokenSource _stopping = new();
+        private readonly Task _serve;
+        private int _directGetCount;
+        private int _multigetReportCount;
+
+        internal QueryCompatibilityServer()
+        {
+            using var reservation = new TcpListener(IPAddress.Loopback, 0);
+            reservation.Start();
+            var port = ((IPEndPoint)reservation.LocalEndpoint).Port;
+            reservation.Stop();
+            BaseUrl = $"http://127.0.0.1:{port}/";
+            MultigetCalendarHref = $"{BaseUrl}calendars/test/multiget/";
+            DirectCalendarHref = $"{BaseUrl}calendars/test/direct/";
+            _listener.Prefixes.Add(BaseUrl);
+            _listener.Start();
+            _serve = ServeAsync();
+        }
+
+        internal string BaseUrl { get; }
+
+        internal string DirectCalendarHref { get; }
+
+        internal int DirectGetCount => Volatile.Read(ref _directGetCount);
+
+        internal string MultigetCalendarHref { get; }
+
+        internal int MultigetReportCount => Volatile.Read(ref _multigetReportCount);
+
+        internal string[] PrivateValues =>
+        [
+            MultigetUid,
+            DirectUid,
+            PrivateSummary,
+            MultigetCalendarHref,
+            DirectCalendarHref
+        ];
+
+        public async ValueTask DisposeAsync()
+        {
+            await _stopping.CancelAsync();
+            _listener.Stop();
+            try
+            {
+                await _serve;
+            }
+            catch (Exception exception) when (_stopping.IsCancellationRequested
+                && exception is HttpListenerException or ObjectDisposedException or OperationCanceledException)
+            {
+                System.Diagnostics.Debug.Assert(_stopping.IsCancellationRequested);
+            }
+            _listener.Close();
+            _stopping.Dispose();
+        }
+
+        private async Task ServeAsync()
+        {
+            while (!_stopping.IsCancellationRequested)
+            {
+                var context = await _listener.GetContextAsync()
+                    .WaitAsync(_stopping.Token)
+                    .ConfigureAwait(false);
+                await RespondAsync(context).ConfigureAwait(false);
+            }
+        }
+
+        private async Task RespondAsync(HttpListenerContext context)
+        {
+            var path = context.Request.Url!.AbsolutePath;
+            if (context.Request.HttpMethod == "PROPFIND")
+            {
+                await WriteXmlAsync(context.Response, path == "/"
+                    ? $"<d:response><d:href>{BaseUrl}</d:href><d:propstat><d:prop><c:calendar-home-set><d:href>{BaseUrl}calendars/test/</d:href></c:calendar-home-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>"
+                    : $"<d:response><d:href>{MultigetCalendarHref}</d:href><d:propstat><d:prop><d:resourcetype><c:calendar/></d:resourcetype><d:displayname>Multiget</d:displayname><c:supported-calendar-component-set><c:comp name=\"VEVENT\"/></c:supported-calendar-component-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response><d:response><d:href>{DirectCalendarHref}</d:href><d:propstat><d:prop><d:resourcetype><c:calendar/></d:resourcetype><d:displayname>Direct</d:displayname><c:supported-calendar-component-set><c:comp name=\"VEVENT\"/></c:supported-calendar-component-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>")
+                    .ConfigureAwait(false);
+                return;
+            }
+
+            if (context.Request.HttpMethod == "REPORT")
+            {
+                using var reader = new StreamReader(context.Request.InputStream, Encoding.UTF8);
+                var requestBody = await reader.ReadToEndAsync(_stopping.Token).ConfigureAwait(false);
+                if (requestBody.Contains("calendar-query", StringComparison.Ordinal))
+                {
+                    var responses = path == "/calendars/test/multiget/"
+                        ? QueryCandidate($"{MultigetCalendarHref}event.ics")
+                        : QueryCandidate($"{DirectCalendarHref}event.ics")
+                          + QueryCandidate($"{DirectCalendarHref}missing.ics");
+                    await WriteXmlAsync(context.Response, responses).ConfigureAwait(false);
+                    return;
+                }
+
+                Interlocked.Increment(ref _multigetReportCount);
+                if (path == "/calendars/test/direct/")
+                {
+                    context.Response.StatusCode = (int)HttpStatusCode.NotImplemented;
+                    context.Response.Close();
+                    return;
+                }
+                await WriteXmlAsync(
+                    context.Response,
+                    MultigetResource($"{MultigetCalendarHref}event.ics", MultigetUid, "multiget-revision"))
+                    .ConfigureAwait(false);
+                return;
+            }
+
+            if (context.Request.HttpMethod == "GET" && path.StartsWith("/calendars/test/direct/", StringComparison.Ordinal))
+            {
+                Interlocked.Increment(ref _directGetCount);
+                if (path.EndsWith("missing.ics", StringComparison.Ordinal))
+                {
+                    context.Response.StatusCode = (int)HttpStatusCode.NotFound;
+                    context.Response.Close();
+                    return;
+                }
+                context.Response.StatusCode = (int)HttpStatusCode.OK;
+                context.Response.Headers["ETag"] = "\"direct-revision\"";
+                await WriteBodyAsync(context.Response, EventResource(DirectUid), "text/calendar; charset=utf-8")
+                    .ConfigureAwait(false);
+                return;
+            }
+
+            context.Response.StatusCode = (int)HttpStatusCode.MethodNotAllowed;
+            context.Response.Close();
+        }
+
+        private static string QueryCandidate(string href) =>
+            $"<d:response><d:href>{href}</d:href><d:status>HTTP/1.1 200 OK</d:status></d:response>";
+
+        private static string MultigetResource(string href, string uid, string entityTag) =>
+            $"<d:response><d:href>{href}</d:href><d:propstat><d:prop><d:getetag>&quot;{entityTag}&quot;</d:getetag><c:calendar-data>{WebUtility.HtmlEncode(EventResource(uid))}</c:calendar-data></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>";
+
+        private static string EventResource(string uid) =>
+            $"BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Compatibility Witness//EN\r\nBEGIN:VEVENT\r\nUID:{uid}\r\nDTSTAMP:20260823T120000Z\r\nDTSTART:20260824T120000Z\r\nSUMMARY:{PrivateSummary}\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        private static Task WriteXmlAsync(HttpListenerResponse response, string responses) =>
+            WriteBodyAsync(
+                response,
+                $"<?xml version=\"1.0\" encoding=\"utf-8\"?><d:multistatus xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\">{responses}</d:multistatus>",
+                "application/xml; charset=utf-8",
+                HttpStatusCode.MultiStatus);
+
+        private static async Task WriteBodyAsync(
+            HttpListenerResponse response,
+            string body,
+            string contentType,
+            HttpStatusCode statusCode = HttpStatusCode.OK)
+        {
+            var bytes = Encoding.UTF8.GetBytes(body);
+            response.StatusCode = (int)statusCode;
+            response.ContentType = contentType;
+            response.ContentLength64 = bytes.Length;
+            await response.OutputStream.WriteAsync(bytes, TestContext.Current.CancellationToken)
+                .ConfigureAwait(false);
+            response.Close();
+        }
     }
 
     private sealed class RetryingDiscoveryServer : IAsyncDisposable

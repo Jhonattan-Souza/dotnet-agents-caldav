@@ -111,6 +111,9 @@ public sealed class CalendarQueryModuleTests
 
         failure.Error.Code.ShouldBe(QueryFailureCode.LimitExhausted);
         failure.Error.Message.ShouldContain("elapsed_time");
+        failure.Error.Limits!.Dimension.ShouldBe(QueryLimitDimension.ElapsedTime);
+        failure.Error.Limits.Observed.ShouldBe(30_000);
+        failure.Error.Limits.Limit.ShouldBe(30_000);
         provider.GetRequiredService<CalendarQuerySnapshotStore>().ActiveReservationCount.ShouldBe(0);
     }
 
@@ -366,7 +369,8 @@ public sealed class CalendarQueryModuleTests
         const string firstCalendar = "https://cal.example/calendars/first/";
         const string secondCalendar = "https://cal.example/calendars/second/";
         var current = firstCalendar;
-        var client = Substitute.For<ICalendarClient>();
+        var client = Substitute.For<ICalendarClient, ICalendarQueryResourceTransport>();
+        var queryTransport = (ICalendarQueryResourceTransport)client;
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(_ => [Calendar(current)]);
         client.QueryCalendarResourceHrefsAsync(
                 Arg.Any<string>(),
@@ -375,7 +379,7 @@ public sealed class CalendarQueryModuleTests
                 null,
                 Arg.Any<CancellationToken>())
             .Returns(call => new[] { call.ArgAt<string>(0) + "item.ics" });
-        client.GetCalendarResourcesForQueryAsync(
+        queryTransport.MultigetAsync(
                 Arg.Any<string>(),
                 Arg.Any<IReadOnlyList<string>>(),
                 Arg.Any<CancellationToken>())
@@ -1237,7 +1241,8 @@ public sealed class CalendarQueryModuleTests
 
     private static ICalendarClient QueryClient(string calendarHref, Func<IReadOnlyList<string>> hrefs)
     {
-        var client = Substitute.For<ICalendarClient>();
+        var client = Substitute.For<ICalendarClient, ICalendarQueryResourceTransport>();
+        var queryTransport = (ICalendarQueryResourceTransport)client;
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
             new CalendarDescriptor
             {
@@ -1255,7 +1260,7 @@ public sealed class CalendarQueryModuleTests
                 null,
                 Arg.Any<CancellationToken>())
             .Returns(_ => hrefs());
-        client.GetCalendarResourcesForQueryAsync(
+        queryTransport.MultigetAsync(
                 calendarHref,
                 Arg.Any<IReadOnlyList<string>>(),
                 Arg.Any<CancellationToken>())
@@ -1353,15 +1358,18 @@ public sealed class CalendarQueryModuleTests
             return Task.FromResult(hrefs());
         }
 
-        public Task<IReadOnlyList<CalendarResourceRead>> MultigetAsync(
+        public Task<CalendarMultigetResult> MultigetAsync(
             string calendarHref,
             IReadOnlyList<string> resourceHrefs,
             CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             MultigetCount++;
-            return Task.FromResult(reads?.Invoke(resourceHrefs) ?? resourceHrefs
-                .Select(href => CalendarResourceRead.Success(href, "\"r1\"", Event(href)))
-                .ToArray());
+            CalendarQueryTelemetry.ObserveMultigetAttempt(resourceHrefs.Count);
+            return Task.FromResult<CalendarMultigetResult>(new CalendarMultigetResult.Resources(
+                reads?.Invoke(resourceHrefs) ?? resourceHrefs
+                    .Select(href => CalendarResourceRead.Success(href, "\"r1\"", Event(href)))
+                    .ToArray()));
         }
 
         public Task<CalendarResourceRead> GetAsync(
@@ -1412,7 +1420,7 @@ public sealed class CalendarQueryModuleTests
             return Task.FromResult<IReadOnlyList<string>>([calendarHref + "item.ics"]);
         }
 
-        public Task<IReadOnlyList<CalendarResourceRead>> MultigetAsync(
+        public Task<CalendarMultigetResult> MultigetAsync(
             string calendarHref,
             IReadOnlyList<string> resourceHrefs,
             CancellationToken cancellationToken)
@@ -1421,9 +1429,9 @@ public sealed class CalendarQueryModuleTests
             var code = calendarHref == FirstCalendar
                 ? CalendarResourceReadCode.PayloadTooLarge
                 : CalendarResourceReadCode.ConcurrencyUnavailable;
-            return Task.FromResult<IReadOnlyList<CalendarResourceRead>>([
+            return Task.FromResult<CalendarMultigetResult>(new CalendarMultigetResult.Resources([
                 new CalendarResourceRead(code, resourceHrefs[0], ObservedByteCount: 33 * 1024 * 1024)
-            ]);
+            ]));
         }
 
         public Task<CalendarResourceRead> GetAsync(
@@ -1455,11 +1463,13 @@ public sealed class CalendarQueryModuleTests
             CancellationToken cancellationToken) => candidates?.Invoke(calendarHref, entityKind, from, to, cancellationToken)
             ?? Task.FromResult<IReadOnlyList<string>>([]);
 
-        public Task<IReadOnlyList<CalendarResourceRead>> MultigetAsync(
+        public async Task<CalendarMultigetResult> MultigetAsync(
             string calendarHref,
             IReadOnlyList<string> resourceHrefs,
-            CancellationToken cancellationToken) => multiget?.Invoke(calendarHref, resourceHrefs, cancellationToken)
-            ?? Task.FromResult<IReadOnlyList<CalendarResourceRead>>([]);
+            CancellationToken cancellationToken) => new CalendarMultigetResult.Resources(
+                multiget is null
+                    ? []
+                    : await multiget(calendarHref, resourceHrefs, cancellationToken).ConfigureAwait(false));
 
         public Task<CalendarResourceRead> GetAsync(
             string calendarHref,

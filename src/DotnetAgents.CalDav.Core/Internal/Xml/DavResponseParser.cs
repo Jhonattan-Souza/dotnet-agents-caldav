@@ -113,6 +113,22 @@ internal static class DavResponseParser
         }
     }
 
+    /// <summary>Recognizes only Calendar multiget-specific unsupported REPORT preconditions.</summary>
+    internal static bool IsCalendarMultigetUnsupportedError(string responseXml)
+    {
+        try
+        {
+            var error = ParseDocument(responseXml).Root;
+            return error?.Name == Dav + "error" && error.Elements().Any(element =>
+                element.Name == CalDav + "supported-calendar-data"
+                || element.Name == Dav + "supported-report");
+        }
+        catch (XmlException)
+        {
+            return false;
+        }
+    }
+
     private static string? TryParseCalendarResourceHref(XElement response)
     {
         var responseStatus = response.Element(Dav + "status");
@@ -130,18 +146,29 @@ internal static class DavResponseParser
         return href;
     }
 
-    private static CalendarMultigetResource ParseCalendarMultigetResource(XElement response)
+    internal static CalendarMultigetResource ParseCalendarMultigetResource(XElement response)
     {
         var href = GetRequiredMultigetHref(response);
-        var properties = GetSuccessfulMultigetProperties(response);
-        if (properties is null)
+        var successful = response.Elements(Dav + "propstat")
+            .Where(IsSuccessfulPropStat)
+            .Select(propstat => propstat.Element(Dav + "prop")
+                ?? throw new XmlException("A successful Calendar multiget propstat is missing its properties."))
+            .ToArray();
+        if (successful.Length == 0)
             return new CalendarMultigetResource(href, GetMultigetFailureStatus(response), null, null);
+
+        if (response.Element(Dav + "status") is not null)
+            throw new XmlException("A Calendar multiget response mixed response and successful propstat truth.");
+        var entityTags = successful.SelectMany(properties => properties.Elements(Dav + "getetag")).ToArray();
+        var calendarData = successful.SelectMany(properties => properties.Elements(CalDav + "calendar-data")).ToArray();
+        if (entityTags.Length > 1 || calendarData.Length > 1)
+            throw new XmlException("A Calendar multiget response contained conflicting authoritative property truth.");
 
         return new CalendarMultigetResource(
             href,
             200,
-            properties.Element(Dav + "getetag")?.Value.Trim(),
-            properties.Element(CalDav + "calendar-data")?.Value);
+            entityTags.SingleOrDefault()?.Value.Trim(),
+            calendarData.SingleOrDefault()?.Value);
     }
 
     private static string GetRequiredMultigetHref(XElement response)
@@ -152,20 +179,22 @@ internal static class DavResponseParser
             : href;
     }
 
-    private static XElement? GetSuccessfulMultigetProperties(XElement response) => response.Elements(Dav + "propstat")
-        .FirstOrDefault(IsSuccessfulPropStat)
-        ?.Element(Dav + "prop");
-
     private static bool IsSuccessfulPropStat(XElement propStat) => propStat.Element(Dav + "status") is { } status
         && IsSuccessStatus(status.Value);
 
     private static int GetMultigetFailureStatus(XElement response)
     {
-        var statusText = response.Element(Dav + "status")?.Value
-            ?? response.Elements(Dav + "propstat").Select(item => item.Element(Dav + "status")?.Value).FirstOrDefault();
-        return statusText is null
-            ? throw new XmlException("A Calendar multiget response is missing its status.")
-            : ParseStatusCode(statusText);
+        var statusCodes = response.Elements(Dav + "status")
+            .Concat(response.Elements(Dav + "propstat").SelectMany(item => item.Elements(Dav + "status")))
+            .Select(status => ParseStatusCode(status.Value))
+            .Distinct()
+            .ToArray();
+        return statusCodes.Length switch
+        {
+            0 => throw new XmlException("A Calendar multiget response is missing its status."),
+            1 => statusCodes[0],
+            _ => throw new XmlException("A Calendar multiget response contained inconsistent failure status truth.")
+        };
     }
 
     private static XDocument ParseDocument(string xml)
@@ -305,7 +334,7 @@ internal static class DavResponseParser
 
     private static bool IsSuccessStatus(string rawStatus) => ParseStatusCode(rawStatus) is >= 200 and <= 299;
 
-    private static int ParseStatusCode(string rawStatus)
+    internal static int ParseStatusCode(string rawStatus)
     {
         var parts = rawStatus.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length < 2

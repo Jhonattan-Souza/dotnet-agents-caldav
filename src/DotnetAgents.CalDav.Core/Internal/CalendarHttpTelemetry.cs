@@ -5,8 +5,10 @@ namespace DotnetAgents.CalDav.Core.Internal;
 internal static class CalendarHttpTelemetry
 {
     private static readonly AsyncLocal<int> AbsenceProbeDepth = new();
+    private static readonly AsyncLocal<CalendarDirectGetReadMeter?> QueryResourceReadMeter = new();
 
     internal const string AbsenceProbe = "absence_probe";
+    internal const string QueryResourceRead = "query_resource_read";
     internal const string InstrumentationName = "DotnetAgents.CalDav.Http";
 
     internal static readonly ActivitySource ActivitySource = new(InstrumentationName);
@@ -20,7 +22,14 @@ internal static class CalendarHttpTelemetry
     internal static readonly HttpRequestOptionsKey<int> ResendCountKey =
         new("DotnetAgents.CalDav.Telemetry.ResendCount");
 
+    internal static readonly HttpRequestOptionsKey<CalendarDirectGetReadMeter> DirectGetMeterKey =
+        new("DotnetAgents.CalDav.Telemetry.DirectGetMeter");
+
+    internal static readonly HttpRequestOptionsKey<int> MultigetResourceCountKey =
+        new("DotnetAgents.CalDav.Telemetry.MultigetResourceCount");
+
     internal static bool IsAbsenceProbe => AbsenceProbeDepth.Value > 0;
+    internal static bool IsQueryResourceRead => QueryResourceReadMeter.Value is not null;
 
     internal static IDisposable BeginAbsenceProbe()
     {
@@ -29,12 +38,33 @@ internal static class CalendarHttpTelemetry
         return new AbsenceProbeScope(previousDepth);
     }
 
+    internal static IDisposable BeginQueryResourceRead(CalendarDirectGetReadMeter meter)
+    {
+        var previous = QueryResourceReadMeter.Value;
+        QueryResourceReadMeter.Value = meter;
+        return new QueryResourceReadScope(previous);
+    }
+
     internal static void MarkAbsenceProbe(HttpRequestMessage request) =>
         request.Options.Set(RequestPurposeKey, AbsenceProbe);
+
+    internal static void MarkQueryResourceRead(HttpRequestMessage request)
+    {
+        request.Options.Set(RequestPurposeKey, QueryResourceRead);
+        request.Options.Set(DirectGetMeterKey, QueryResourceReadMeter.Value!);
+    }
+
+    internal static void MarkQueryMultiget(HttpRequestMessage request, int resourceCount) =>
+        request.Options.Set(MultigetResourceCountKey, resourceCount);
 
     private sealed class AbsenceProbeScope(int previousDepth) : IDisposable
     {
         public void Dispose() => AbsenceProbeDepth.Value = previousDepth;
+    }
+
+    private sealed class QueryResourceReadScope(CalendarDirectGetReadMeter? previous) : IDisposable
+    {
+        public void Dispose() => QueryResourceReadMeter.Value = previous;
     }
 
     internal sealed class AttemptSequence

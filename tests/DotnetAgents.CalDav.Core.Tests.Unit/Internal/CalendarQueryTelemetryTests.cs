@@ -44,7 +44,8 @@ public sealed class CalendarQueryTelemetryTests
     {
         CalendarQueryTelemetry.Begin(false);
         CalendarQueryTelemetry.Add("caldav.query.candidate_count", 1);
-        CalendarQueryTelemetry.ObserveMultiget(1);
+        CalendarQueryTelemetry.ObserveMultigetAttempt(1);
+        CalendarQueryTelemetry.ObserveMultigetSuccess();
         using var listener = Listen();
         using var source = new ActivitySource(CalendarQueryTelemetry.InstrumentationName, "0.1.0");
         using var operation = source.StartActivity("caldav.operation");
@@ -55,7 +56,8 @@ public sealed class CalendarQueryTelemetryTests
         CalendarQueryTelemetry.Add("caldav.query.candidate_count", -1);
         CalendarQueryTelemetry.Add("caldav.query.candidate_count", 2);
         CalendarQueryTelemetry.Add("caldav.query.candidate_count", 3);
-        CalendarQueryTelemetry.ObserveMultiget(4);
+        CalendarQueryTelemetry.ObserveMultigetAttempt(4);
+        CalendarQueryTelemetry.ObserveMultigetSuccess();
 
         operation.GetTagItem("caldav.query.mode").ShouldBe("start");
         operation.GetTagItem("caldav.query.candidate_count").ShouldBe(5L);
@@ -77,6 +79,54 @@ public sealed class CalendarQueryTelemetryTests
         operation.GetTagItem("caldav.query.snapshot_lookup_count").ShouldBe(0L);
         operation.GetTagItem("caldav.query.page_admission_count").ShouldBe(0L);
         operation.GetTagItem("caldav.query.candidate_count").ShouldBeNull();
+        operation.GetTagItem("caldav.query.fetch_mode").ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task ConcurrentFallbackWorkPreservesMixedModeAndExactClosedCounters()
+    {
+        const int workerCount = 128;
+        using var listener = Listen();
+        using var source = new ActivitySource(CalendarQueryTelemetry.InstrumentationName, "0.1.0");
+        using var operation = source.StartActivity("caldav.operation");
+        operation.ShouldNotBeNull();
+        CalendarQueryTelemetry.Begin(false);
+        CalendarQueryTelemetry.ObserveMultigetSuccess();
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var workers = Enumerable.Range(0, workerCount).Select(async _ =>
+        {
+            await release.Task;
+            CalendarQueryTelemetry.ObserveDirectGetFallback();
+            CalendarQueryTelemetry.Add("caldav.query.direct_get_resource_count");
+            CalendarQueryTelemetry.Add("caldav.query.direct_get_attempt_count");
+            CalendarQueryTelemetry.Add("caldav.query.disappeared_resource_count");
+        }).ToArray();
+        release.SetResult();
+        await Task.WhenAll(workers);
+
+        operation.GetTagItem("caldav.query.fetch_mode").ShouldBe("mixed");
+        operation.GetTagItem("caldav.query.fallback_reason").ShouldBe("multiget_unavailable");
+        operation.GetTagItem("caldav.query.direct_get_resource_count").ShouldBe((long)workerCount);
+        operation.GetTagItem("caldav.query.direct_get_attempt_count").ShouldBe((long)workerCount);
+        operation.GetTagItem("caldav.query.disappeared_resource_count").ShouldBe((long)workerCount);
+    }
+
+    [Fact]
+    public void FetchModeTransitionRemainsMixedWhenDirectWorkPrecedesMultigetObservation()
+    {
+        using var listener = Listen();
+        using var source = new ActivitySource(CalendarQueryTelemetry.InstrumentationName, "0.1.0");
+        using var operation = source.StartActivity("caldav.operation");
+        operation.ShouldNotBeNull();
+        CalendarQueryTelemetry.Begin(false);
+
+        CalendarQueryTelemetry.ObserveDirectGetFallback();
+        CalendarQueryTelemetry.ObserveMultigetSuccess();
+        CalendarQueryTelemetry.ObserveMultigetSuccess();
+
+        operation.GetTagItem("caldav.query.fetch_mode").ShouldBe("mixed");
+        operation.GetTagItem("caldav.query.fallback_reason").ShouldBe("multiget_unavailable");
     }
 
     [Fact]
@@ -95,7 +145,8 @@ public sealed class CalendarQueryTelemetryTests
 
         CalendarQueryTelemetry.Begin(false);
         CalendarQueryTelemetry.Add("caldav.query.candidate_count", 1);
-        CalendarQueryTelemetry.ObserveMultiget(2);
+        CalendarQueryTelemetry.ObserveMultigetAttempt(2);
+        CalendarQueryTelemetry.ObserveMultigetSuccess();
         using var phase = CalendarQueryTelemetry.StartPhase("candidate");
 
         phase.ShouldNotBeNull();

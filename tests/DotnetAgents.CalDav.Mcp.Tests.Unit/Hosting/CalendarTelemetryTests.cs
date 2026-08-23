@@ -344,7 +344,7 @@ public sealed class CalendarTelemetryTests
     }
 
     [Fact]
-    public void ExportAllowlist_OnlyMarkedAbsenceProbeReclassifiesHttpNotFound()
+    public void ExportAllowlist_OnlyClosedMarkedObservationsReclassifyHttpNotFound()
     {
         using var listener = ListenTo("DotnetAgents.CalDav.Http");
         using var source = new ActivitySource("DotnetAgents.CalDav.Http");
@@ -356,6 +356,14 @@ public sealed class CalendarTelemetryTests
         marked.SetTag("caldav.http.request_purpose", "absence_probe");
         marked.SetStatus(ActivityStatusCode.Error);
         marked.Stop();
+        using var queryRead = source.StartActivity("GET query");
+        queryRead.ShouldNotBeNull();
+        queryRead.SetTag("http.request.method", "GET");
+        queryRead.SetTag("http.response.status_code", 404);
+        queryRead.SetTag("error.type", "404");
+        queryRead.SetTag("caldav.http.request_purpose", "query_resource_read");
+        queryRead.SetStatus(ActivityStatusCode.Error);
+        queryRead.Stop();
         using var unmarked = source.StartActivity("GET unmarked");
         unmarked.ShouldNotBeNull();
         unmarked.SetTag("http.request.method", "GET");
@@ -366,6 +374,7 @@ public sealed class CalendarTelemetryTests
 
         var processor = new TelemetryActivityAllowlistProcessor();
         processor.OnEnd(marked);
+        processor.OnEnd(queryRead);
         processor.OnEnd(unmarked);
 
         marked.GetTagItem("http.response.status_code").ShouldBe(404);
@@ -373,10 +382,43 @@ public sealed class CalendarTelemetryTests
         marked.GetTagItem("caldav.http.observation").ShouldBe("expected_absence");
         marked.GetTagItem("error.type").ShouldBeNull();
         marked.Status.ShouldBe(ActivityStatusCode.Ok);
+        queryRead.GetTagItem("http.response.status_code").ShouldBe(404);
+        queryRead.GetTagItem("caldav.http.request_purpose").ShouldBe("query_resource_read");
+        queryRead.GetTagItem("caldav.http.observation").ShouldBe("resource_disappeared");
+        queryRead.GetTagItem("error.type").ShouldBeNull();
+        queryRead.Status.ShouldBe(ActivityStatusCode.Ok);
         unmarked.GetTagItem("caldav.http.request_purpose").ShouldBeNull();
         unmarked.GetTagItem("caldav.http.observation").ShouldBeNull();
         unmarked.GetTagItem("error.type").ShouldBe("404");
         unmarked.Status.ShouldBe(ActivityStatusCode.Error);
+    }
+
+    [Theory]
+    [InlineData(200, ActivityStatusCode.Unset)]
+    [InlineData(503, ActivityStatusCode.Error)]
+    public void ExportAllowlist_PreservesQueryReadPurposeOnEveryWireOutcome(
+        int statusCode,
+        ActivityStatusCode expectedStatus)
+    {
+        using var listener = ListenTo("DotnetAgents.CalDav.Http");
+        using var source = new ActivitySource("DotnetAgents.CalDav.Http");
+        using var activity = source.StartActivity("GET query resource");
+        activity.ShouldNotBeNull();
+        activity.SetTag("http.request.method", "GET");
+        activity.SetTag("http.response.status_code", statusCode);
+        activity.SetTag("caldav.http.request_purpose", "query_resource_read");
+        if (statusCode >= 400)
+        {
+            activity.SetTag("error.type", statusCode.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            activity.SetStatus(ActivityStatusCode.Error);
+        }
+        activity.Stop();
+
+        new TelemetryActivityAllowlistProcessor().OnEnd(activity);
+
+        activity.GetTagItem("caldav.http.request_purpose").ShouldBe("query_resource_read");
+        activity.GetTagItem("caldav.http.observation").ShouldBeNull();
+        activity.Status.ShouldBe(expectedStatus);
     }
 
     [Fact]
@@ -614,6 +656,10 @@ public sealed class CalendarTelemetryTests
         activity.ShouldNotBeNull();
         activity.SetTag("caldav.query.mode", "start");
         activity.SetTag("caldav.query.fetch_mode", "multiget");
+        activity.SetTag("caldav.query.fallback_reason", "private");
+        activity.SetTag("caldav.query.direct_get_resource_count", 4L);
+        activity.SetTag("caldav.query.direct_get_attempt_count", 5L);
+        activity.SetTag("caldav.query.disappeared_resource_count", 1L);
         activity.SetTag("caldav.query.snapshot_lookup_count", 1L);
         activity.SetTag("caldav.query.serialization_count", 0L);
         activity.SetTag("caldav.query.candidate_count", -1L);
@@ -628,6 +674,10 @@ public sealed class CalendarTelemetryTests
 
         activity.GetTagItem("caldav.query.mode").ShouldBe("start");
         activity.GetTagItem("caldav.query.fetch_mode").ShouldBe("multiget");
+        activity.GetTagItem("caldav.query.fallback_reason").ShouldBeNull();
+        activity.GetTagItem("caldav.query.direct_get_resource_count").ShouldBe(4L);
+        activity.GetTagItem("caldav.query.direct_get_attempt_count").ShouldBe(5L);
+        activity.GetTagItem("caldav.query.disappeared_resource_count").ShouldBe(1L);
         activity.GetTagItem("caldav.query.snapshot_lookup_count").ShouldBe(1L);
         activity.GetTagItem("caldav.query.serialization_count").ShouldBe(0L);
         activity.GetTagItem("caldav.query.candidate_count").ShouldBeNull();
@@ -636,6 +686,26 @@ public sealed class CalendarTelemetryTests
         activity.GetTagItem("caldav.query.phase").ShouldBeNull();
         activity.GetTagItem("caldav.query.cursor").ShouldBeNull();
         activity.GetTagItem("caldav.query.href").ShouldBeNull();
+    }
+
+    [Theory]
+    [InlineData("direct_get_fallback")]
+    [InlineData("mixed")]
+    public void QueryTelemetryAllowlistKeepsEveryClosedFallbackModeAndReason(string mode)
+    {
+        using var listener = ListenTo(CalendarTelemetry.InstrumentationName);
+        using var source = new ActivitySource(CalendarTelemetry.InstrumentationName);
+        using var activity = source.StartActivity("caldav.operation");
+        activity.ShouldNotBeNull();
+        activity.SetTag("caldav.query.mode", "start");
+        activity.SetTag("caldav.query.fetch_mode", mode);
+        activity.SetTag("caldav.query.fallback_reason", "multiget_unavailable");
+        activity.Stop();
+
+        new TelemetryActivityAllowlistProcessor().OnEnd(activity);
+
+        activity.GetTagItem("caldav.query.fetch_mode").ShouldBe(mode);
+        activity.GetTagItem("caldav.query.fallback_reason").ShouldBe("multiget_unavailable");
     }
 
     [Fact]

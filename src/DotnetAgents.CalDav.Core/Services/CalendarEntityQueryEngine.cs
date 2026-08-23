@@ -151,14 +151,14 @@ internal sealed class CalendarEntityQueryEngine
         IReadOnlyList<CalendarResourceRead>? reads;
         try
         {
-            reads = await _calendarClient.GetCalendarResourcesForQueryAsync(calendar.Href, hrefs, cancellationToken);
+            reads = await QueryResourceTransport.MultigetAsync(calendar.Href, hrefs, cancellationToken);
         }
         catch (CalendarDiscoveryUnsupportedCapabilityException)
         {
             reads = null;
         }
         if (reads is null || reads.Count != hrefs.Count)
-            reads = await ReadDirectlyAsync(hrefs, cancellationToken);
+            reads = await ReadDirectlyAsync(calendar, hrefs, cancellationToken);
         return reads.Select(read => read.Code == CalendarResourceReadCode.Success
                 ? CalendarResourceProjector.AttachSnapshot(calendar.Href, read)
                 : read)
@@ -166,14 +166,20 @@ internal sealed class CalendarEntityQueryEngine
     }
 
     private async Task<IReadOnlyList<CalendarResourceRead>> ReadDirectlyAsync(
+        CalendarDescriptor calendar,
         IReadOnlyList<string> hrefs,
         CancellationToken cancellationToken)
     {
         var reads = new List<CalendarResourceRead>(hrefs.Count);
         foreach (var href in hrefs)
-            reads.Add(await _calendarClient.GetCalendarResourceAsync(href, cancellationToken));
+            reads.Add(await QueryResourceTransport.DirectGetAsync(calendar.Href, href, cancellationToken));
         return reads;
     }
+
+    private ICalendarQueryResourceTransport QueryResourceTransport =>
+        _calendarClient as ICalendarQueryResourceTransport
+        ?? throw new CalendarDiscoveryProtocolException(
+            "The configured CalDAV adapter does not implement bounded query resource retrieval.");
 
     private static CandidateFetchResult? AccumulateRead(
         CalendarResourceRead read,

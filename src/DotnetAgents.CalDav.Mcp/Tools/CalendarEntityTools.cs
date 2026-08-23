@@ -110,7 +110,10 @@ public sealed class CalendarEntityTools
             failure.Limits.OccurrenceCount,
             failure.Limits.ByteCount,
             failure.Limits.ItemCount,
-            failure.Limits.SnapshotCount),
+            failure.Limits.SnapshotCount,
+            LimitDimension(failure.Limits.Dimension),
+            failure.Limits.Observed,
+            failure.Limits.Limit),
         failure.AuthorizedCandidates?.Select(Candidate).ToArray(),
         failure.RetryAfterMs));
 
@@ -120,6 +123,15 @@ public sealed class CalendarEntityTools
         new CalendarEntityKinds(
             CalendarEntityKindCapability.From(candidate.EventSupport, candidate.EventEvidence),
             CalendarEntityKindCapability.From(candidate.TodoSupport, candidate.TodoEvidence)));
+
+    private static string? LimitDimension(QueryLimitDimension? dimension) => dimension switch
+    {
+        QueryLimitDimension.ResourceCount => "resource_count",
+        QueryLimitDimension.AttemptCount => "attempt_count",
+        QueryLimitDimension.ByteCount => "byte_count",
+        QueryLimitDimension.ElapsedTime => "elapsed_time",
+        _ => null
+    };
 
     private static bool TryCreateRequest(
         IDictionary<string, JsonElement>? arguments,
@@ -381,7 +393,10 @@ public sealed record CalendarEntityExecutionLimits(
     [property: JsonPropertyName("occurrenceCount"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? OccurrenceCount = null,
     [property: JsonPropertyName("byteCount"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? ByteCount = null,
     [property: JsonPropertyName("itemCount"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? ItemCount = null,
-    [property: JsonPropertyName("snapshotCount"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? SnapshotCount = null);
+    [property: JsonPropertyName("snapshotCount"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? SnapshotCount = null,
+    [property: JsonPropertyName("dimension"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Dimension = null,
+    [property: JsonPropertyName("observed"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? Observed = null,
+    [property: JsonPropertyName("limit"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? Limit = null);
 
 public sealed record CalendarAuthorizedCandidateResult(
     [property: JsonPropertyName("calendar")] CalendarHref Calendar,

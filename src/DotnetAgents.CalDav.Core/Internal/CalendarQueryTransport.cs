@@ -26,19 +26,31 @@ internal sealed class CalendarQueryTransport(CalendarOperationDiscovery discover
             to,
             cancellationToken).ConfigureAwait(false);
 
-    public async Task<IReadOnlyList<CalendarResourceRead>> MultigetAsync(
+    public async Task<CalendarMultigetResult> MultigetAsync(
         string calendarHref,
         IReadOnlyList<string> resourceHrefs,
-        CancellationToken cancellationToken) => await discovery.GetCalendarResourcesForQueryAsync(
-            calendarHref,
-            resourceHrefs,
-            cancellationToken).ConfigureAwait(false);
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var resources = await discovery.MultigetAsync(
+                calendarHref,
+                resourceHrefs,
+                cancellationToken).ConfigureAwait(false);
+            return new CalendarMultigetResult.Resources(resources);
+        }
+        catch (CalendarDiscoveryUnsupportedCapabilityException)
+        {
+            return new CalendarMultigetResult.VerifiedUnavailable();
+        }
+    }
 
     public async Task<CalendarResourceRead> GetAsync(
         string calendarHref,
         string resourceHref,
-        CancellationToken cancellationToken) => await discovery.GetCalendarResourceForQueryAsync(
+        CancellationToken cancellationToken) => await discovery.DirectGetAsync(
             calendarHref,
             resourceHref,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken)
+            .ConfigureAwait(false);
 }

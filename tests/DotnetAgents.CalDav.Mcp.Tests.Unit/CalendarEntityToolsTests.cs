@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using DotnetAgents.CalDav.Core.Abstractions;
@@ -6,6 +7,7 @@ using DotnetAgents.CalDav.Core.DependencyInjection;
 using DotnetAgents.CalDav.Core.Models;
 using DotnetAgents.CalDav.Mcp.Tools;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Http;
 using ModelContextProtocol.Protocol;
 using NSubstitute;
 using Shouldly;
@@ -380,41 +382,17 @@ public sealed class CalendarEntityToolsTests
     public async Task ActualSdkEnvelopeMatchesTheModuleAccountant()
     {
         const string calendarHref = "https://cal.example/calendars/work/";
-        var client = Substitute.For<ICalendarClient>();
-        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
-            new CalendarDescriptor
-            {
-                Href = calendarHref,
-                DisplayName = "Work",
-                DisplayNameProvenance = DisplayNameProvenance.DavDisplayName,
-                EventSupport = EntityKindSupport.Advertised,
-                TodoSupport = EntityKindSupport.NotAdvertised
-            }
-        ]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([calendarHref + "a.ics"]);
-        client.GetCalendarResourcesForQueryAsync(
-                calendarHref,
-                Arg.Any<IReadOnlyList<string>>(),
-                Arg.Any<CancellationToken>())
-            .Returns([CalendarResourceRead.Success(
-                calendarHref + "a.ics",
-                "\"r1\"",
-                Encoding.UTF8.GetBytes("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:a\r\nDTSTAMP:20260823T120000Z\r\nDTSTART:20260824T120000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"))]);
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddSingleton<IHttpMessageHandlerBuilderFilter>(
+            new PrimaryHandlerFilter(new QueryEnvelopeHandler(calendarHref)));
         services.AddCalDavCalendars(options =>
         {
-            options.BaseUrl = "https://cal.example";
+            options.BaseUrl = "https://cal.example/calendars/";
             options.Username = "user";
             options.Password = "password";
+            options.CalendarHrefs = calendarHref;
         });
-        services.AddSingleton(client);
         await using var provider = services.BuildServiceProvider();
         var page = (await provider.GetRequiredService<ICalendarQueryModule>().QueryEntitiesAsync(
             new CalendarEntityQueryRequest.Start(
@@ -493,4 +471,57 @@ public sealed class CalendarEntityToolsTests
         return arguments;
     }
 
+    private sealed class PrimaryHandlerFilter(HttpMessageHandler handler) : IHttpMessageHandlerBuilderFilter
+    {
+        public Action<HttpMessageHandlerBuilder> Configure(Action<HttpMessageHandlerBuilder> next) => builder =>
+        {
+            next(builder);
+            builder.PrimaryHandler = handler;
+        };
+    }
+
+    private sealed class QueryEnvelopeHandler(string calendarHref) : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            var body = request.Content is null
+                ? string.Empty
+                : await request.Content.ReadAsStringAsync(cancellationToken);
+            var xml = request.Method.Method switch
+            {
+                "PROPFIND" when request.Headers.GetValues("Depth").Single() == "0" => $"""
+                    <d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+                      <d:response><d:href>https://cal.example/calendars/</d:href><d:propstat><d:prop><c:calendar-home-set><d:href>https://cal.example/calendars/</d:href></c:calendar-home-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>
+                    </d:multistatus>
+                    """,
+                "PROPFIND" => $"""
+                    <d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+                      <d:response><d:href>{calendarHref}</d:href><d:propstat><d:prop><d:displayname>Work</d:displayname><d:resourcetype><c:calendar/></d:resourcetype><c:supported-calendar-component-set><c:comp name="VEVENT"/></c:supported-calendar-component-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>
+                    </d:multistatus>
+                    """,
+                "REPORT" when body.Contains("calendar-query", StringComparison.Ordinal) => $"""
+                    <d:multistatus xmlns:d="DAV:"><d:response><d:href>{calendarHref}a.ics</d:href><d:status>HTTP/1.1 200 OK</d:status></d:response></d:multistatus>
+                    """,
+                "REPORT" => $"""
+                    <d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:response><d:href>{calendarHref}a.ics</d:href><d:propstat><d:prop><d:getetag>&quot;r1&quot;</d:getetag><c:calendar-data>BEGIN:VCALENDAR&#13;
+                    VERSION:2.0&#13;
+                    BEGIN:VEVENT&#13;
+                    UID:a&#13;
+                    DTSTAMP:20260823T120000Z&#13;
+                    DTSTART:20260824T120000Z&#13;
+                    END:VEVENT&#13;
+                    END:VCALENDAR&#13;
+                    </c:calendar-data></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>
+                    """,
+                _ => throw new InvalidOperationException("Unexpected deterministic query request.")
+            };
+            return new HttpResponseMessage(HttpStatusCode.MultiStatus)
+            {
+                Content = new StringContent(xml, Encoding.UTF8, "application/xml"),
+                RequestMessage = request
+            };
+        }
+    }
 }

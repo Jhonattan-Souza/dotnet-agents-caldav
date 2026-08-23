@@ -20,7 +20,7 @@ namespace DotnetAgents.CalDav.Core.Internal;
 /// HttpClient-based CalDAV client for Calendar Object Resources.
 /// Handles PROPFIND, REPORT, GET, PUT, DELETE verbs with XML/iCalendar encoding.
 /// </summary>
-internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport
+internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport, ICalendarQueryResourceTransport
 {
     private const int MaximumCalendarResourceBytes = 4 * 1024 * 1024;
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
@@ -30,24 +30,38 @@ internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport
     private readonly HttpClient _httpClient;
     private readonly IOptions<CalDavOptions> _options;
     private readonly ILogger<CalDavClient> _logger;
+    private readonly CalendarQueryCapabilityState _queryCapabilities;
     private readonly ConcurrentDictionary<CapabilityKey, CapabilityState> _capabilities = new();
     private readonly object _configurationGate = new();
     private int _configurationFingerprint;
     private long _capabilityGeneration;
 
-    public CalDavClient(HttpClient httpClient, IOptions<CalDavOptions> options, ILogger<CalDavClient> logger)
+    public CalDavClient(
+        HttpClient httpClient,
+        IOptions<CalDavOptions> options,
+        ILogger<CalDavClient> logger,
+        CalendarQueryCapabilityState queryCapabilities)
     {
         _httpClient = httpClient;
         _options = options;
         _logger = logger;
+        _queryCapabilities = queryCapabilities;
         _configurationFingerprint = GetConfigurationFingerprint(options.Value);
+    }
+
+    internal CalDavClient(HttpClient httpClient, IOptions<CalDavOptions> options, ILogger<CalDavClient> logger)
+        : this(httpClient, options, logger, new CalendarQueryCapabilityState())
+    {
     }
 
     public void RediscoverCapabilities()
     {
         EnsureCapabilityConfiguration();
         lock (_configurationGate)
+        {
             InvalidateCapabilityObservations();
+            _queryCapabilities.Invalidate();
+        }
     }
 
     /// <inheritdoc />
@@ -204,14 +218,55 @@ internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport
             resourceUri,
             absenceProbe,
             cancellationToken);
+        return await ReadCalendarResourceResponseAsync(resourceUri, response, cancellationToken).ConfigureAwait(false);
+    }
+
+    async Task<IReadOnlyList<CalendarResourceRead>> ICalendarQueryResourceTransport.MultigetAsync(
+        string calendarHref,
+        IReadOnlyList<string> resourceHrefs,
+        CancellationToken cancellationToken) => await GetCalendarResourcesForQueryAsync(
+            calendarHref,
+            resourceHrefs,
+            cancellationToken).ConfigureAwait(false);
+
+    async Task<CalendarResourceRead> ICalendarQueryResourceTransport.DirectGetAsync(
+        string calendarHref,
+        string resourceHref,
+        CancellationToken cancellationToken)
+    {
+        CalendarOperationProgress.SetPhase(CalendarOperationPhase.Fetch);
+        var origin = new Uri(_options.Value.BaseUrl, UriKind.Absolute);
+        if (!TryCanonicalizeCalendarHref(origin, calendarHref, out var canonicalCalendarHref)
+            || !TryValidateAbsoluteResourceHref(resourceHref, out var resourceUri)
+            || !IsDirectResourceOf(new Uri(canonicalCalendarHref, UriKind.Absolute), resourceUri))
+        {
+            return new CalendarResourceRead(CalendarResourceReadCode.InvalidInput, resourceHref);
+        }
+
+        using var response = await SendGetWithRedirectHandlingAsync(
+            resourceUri,
+            absenceProbe: false,
+            cancellationToken,
+            authorizedCalendar: new Uri(canonicalCalendarHref, UriKind.Absolute)).ConfigureAwait(false);
+        return await ReadCalendarResourceResponseAsync(resourceUri, response, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<CalendarResourceRead> ReadCalendarResourceResponseAsync(
+        Uri resourceUri,
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
         if (response.StatusCode == HttpStatusCode.NotFound)
-            return new CalendarResourceRead(CalendarResourceReadCode.NotFound);
+            return new CalendarResourceRead(CalendarResourceReadCode.NotFound, resourceUri.AbsoluteUri);
 
         response.EnsureSuccessStatusCode();
         var responseEntityTag = response.Headers.ETag;
         var bounded = await ReadBoundedContentAsync(response.Content, cancellationToken);
         if (bounded.Content is null)
-            return new CalendarResourceRead(CalendarResourceReadCode.PayloadTooLarge, ObservedByteCount: bounded.ObservedByteCount);
+            return new CalendarResourceRead(
+                CalendarResourceReadCode.PayloadTooLarge,
+                resourceUri.AbsoluteUri,
+                ObservedByteCount: bounded.ObservedByteCount);
         var content = bounded.Content;
         try
         {
@@ -219,7 +274,7 @@ internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport
         }
         catch (DecoderFallbackException)
         {
-            return new CalendarResourceRead(CalendarResourceReadCode.UpstreamProtocolError);
+            return new CalendarResourceRead(CalendarResourceReadCode.UpstreamProtocolError, resourceUri.AbsoluteUri);
         }
 
         if (responseEntityTag is null || responseEntityTag.IsWeak)
@@ -234,18 +289,7 @@ internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport
         return CalendarResourceRead.Success(resourceUri.AbsoluteUri, entityTag, content);
     }
 
-    /// <inheritdoc />
-    public async Task<CalendarResourceRead> GetCalendarResourceForQueryAsync(
-        string calendarHref,
-        string href,
-        CancellationToken cancellationToken)
-    {
-        var reads = await GetCalendarResourcesForQueryAsync(calendarHref, [href], cancellationToken);
-        return reads[0];
-    }
-
-    /// <inheritdoc />
-    public async Task<IReadOnlyList<CalendarResourceRead>> GetCalendarResourcesForQueryAsync(
+    private async Task<IReadOnlyList<CalendarResourceRead>> GetCalendarResourcesForQueryAsync(
         string calendarHref,
         IReadOnlyList<string> hrefs,
         CancellationToken cancellationToken)
@@ -254,7 +298,6 @@ internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport
         if (hrefs.Count == 0)
             return [];
         EnsureCapabilityConfiguration();
-        var generation = Volatile.Read(ref _capabilityGeneration);
         if (!TryCreateMultigetPlan(calendarHref, hrefs, out var canonicalCalendarHref, out var resourceUris))
         {
             return hrefs.Select(href => new CalendarResourceRead(
@@ -263,31 +306,31 @@ internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport
         }
         var calendarUri = new Uri(canonicalCalendarHref, UriKind.Absolute);
 
-        var capabilityKey = CapabilityKey.CalendarMultiget(canonicalCalendarHref);
-        if (IsUnavailable(capabilityKey))
+        var capability = _queryCapabilities.ObserveContext(_options.Value, canonicalCalendarHref);
+        if (_queryCapabilities.IsUnavailable(capability))
             throw new CalendarDiscoveryUnsupportedCapabilityException("The Calendar multiget capability is unavailable.");
 
-        (string Content, Uri RequestUri) response;
+        (IReadOnlyList<CalendarMultigetResource> Resources, Uri RequestUri) response;
         try
         {
-            response = await SendReportAsync(
+            response = await SendMultigetReportAsync(
                 canonicalCalendarHref,
                 DavRequestBuilder.BuildCalendarMultiget(resourceUris.Select(resourceUri => resourceUri.AbsoluteUri).ToArray()),
+                resourceUris.Count,
                 cancellationToken);
         }
-        catch (CalendarQueryFilterUnsupportedException exception)
+        catch (CalendarMultigetUnsupportedException exception)
         {
-            ObserveCapability(capabilityKey, CapabilityState.Unavailable, generation);
+            _queryCapabilities.ObserveUnavailable(capability);
             throw new CalendarDiscoveryUnsupportedCapabilityException(exception.Message);
         }
         var requested = resourceUris.Select(resourceUri => resourceUri.AbsoluteUri).ToHashSet(StringComparer.Ordinal);
         var returned = new Dictionary<string, CalendarMultigetResource>(StringComparer.Ordinal);
-        foreach (var candidate in DavResponseParser.ParseCalendarMultigetResources(response.Content))
+        foreach (var candidate in response.Resources)
         {
             if (!TryAddMultigetResource(response.RequestUri, calendarUri, requested, returned, candidate))
                 throw new CalendarDiscoveryProtocolException("The Calendar multiget response contained an unsafe resource href.");
         }
-        ObserveCapability(capabilityKey, CapabilityState.Verified, generation);
         return resourceUris.Select(resourceUri => ToCalendarResourceRead(
                 resourceUri.AbsoluteUri,
                 returned.GetValueOrDefault(resourceUri.AbsoluteUri)))
@@ -338,12 +381,23 @@ internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport
         string resourceHref,
         CalendarMultigetResource? resource)
     {
-        if (resource is null || resource.StatusCode == (int)HttpStatusCode.NotFound)
+        if (resource?.StatusCode == (int)HttpStatusCode.NotFound)
             return new CalendarResourceRead(CalendarResourceReadCode.NotFound, ResourceHref: resourceHref);
+        if (resource is null)
+            return new CalendarResourceRead(CalendarResourceReadCode.UpstreamProtocolError, ResourceHref: resourceHref);
         if (resource.StatusCode is < 200 or > 299 || resource.CalendarData is null)
             return new CalendarResourceRead(CalendarResourceReadCode.UpstreamProtocolError, ResourceHref: resourceHref);
 
-        var content = StrictUtf8.GetBytes(resource.CalendarData.ReplaceLineEndings("\r\n"));
+        var normalized = resource.CalendarData.ReplaceLineEndings("\r\n");
+        var byteCount = StrictUtf8.GetByteCount(normalized);
+        if (byteCount > MaximumCalendarResourceBytes)
+        {
+            return new CalendarResourceRead(
+                CalendarResourceReadCode.PayloadTooLarge,
+                ResourceHref: resourceHref,
+                ObservedByteCount: byteCount);
+        }
+        var content = StrictUtf8.GetBytes(normalized);
         if (!EntityTagHeaderValue.TryParse(resource.EntityTag, out var entityTag) || entityTag.IsWeak)
         {
             return new CalendarResourceRead(
@@ -439,53 +493,95 @@ internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport
         Uri initialUri,
         bool absenceProbe,
         CancellationToken cancellationToken,
-        int maxRedirects = 5)
+        int maxRedirects = 5,
+        Uri? authorizedCalendar = null)
     {
         var currentUri = initialUri;
         for (var attempt = 0; ; attempt++)
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, currentUri);
-            if (absenceProbe)
-                CalendarHttpTelemetry.MarkAbsenceProbe(request);
+            MarkReadPurpose(request, absenceProbe);
             var response = await _httpClient.SendAsync(
                 request,
                 HttpCompletionOption.ResponseHeadersRead,
                 cancellationToken);
-            if (response.StatusCode == HttpStatusCode.RedirectMethod)
+            var redirect = GetValidatedReadRedirect(
+                response,
+                currentUri,
+                initialUri,
+                authorizedCalendar,
+                attempt,
+                maxRedirects);
+            if (redirect is null)
             {
-                response.Dispose();
-                throw new CalendarDiscoveryProtocolException("A 303 redirect is invalid for a CalDAV resource read.");
-            }
-
-            if (!IsPreservingReadRedirect(response.StatusCode))
+                EnsureQueryResponseIdentity(response, currentUri, initialUri, authorizedCalendar);
                 return response;
-            if (attempt == maxRedirects)
-            {
-                response.Dispose();
-                throw new CalendarDiscoveryProtocolException("CalDAV redirect limit was exceeded.");
             }
-
-            var location = response.Headers.Location;
-            if (location is null)
-            {
-                response.Dispose();
-                throw new CalendarDiscoveryProtocolException("A CalDAV redirect is missing its Location header.");
-            }
-            if (location.OriginalString.Contains("%2e", StringComparison.OrdinalIgnoreCase))
-            {
-                response.Dispose();
-                throw new CalendarDiscoveryProtocolException("Unsafe CalDAV resource redirect href.");
-            }
-            var redirectUri = location.IsAbsoluteUri ? location : new Uri(currentUri, location);
-            if (!TryValidateAbsoluteResourceHref(redirectUri.AbsoluteUri, out var canonicalRedirectUri))
-            {
-                response.Dispose();
-                throw new CalendarDiscoveryProtocolException("Unsafe CalDAV resource redirect href.");
-            }
-
             response.Dispose();
-            currentUri = canonicalRedirectUri;
+            currentUri = redirect;
         }
+    }
+
+    private Uri? GetValidatedReadRedirect(
+        HttpResponseMessage response,
+        Uri currentUri,
+        Uri initialUri,
+        Uri? authorizedCalendar,
+        int attempt,
+        int maxRedirects)
+    {
+        if (response.StatusCode == HttpStatusCode.RedirectMethod)
+            throw ReadRedirectProtocol(response, "A 303 redirect is invalid for a CalDAV resource read.");
+        if (!IsPreservingReadRedirect(response.StatusCode))
+            return null;
+        if (attempt == maxRedirects)
+            throw ReadRedirectProtocol(response, "CalDAV redirect limit was exceeded.");
+        var location = response.Headers.Location
+            ?? throw ReadRedirectProtocol(response, "A CalDAV redirect is missing its Location header.");
+        if (location.OriginalString.Contains("%2e", StringComparison.OrdinalIgnoreCase))
+            throw ReadRedirectProtocol(response, "Unsafe CalDAV resource redirect href.");
+        var redirectUri = location.IsAbsoluteUri ? location : new Uri(currentUri, location);
+        if (!TryValidateAbsoluteResourceHref(redirectUri.AbsoluteUri, out var canonicalRedirectUri))
+            throw ReadRedirectProtocol(response, "Unsafe CalDAV resource redirect href.");
+        if (authorizedCalendar is not null
+            && !IsAuthorizedQueryResource(authorizedCalendar, initialUri, canonicalRedirectUri))
+        {
+            throw ReadRedirectProtocol(response, "A query resource redirect changed resource identity.");
+        }
+        return canonicalRedirectUri;
+    }
+
+    private static void EnsureQueryResponseIdentity(
+        HttpResponseMessage response,
+        Uri currentUri,
+        Uri initialUri,
+        Uri? authorizedCalendar)
+    {
+        if (authorizedCalendar is null
+            || IsAuthorizedQueryResource(
+                authorizedCalendar,
+                initialUri,
+                response.RequestMessage?.RequestUri ?? currentUri))
+        {
+            return;
+        }
+        throw ReadRedirectProtocol(response, "A query resource response changed resource identity.");
+    }
+
+    private static CalendarDiscoveryProtocolException ReadRedirectProtocol(
+        HttpResponseMessage response,
+        string message)
+    {
+        response.Dispose();
+        return new CalendarDiscoveryProtocolException(message);
+    }
+
+    private static void MarkReadPurpose(HttpRequestMessage request, bool absenceProbe)
+    {
+        if (absenceProbe)
+            CalendarHttpTelemetry.MarkAbsenceProbe(request);
+        else if (CalendarHttpTelemetry.IsQueryResourceRead)
+            CalendarHttpTelemetry.MarkQueryResourceRead(request);
     }
 
     private static bool IsPreservingReadRedirect(HttpStatusCode statusCode) => statusCode is
@@ -493,6 +589,10 @@ internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport
         HttpStatusCode.Redirect or
         HttpStatusCode.TemporaryRedirect or
         HttpStatusCode.PermanentRedirect;
+
+    private static bool IsAuthorizedQueryResource(Uri calendar, Uri requested, Uri candidate) =>
+        IsDirectResourceOf(calendar, candidate)
+        && string.Equals(requested.AbsoluteUri, candidate.AbsoluteUri, StringComparison.Ordinal);
 
     private bool TryValidateAbsoluteResourceHref(string href, out Uri resourceUri)
     {
@@ -526,10 +626,11 @@ internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport
 
     private static async Task<BoundedContentRead> ReadBoundedContentAsync(
         HttpContent content,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int maximumBytes = MaximumCalendarResourceBytes)
     {
         var gzipEncoded = content.Headers.ContentEncoding.Contains("gzip", StringComparer.OrdinalIgnoreCase);
-        if (!gzipEncoded && content.Headers.ContentLength > MaximumCalendarResourceBytes)
+        if (!gzipEncoded && content.Headers.ContentLength > maximumBytes)
             return new BoundedContentRead(null, SaturateByteCount(content.Headers.ContentLength.Value));
 
         await using var encodedStream = await content.ReadAsStreamAsync(cancellationToken);
@@ -537,26 +638,26 @@ internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport
             ? new GZipStream(encodedStream, CompressionMode.Decompress, leaveOpen: false)
             : encodedStream;
         using var destination = new MemoryStream(
-            !gzipEncoded && content.Headers.ContentLength is >= 0 and <= MaximumCalendarResourceBytes
+            !gzipEncoded && content.Headers.ContentLength is >= 0 && content.Headers.ContentLength <= maximumBytes
                 ? (int)content.Headers.ContentLength.Value
                 : 0);
         var buffer = ArrayPool<byte>.Shared.Rent(81920);
         try
         {
-            while (destination.Length <= MaximumCalendarResourceBytes)
+            while (destination.Length <= maximumBytes)
             {
-                var remainingPlusOne = (MaximumCalendarResourceBytes - (int)destination.Length) + 1;
+                var remainingPlusOne = (maximumBytes - (int)destination.Length) + 1;
                 var read = await stream.ReadAsync(
                     buffer.AsMemory(0, Math.Min(buffer.Length, remainingPlusOne)),
                     cancellationToken);
                 if (read == 0)
                     return new BoundedContentRead(destination.ToArray(), (int)destination.Length);
-                if (destination.Length + read > MaximumCalendarResourceBytes)
+                if (destination.Length + read > maximumBytes)
                     return new BoundedContentRead(null, (int)destination.Length + read);
                 await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
             }
 
-            return new BoundedContentRead(null, MaximumCalendarResourceBytes + 1);
+            return new BoundedContentRead(null, maximumBytes + 1);
         }
         finally
         {
@@ -772,6 +873,53 @@ internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport
         }
     }
 
+    private async Task<(IReadOnlyList<CalendarMultigetResource> Resources, Uri RequestUri)> SendMultigetReportAsync(
+        string href,
+        string body,
+        int requestedResourceCount,
+        CancellationToken cancellationToken)
+    {
+        if (!TryCanonicalizeCalendarHref(new Uri(_options.Value.BaseUrl, UriKind.Absolute), href, out var canonicalHref))
+            throw new CalendarDiscoveryProtocolException("Unsafe CalDAV REPORT href.");
+
+        var request = new HttpRequestMessage(ReportMethod, canonicalHref)
+        {
+            Content = new StringContent(body, Encoding.UTF8, "application/xml")
+        };
+        CalendarHttpTelemetry.MarkQueryMultiget(request, requestedResourceCount);
+
+        using var response = await SendWithRedirectHandlingAsync(request, body, cancellationToken, ensureSuccess: false);
+        var requestUri = response.RequestMessage?.RequestUri ?? new Uri(canonicalHref, UriKind.Absolute);
+        if (!response.IsSuccessStatusCode)
+        {
+            if (response.StatusCode is HttpStatusCode.MethodNotAllowed or HttpStatusCode.NotImplemented)
+                throw new CalendarMultigetUnsupportedException();
+            var bounded = await ReadBoundedContentAsync(response.Content, cancellationToken).ConfigureAwait(false);
+            if (bounded.Content is not null
+                && response.StatusCode is (HttpStatusCode.BadRequest or HttpStatusCode.Forbidden))
+            {
+                string errorBody;
+                try
+                {
+                    errorBody = StrictUtf8.GetString(bounded.Content);
+                }
+                catch (DecoderFallbackException)
+                {
+                    throw new CalendarDiscoveryProtocolException("The Calendar multiget error response was not valid UTF-8.");
+                }
+                if (DavResponseParser.IsCalendarMultigetUnsupportedError(errorBody))
+                    throw new CalendarMultigetUnsupportedException();
+            }
+            response.EnsureSuccessStatusCode();
+        }
+        var resources = await CalendarMultigetResponseParser.ParseAsync(
+                response.Content,
+                requestedResourceCount,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return (resources, requestUri);
+    }
+
     /// <summary>
     /// Sends a request and follows redirect responses (301, 302, 307, 308)
     /// manually, preserving the original HTTP method and body.
@@ -826,6 +974,10 @@ internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport
     {
     }
 
+    private sealed class CalendarMultigetUnsupportedException : Exception
+    {
+    }
+
     private bool IsUnavailable(CapabilityKey key) =>
         _capabilities.TryGetValue(key, out var state) && state == CapabilityState.Unavailable;
 
@@ -840,6 +992,7 @@ internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport
             if (fingerprint == _configurationFingerprint)
                 return;
             InvalidateCapabilityObservations();
+            _queryCapabilities.Invalidate();
             _configurationFingerprint = fingerprint;
         }
     }
@@ -945,6 +1098,12 @@ internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport
         };
         foreach (var depthValue in depthValues)
             redirectRequest.Headers.Add("Depth", depthValue);
+        if (currentRequest.Options.TryGetValue(
+                CalendarHttpTelemetry.MultigetResourceCountKey,
+                out var multigetResourceCount))
+        {
+            CalendarHttpTelemetry.MarkQueryMultiget(redirectRequest, multigetResourceCount);
+        }
         return redirectRequest;
     }
 

@@ -374,7 +374,7 @@ public sealed class CalendarServiceTests
     {
         const string calendarHref = "https://cal.example/events/";
         const string resourceHref = "https://cal.example/events/recurring.ics";
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var sut = new CalendarService(
             client,
             Options.Create(new CalDavOptions { BaseUrl = "https://cal.example", DefaultEventCalendarName = "Events" }),
@@ -426,7 +426,7 @@ public sealed class CalendarServiceTests
         const string resourceHref = "https://cal.example/events/recurring.ics";
         var from = DateTimeOffset.Parse("2026-08-17T20:30:00Z");
         var to = DateTimeOffset.Parse("2026-08-17T20:45:00Z");
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var sut = new CalendarService(
             client,
             Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
@@ -535,7 +535,8 @@ public sealed class CalendarServiceTests
         var to = DateTimeOffset.Parse("2026-08-16T11:00:00Z");
         var hrefs = Enumerable.Range(1, 51).Select(index => $"{calendarHref}{index}.ics").ToArray();
         var batchSizes = new List<int>();
-        var client = Substitute.For<ICalendarClient>();
+        var client = Substitute.For<ICalendarClient, ICalendarQueryResourceTransport>();
+        var queryTransport = (ICalendarQueryResourceTransport)client;
         var sut = new CalendarService(
             client,
             Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
@@ -556,7 +557,7 @@ public sealed class CalendarServiceTests
                 to,
                 Arg.Any<CancellationToken>())
             .Returns([]);
-        client.GetCalendarResourcesForQueryAsync(
+        queryTransport.MultigetAsync(
                 calendarHref,
                 Arg.Any<IReadOnlyList<string>>(),
                 Arg.Any<CancellationToken>())
@@ -580,7 +581,7 @@ public sealed class CalendarServiceTests
         result.Code.ShouldBe(CalendarOccurrenceQueryCode.Success);
         result.Items.Count.ShouldBe(51);
         batchSizes.ShouldBe([50, 1]);
-        await client.Received(2).GetCalendarResourcesForQueryAsync(
+        await queryTransport.Received(2).MultigetAsync(
             calendarHref,
             Arg.Any<IReadOnlyList<string>>(),
             Arg.Any<CancellationToken>());
@@ -595,7 +596,7 @@ public sealed class CalendarServiceTests
         const string calendarHref = "https://cal.example/mixed/";
         var hrefs = new[] { "event", "todo-span", "todo-due", "todo-start", "todo-none" }
             .ToDictionary(name => name, name => $"{calendarHref}{name}.ics");
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var sut = new CalendarService(
             client,
             Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
@@ -640,7 +641,7 @@ public sealed class CalendarServiceTests
     {
         const string calendarHref = "https://cal.example/events/";
         const string resourceHref = "https://cal.example/events/overrides.ics";
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var sut = new CalendarService(
             client,
             Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
@@ -695,7 +696,7 @@ public sealed class CalendarServiceTests
     {
         const string calendarHref = "https://cal.example/events/";
         const string resourceHref = "https://cal.example/events/ranges.ics";
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var sut = new CalendarService(
             client,
             Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
@@ -1600,7 +1601,7 @@ public sealed class CalendarServiceTests
     {
         const string calendarHref = "https://cal.example/events/";
         const string resourceHref = "https://cal.example/events/floating.ics";
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var sut = new CalendarService(
             client,
             Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
@@ -1638,7 +1639,7 @@ public sealed class CalendarServiceTests
     [Fact]
     public async Task QueryOccurrencesAsync_RejectsInvalidEvaluationTimeZoneBeforeDiscovery()
     {
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var sut = new CalendarService(
             client,
             Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
@@ -1911,7 +1912,7 @@ public sealed class CalendarServiceTests
     {
         const string calendarHref = "https://cal.example/events/";
         const string resourceHref = "https://cal.example/events/local-zone.ics";
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var sut = new CalendarService(
             client,
             Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
@@ -2013,7 +2014,7 @@ public sealed class CalendarServiceTests
         const string calendarHref = "https://cal.example/todos/";
         var startHref = $"{calendarHref}start.ics";
         var dueHref = $"{calendarHref}due.ics";
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var sut = new CalendarService(
             client,
             Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
@@ -2215,7 +2216,7 @@ public sealed class CalendarServiceTests
         var recurringHref = $"{firstCalendar}recurring.ics";
         var laterUidHref = $"{firstCalendar}single.ics";
         var laterCalendarHref = $"{laterCalendar}single.ics";
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var sut = new CalendarService(
             client,
             Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
@@ -2264,7 +2265,7 @@ public sealed class CalendarServiceTests
         const string calendarHref = "https://cal.example/events/";
         var vanished = $"{calendarHref}vanished.ics";
         var current = $"{calendarHref}current.ics";
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var sut = new CalendarService(
             client,
             Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
@@ -2299,7 +2300,7 @@ public sealed class CalendarServiceTests
     {
         const string calendarHref = "https://cal.example/events/";
         const string resourceHref = "https://cal.example/events/invalid.ics";
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var sut = new CalendarService(
             client,
             Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
@@ -2337,7 +2338,7 @@ public sealed class CalendarServiceTests
             $"{calendarHref}cancelled.ics",
             $"{calendarHref}conflict.ics"
         };
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var sut = new CalendarService(
             client,
             Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
@@ -2374,7 +2375,7 @@ public sealed class CalendarServiceTests
         const string undatedHref = "https://cal.example/todos/undated.ics";
         var from = DateTimeOffset.Parse("2026-08-15T00:00:00Z");
         var to = DateTimeOffset.Parse("2026-08-17T00:00:00Z");
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var sut = new CalendarService(
             client,
             Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
@@ -2452,7 +2453,7 @@ public sealed class CalendarServiceTests
     [Fact]
     public async Task QueryTodosAsync_RejectsDefaultScopeAndUnpairedWindowBeforeDiscovery()
     {
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var sut = new CalendarService(
             client,
             Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
@@ -2473,7 +2474,7 @@ public sealed class CalendarServiceTests
         const string calendarHref = "https://cal.example/todos/";
         const string firstHref = "https://cal.example/todos/first.ics";
         const string boundaryHref = "https://cal.example/todos/boundary.ics";
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var sut = new CalendarService(
             client,
             Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
@@ -2503,7 +2504,7 @@ public sealed class CalendarServiceTests
     {
         const string calendarHref = "https://cal.example/todos/";
         const string href = "https://cal.example/todos/completed.ics";
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var sut = new CalendarService(
             client,
             Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
@@ -2529,7 +2530,7 @@ public sealed class CalendarServiceTests
     {
         const string calendarHref = "https://cal.example/todos/";
         const string href = "https://cal.example/todos/floating.ics";
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var sut = new CalendarService(
             client,
             Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
@@ -2562,7 +2563,7 @@ public sealed class CalendarServiceTests
         const string failedHref = "https://cal.example/todos/failed.ics";
         var from = DateTimeOffset.Parse("2026-08-15T00:00:00Z");
         var to = DateTimeOffset.Parse("2026-08-17T00:00:00Z");
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var sut = new CalendarService(
             client,
             Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
@@ -2606,7 +2607,7 @@ public sealed class CalendarServiceTests
         string? toText,
         string? evaluationTimeZone)
     {
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var sut = new CalendarService(
             client,
             Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
@@ -2633,7 +2634,7 @@ public sealed class CalendarServiceTests
         const string calendarHref = "https://cal.example/events/";
         const string resourceHref = "https://cal.example/events/standup.ics";
         const string content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260815T120000Z\r\nDTSTART:20260816T090000Z\r\nSUMMARY:Standup\r\nDESCRIPTION:Folded\r\n exactly\r\n\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var options = Options.Create(new CalDavOptions
         {
             BaseUrl = "https://cal.example",
@@ -2668,7 +2669,7 @@ public sealed class CalendarServiceTests
         const string calendarHref = "https://cal.example/mixed/";
         const string resourceHref = "https://cal.example/mixed/mixed.ics";
         const string content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260815T120000Z\r\nDTSTART:20260816T090000Z\r\nEND:VEVENT\r\nBEGIN:VTODO\r\nUID:todo-1\r\nDTSTAMP:20260815T120000Z\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var options = Options.Create(new CalDavOptions { BaseUrl = "https://cal.example", CalendarHrefs = calendarHref });
         var sut = new CalendarService(client, options, Substitute.For<ILogger<CalendarService>>());
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(
@@ -2693,7 +2694,7 @@ public sealed class CalendarServiceTests
         const string calendarHref = "https://cal.example/events/";
         const string resourceHref = "https://cal.example/events/inert.ics";
         const string content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\nBEGIN:VEVENT\r\nUID:event-1\r\nDTSTAMP:20260815T120000Z\r\nDTSTART:20260816T090000Z\r\nURL:https://attacker.invalid/url\r\nATTACH;VALUE=URI:https://attacker.invalid/attachment\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var sut = new CalendarService(
             client,
             Options.Create(new CalDavOptions { BaseUrl = "https://cal.example", CalendarHrefs = calendarHref }),
@@ -2724,7 +2725,7 @@ public sealed class CalendarServiceTests
         string href,
         CalendarResourceReadCode expectedCode)
     {
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var options = Options.Create(new CalDavOptions
         {
             BaseUrl = "https://cal.example",
@@ -2742,7 +2743,7 @@ public sealed class CalendarServiceTests
     [Fact]
     public async Task ResolveDefaultCalendarAsync_UsesIndependentEventAndTodoDefaults()
     {
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var options = Options.Create(new CalDavOptions
         {
             BaseUrl = "https://cal.example",
@@ -2780,7 +2781,7 @@ public sealed class CalendarServiceTests
     [Fact]
     public async Task ResolveDefaultCalendarAsync_ResolvesAuthorizedMatchBeyondCandidateLimit()
     {
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var options = Options.Create(new CalDavOptions
         {
             BaseUrl = "https://cal.example",
@@ -2810,7 +2811,7 @@ public sealed class CalendarServiceTests
         string configuredName,
         CalendarSelectionCode expectedCode)
     {
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var options = Options.Create(new CalDavOptions
         {
             BaseUrl = "https://cal.example",
@@ -2847,7 +2848,7 @@ public sealed class CalendarServiceTests
     [Fact]
     public async Task ResolveDefaultCalendarAsync_AmbiguousCaseInsensitiveNameReturnsCompleteAuthorizedCalendarEvidence()
     {
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var sut = new CalendarService(
             client,
             Options.Create(new CalDavOptions
@@ -2879,7 +2880,7 @@ public sealed class CalendarServiceTests
     [Fact]
     public async Task GetCalendarsAsync_AppliesExactScopeAndPreservesDiscoveryEvidence()
     {
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var options = Options.Create(new CalDavOptions
         {
             BaseUrl = "https://cal.example",
@@ -2922,7 +2923,7 @@ public sealed class CalendarServiceTests
     [Fact]
     public async Task GetCalendarsAsync_WithoutConfiguredScope_ReturnsAllUniqueCalendarsInCanonicalOrder()
     {
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var options = Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" });
         var sut = new CalendarService(client, options, Substitute.For<ILogger<CalendarService>>());
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(
@@ -2944,7 +2945,7 @@ public sealed class CalendarServiceTests
     {
         const string unsafeHref = "https://user:secret@cal.example/private/";
         var oversizedHref = $"https://cal.example/{new string('x', 10_000)}";
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var options = Options.Create(new CalDavOptions
         {
             BaseUrl = "https://cal.example",
@@ -2967,7 +2968,7 @@ public sealed class CalendarServiceTests
     [InlineData(257, true)]
     public async Task GetCalendarsAsync_DeduplicatesAndBoundsDiscoveredCalendars(int calendarCount, bool rejected)
     {
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var options = Options.Create(new CalDavOptions
         {
             BaseUrl = "https://cal.example",
@@ -3182,7 +3183,7 @@ public sealed class CalendarServiceTests
     {
         const string calendarHref = "https://cal.example/events/";
         const string resourceHref = "https://cal.example/events/occurrence.ics";
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var sut = new CalendarService(
             client,
             Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
@@ -3226,7 +3227,7 @@ public sealed class CalendarServiceTests
     {
         const string calendarHref = "https://cal.example/calendar/";
         const string resourceHref = "https://cal.example/calendar/occurrence.ics";
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var sut = new CalendarService(
             client,
             Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
@@ -3269,7 +3270,7 @@ public sealed class CalendarServiceTests
     {
         const string calendarHref = "https://cal.example/todos/";
         const string resourceHref = "https://cal.example/todos/occurrence.ics";
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var sut = new CalendarService(
             client,
             Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
@@ -3293,7 +3294,7 @@ public sealed class CalendarServiceTests
     {
         const string calendarHref = "https://cal.example/events/";
         var hrefs = occurrenceCounts.Select((_, index) => $"{calendarHref}{index}.ics").ToArray();
-        var client = Substitute.For<ICalendarClient>();
+        var client = QueryClientSubstitute();
         var sut = new CalendarService(
             client,
             Options.Create(new CalDavOptions { BaseUrl = "https://cal.example" }),
@@ -3331,6 +3332,36 @@ public sealed class CalendarServiceTests
             CancellationToken.None);
     }
 
+    private static ICalendarClient QueryClientSubstitute()
+    {
+        var client = Substitute.For<ICalendarClient, ICalendarQueryResourceTransport>();
+        var queryTransport = (ICalendarQueryResourceTransport)client;
+        async Task<IReadOnlyList<CalendarResourceRead>> ReadAllAsync(
+            IReadOnlyList<string> hrefs,
+            CancellationToken cancellationToken)
+        {
+            var reads = new List<CalendarResourceRead>(hrefs.Count);
+            foreach (var href in hrefs)
+                reads.Add(await client.GetCalendarResourceAsync(href, cancellationToken));
+            return reads;
+        }
+        queryTransport.MultigetAsync(
+                Arg.Any<string>(),
+                Arg.Any<IReadOnlyList<string>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call => ReadAllAsync(
+                call.ArgAt<IReadOnlyList<string>>(1),
+                call.ArgAt<CancellationToken>(2)));
+        queryTransport.DirectGetAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call => client.GetCalendarResourceAsync(
+                call.ArgAt<string>(1),
+                call.ArgAt<CancellationToken>(2)));
+        return client;
+    }
+
     private static CalendarService Service(
         ICalendarClient client,
         IOptions<CalDavOptions>? options = null) => new(
@@ -3345,7 +3376,7 @@ public sealed class CalendarServiceTests
     private sealed class RedirectQueryCalendarClient(
         ICalendarClient transport,
         CalendarDescriptor calendar,
-        string candidateHref) : ICalendarClient
+        string candidateHref) : ICalendarClient, ICalendarQueryResourceTransport
     {
         public Task<IReadOnlyList<CalendarDescriptor>> GetCalendarsAsync(CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<CalendarDescriptor>>([calendar]);
@@ -3360,6 +3391,22 @@ public sealed class CalendarServiceTests
         public Task<CalendarResourceRead> GetCalendarResourceAsync(string href, CancellationToken cancellationToken) =>
             transport.GetCalendarResourceAsync(href, cancellationToken);
 
+        public Task<IReadOnlyList<CalendarResourceRead>> MultigetAsync(
+            string calendarHref,
+            IReadOnlyList<string> hrefs,
+            CancellationToken cancellationToken) => ((ICalendarQueryResourceTransport)transport).MultigetAsync(
+                calendarHref,
+                hrefs,
+                cancellationToken);
+
+        public Task<CalendarResourceRead> DirectGetAsync(
+            string calendarHref,
+            string resourceHref,
+            CancellationToken cancellationToken) => ((ICalendarQueryResourceTransport)transport).DirectGetAsync(
+                calendarHref,
+                resourceHref,
+                cancellationToken);
+
         public Task<CalendarResourceCreateResult> CreateCalendarResourceAsync(
             CalendarResourceCreateRequest request,
             CancellationToken cancellationToken) => transport.CreateCalendarResourceAsync(request, cancellationToken);
@@ -3371,7 +3418,7 @@ public sealed class CalendarServiceTests
 
     private sealed class DelegatingQueryCalendarClient(
         ICalendarClient transport,
-        CalendarDescriptor calendar) : ICalendarClient
+        CalendarDescriptor calendar) : ICalendarClient, ICalendarQueryResourceTransport
     {
         public Task<IReadOnlyList<CalendarDescriptor>> GetCalendarsAsync(CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<CalendarDescriptor>>([calendar]);
@@ -3391,12 +3438,20 @@ public sealed class CalendarServiceTests
         public Task<CalendarResourceRead> GetCalendarResourceAsync(string href, CancellationToken cancellationToken) =>
             transport.GetCalendarResourceAsync(href, cancellationToken);
 
-        public Task<IReadOnlyList<CalendarResourceRead>> GetCalendarResourcesForQueryAsync(
+        public Task<IReadOnlyList<CalendarResourceRead>> MultigetAsync(
             string calendarHref,
             IReadOnlyList<string> hrefs,
-            CancellationToken cancellationToken) => transport.GetCalendarResourcesForQueryAsync(
+            CancellationToken cancellationToken) => ((ICalendarQueryResourceTransport)transport).MultigetAsync(
                 calendarHref,
                 hrefs,
+                cancellationToken);
+
+        public Task<CalendarResourceRead> DirectGetAsync(
+            string calendarHref,
+            string resourceHref,
+            CancellationToken cancellationToken) => ((ICalendarQueryResourceTransport)transport).DirectGetAsync(
+                calendarHref,
+                resourceHref,
                 cancellationToken);
 
         public Task<CalendarResourceCreateResult> CreateCalendarResourceAsync(

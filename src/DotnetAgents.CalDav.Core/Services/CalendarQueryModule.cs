@@ -8,6 +8,8 @@ using DotnetAgents.CalDav.Core.Internal;
 using DotnetAgents.CalDav.Core.Internal.Ical;
 using DotnetAgents.CalDav.Core.Models;
 using Microsoft.Extensions.Options;
+using Polly.CircuitBreaker;
+using Polly.Timeout;
 
 namespace DotnetAgents.CalDav.Core.Services;
 
@@ -46,19 +48,22 @@ internal sealed class CalendarEntityQueryStartExecutor
     private readonly TimeProvider _timeProvider;
     private readonly CalendarQuerySnapshotWriter _snapshotWriter;
     private readonly CalendarEntityQueryPageCodec _pageCodec;
+    private readonly CalendarQueryResourceRetriever _resourceRetriever;
 
     internal CalendarEntityQueryStartExecutor(
         Func<ICalendarQueryTransport> transportFactory,
         IOptions<CalDavOptions> options,
         TimeProvider timeProvider,
         CalendarQuerySnapshotWriter snapshotWriter,
-        CalendarEntityQueryPageCodec pageCodec)
+        CalendarEntityQueryPageCodec pageCodec,
+        CalendarQueryResourceRetriever resourceRetriever)
     {
         _transportFactory = transportFactory;
         _options = options.Value;
         _timeProvider = timeProvider;
         _snapshotWriter = snapshotWriter;
         _pageCodec = pageCodec;
+        _resourceRetriever = resourceRetriever;
     }
 
     internal async Task<QueryReply<CalendarEntityQueryItem>> ExecuteAsync(
@@ -91,13 +96,14 @@ internal sealed class CalendarEntityQueryStartExecutor
         }
         catch (OperationCanceledException) when (deadline.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
-            return Failure(CalendarQueryFailures.Limit("The Calendar Entity query exhausted the elapsed_time execution budget."));
+            return Failure(CalendarQueryFailures.ElapsedLimit());
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             return Failure(CalendarQueryFailures.UpstreamUnavailable());
         }
-        catch (TimeoutException)
+        catch (Exception exception) when (exception is TimeoutException or TimeoutRejectedException
+                                           or BrokenCircuitException)
         {
             return Failure(CalendarQueryFailures.UpstreamUnavailable());
         }
@@ -111,7 +117,7 @@ internal sealed class CalendarEntityQueryStartExecutor
         }
         catch (CalendarEntityQueryDeadlineException)
         {
-            return Failure(CalendarQueryFailures.Limit("The Calendar Entity query exhausted the elapsed_time execution budget."));
+            return Failure(CalendarQueryFailures.ElapsedLimit());
         }
     }
 
@@ -233,29 +239,28 @@ internal sealed class CalendarEntityQueryStartExecutor
             retainedBytes);
     }
 
-    private static async Task<FetchResult> FetchSnapshotsAsync(
+    private async Task<FetchResult> FetchSnapshotsAsync(
         ICalendarQueryTransport transport,
         IReadOnlyDictionary<string, CalendarDescriptor> candidates,
         List<QueryDiagnostic> diagnostics,
         CancellationToken cancellationToken)
     {
+        var retrieval = await _resourceRetriever.RetrieveAsync(transport, candidates, cancellationToken)
+            .ConfigureAwait(false);
+        if (retrieval.Error is not null)
+            return FetchResult.Failure(retrieval.Error);
         var snapshots = new List<CalendarResourceSnapshot>();
-        foreach (var group in candidates.GroupBy(candidate => candidate.Value.Href, StringComparer.Ordinal)
+        foreach (var group in retrieval.Resources.GroupBy(resource => resource.Calendar.Href, StringComparer.Ordinal)
                      .OrderBy(group => group.Key, StringComparer.Ordinal))
         {
-            var calendar = group.First().Value;
-            foreach (var batch in group.Select(candidate => candidate.Key)
-                         .Order(StringComparer.Ordinal)
-                         .Chunk(CalendarQueryPolicy.MaximumMultigetBatchSize))
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                CalendarQueryTelemetry.ObserveMultiget(batch.Length);
-                var reads = await transport.MultigetAsync(calendar.Href, batch, cancellationToken)
-                    .ConfigureAwait(false);
-                var error = AccumulateBatch(calendar, batch, reads, snapshots, diagnostics);
-                if (error is not null)
-                    return FetchResult.Failure(error);
-            }
+            var calendar = group.First().Calendar;
+            var ordered = group.OrderBy(resource => resource.RequestedHref, StringComparer.Ordinal)
+                .ToArray();
+            var requested = ordered.Select(resource => resource.RequestedHref).ToArray();
+            var reads = ordered.Select(resource => resource.Read).ToArray();
+            var error = AccumulateBatch(calendar, requested, reads, snapshots, diagnostics);
+            if (error is not null)
+                return FetchResult.Failure(error);
         }
         return FetchResult.Success(snapshots, diagnostics);
     }
@@ -750,6 +755,13 @@ internal static class CalendarQueryFailures
     internal static QueryFailure Limit(string message, QueryExecutionLimits? limits = null) =>
         new(QueryFailureCode.LimitExhausted, QueryFailureCategory.LimitsAndAdmission, message, false,
             QueryFailurePhase.Execution, limits);
+
+    internal static QueryFailure ElapsedLimit() => Limit(
+        "The Calendar Entity query exhausted the elapsed_time execution budget.",
+        new QueryExecutionLimits(
+            Dimension: QueryLimitDimension.ElapsedTime,
+            Observed: 30_000,
+            Limit: 30_000));
 
     internal static QueryFailure Busy(int retryAfterMs) => new(
         QueryFailureCode.Busy,

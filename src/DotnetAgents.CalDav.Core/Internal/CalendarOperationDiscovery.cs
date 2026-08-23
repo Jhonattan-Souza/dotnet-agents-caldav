@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 namespace DotnetAgents.CalDav.Core.Internal;
 
 /// <summary>Coordinates one immutable CalDAV discovery acquisition per authorization-bound key and operation.</summary>
-internal sealed class CalendarOperationDiscovery : ICalendarClient, ICalendarCreateTransport
+internal sealed class CalendarOperationDiscovery : ICalendarClient, ICalendarCreateTransport, ICalendarQueryResourceTransport
 {
     private readonly ICalendarClient _transport;
     private readonly Func<IReadOnlyList<CalendarDescriptor>, CalendarDiscoveryResult> _applyScope;
@@ -72,21 +72,26 @@ internal sealed class CalendarOperationDiscovery : ICalendarClient, ICalendarCre
         string href,
         CancellationToken cancellationToken) => _transport.GetCalendarResourceAsync(href, cancellationToken);
 
-    public Task<CalendarResourceRead> GetCalendarResourceForQueryAsync(
+    public Task<CalendarResourceRead> DirectGetAsync(
         string calendarHref,
         string href,
-        CancellationToken cancellationToken) => _transport.GetCalendarResourceForQueryAsync(
+        CancellationToken cancellationToken) => QueryResourceTransport.DirectGetAsync(
             calendarHref,
             href,
             cancellationToken);
 
-    public Task<IReadOnlyList<CalendarResourceRead>> GetCalendarResourcesForQueryAsync(
+    public Task<IReadOnlyList<CalendarResourceRead>> MultigetAsync(
         string calendarHref,
         IReadOnlyList<string> hrefs,
-        CancellationToken cancellationToken) => _transport.GetCalendarResourcesForQueryAsync(
+        CancellationToken cancellationToken) => QueryResourceTransport.MultigetAsync(
             calendarHref,
             hrefs,
             cancellationToken);
+
+    private ICalendarQueryResourceTransport QueryResourceTransport =>
+        _transport as ICalendarQueryResourceTransport
+        ?? throw new CalendarDiscoveryProtocolException(
+            "The configured CalDAV adapter does not implement bounded query resource retrieval.");
 
     public Task<CalendarResourceCreateResult> CreateCalendarResourceAsync(
         CalendarResourceCreateRequest request,
