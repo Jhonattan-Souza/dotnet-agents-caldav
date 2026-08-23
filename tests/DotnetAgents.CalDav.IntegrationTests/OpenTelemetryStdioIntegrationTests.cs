@@ -26,6 +26,7 @@ public sealed class OpenTelemetryStdioIntegrationTests
     [Fact]
     public async Task CalendarEntityStartContinue_ExportsSafeModulePhasesAndZeroContinuationWireWork()
     {
+        const string evaluationTimeZone = "America/Sao_Paulo";
         var suffix = Guid.NewGuid().ToString("N");
         var firstUid = $"private-query-first-{suffix}";
         var secondUid = $"private-query-second-{suffix}";
@@ -46,7 +47,8 @@ public sealed class OpenTelemetryStdioIntegrationTests
             await using (var client = await CreateClientAsync(
                              receiver.Endpoint,
                              stderr,
-                             calendarHrefs: $"{_fixture.BaseUrl}{_fixture.TodoCalendarHref}"))
+                             calendarHrefs: $"{_fixture.BaseUrl}{_fixture.TodoCalendarHref}",
+                             evaluationTimeZone: evaluationTimeZone))
             {
                 var start = await client.CallToolAsync(
                     "calendar_entities.query",
@@ -62,6 +64,16 @@ public sealed class OpenTelemetryStdioIntegrationTests
                             }
                         },
                         ["entityKinds"] = new[] { "todo" },
+                        ["from"] = new Dictionary<string, object?>
+                        {
+                            ["kind"] = "utcDateTime",
+                            ["value"] = "2026-08-24T03:00:00Z"
+                        },
+                        ["to"] = new Dictionary<string, object?>
+                        {
+                            ["kind"] = "utcDateTime",
+                            ["value"] = "2026-08-24T04:00:00Z"
+                        },
                         ["pageSize"] = 1
                     },
                     cancellationToken: TestContext.Current.CancellationToken);
@@ -69,6 +81,8 @@ public sealed class OpenTelemetryStdioIntegrationTests
                 var structured = start.StructuredContent!.Value;
                 structured.GetProperty("pagination").GetProperty("mode").GetString()
                     .ShouldBe("query_result_snapshot");
+                structured.GetProperty("temporalEvaluationContext").GetRawText()
+                    .ShouldBe("{\"timeZone\":\"America/Sao_Paulo\",\"source\":\"configuration\"}");
                 cursor = structured.GetProperty("pagination").GetProperty("nextCursor").GetString()
                     .ShouldNotBeNull();
 
@@ -79,6 +93,8 @@ public sealed class OpenTelemetryStdioIntegrationTests
                 continuation.IsError.ShouldBe(false, continuation.StructuredContent?.ToString());
                 continuation.StructuredContent!.Value.GetProperty("pagination").GetProperty("mode").GetString()
                     .ShouldBe("query_result_snapshot");
+                continuation.StructuredContent.Value.GetProperty("temporalEvaluationContext").GetRawText()
+                    .ShouldBe(structured.GetProperty("temporalEvaluationContext").GetRawText());
             }
 
             await receiver.WaitForPathsAsync(["/v1/traces"], TestContext.Current.CancellationToken);
@@ -129,6 +145,7 @@ public sealed class OpenTelemetryStdioIntegrationTests
                     "caldav.query.snapshot_lookup_count"
                 ]);
             OtlpProtobufReader.ContainsUtf8(receiver.Requests, cursor).ShouldBeFalse();
+            OtlpProtobufReader.ContainsUtf8(receiver.Requests, evaluationTimeZone).ShouldBeFalse();
             foreach (var privateValue in new[] { firstUid, secondUid, privateSummary, firstHref, secondHref })
                 OtlpProtobufReader.ContainsUtf8(receiver.Requests, privateValue).ShouldBeFalse();
             spans.ShouldAllBe(span => span.EventCount == 0);
@@ -1049,7 +1066,8 @@ public sealed class OpenTelemetryStdioIntegrationTests
         ConcurrentQueue<string> stderr,
         string? baseUrl = null,
         string? calendarHrefs = null,
-        string? defaultTodoCalendarName = null)
+        string? defaultTodoCalendarName = null,
+        string? evaluationTimeZone = null)
     {
         baseUrl ??= _fixture.BaseUrl;
         var eventCalendarHref = $"{baseUrl}{_fixture.EventCalendarHref}";
@@ -1068,6 +1086,7 @@ public sealed class OpenTelemetryStdioIntegrationTests
                 ["CALDAV_PASSWORD"] = "caldavtest123",
                 ["CALDAV_CALENDAR_HREFS"] = calendarHrefs,
                 ["CALDAV_DEFAULT_TODO_CALENDAR_NAME"] = defaultTodoCalendarName,
+                ["CALDAV_EVALUATION_TIME_ZONE"] = evaluationTimeZone,
                 ["OTEL_EXPORTER_OTLP_ENDPOINT"] = endpoint.GetLeftPart(UriPartial.Authority),
                 ["OTEL_EXPORTER_OTLP_PROTOCOL"] = "http/protobuf",
                 ["OTEL_EXPORTER_OTLP_HEADERS"] = "authorization=Bearer otlp-private-header",
@@ -1158,7 +1177,7 @@ public sealed class OpenTelemetryStdioIntegrationTests
     private static string SnapshotTodo(string uid, string summary) =>
         "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Query Snapshot Telemetry//EN\r\n"
         + $"BEGIN:VTODO\r\nUID:{uid}\r\nDTSTAMP:20260823T120000Z\r\n"
-        + $"SUMMARY:{summary}\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+        + $"SUMMARY:{summary}\r\nDUE;VALUE=DATE:20260824\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
 
     private static string ExactEvent(string uid, string summary) =>
         "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Telemetry Exact Review//EN\r\n"

@@ -288,11 +288,15 @@ public class CalDavHostBuilderTests
         inputBranches.All(branch => !branch!["additionalProperties"]!.GetValue<bool>()).ShouldBeTrue();
         inputBranches[0]!["required"]!.AsArray().Select(item => item!.GetValue<string>())
             .ShouldBe(["scope", "entityKinds"]);
+        inputBranches[0]!["properties"]!.AsObject().ShouldContainKey("evaluationTimeZone");
         inputBranches[1]!["required"]!.AsArray().Select(item => item!.GetValue<string>())
             .ShouldBe(["cursor"]);
         inputBranches[1]!["properties"]!["cursor"]!["maxLength"]!.GetValue<int>().ShouldBe(2048);
         outputSchema["oneOf"]!.AsArray().Count.ShouldBe(2);
         outputSchema["$defs"]!.AsObject().ShouldContainKey("entityQuerySuccess");
+        var temporalContext = outputSchema["$defs"]!["entityQuerySuccess"]!["properties"]!["temporalEvaluationContext"]!;
+        temporalContext["properties"]!["source"]!["enum"]!.AsArray()
+            .Select(item => item!.GetValue<string>()).ShouldBe(["caller", "configuration"]);
         outputSchema["$defs"]!["entityQueryPagination"]!["properties"]!["mode"]!["const"]!
             .GetValue<string>().ShouldBe("query_result_snapshot");
         outputSchema["$defs"]!.AsObject().ShouldContainKey("entityQueryErrorOutcome");

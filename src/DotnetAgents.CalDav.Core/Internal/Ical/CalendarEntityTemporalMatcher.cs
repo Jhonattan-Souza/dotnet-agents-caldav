@@ -35,6 +35,7 @@ internal static class CalendarEntityTemporalMatcher
         CalendarResourceSnapshot snapshot,
         DateTimeOffset? from,
         DateTimeOffset? to,
+        string? evaluationTimeZone = null,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -48,7 +49,8 @@ internal static class CalendarEntityTemporalMatcher
         var resolver = new CalendarTemporalResolver(
             snapshot.CalendarProperties,
             snapshot.AuthoritativeUtf8.Span,
-            cancellationToken);
+            cancellationToken,
+            evaluationTimeZone);
         if (HasUnresolvedTemporalValue(entityProperties, resolver, cancellationToken))
             return new(CalendarEntityTemporalMatch.Unresolved);
         var masterProperties = entityProperties.Where(property => property.ComponentPath[1].Occurrence == 0).ToArray();
@@ -174,7 +176,18 @@ internal static class CalendarEntityTemporalMatcher
         var effectiveEnd = occurrence.Period.EffectiveEndTime;
         if (effectiveEnd is null)
         {
-            end = start;
+            if (occurrence.Period.StartTime.HasTime)
+            {
+                end = start;
+                return true;
+            }
+            var followingDate = resolver.ResolveFollowingCivilDate(occurrence.Period.StartTime);
+            if (followingDate.Value is null)
+            {
+                failure = ToFailure(followingDate);
+                return false;
+            }
+            end = followingDate.Value.Value;
             return true;
         }
         var resolvedEnd = resolver.Resolve(effectiveEnd);
@@ -216,14 +229,20 @@ internal static class CalendarEntityTemporalMatcher
         IReadOnlyList<CalendarProperty> properties,
         CalendarTemporalResolver resolver)
     {
-        var start = resolver.Resolve(GetProperty(properties, "DTSTART")).Value;
+        var startProperty = GetProperty(properties, "DTSTART");
+        var start = resolver.Resolve(startProperty).Value;
         if (start is null)
             return TimeSpan.Zero;
         var end = resolver.Resolve(GetProperty(properties, "DTEND") ?? GetProperty(properties, "DUE")).Value;
         if (end > start)
             return end.Value - start.Value;
         var duration = GetDuration(properties);
-        return duration > TimeSpan.Zero ? duration.Value : TimeSpan.Zero;
+        if (duration > TimeSpan.Zero)
+            return duration.Value;
+        var followingDate = startProperty is { ValueType: CalendarPropertyValueType.Date }
+            ? resolver.ResolveFollowingCivilDate(startProperty).Value
+            : null;
+        return followingDate > start ? followingDate.Value - start.Value : TimeSpan.Zero;
     }
 
     private static TimeSpan GetPeriodSpan(
@@ -289,6 +308,9 @@ internal static class CalendarEntityTemporalMatcher
             return ToFailure(resolvedEnd);
         var endInstant = resolvedEnd.Value
             ?? ApplyDuration(properties, start.Value.Value)
+            ?? (GetProperty(properties, "DTSTART") is { ValueType: CalendarPropertyValueType.Date } dateStart
+                ? resolver.ResolveFollowingCivilDate(dateStart).Value
+                : null)
             ?? start.Value.Value;
         return Overlaps(start.Value.Value, endInstant, from, to);
     }

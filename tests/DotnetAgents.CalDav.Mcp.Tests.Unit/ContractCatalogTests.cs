@@ -138,6 +138,14 @@ public sealed class ContractCatalogTests
         var occurrenceInput = catalog["$defs"]!["occurrenceQueryInput"]!.AsObject();
         occurrenceInput["required"]!.ToJsonString().ShouldNotContain("evaluationTimeZone");
         occurrenceInput["properties"]!.AsObject().ShouldContainKey("evaluationTimeZone");
+        var entityQueryInput = catalog["$defs"]!["entityQueryInput"]!.AsObject();
+        entityQueryInput["oneOf"]![0]!["properties"]!.AsObject().ShouldContainKey("evaluationTimeZone");
+        entityQueryInput["oneOf"]![1]!["properties"]!.AsObject().ShouldNotContainKey("evaluationTimeZone");
+        var entityQuerySuccess = catalog["$defs"]!["entityQuerySuccess"]!.AsObject();
+        entityQuerySuccess["properties"]!.AsObject().ShouldContainKey("temporalEvaluationContext");
+        catalog["environment"]!.AsArray()
+            .Single(item => item!["name"]!.GetValue<string>() == "CALDAV_EVALUATION_TIME_ZONE")!
+            ["description"]!.GetValue<string>().ShouldContain("bounded Calendar Entity Start");
         var calendarListInput = catalog["$defs"]!["calendarScopeInput"]!.AsObject();
         calendarListInput["required"].ShouldBeNull();
         calendarListInput["properties"].ShouldBeNull();

@@ -63,6 +63,30 @@ internal sealed class CalendarTemporalResolver
     public ResolvedCalendarInstant ResolveToken(CalendarProperty property, string raw) =>
         ResolveToken(raw, GetTimeZoneId(property));
 
+    public ResolvedCalendarInstant ResolveFollowingCivilDate(CalendarProperty property)
+    {
+        _cancellationToken.ThrowIfCancellationRequested();
+        if (property.ValueType != CalendarPropertyValueType.Date
+            || !DateTime.TryParseExact(
+                property.RawEncodedValue,
+                "yyyyMMdd",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var date))
+        {
+            return new(null, true);
+        }
+        return ResolveInEvaluationZone(date.AddDays(1));
+    }
+
+    public ResolvedCalendarInstant ResolveFollowingCivilDate(CalDateTime value)
+    {
+        _cancellationToken.ThrowIfCancellationRequested();
+        return value.HasTime
+            ? new(null, true)
+            : ResolveInEvaluationZone(value.Value.Date.AddDays(1));
+    }
+
     public ResolvedCalendarInstant Resolve(CalDateTime value, bool generated = false)
     {
         _cancellationToken.ThrowIfCancellationRequested();

@@ -28,6 +28,9 @@ public sealed class CalDavOptions
     /// <summary>Display name of the default Calendar for Event operations.</summary>
     public string? DefaultEventCalendarName { get; set; }
 
+    /// <summary>Optional explicit IANA zone for temporal query evaluation.</summary>
+    public string? EvaluationTimeZone { get; set; }
+
     /// <summary>Optional timeout for HTTP requests. Defaults to 30 seconds.</summary>
     public TimeSpan RequestTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
@@ -67,9 +70,17 @@ internal sealed class ValidateCalDavOptions : IValidateOptions<CalDavOptions>
         if (options.RequestTimeout <= TimeSpan.Zero)
             failures.Add("CalDav:RequestTimeout must be positive.");
 
+        ValidateEvaluationTimeZone(options, failures);
+
         return failures.Count > 0
             ? ValidateOptionsResult.Fail(failures)
             : ValidateOptionsResult.Success;
+    }
+
+    private static void ValidateEvaluationTimeZone(CalDavOptions options, ICollection<string> failures)
+    {
+        if (options.EvaluationTimeZone is not null && !IanaTimeZoneIds.IsValid(options.EvaluationTimeZone))
+            failures.Add("CalDav:EvaluationTimeZone must be an exact IANA time-zone identifier when configured.");
     }
 
     private static bool IsSafeCanonicalEndpoint(string original, Uri uri) =>
@@ -81,4 +92,11 @@ internal sealed class ValidateCalDavOptions : IValidateOptions<CalDavOptions>
         && !original.Contains("%5c", StringComparison.OrdinalIgnoreCase)
         && (string.Equals(original, uri.AbsoluteUri, StringComparison.Ordinal)
             || string.Equals(original + '/', uri.AbsoluteUri, StringComparison.Ordinal));
+}
+
+internal static class IanaTimeZoneIds
+{
+    internal static bool IsValid(string value) => value.Length > 0
+        && string.Equals(value, value.Trim(), StringComparison.Ordinal)
+        && NodaTime.DateTimeZoneProviders.Tzdb.GetZoneOrNull(value) is not null;
 }

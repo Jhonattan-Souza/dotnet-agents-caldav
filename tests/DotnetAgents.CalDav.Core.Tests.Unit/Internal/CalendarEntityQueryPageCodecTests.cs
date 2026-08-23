@@ -17,17 +17,24 @@ public sealed class CalendarEntityQueryPageCodecTests
     public void ActualAccountantAdmitsExactlyFourMiBAndRejectsOneByteMore()
     {
         var codec = Codec();
-        var initial = Snapshot(Json("x"));
+        var temporalContext = CalendarTemporalEvaluationContextCodec.Encode(new TemporalEvaluationContext(
+            "America/Sao_Paulo",
+            TemporalEvaluationContextSource.Caller));
+        var initial = Snapshot(Json("x"), temporalContext);
         var initialPlan = codec.Plan(initial, 0, 1, CancellationToken.None).Value!;
         var padding = CalendarEntityQueryPageCodec.MaximumCallToolResultBytes
             - initialPlan.MeasuredCallToolResultBytes;
-        var exact = Snapshot(Json(new string('x', padding + 1)));
+        var exact = Snapshot(Json(new string('x', padding + 1)), temporalContext);
 
         var admitted = codec.Plan(exact, 0, 1, CancellationToken.None);
         admitted.Error.ShouldBeNull();
         admitted.Value!.MeasuredCallToolResultBytes.ShouldBe(
             CalendarEntityQueryPageCodec.MaximumCallToolResultBytes);
-        var above = Snapshot(Json(new string('x', padding + 2)));
+        var page = codec.Materialize(exact, admitted.Value);
+        page.TemporalEvaluationContext.ShouldBe(new TemporalEvaluationContext(
+            "America/Sao_Paulo",
+            TemporalEvaluationContextSource.Caller));
+        var above = Snapshot(Json(new string('x', padding + 2)), temporalContext);
         var refused = codec.Plan(above, 0, 1, CancellationToken.None);
         refused.Error!.Code.ShouldBe(QueryFailureCode.PayloadTooLarge);
     }
@@ -161,6 +168,14 @@ public sealed class CalendarEntityQueryPageCodecTests
         [new StoredCalendarEntityQueryItem(json)],
         "[]"u8.ToArray(),
         json.Length + 2);
+
+    private static CalendarQuerySnapshot Snapshot(byte[] json, ReadOnlyMemory<byte> temporalContext) => new(
+        Guid.NewGuid(),
+        Now.AddMinutes(10),
+        [new StoredCalendarEntityQueryItem(json)],
+        "[]"u8.ToArray(),
+        json.Length + 2 + temporalContext.Length,
+        temporalContext);
 
     private static byte[] Json<T>(T value) => JsonSerializer.SerializeToUtf8Bytes(value);
 }

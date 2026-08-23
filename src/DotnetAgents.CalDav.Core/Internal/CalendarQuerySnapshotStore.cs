@@ -196,7 +196,8 @@ internal sealed record CalendarQuerySnapshot(
     DateTimeOffset ExpiresAt,
     ImmutableArray<StoredCalendarEntityQueryItem> Items,
     ReadOnlyMemory<byte> DiagnosticsUtf8,
-    long RetainedBytes);
+    long RetainedBytes,
+    ReadOnlyMemory<byte> TemporalEvaluationContextUtf8 = default);
 
 internal sealed record StoredCalendarEntityQueryItem(ReadOnlyMemory<byte> JsonUtf8)
 {

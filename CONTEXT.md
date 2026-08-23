@@ -144,7 +144,7 @@ A date or date-time that preserves whether it is date-only, floating, UTC, or as
 _Avoid_: Timestamp, normalized date-time
 
 **Temporal Evaluation Context**:
-The explicit named time zone used to compare or expand floating and date-only Temporal Values without changing their preserved temporal kind.
+The explicit IANA time zone used to compare or expand floating and date-only Temporal Values without changing their preserved temporal kind. A caller context is distinct from a validated deployment configuration context; neither permits inference from Calendar, server, operating-system, process, host, locale, or location state.
 _Avoid_: Default time zone, host time zone
 
 **Effective Temporal Span**:

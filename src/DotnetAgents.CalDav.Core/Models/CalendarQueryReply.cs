@@ -37,7 +37,8 @@ public sealed record QueryPage<T>(
     JsonElement StructuredContent,
     string HumanText,
     int MeasuredCallToolResultBytes,
-    string PaginationMode = "query_result_snapshot");
+    string PaginationMode = "query_result_snapshot",
+    TemporalEvaluationContext? TemporalEvaluationContext = null);
 
 /// <summary>One final projected Calendar Entity result retained without authoritative content.</summary>
 public sealed record CalendarEntityQueryItem(JsonElement Value);

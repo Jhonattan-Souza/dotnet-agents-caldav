@@ -45,6 +45,7 @@ internal sealed class CalendarQueryCursorKey
         string CalendarScope,
         string DefaultEventCalendarName,
         string DefaultTodoCalendarName,
+        string EvaluationTimeZone,
         long RequestTimeoutTicks)
     {
         internal static CursorContext From(CalDavOptions options) => new(
@@ -57,6 +58,7 @@ internal sealed class CalendarQueryCursorKey
                 .Order(StringComparer.Ordinal)),
             options.DefaultEventCalendarName?.Trim() ?? string.Empty,
             options.DefaultTodoCalendarName?.Trim() ?? string.Empty,
+            options.EvaluationTimeZone ?? string.Empty,
             options.RequestTimeout.Ticks);
     }
 }
@@ -65,13 +67,22 @@ internal sealed class CalendarQueryCursorIssuer(CalendarQueryCursorKey key)
 {
     internal const int MaximumCursorCharacters = 2048;
 
-    internal string Issue(string tool, Guid snapshotId, int position, DateTimeOffset expiresAt) => Protect(new CalendarQueryCursor(
-        Version: 1,
+    internal string Issue(
+        string tool,
+        Guid snapshotId,
+        int position,
+        DateTimeOffset expiresAt,
+        ReadOnlyMemory<byte> temporalEvaluationContextUtf8 = default) => Protect(new CalendarQueryCursor(
+        Version: 2,
         Tool: tool,
         SnapshotId: snapshotId,
         Position: position,
         ExpiresAtUnixMilliseconds: expiresAt.ToUnixTimeMilliseconds(),
-        Context: key.Context));
+        Context: key.Context,
+        TemporalContextBinding: BindTemporalContext(temporalEvaluationContextUtf8.Span)));
+
+    private string BindTemporalContext(ReadOnlySpan<byte> value) =>
+        Convert.ToHexStringLower(HMACSHA256.HashData(key.NonceKey, value));
 
     private string Protect(CalendarQueryCursor cursor)
     {
@@ -116,6 +127,12 @@ internal sealed class CalendarQueryCursorAuthenticator(
         }
     }
 
+    internal bool MatchesTemporalContext(
+        CalendarQueryCursor cursor,
+        ReadOnlySpan<byte> temporalEvaluationContextUtf8) => FixedTimeEquals(
+        cursor.TemporalContextBinding,
+        Convert.ToHexStringLower(HMACSHA256.HashData(key.NonceKey, temporalEvaluationContextUtf8)));
+
     private CalendarQueryCursor? Decrypt(byte[] protectedBytes)
     {
         var nonce = protectedBytes.AsSpan(0, 12);
@@ -129,10 +146,11 @@ internal sealed class CalendarQueryCursorAuthenticator(
 
     private bool IsValid(CalendarQueryCursor? cursor, string expectedTool) => cursor is
         {
-            Version: 1,
+            Version: 2,
             SnapshotId: var snapshotId,
             Position: >= 1,
-            ExpiresAtUnixMilliseconds: > 0
+            ExpiresAtUnixMilliseconds: > 0,
+            TemporalContextBinding.Length: 64
         }
         && string.Equals(cursor.Tool, expectedTool, StringComparison.Ordinal)
         && snapshotId != Guid.Empty
@@ -169,7 +187,8 @@ internal sealed record CalendarQueryCursor(
     Guid SnapshotId,
     int Position,
     long ExpiresAtUnixMilliseconds,
-    string Context);
+    string Context,
+    string TemporalContextBinding);
 
 internal sealed record CalendarQueryCursorAuthentication(
     CalendarQueryCursorAuthenticationCode Code,

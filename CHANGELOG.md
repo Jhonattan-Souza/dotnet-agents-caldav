@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added immutable ten-minute Query Result Snapshot pagination for `calendar_entities.query`, including authenticated replayable Continuation Cursors, variable page sizes, and typed `cursor_expired` and `busy` failures.
 - Added a typed `ICalendarQueryModule`, a narrow CalDAV query transport, exact linear page-byte admission, bounded process-local snapshot retention, and privacy-safe query phases and aggregate work counters.
 - Added an automatic bounded Direct GET Compatibility Mode for verified `calendar-multiget` unavailability, with canonical four-wide waves, shared per-origin permits, closed execution-limit evidence, and strict all-or-nothing resource truth.
+- Added an explicit caller-or-configured IANA Temporal Evaluation Context for bounded Calendar Entity queries, including source-preserving DST and date-only evaluation and frozen context on every snapshot page.
 - Added opt-in OTLP traces, MCP metrics, and trace-correlated safe logs for the stdio server, including CalDAV aggregate-phase and outbound HTTP attempt waterfalls.
 - Added automated loopback OTLP coverage for trace parentage, metrics, log correlation, redaction, disabled defaults, collector failure isolation, and stdin-EOF shutdown.
 - Added truthful Operation outcome and Mutation State telemetry, explicit expected-absence observations, and per-wire-attempt retry recovery evidence through the built MCP stdio server.
@@ -20,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Replaced Calendar Entity cursor re-execution and MCP-owned page assembly with one complete Start execution and zero-CalDAV, zero-semantic-work Continue execution.
 - Changed `calendar_entities.query` input to a strict Start-or-Continue union and its pagination mode from `non_snapshot` to `query_result_snapshot`.
+- Bounded `calendar_entities.query` Start requests now reject a missing or invalid Temporal Evaluation Context before discovery; unbounded Starts reject an unused caller override.
 - Reused one immutable, authorization-bound CalDAV discovery result inside each MCP tool call while keeping MRTR continuations fresh and Capability State separate.
 - Kept successful query retrieval on 50-resource `calendar-multiget` batches with zero GETs, and made missing, duplicate, unsafe, unrequested, incomplete, or inconsistently tagged multiget results atomic protocol failures instead of fallback triggers.
 - Migrated test execution from VSTest to Microsoft.Testing.Platform v2 and xUnit 4.

@@ -85,12 +85,12 @@ run_main_project \
   tests/DotnetAgents.CalDav.Core.Tests.Unit/DotnetAgents.CalDav.Core.Tests.Unit.csproj \
   main-core \
   main-core.trx \
-  1883
+  1925
 run_main_project \
   tests/DotnetAgents.CalDav.Mcp.Tests.Unit/DotnetAgents.CalDav.Mcp.Tests.Unit.csproj \
   main-mcp \
   main-mcp.trx \
-  958
+  960
 run_main_project \
   tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj \
   main-integration \

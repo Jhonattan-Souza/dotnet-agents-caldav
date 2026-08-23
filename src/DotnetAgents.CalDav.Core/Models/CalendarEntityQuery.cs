@@ -27,7 +27,20 @@ public sealed record CalendarEntityQuery(
     CalendarEntityScope Scope,
     IReadOnlyList<CalendarEntityKind> EntityKinds,
     DateTimeOffset? From = null,
-    DateTimeOffset? To = null);
+    DateTimeOffset? To = null,
+    string? EvaluationTimeZone = null);
+
+/// <summary>Explicit context used to evaluate floating and date-only Temporal Values.</summary>
+public sealed record TemporalEvaluationContext(
+    string TimeZone,
+    TemporalEvaluationContextSource Source);
+
+/// <summary>Observable provenance of a Temporal Evaluation Context.</summary>
+public enum TemporalEvaluationContextSource
+{
+    Caller,
+    Configuration
+}
 
 /// <summary>Typed Calendar Entity query outcome.</summary>
 public sealed record CalendarEntityQueryResult(

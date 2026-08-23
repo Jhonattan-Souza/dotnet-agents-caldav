@@ -29,8 +29,8 @@ seed_main_artifacts() {
     printf '<coverage />\n' > "$directory/$prefix.coverage.opencover.260821000000001.xml"
   done
 
-  write_successful_trx "$directory/main-core.trx" 1883
-  write_successful_trx "$directory/main-mcp.trx" 958
+  write_successful_trx "$directory/main-core.trx" 1925
+  write_successful_trx "$directory/main-mcp.trx" 960
   write_successful_trx "$directory/main-integration.trx" 99
 }
 
@@ -104,7 +104,7 @@ echo "PASS unknown root coverage reports are rejected"
 
 below_minimum="$fixture_root/below-minimum"
 seed_main_artifacts "$below_minimum"
-write_successful_trx "$below_minimum/main-core.trx" 1882
+write_successful_trx "$below_minimum/main-core.trx" 1924
 if "$verifier" "$below_minimum" main >/dev/null 2>&1; then
   echo "Expected a main test result below its discovery baseline to be rejected." >&2
   exit 1

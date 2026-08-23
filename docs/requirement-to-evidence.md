@@ -95,6 +95,23 @@ no Depth-1 crawl or response-mismatch fallback. The dated
 records the code-derived sequential baseline, focused deterministic work
 counts, and the applicable real-server boundary.
 
+## Configured Temporal Evaluation Context
+
+| Requirement | Implementation evidence | Verification evidence |
+| --- | --- | --- |
+| `CAL-TIME-005` | `CalendarEntityQueryStartExecutor` resolves caller override, configured fallback, or typed `invalid_input` before constructing the CalDAV query transport. | `BoundedStartWithoutTemporalContextFailsBeforeAnyCalDavWork`, `CallerTemporalContextWinsAndIsFrozenAcrossContinuation`, and the raw stdio temporal witness |
+| `CAL-TIME-006` | Bounded Calendar Entity Starts require a context; unbounded Starts leave configured fallback unused and reject an explicit unused override. The same typed context is the closed contract for later Occurrence and To-do module cutovers. | `UnboundedStartLeavesConfiguredTemporalContextUnusedAndUnreported`, `UnboundedStartRejectsUnusedCallerTemporalOverrideBeforeAnyCalDavWork`, and strict MCP Start/Continue conversion tests |
+| `CAL-TIME-007` | `ValidateCalDavOptions` validates the deployment IANA identifier on startup and caller validation uses the same TZDB authority before I/O. No host-zone API participates in resolution. | `ValidateCalDavOptions_RejectsInvalidConfiguredEvaluationTimeZone`, `RunAsync_InvalidConfiguredEvaluationTimeZoneFailsStartupWithoutEchoingTheValue`, `InvalidCallerTemporalContextFailsBeforeAnyCalDavWork`, and `ExplicitTemporalContextProducesHostZoneIndependentItemsAndBytes` under `TZ=UTC` and `TZ=Pacific/Kiritimati` subprocesses |
+| `CAL-TIME-008` | `TemporalEvaluationContext` records only `timeZone` and caller/configuration source once per applicable page; `CalendarQuerySnapshot` freezes its authoritative wire bytes for Continue and exact page accounting. | `CallerTemporalContextWinsAndIsFrozenAcrossContinuation`, `RetainedSnapshotCountsTheExactContextWireBytesOnce`, the context-present 4 MiB page boundary, live catalog tests, and stdio schema/result evidence |
+| `CAL-TIME-009` | `CalendarTemporalResolver` evaluates UTC, IANA named-zone, resource-local VTIMEZONE, floating, and date-only forms without modifying `CalendarProperty` source slices or projected values. | `NamedIanaGapAndOverlapMatrixCoversEventAndTodoRecurringAndNonRecurring`, `ValidResourceLocalVTimeZoneIsAuthoritativeOverEvaluationContext`, floating gap/overlap tests, and source-form assertions |
+| `CAL-TIME-010` | `CalendarEntityTemporalMatcher` applies half-open positive spans, point inclusion, one civil-day implicit Event end, and civil-date To-do boundaries for recurring and non-recurring entities. | Event 23/25-hour, `RecurringDateOnlyTodoUsesCivilBoundariesAcrossTwentyThreeAndTwentyFiveHourDays`, To-do intervening-span, lone-DUE boundary, and half-open tests |
+| `CAL-TIME-011` | Unknown or conflicting resource-local zones return one non-retryable `temporal_unresolved` failure before page publication. | `UnknownResourceLocalZoneFailsAtomicallyWithoutRetainingASnapshot` and `ConflictingResourceLocalZonesFailAtomicallyWithoutRetainingASnapshot` |
+| `CAL-TIME-012` | Snapshot content freezes the context and cursor key context authenticates the configured zone with the credentials and other relevant configuration. | `CursorContextBindsConfiguredTemporalEvaluationContextWithoutDisclosingTheChange` and continuation replay tests |
+
+The dated [temporal before/after observation](performance-temporal-context-2026-08-23.md)
+records the zero-I/O admission change, focused temporal corpus, stdio/Radicale
+boundary, privacy assertions, and cleanup.
+
 ## Shared performance evidence
 
 | Requirement | Evidence |

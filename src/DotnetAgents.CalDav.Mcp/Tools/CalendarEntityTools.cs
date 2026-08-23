@@ -38,7 +38,7 @@ public sealed class CalendarEntityTools
         OpenWorld = true,
         UseStructuredContent = true,
         OutputSchemaType = typeof(CalendarEntityQuerySuccessResult)),
-     Description("Start one bounded Calendar Entity query or continue its immutable Query Result Snapshot without repeating CalDAV or semantic work.")]
+     Description("Start one Calendar Entity query or continue its immutable Query Result Snapshot. A bounded Start requires an explicit IANA Temporal Evaluation Context from evaluationTimeZone or validated configuration; Continue repeats the frozen context without CalDAV or semantic work.")]
     public Task<CallToolResult> QueryAsync(
         RequestContext<CallToolRequestParams> requestContext,
         CancellationToken cancellationToken) => QueryRawAsync(requestContext.Params?.Arguments, cancellationToken);
@@ -183,7 +183,7 @@ public sealed class CalendarEntityTools
     {
         scope = null;
         kinds = null;
-        if (arguments.Keys.Any(key => key is not ("scope" or "entityKinds" or "from" or "to" or "pageSize"))
+        if (arguments.Keys.Any(key => key is not ("scope" or "entityKinds" or "from" or "to" or "evaluationTimeZone" or "pageSize"))
             || !arguments.TryGetValue("scope", out var scopeElement)
             || !arguments.TryGetValue("entityKinds", out var kindsElement)
             || !CalendarQueryToolSupport.HasScopeShape(scopeElement)
@@ -205,10 +205,25 @@ public sealed class CalendarEntityTools
         query = null!;
         if (!CalendarQueryToolSupport.TryCreateScope(scope, out var domainScope)
             || !TryCreateKinds(kinds, out var domainKinds)
-            || !TryReadWindow(arguments, out var from, out var to))
+            || !TryReadWindow(arguments, out var from, out var to)
+            || !TryReadOptionalString(arguments, "evaluationTimeZone", out var evaluationTimeZone))
             return false;
-        query = new CalendarEntityQuery(domainScope, domainKinds, from, to);
+        query = new CalendarEntityQuery(domainScope, domainKinds, from, to, evaluationTimeZone);
         return true;
+    }
+
+    private static bool TryReadOptionalString(
+        IDictionary<string, JsonElement> arguments,
+        string name,
+        out string? value)
+    {
+        value = null;
+        if (!arguments.TryGetValue(name, out var element))
+            return true;
+        if (element.ValueKind != JsonValueKind.String)
+            return false;
+        value = element.GetString();
+        return value is not null;
     }
 
     private static bool TryCreateKinds(
@@ -375,7 +390,12 @@ public sealed record CalendarEntityQuerySuccessResult(
     [property: JsonPropertyName("outcome")] string Outcome,
     [property: JsonPropertyName("items")] IReadOnlyList<CalendarSnapshotResult> Items,
     [property: JsonPropertyName("diagnostics")] IReadOnlyList<CalendarDiagnosticResult> Diagnostics,
+    [property: JsonPropertyName("temporalEvaluationContext"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CalendarTemporalEvaluationContextResult? TemporalEvaluationContext,
     [property: JsonPropertyName("pagination")] CalendarPagination Pagination);
+
+public sealed record CalendarTemporalEvaluationContextResult(
+    [property: JsonPropertyName("timeZone")] string TimeZone,
+    [property: JsonPropertyName("source")] string Source);
 
 public sealed record CalendarEntityQueryErrorResult(
     [property: JsonPropertyName("code")] string Code,

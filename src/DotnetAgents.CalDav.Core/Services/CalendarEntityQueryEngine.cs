@@ -231,7 +231,7 @@ internal sealed class CalendarEntityQueryEngine
                 snapshot,
                 query.From,
                 query.To,
-                cancellationToken);
+                cancellationToken: cancellationToken);
             occurrenceCount += temporal.OccurrenceCount;
             if (temporal.Match == CalendarEntityTemporalMatch.LimitExhausted || occurrenceCount > MaximumQueryOccurrences)
                 return FilterResult.Failure(CalendarEntityQueryCode.LimitExhausted, occurrenceCount);

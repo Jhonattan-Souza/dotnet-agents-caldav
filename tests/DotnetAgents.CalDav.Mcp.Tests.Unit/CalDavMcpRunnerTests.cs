@@ -99,6 +99,25 @@ public class CalDavMcpRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_InvalidConfiguredEvaluationTimeZoneFailsStartupWithoutEchoingTheValue()
+    {
+        const string privateValue = "Private/Secret-Zone";
+        var output = new StringWriter();
+
+        var exitCode = await new CalDavMcpRunner(output).RunAsync(options =>
+        {
+            options.BaseUrl = "https://caldav.example.com";
+            options.Username = "user";
+            options.Password = "pass";
+            options.EvaluationTimeZone = privateValue;
+        }, TestContext.Current.CancellationToken);
+
+        exitCode.ShouldBe(1);
+        output.ToString().ShouldContain("EvaluationTimeZone");
+        output.ToString().ShouldNotContain(privateValue);
+    }
+
+    [Fact]
     public async Task RunAsync_MissingUsername_ReturnsExitCode1_WithUsernameInError()
     {
         var sw = new StringWriter();

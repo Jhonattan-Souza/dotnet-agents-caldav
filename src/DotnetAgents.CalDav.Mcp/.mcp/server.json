@@ -46,6 +46,11 @@
           "isRequired": false
         },
         {
+          "name": "CALDAV_EVALUATION_TIME_ZONE",
+          "description": "Explicit IANA time zone used as the configured Temporal Evaluation Context for bounded Calendar Entity Starts (optional; shared policy for later Occurrence and To-do query-module cutovers)",
+          "isRequired": false
+        },
+        {
           "name": "CALDAV_EXPOSE_EXACT_TOOLS",
           "description": "Set to true to expose protected exact Calendar Object Resource tools (optional)",
           "isRequired": false
