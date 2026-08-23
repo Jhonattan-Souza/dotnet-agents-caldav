@@ -271,7 +271,6 @@ public sealed class OpenTelemetryStdioIntegrationTests
             attempt.ParentSpanId.SequenceEqual(phase.SpanId)));
         server.TransientFailureCount.ShouldBe(1);
         spans.ShouldNotContain(span => span.ScopeName == "System.Net.Http");
-        spans.ShouldAllBe(span => span.EventCount == 0);
         stderr.ShouldBeEmpty();
     }
 

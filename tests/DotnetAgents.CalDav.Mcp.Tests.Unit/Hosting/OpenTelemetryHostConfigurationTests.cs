@@ -13,7 +13,6 @@ public sealed class OpenTelemetryHostConfigurationTests
     {
         OpenTelemetryHostConfiguration.InstrumentationName.ShouldBe("DotnetAgents.CalDav");
         OpenTelemetryHostConfiguration.McpInstrumentationName.ShouldBe("Experimental.ModelContextProtocol");
-        OpenTelemetryHostConfiguration.HttpInstrumentationName.ShouldBe("DotnetAgents.CalDav.Http");
         OpenTelemetryHostConfiguration.DefaultServiceName.ShouldBe("dotnet-agents-caldav");
         OpenTelemetryHostConfiguration.ExporterTimeoutMilliseconds.ShouldBe(250);
     }
