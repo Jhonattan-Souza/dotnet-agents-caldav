@@ -23,7 +23,13 @@ public sealed record CalendarDescriptor
     public IReadOnlyList<CapabilityEvidence> EventEvidence { get; init; } = [];
 
     public IReadOnlyList<CapabilityEvidence> TodoEvidence { get; init; } = [];
+
+    /// <summary>Properties explicitly reported unavailable by discovery, with their DAV status.</summary>
+    public IReadOnlyList<CalendarUnavailableProperty> UnavailableProperties { get; init; } = [];
 }
+
+/// <summary>Evidence that one Calendar property was unavailable in a discovery response.</summary>
+public sealed record CalendarUnavailableProperty(string NamespaceUri, string LocalName, int StatusCode);
 
 /// <summary>Provenance for a Calendar display name.</summary>
 public enum DisplayNameProvenance

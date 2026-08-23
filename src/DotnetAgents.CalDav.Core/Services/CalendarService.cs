@@ -34,7 +34,7 @@ internal sealed class CalendarService : ICalendarService
         TimeProvider timeProvider,
         ICalendarEntityIdentityGenerator identityGenerator)
     {
-        _calendarClient = calendarClient;
+        _calendarClient = new CalendarOperationDiscovery(calendarClient, options);
         _options = options;
         _logger = logger;
         _timeProvider = timeProvider;

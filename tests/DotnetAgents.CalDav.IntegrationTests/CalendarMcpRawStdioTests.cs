@@ -156,6 +156,48 @@ public sealed class CalendarMcpRawStdioTests
     }
 
     [Fact]
+    public async Task CalendarList_EachStdioToolCallPerformsFreshDiscovery()
+    {
+        const string privatePassword = "discovery-private-password";
+        await using var server = new SlowDiscoveryServer();
+        server.ReleaseResponse();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var process = StartServer(server.BaseUrl, server.CalendarHref, password: privatePassword);
+        try
+        {
+            await process.StandardInput.WriteLineAsync(
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2026-07-28\",\"capabilities\":{},\"clientInfo\":{\"name\":\"raw-test\",\"version\":\"1\"}}}");
+            await process.StandardInput.FlushAsync(timeout.Token);
+            _ = await ReadResponseAsync(process, 1, timeout.Token);
+            await process.StandardInput.WriteLineAsync(
+                "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}");
+            await process.StandardInput.WriteLineAsync(
+                "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"calendars.list\",\"arguments\":{}}}");
+            await process.StandardInput.FlushAsync(timeout.Token);
+            var first = await ReadResponseAsync(process, 2, timeout.Token);
+            await process.StandardInput.WriteLineAsync(
+                "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"calendars.list\",\"arguments\":{}}}");
+            await process.StandardInput.FlushAsync(timeout.Token);
+            var second = await ReadResponseAsync(process, 3, timeout.Token);
+
+            first.GetProperty("result").GetProperty("isError").GetBoolean().ShouldBeFalse();
+            second.GetProperty("result").GetProperty("isError").GetBoolean().ShouldBeFalse();
+            first.ToString().ShouldNotContain(privatePassword);
+            second.ToString().ShouldNotContain(privatePassword);
+            server.PropFindCount.ShouldBe(6);
+
+            process.StandardInput.Close();
+            await process.WaitForExitAsync(timeout.Token);
+            (await process.StandardError.ReadToEndAsync(timeout.Token)).ShouldBeEmpty();
+        }
+        finally
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
+        }
+    }
+
+    [Fact]
     public async Task CalendarResourceDelete_NativeSdkCompletesMrtrOverStdioWithoutDocker()
     {
         await using var server = new DeleteServer();
@@ -223,6 +265,7 @@ public sealed class CalendarMcpRawStdioTests
         structured.GetProperty("deletionReceipt").GetProperty("consumedEntityTag").GetString().ShouldBe("\"r1\"");
         elicitationCount.ShouldBe(1);
         server.DeleteCount.ShouldBe(1);
+        server.PropFindCount.ShouldBe(6);
         server.ObservedIfMatch.ShouldBe("\"r1\"");
         server.IsDeleted.ShouldBeTrue();
         JsonSerializer.Serialize(result).ShouldNotContain("Private reviewed delete");
@@ -931,7 +974,11 @@ public sealed class CalendarMcpRawStdioTests
         return prefix + duplicate + paddingPrefix + new string('x', argumentBytes - fixedBytes) + suffix;
     }
 
-    private static Process StartServer(string baseUrl, string calendarHref, bool exposeExact = false)
+    private static Process StartServer(
+        string baseUrl,
+        string calendarHref,
+        bool exposeExact = false,
+        string password = "test")
     {
         var startInfo = new ProcessStartInfo("dotnet", GetServerAssemblyPath())
         {
@@ -943,7 +990,7 @@ public sealed class CalendarMcpRawStdioTests
         };
         startInfo.Environment["CALDAV_URL"] = baseUrl;
         startInfo.Environment["CALDAV_USERNAME"] = "test";
-        startInfo.Environment["CALDAV_PASSWORD"] = "test";
+        startInfo.Environment["CALDAV_PASSWORD"] = password;
         startInfo.Environment["CALDAV_CALENDAR_HREFS"] = calendarHref;
         startInfo.Environment["CALDAV_EXPOSE_EXACT_TOOLS"] = exposeExact ? "true" : "false";
         return Process.Start(startInfo)!;
@@ -1128,6 +1175,7 @@ public sealed class CalendarMcpRawStdioTests
         private readonly CancellationTokenSource _stopping = new();
         private readonly TaskCompletionSource _releaseResponse = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly Task _serve;
+        private int _propFindCount;
 
         public SlowDiscoveryServer()
         {
@@ -1141,6 +1189,7 @@ public sealed class CalendarMcpRawStdioTests
 
         public string BaseUrl { get; }
         public string CalendarHref { get; }
+        public int PropFindCount => Volatile.Read(ref _propFindCount);
 
         public void ReleaseResponse() => _releaseResponse.TrySetResult();
 
@@ -1166,6 +1215,7 @@ public sealed class CalendarMcpRawStdioTests
                 while (!_stopping.IsCancellationRequested)
                 {
                     var context = await _listener.GetContextAsync();
+                    Interlocked.Increment(ref _propFindCount);
                     await _releaseResponse.Task.WaitAsync(_stopping.Token);
                     var body = context.Request.Url!.AbsolutePath == "/"
                         ? "<d:response><d:href>/</d:href><d:propstat><d:prop><c:calendar-home-set><d:href>/calendars/test/</d:href></c:calendar-home-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>"
@@ -1212,6 +1262,7 @@ public sealed class CalendarMcpRawStdioTests
         private readonly Task _serve;
         private int _deleteCount;
         private int _deleted;
+        private int _propFindCount;
         private string? _observedIfMatch;
 
         public DeleteServer()
@@ -1232,6 +1283,8 @@ public sealed class CalendarMcpRawStdioTests
         public string ResourceHref { get; }
 
         public int DeleteCount => Volatile.Read(ref _deleteCount);
+
+        public int PropFindCount => Volatile.Read(ref _propFindCount);
 
         public bool IsDeleted => Volatile.Read(ref _deleted) != 0;
 
@@ -1274,6 +1327,7 @@ public sealed class CalendarMcpRawStdioTests
             switch (context.Request.HttpMethod)
             {
                 case "PROPFIND":
+                    Interlocked.Increment(ref _propFindCount);
                     await WriteDiscoveryAsync(context.Response, context.Request.Url!.AbsolutePath);
                     return;
                 case "GET":
