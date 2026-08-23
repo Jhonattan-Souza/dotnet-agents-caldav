@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Reused one immutable, authorization-bound CalDAV discovery result inside each MCP tool call while keeping MRTR continuations fresh and Capability State separate.
 - Migrated test execution from VSTest to Microsoft.Testing.Platform v2 and xUnit 4.
 - Isolated coverage and TRX evidence per run so historical or nested runner artifacts cannot affect quality gates.
 

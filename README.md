@@ -120,6 +120,8 @@ Layered design:
 
 `MCP tools` → `ICalendarService` → thin service facade → `CalDavClient` → `HttpClient`; lossless iCalendar projection and bounded recurrence evaluation stay in Core's iCalendar modules.
 
+Each MCP tool call owns one immutable, authorization-bound discovery coordinator. Same-key source, destination, query, and reconciliation consumers share its complete in-scope result; a new call, including an MRTR continuation, performs fresh discovery. This is an operation-local lifetime only: credentials, resource snapshots, query results, Entity Tags, and process-lifetime Capability State are never retained in the discovery result, and there is no process-wide or TTL discovery cache.
+
 ## Development
 
 Build:
@@ -150,6 +152,6 @@ Slopwatch:
 dotnet tool run slopwatch analyze --config .slopwatch/slopwatch.json --fail-on warning
 ```
 
-The behavior gates, final-package smoke test, and package-content policy are documented in [Release validation](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/main/docs/release-process.md).
+The behavior gates, final-package smoke test, and package-content policy are documented in [Release validation](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/main/docs/release-process.md). Current specification evidence is linked from the [requirement-to-evidence catalog](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/main/docs/requirement-to-evidence.md).
 
 The 0.2.0 contract is deliberately incompatible with the removed 0.1.x task-specific tools and environment names.
