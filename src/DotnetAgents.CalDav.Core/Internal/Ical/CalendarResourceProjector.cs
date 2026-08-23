@@ -1743,7 +1743,7 @@ internal static class CalendarResourceProjector
         try
         {
             return IcalCalendar.Load(new UTF8Encoding(false, true).GetString(
-                document.ReplayForProjectionValidation()));
+                document.ReplayForTypedValidation()));
         }
         catch (Exception exception) when (exception is ArgumentException
             or InvalidOperationException
