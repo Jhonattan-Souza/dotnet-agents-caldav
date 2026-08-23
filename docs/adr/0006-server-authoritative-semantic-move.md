@@ -34,9 +34,27 @@ The module performs lexical validation, origin and Calendar Scope
 authorization, destination selection and capability checks, source projection
 and revision validation, one exact destination-href absence probe, one MOVE,
 and bounded concurrent bilateral reconciliation. MOVE is never retried.
+Source, destination, presence, dispatch, and reconciliation operations carry
+the already-authorized source or destination Calendar identity. A redirect may
+remain within that Calendar's direct-resource namespace but may not cross to a
+different same-origin Calendar, so credentials and conditional headers never
+follow a redirect beyond the selected authorization boundary.
 `DestinationConflict` is reserved for authoritative occupancy of the exact
 destination href. `CALDAV:no-uid-conflict` and generic 409/412 rejection map to
 the non-disclosing `conflict` outcome.
+
+Semantic reconciliation compares a complete lossless semantic representation,
+not authoritative byte equality. The representation recursively includes the
+VCALENDAR root, every property and parameter occurrence, duplicate
+multiplicity, derived fields, and every nested or supporting component.
+Grammar-proven differences in content-line folding, irrelevant
+property/component order, registered token casing, recurrence ordering, and a
+sole explicit default `VALUE` parameter may normalize. Group identity,
+parameter value order where not defined as unordered, list cardinality, unknown
+extension values, and every true semantic value remain distinct. Malformed or
+unproved registered grammar fails closed, and component depth is bounded before
+comparison. Exact Move remains the independently gated operation that compares
+authoritative bytes, including lexical differences and opaque resources.
 
 `Dispatched` and `PossiblyDispatched` remain distinct. A definite dispatch may
 claim committed success or fidelity failure only from complete destination plus
@@ -47,6 +65,10 @@ faithful destination plus absent source. Absent destination plus an unchanged
 strong source proves `not_committed`; every other cell remains
 `indeterminate`/`unknown`. Reconciliation uses its own bounded token and is not
 stopped by caller cancellation after dispatch may have occurred.
+An unexpected successful HTTP status has no stronger parsed commitment
+evidence, so it is treated conservatively as `PossiblyDispatched` and enters
+the same bilateral truth table rather than being reported as a definite
+rejection.
 
 The capability contract is explicit and fail closed. The only enabled profile
 is `radicale-3.7.8`, which denotes the repository's digest-pinned Radicale 3.7.8
@@ -61,6 +83,12 @@ result preserves Calendar Scope and configured-default selection truth without
 reapplying policy in the module. Conditional Create remains unchanged, and the
 Exact Move MRTR plan redesign and Exact-only scan cleanup remain owned by issue
 `#115`.
+
+The permanent deterministic and digest-pinned Radicale witnesses materialize
+destination sizes 1, 50, and 600. They prove zero changed-revision REPORT,
+multiget, and unrelated GET work, exactly one MOVE, and constant involved-
+resource reconciliation; recorded durations are supporting observations only,
+not an SLA.
 
 Operation telemetry exports only closed dispatch, collision, reconciliation,
 logical outcome, and Mutation State classifications. The export allowlist still
