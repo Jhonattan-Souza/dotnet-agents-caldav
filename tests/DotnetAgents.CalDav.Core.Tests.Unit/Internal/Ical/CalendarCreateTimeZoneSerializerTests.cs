@@ -173,7 +173,8 @@ public sealed class CalendarCreateTimeZoneSerializerTests
 
     private static CalendarOccurrenceEvaluation Evaluate(byte[] bytes, string from, string to)
     {
-        var projected = CalendarResourceProjector.Project(bytes);
+        var document = CalendarContentDocument.Parse(bytes);
+        var projected = CalendarResourceProjector.Project(document);
         var snapshot = new CalendarResourceSnapshot(
             "https://cal.example/events/",
             "https://cal.example/events/deterministic-zone.ics",
@@ -188,6 +189,8 @@ public sealed class CalendarCreateTimeZoneSerializerTests
                 CalendarEntityScope.Selected(new CalendarReference(Href: snapshot.CalendarHref)),
                 DateTimeOffset.Parse(from),
                 DateTimeOffset.Parse(to)),
+            document,
+            CalendarResourceProjector.LoadTypedCalendar(document),
             CancellationToken.None);
     }
 

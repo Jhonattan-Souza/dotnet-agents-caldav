@@ -226,7 +226,8 @@ public sealed class CalendarMcpStdioIntegrationTests
             await using var client = await CreateClientAsync(
                 stderr,
                 exposeExact: false,
-                calendarHrefs: $"{_fixture.BaseUrl}{calendarHref}");
+                calendarHrefs: $"{_fixture.BaseUrl}{calendarHref}",
+                evaluationTimeZone: "UTC");
             var scope = new Dictionary<string, object?>
             {
                 ["mode"] = "selected",
@@ -246,6 +247,10 @@ public sealed class CalendarMcpStdioIntegrationTests
                     cancellationToken: TestContext.Current.CancellationToken);
                 open.IsError.ShouldBe(false);
                 var openStructured = open.StructuredContent!.Value;
+                openStructured.GetProperty("pagination").GetProperty("mode").GetString()
+                    .ShouldBe("query_result_snapshot");
+                openStructured.GetProperty("temporalEvaluationContext").GetRawText()
+                    .ShouldBe("{\"timeZone\":\"UTC\",\"source\":\"configuration\"}");
                 foreach (var item in openStructured.GetProperty("items").EnumerateArray())
                 {
                     item.GetProperty("completionState").GetString().ShouldBe("open");
@@ -254,7 +259,7 @@ public sealed class CalendarMcpStdioIntegrationTests
                 var nextCursor = openStructured.GetProperty("pagination").GetProperty("nextCursor");
                 openArguments = nextCursor.ValueKind == JsonValueKind.Null
                     ? null
-                    : new Dictionary<string, object?> { ["scope"] = scope, ["pageSize"] = 2, ["cursor"] = nextCursor.GetString() };
+                    : new Dictionary<string, object?> { ["cursor"] = nextCursor.GetString(), ["pageSize"] = 2 };
             }
             while (openArguments is not null);
 

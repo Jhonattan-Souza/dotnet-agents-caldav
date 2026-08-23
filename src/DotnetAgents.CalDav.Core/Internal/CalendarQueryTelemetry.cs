@@ -16,6 +16,7 @@ internal static class CalendarQueryTelemetry
         "caldav.query.direct_get_attempt_count",
         "caldav.query.disappeared_resource_count",
         "caldav.query.snapshot_count",
+        "caldav.query.parse_count",
         "caldav.query.evaluation_count",
         "caldav.query.serialization_count",
         "caldav.query.page_admission_count"

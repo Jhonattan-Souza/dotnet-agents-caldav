@@ -38,6 +38,34 @@ internal static class CalendarEntityTemporalMatcher
         string? evaluationTimeZone = null,
         CancellationToken cancellationToken = default)
     {
+        if (snapshot.Projection.Kind == CalendarResourceProjectionKind.Opaque)
+            return MatchOpaque(snapshot);
+        try
+        {
+            return Matches(
+                snapshot,
+                CalendarContentDocument.Parse(snapshot.AuthoritativeUtf8.Span),
+                null,
+                from,
+                to,
+                evaluationTimeZone,
+                cancellationToken);
+        }
+        catch (Exception exception) when (exception is FormatException or ArgumentException or InvalidOperationException)
+        {
+            return new(CalendarEntityTemporalMatch.Unevaluable);
+        }
+    }
+
+    internal static CalendarEntityTemporalResult Matches(
+        CalendarResourceSnapshot snapshot,
+        CalendarContentDocument document,
+        IcalCalendar? typedCalendar,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        string? evaluationTimeZone = null,
+        CancellationToken cancellationToken = default)
+    {
         cancellationToken.ThrowIfCancellationRequested();
         if (from is null || to is null)
             return new(CalendarEntityTemporalMatch.Match);
@@ -46,9 +74,10 @@ internal static class CalendarEntityTemporalMatcher
 
         var componentName = snapshot.Projection.Kind == CalendarResourceProjectionKind.Event ? "VEVENT" : "VTODO";
         var entityProperties = snapshot.CalendarProperties.Where(property => IsEntityProperty(property, componentName)).ToArray();
+        var calendar = ResolveTypedCalendar(typedCalendar, document);
         var resolver = new CalendarTemporalResolver(
             snapshot.CalendarProperties,
-            snapshot.AuthoritativeUtf8.Span,
+            calendar,
             cancellationToken,
             evaluationTimeZone);
         if (HasUnresolvedTemporalValue(entityProperties, resolver, cancellationToken))
@@ -58,7 +87,14 @@ internal static class CalendarEntityTemporalMatcher
         if (recurrence == RecurrenceDisposition.Unevaluable)
             return new(CalendarEntityTemporalMatch.Unevaluable);
         if (recurrence == RecurrenceDisposition.Recurring)
-            return MatchRecurring(snapshot, entityProperties, resolver, from.Value, to.Value, cancellationToken);
+            return MatchRecurring(
+                snapshot,
+                calendar,
+                entityProperties,
+                resolver,
+                from.Value,
+                to.Value,
+                cancellationToken);
         var match = snapshot.Projection.Kind == CalendarResourceProjectionKind.Event
             ? MatchEvent(masterProperties, resolver, from.Value, to.Value)
             : MatchTodo(masterProperties, resolver, from.Value, to.Value);
@@ -71,8 +107,13 @@ internal static class CalendarEntityTemporalMatcher
         return new(CalendarEntityTemporalMatch.Unresolved);
     }
 
+    private static IcalCalendar? ResolveTypedCalendar(
+        IcalCalendar? typedCalendar,
+        CalendarContentDocument document) => typedCalendar ?? CalendarResourceProjector.LoadTypedCalendar(document);
+
     private static CalendarEntityTemporalResult MatchRecurring(
         CalendarResourceSnapshot snapshot,
+        IcalCalendar? typedCalendar,
         IReadOnlyList<CalendarProperty> entityProperties,
         CalendarTemporalResolver resolver,
         DateTimeOffset from,
@@ -81,10 +122,9 @@ internal static class CalendarEntityTemporalMatcher
     {
         try
         {
-            var replay = CalendarContentDocument.Parse(snapshot.AuthoritativeUtf8.Span).ReplayForTypedValidation();
-            var calendar = IcalCalendar.Load(Encoding.UTF8.GetString(replay));
-            if (calendar is null)
+            if (typedCalendar is null)
                 return new(CalendarEntityTemporalMatch.Unevaluable);
+            var calendar = typedCalendar;
             cancellationToken.ThrowIfCancellationRequested();
             var searchStart = SubtractSafely(from, GetMaximumLookback(entityProperties, resolver, cancellationToken));
             var options = new EvaluationOptions { MaxUnmatchedIncrementsLimit = MaximumUnmatchedIncrements };

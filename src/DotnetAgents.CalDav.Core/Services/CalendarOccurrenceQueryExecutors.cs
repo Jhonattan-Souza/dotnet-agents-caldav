@@ -97,15 +97,21 @@ internal sealed class CalendarOccurrenceQueryStartExecutor(
         var observedCount = 0;
         using (CalendarQueryTelemetry.StartPhase("evaluation"))
         {
-            foreach (var snapshot in acquired.Snapshots)
+            foreach (var resource in acquired.Resources)
             {
+                var snapshot = resource.Snapshot;
                 cancellationToken.ThrowIfCancellationRequested();
                 if (snapshot.Projection.Kind == CalendarResourceProjectionKind.Opaque)
                     continue;
                 CalendarQueryTelemetry.Add("caldav.query.evaluation_count");
                 if (CalendarOccurrenceEvaluator.HasInvalidComponentStructure(snapshot))
                     return CompletedCalendarOccurrenceQuery.Failure(CalendarQueryFailures.RecurrenceUnevaluable());
-                var evaluated = CalendarOccurrenceEvaluator.Evaluate(snapshot, effectiveQuery, cancellationToken);
+                var evaluated = CalendarOccurrenceEvaluator.Evaluate(
+                    snapshot,
+                    effectiveQuery,
+                    resource.Document!,
+                    resource.TypedCalendar,
+                    cancellationToken);
                 observedCount += evaluated.ObservedOccurrenceCount;
                 var failure = EvaluationFailure(evaluated.Code, observedCount);
                 if (failure is not null)

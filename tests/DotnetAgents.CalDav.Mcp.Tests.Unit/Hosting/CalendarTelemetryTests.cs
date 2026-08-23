@@ -662,6 +662,7 @@ public sealed class CalendarTelemetryTests
         activity.SetTag("caldav.query.disappeared_resource_count", 1L);
         activity.SetTag("caldav.query.snapshot_lookup_count", 1L);
         activity.SetTag("caldav.query.serialization_count", 0L);
+        activity.SetTag("caldav.query.parse_count", 3L);
         activity.SetTag("caldav.query.candidate_count", -1L);
         activity.SetTag("caldav.query.admission_envelope_serialization_count", 1L);
         activity.SetTag("caldav.query.final_materialization_count", 1L);
@@ -680,6 +681,7 @@ public sealed class CalendarTelemetryTests
         activity.GetTagItem("caldav.query.disappeared_resource_count").ShouldBe(1L);
         activity.GetTagItem("caldav.query.snapshot_lookup_count").ShouldBe(1L);
         activity.GetTagItem("caldav.query.serialization_count").ShouldBe(0L);
+        activity.GetTagItem("caldav.query.parse_count").ShouldBeNull();
         activity.GetTagItem("caldav.query.candidate_count").ShouldBeNull();
         activity.GetTagItem("caldav.query.admission_envelope_serialization_count").ShouldBeNull();
         activity.GetTagItem("caldav.query.final_materialization_count").ShouldBeNull();

@@ -32,6 +32,18 @@ internal sealed class CalendarTemporalResolver
         _typedCalendar = LoadTypedCalendar(authoritativeUtf8);
     }
 
+    internal CalendarTemporalResolver(
+        IReadOnlyList<CalendarProperty> properties,
+        IcalCalendar? typedCalendar,
+        CancellationToken cancellationToken = default,
+        string? evaluationTimeZone = null)
+    {
+        _properties = properties;
+        _cancellationToken = cancellationToken;
+        _evaluationTimeZone = evaluationTimeZone;
+        _typedCalendar = typedCalendar;
+    }
+
     public ResolvedCalendarInstant Resolve(CalendarProperty? property)
     {
         _cancellationToken.ThrowIfCancellationRequested();

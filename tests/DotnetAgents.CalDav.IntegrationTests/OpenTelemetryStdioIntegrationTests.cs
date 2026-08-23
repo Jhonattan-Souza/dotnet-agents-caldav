@@ -24,7 +24,7 @@ public sealed class OpenTelemetryStdioIntegrationTests
     }
 
     [Fact]
-    public async Task CalendarEntityStartContinue_ExportsSafeModulePhasesAndZeroContinuationWireWork()
+    public async Task TodoStartContinue_ExportsSafeModulePhasesAndZeroContinuationWireWork()
     {
         const string evaluationTimeZone = "America/Sao_Paulo";
         var suffix = Guid.NewGuid().ToString("N");
@@ -51,7 +51,7 @@ public sealed class OpenTelemetryStdioIntegrationTests
                              evaluationTimeZone: evaluationTimeZone))
             {
                 var start = await client.CallToolAsync(
-                    "calendar_entities.query",
+                    "todos.query",
                     new Dictionary<string, object?>
                     {
                         ["scope"] = new Dictionary<string, object?>
@@ -63,7 +63,6 @@ public sealed class OpenTelemetryStdioIntegrationTests
                                 ["href"] = $"{_fixture.BaseUrl}{_fixture.TodoCalendarHref}"
                             }
                         },
-                        ["entityKinds"] = new[] { "todo" },
                         ["from"] = new Dictionary<string, object?>
                         {
                             ["kind"] = "utcDateTime",
@@ -87,7 +86,7 @@ public sealed class OpenTelemetryStdioIntegrationTests
                     .ShouldNotBeNull();
 
                 var continuation = await client.CallToolAsync(
-                    "calendar_entities.query",
+                    "todos.query",
                     new Dictionary<string, object?> { ["cursor"] = cursor, ["pageSize"] = 1 },
                     cancellationToken: TestContext.Current.CancellationToken);
                 continuation.IsError.ShouldBe(false, continuation.StructuredContent?.ToString());
@@ -104,7 +103,7 @@ public sealed class OpenTelemetryStdioIntegrationTests
             {
                 operations = OtlpProtobufReader.ReadSpans(receiver.Requests).Where(span =>
                     span.Name == "caldav.operation"
-                    && Equals(span.Attributes.GetValueOrDefault("caldav.tool.name"), "calendar_entities.query"))
+                    && Equals(span.Attributes.GetValueOrDefault("caldav.tool.name"), "todos.query"))
                     .ToArray();
                 if (operations.Length == 2)
                     break;
@@ -122,6 +121,7 @@ public sealed class OpenTelemetryStdioIntegrationTests
                 .ShouldBeGreaterThan(0);
             startOperation.Attributes.GetValueOrDefault("caldav.query.direct_get_resource_count").ShouldBe(0L);
             startOperation.Attributes.GetValueOrDefault("caldav.query.direct_get_attempt_count").ShouldBe(0L);
+            startOperation.Attributes.GetValueOrDefault("caldav.query.parse_count").ShouldBeNull();
             var spans = OtlpProtobufReader.ReadSpans(receiver.Requests);
             var startTrace = spans.Where(span => span.TraceId.SequenceEqual(startOperation.TraceId)).ToArray();
             var continueTrace = spans.Where(span => span.TraceId.SequenceEqual(continueOperation.TraceId)).ToArray();

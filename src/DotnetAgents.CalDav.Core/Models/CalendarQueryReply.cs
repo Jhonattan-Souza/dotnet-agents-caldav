@@ -31,6 +31,38 @@ public abstract record CalendarOccurrenceQueryRequest
     public sealed record Continue(string Cursor, int? PageSize = null) : CalendarOccurrenceQueryRequest;
 }
 
+/// <summary>Closed compact To-do query request.</summary>
+public abstract record CalendarTodoQueryRequest
+{
+    private CalendarTodoQueryRequest()
+    {
+    }
+
+    /// <summary>Completes one semantic To-do query and starts immutable pagination.</summary>
+    public sealed record Start(
+        CalendarTodoQuery Query,
+        IReadOnlyList<CalendarTodoProjectionField> Projection,
+        int PageSize = 50) : CalendarTodoQueryRequest;
+
+    /// <summary>Reads only an authenticated position in an immutable To-do result snapshot.</summary>
+    public sealed record Continue(string Cursor, int? PageSize = null) : CalendarTodoQueryRequest;
+}
+
+/// <summary>Closed compact To-do projection vocabulary.</summary>
+public enum CalendarTodoProjectionField
+{
+    Summary,
+    Status,
+    CompletedAt,
+    PercentComplete,
+    Due,
+    Priority,
+    Categories,
+    Start,
+    Description,
+    Recurrence
+}
+
 /// <summary>Closed query result containing either one complete page or one typed failure.</summary>
 public abstract record QueryReply<T>
 {
@@ -59,6 +91,9 @@ public sealed record CalendarEntityQueryItem(JsonElement Value);
 
 /// <summary>One final projected Occurrence retained without authoritative content.</summary>
 public sealed record CalendarOccurrenceQueryItem(JsonElement Value);
+
+/// <summary>One final projected compact To-do result retained without authoritative content.</summary>
+public sealed record CalendarTodoQueryPageItem(JsonElement Value);
 
 /// <summary>Bounded content-safe diagnostic frozen across all pages.</summary>
 public sealed record QueryDiagnostic(

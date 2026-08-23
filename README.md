@@ -37,7 +37,7 @@ Add this MCP server to VS Code, Claude Desktop, Cursor, or any MCP client:
 | `CALDAV_CALENDAR_HREFS` | No | Comma-separated exact canonical Calendar href allowlist; omit to discover every Calendar |
 | `CALDAV_DEFAULT_TODO_CALENDAR_NAME` | No | Display name of the default Calendar for To-do operations |
 | `CALDAV_DEFAULT_EVENT_CALENDAR_NAME` | No | Display name of the default Calendar for Event operations |
-| `CALDAV_EVALUATION_TIME_ZONE` | No | Exact IANA zone used as the configured Temporal Evaluation Context for bounded Calendar Entity and Occurrence Starts; invalid values fail startup and a caller `evaluationTimeZone` override wins. The same policy is shared by the To-do query-module cutover |
+| `CALDAV_EVALUATION_TIME_ZONE` | No | Exact IANA zone used as the configured Temporal Evaluation Context for bounded Calendar Entity Starts and every Occurrence or To-do Start; invalid values fail startup and a caller `evaluationTimeZone` override wins |
 | `CALDAV_EXPOSE_EXACT_TOOLS` | No | Set to `true` to expose protected exact Calendar Object Resource tools |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | No | Non-empty OTLP endpoint that opts into telemetry export; no exporter is registered when omitted |
 | `OTEL_EXPORTER_OTLP_PROTOCOL` | No | Standard OTLP protocol such as `http/protobuf` or `grpc` |
@@ -52,7 +52,7 @@ Add this MCP server to VS Code, Claude Desktop, Cursor, or any MCP client:
 - `calendars.list` — Discover the configured Calendar Scope.
 - `calendar_entities.query` — Start a persisted Event and To-do query across Calendar Scope, or continue its immutable Query Result Snapshot without repeating CalDAV work. A bounded Start requires an explicit caller or configured IANA Temporal Evaluation Context and reports the frozen context on every page.
 - `calendar_occurrences.query` — Start one bounded Event and To-do Occurrence query under an explicit caller or configured IANA Temporal Evaluation Context, or continue its immutable Query Result Snapshot with no CalDAV or recurrence work.
-- `todos.query` — Read compact normalized To-do results in an explicit Calendar Scope; routine open-task reads use this surface instead of parsing full snapshots.
+- `todos.query` — Start a compact normalized To-do query over one authoritative VTODO-only corpus, or continue its immutable Query Result Snapshot without remote or semantic re-execution. Every Start requires a caller or configured IANA Temporal Evaluation Context.
 - `calendar_resources.get` — Read an authoritative semantic-or-opaque snapshot by confirmed absolute href.
 - `events.create` — Create one Event in a selected Calendar.
 - `events.patch` — Apply a revision-bound semantic patch to one Event resource.
@@ -120,9 +120,9 @@ Version 0.2.0 deliberately replaces the task-specific 0.1.x contract. Read [Migr
 
 Layered design:
 
-Calendar Entity reads use `MCP adapter` → `ICalendarQueryModule` → narrow CalDAV query transport → `CalDavClient`; unrelated operations retain the `ICalendarService` path. Lossless iCalendar projection and bounded recurrence evaluation stay in Core's iCalendar modules.
+Calendar Entity, Occurrence, and compact To-do reads use `MCP adapter` → `ICalendarQueryModule` → narrow CalDAV query transport → `CalDavClient`; unrelated operations retain the `ICalendarService` path. Lossless iCalendar projection and bounded recurrence evaluation stay in Core's iCalendar modules.
 
-A Calendar Entity Start completes discovery, authoritative retrieval, evaluation, ordering, and projection before returning its first page. A Continue authenticates its opaque cursor and reads only the bounded process-local Query Result Snapshot. Snapshots expire ten minutes after the first page, are never extended by replay, and are not CalDAV caches or mutation authority.
+A query Start completes discovery, authoritative retrieval, evaluation, ordering, and projection before returning its first page. Windowed To-do Starts acquire VTODOs once, route non-recurring resources through the Entity lane and recurring resources through the Occurrence lane, then apply one global order. A Continue authenticates its opaque cursor and reads only the bounded process-local Query Result Snapshot. Snapshots expire ten minutes after the first page, are never extended by replay, and are not CalDAV caches or mutation authority.
 
 Each MCP tool call owns one immutable, authorization-bound discovery coordinator. Same-key source, destination, query, and reconciliation consumers share its complete in-scope result; a new call, including an MRTR continuation, performs fresh discovery. This is an operation-local lifetime only: credentials, resource snapshots, query results, Entity Tags, and process-lifetime Capability State are never retained in the discovery result, and there is no process-wide or TTL discovery cache.
 

@@ -92,6 +92,24 @@ The dated [Occurrence before/after observation](performance-occurrence-query-sna
 records the former cursor-bound re-execution shape and the deterministic,
 stdio, pinned-Radicale, and OTLP evidence for immutable traversal.
 
+## Compact To-do deep query module
+
+| Requirement | Implementation evidence | Verification evidence |
+| --- | --- | --- |
+| `CAL-QUERY-020` | Public Core `ICalendarQueryModule.QueryTodosAsync` owns a closed Start/Continue family; the MCP tool performs only strict argument conversion and mechanical reply mapping. | `CalendarTodoToolsTests`; host live-schema witness |
+| `CAL-QUERY-021` | Each Start resolves caller or configured IANA context before transport construction, performs one VTODO-only candidate acquisition, requires a strong Entity Tag before exclusion, and carries one operation-scoped parsed document/typed calendar per surviving resource. | `TodoStartWithoutTemporalContextFailsBeforeTransportConstruction`, `MissingOrWeakEntityTagFailsBeforeSemanticExclusion`, and `TodoStartUsesOneVtodoCorpusAndSplitsEntityAndOccurrenceLanes` assert exact discovery, candidate, retrieval, parse, evaluation, and serialization counts. |
+| `CAL-QUERY-022` | No-window Starts preserve every recurring master as one compact Entity row without expansion. Windowed Starts route dated and undated non-recurring resources through the Entity lane and recurring resources through the Occurrence lane without an extra master row or invented identity. | `TodoStartWithoutWindowKeepsRecurringMasterAsCompactEntityWithoutExpansion`; deterministic lane and lineage tracer |
+| `CAL-QUERY-023` | Effective override resolution precedes completion and due filtering. Cancelled candidates remain available to the authoritative classifier, contradictory evidence becomes `indeterminate`, a complete moved override that intentionally omits DUE remains due-less, a DUE-only detached override retains its due role, and a completion-only override retains nominal timing. | `CompletionAndDueFiltersObserveTheChangedOverrideAfterResolution`, `IndeterminateFilterRetainsCancelledOverrideUntilAuthoritativeClassification`, `MovedCompleteOverrideWithoutDueRemainsDueLessAndDueFilterExcludesIt`, `DueOnlyDetachedOverrideKeepsDueRoleThroughFilteringProjectionAndOrdering`, and `CompletionOnlyOverrideKeepsNominalTimingThroughDueFilterAndOrdering` |
+| `CAL-QUERY-024` | One global due-null-last, start-null-last, Calendar href, UID, Resource href, and recurrence-identity order is frozen before page admission; every occurrence retains its resource's strong revision lineage. | `GlobalOrderTraversesEquivalentlyAtEverySupportedRepresentativePageSize` and lane tracer revision assertions |
+| `CAL-QUERY-025` | Todo Continue authenticates the tool-bound cursor and reads only frozen encoded items, diagnostics, exclusion count, and Temporal Evaluation Context; it has no transport, parser, evaluator, or projector dependency. | `ContinueReplaysFrozenPageWithZeroRemoteOrSemanticWork`; snapshot/store cleanup and cursor tests shared with CAL-QUERY-005 through CAL-QUERY-019 |
+| `CAL-QUERY-026` | Typed recurrence, temporal, count, byte, cancellation, reservation, and page failures publish no partial snapshot. The live schema is a mutually exclusive Start/Continue union with 1-200 page size, 2,048-character cursor, snapshot pagination, and frozen context. | `UnevaluableRecurringTodoFailsAtomicallyWithoutSnapshot`; `CalendarTodoQueryPageCodecTests` exact 4 MiB and 1/50/200 gates; shared store cleanup gates; MCP stdio, pinned-Radicale, and OTLP To-do witnesses |
+
+These requirements supersede ADR 0001's non-snapshot cursor and 64 KiB page
+mechanics while retaining its compact completion vocabulary and projection.
+The dated [To-do query observation](performance-todo-query-snapshots-2026-08-23.md)
+records the one-corpus structural baseline, changed revision, real-server
+boundary, continuation behavior, privacy checks, and cleanup.
+
 ## Bounded multiget and Direct GET Compatibility Mode
 
 | Requirement | Implementation evidence | Verification evidence |

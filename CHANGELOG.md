@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added an automatic bounded Direct GET Compatibility Mode for verified `calendar-multiget` unavailability, with canonical four-wide waves, shared per-origin permits, closed execution-limit evidence, and strict all-or-nothing resource truth.
 - Added an explicit caller-or-configured IANA Temporal Evaluation Context for bounded Calendar Entity queries, including source-preserving DST and date-only evaluation and frozen context on every snapshot page.
 - Added immutable Query Result Snapshot traversal for `calendar_occurrences.query`, preserving full recurrence identities, source and effective timing, strong revision lineage, and explicit cancellation policy across pages.
+- Added immutable Query Result Snapshot Start/Continue pagination for `todos.query`, with one VTODO-only authoritative corpus, one-pass parsed semantic state, effective override-aware filtering, and frozen Temporal Evaluation Context.
 - Added opt-in OTLP traces, MCP metrics, and trace-correlated safe logs for the stdio server, including CalDAV aggregate-phase and outbound HTTP attempt waterfalls.
 - Added automated loopback OTLP coverage for trace parentage, metrics, log correlation, redaction, disabled defaults, collector failure isolation, and stdin-EOF shutdown.
 - Added truthful Operation outcome and Mutation State telemetry, explicit expected-absence observations, and per-wire-attempt retry recovery evidence through the built MCP stdio server.
@@ -22,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Replaced Calendar Entity cursor re-execution and MCP-owned page assembly with one complete Start execution and zero-CalDAV, zero-semantic-work Continue execution.
 - Changed `calendar_entities.query` input to a strict Start-or-Continue union and its pagination mode from `non_snapshot` to `query_result_snapshot`.
+- Changed `todos.query` to a strict Start-or-Continue union; windowed Starts combine non-recurring Entity and recurring Occurrence lanes under one global order, while Continue performs zero CalDAV or semantic work.
 - Bounded `calendar_entities.query` Start requests now reject a missing or invalid Temporal Evaluation Context before discovery; unbounded Starts reject an unused caller override.
 - Replaced Occurrence cursor-bound query replay, MCP-owned page assembly, and duplicate deadlines with one typed module Start and a cursor-only Continue that performs no CalDAV, parsing, projection, or recurrence expansion.
 - Reused one immutable, authorization-bound CalDAV discovery result inside each MCP tool call while keeping MRTR continuations fresh and Capability State separate.

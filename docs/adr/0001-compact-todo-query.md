@@ -2,6 +2,8 @@
 
 Status: Accepted
 
+Superseded in part by: ADR 0004 and ADR 0005 (2026-08-23)
+
 Date: 2026-08-19
 
 ## Context
@@ -43,9 +45,19 @@ read path; a future data-bearing CalDAV REPORT may be added as a capability
 optimization, but pinned Radicale 3.7.8 ignores nested calendar-data property
 projection and cannot provide selective upstream bytes.
 
+ADR 0004 supersedes the cursor, admission, and acquisition mechanics above.
+`todos.query` now owns a strict Start/Continue union through
+`ICalendarQueryModule`, uses exact 4 MiB page admission and immutable ten-minute
+Query Result Snapshots, and never re-executes CalDAV or semantic work on
+Continue. One VTODO-only authoritative corpus supplies both non-recurring
+Entity rows and recurring effective Occurrence rows. ADR 0005 further requires
+every To-do Start to resolve one explicit IANA Temporal Evaluation Context
+before I/O. The completion model, compact projection, lane semantics, and
+strong revision targets in this ADR remain authoritative.
+
 ## Consequences
 
-`calendar_entities.query` is unchanged and remains the full snapshot contract.
+`calendar_entities.query` remains the full snapshot contract.
 The semantic catalog grows from 16 to 17 default tools (21 including exact
 tools), and the additive contract is documented as 0.2.1 while 0.2.0 artifacts
 remain available for existing clients. Native stdio tests prove the compact

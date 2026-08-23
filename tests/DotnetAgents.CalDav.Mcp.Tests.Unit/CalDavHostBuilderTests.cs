@@ -336,6 +336,35 @@ public class CalDavHostBuilderTests
         tool.ProtocolTool.Meta!["cache"]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
     }
 
+    [Fact]
+    public void BuildHost_AdvertisesFrozenTodoQuerySnapshotSchemasAndPrivateCacheHint()
+    {
+        var builder = CalDavHostBuilder.CreateBuilder();
+        builder.Services.ConfigureCalDav(ValidOptions);
+        using var host = builder.Build();
+
+        var options = host.Services.GetRequiredService<IOptions<ModelContextProtocol.Server.McpServerOptions>>().Value;
+        options.ToolCollection!.TryGetPrimitive("todos.query", out var tool).ShouldBeTrue();
+
+        var inputSchema = JsonNode.Parse(tool!.ProtocolTool.InputSchema.GetRawText())!.AsObject();
+        var outputSchema = JsonNode.Parse(tool.ProtocolTool.OutputSchema!.Value.GetRawText())!.AsObject();
+        var branches = inputSchema["oneOf"]!.AsArray();
+        branches.Count.ShouldBe(2);
+        branches.All(branch => !branch!["additionalProperties"]!.GetValue<bool>()).ShouldBeTrue();
+        branches[0]!["required"]!.AsArray().Select(item => item!.GetValue<string>()).ShouldBe(["scope"]);
+        branches[0]!["properties"]!.AsObject().ShouldContainKey("evaluationTimeZone");
+        branches[1]!["required"]!.AsArray().Select(item => item!.GetValue<string>()).ShouldBe(["cursor"]);
+        branches[1]!["properties"]!["cursor"]!["maxLength"]!.GetValue<int>().ShouldBe(2048);
+        var definitions = outputSchema["$defs"]!.AsObject();
+        definitions.ShouldContainKey("todoQuerySuccess");
+        definitions["todoQuerySuccess"]!["required"]!.AsArray()
+            .Select(item => item!.GetValue<string>()).ShouldContain("temporalEvaluationContext");
+        definitions["entityQueryPagination"]!["properties"]!["mode"]!["const"]!
+            .GetValue<string>().ShouldBe("query_result_snapshot");
+        tool.ProtocolTool.Meta!["cache"]!["ttlMs"]!.GetValue<int>().ShouldBe(5000);
+        tool.ProtocolTool.Meta!["cache"]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
+    }
+
     [Theory]
     [InlineData("events.create", "eventCreateEntity")]
     [InlineData("todos.create", "todoCreateEntity")]
