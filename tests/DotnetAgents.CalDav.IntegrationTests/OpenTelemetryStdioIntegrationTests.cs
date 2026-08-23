@@ -241,6 +241,141 @@ public sealed class OpenTelemetryStdioIntegrationTests
     }
 
     [Fact]
+    public async Task ConfirmedDelete_ExportsExpectedAbsenceWithoutErrorOverStdio()
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        var privateUid = $"private-delete-{suffix}";
+        var privateContent = PrivateTodo(privateUid);
+        var privateHref = await PutResourceAsync(
+            _fixture.TodoCalendarHref,
+            $"{privateUid}.ics",
+            privateContent);
+        var privateEntityTag = await GetEntityTagAsync(privateHref);
+        await using var receiver = OtlpLoopbackReceiver.Start();
+        using var process = CreateRawTelemetryProcess(receiver.Endpoint);
+        process.Start();
+        var stderrTask = process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
+
+        try
+        {
+            var arguments = new
+            {
+                revision = new
+                {
+                    href = privateHref,
+                    entityUid = privateUid,
+                    entityKind = "todo",
+                    entityTag = privateEntityTag
+                }
+            };
+            await WriteRawAsync(process,
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2026-07-28\",\"capabilities\":{},\"clientInfo\":{\"name\":\"telemetry-delete\",\"version\":\"1\"}}}");
+            _ = await ReadRawResponseAsync(process, 1);
+            await WriteRawAsync(process,
+                "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}");
+            await WriteRawAsync(process, JsonSerializer.Serialize(new
+            {
+                jsonrpc = "2.0",
+                id = 2,
+                method = "tools/call",
+                @params = new
+                {
+                    _meta = new Dictionary<string, object?>
+                    {
+                        ["io.modelcontextprotocol/protocolVersion"] = "2026-07-28",
+                        ["io.modelcontextprotocol/clientInfo"] = new { name = "telemetry-delete", version = "1" },
+                        ["io.modelcontextprotocol/clientCapabilities"] = new { }
+                    },
+                    name = "calendar_resources.delete",
+                    arguments
+                }
+            }));
+            var review = (await ReadRawResponseAsync(process, 2)).GetProperty("result");
+            review.GetProperty("inputRequests").TryGetProperty("confirm_delete", out _)
+                .ShouldBeTrue(review.ToString());
+            var requestState = review.GetProperty("requestState").GetString()
+                .ShouldNotBeNull();
+            await WriteRawAsync(process, JsonSerializer.Serialize(new
+            {
+                jsonrpc = "2.0",
+                id = 3,
+                method = "tools/call",
+                @params = new
+                {
+                    _meta = new Dictionary<string, object?>
+                    {
+                        ["io.modelcontextprotocol/protocolVersion"] = "2026-07-28",
+                        ["io.modelcontextprotocol/clientInfo"] = new { name = "telemetry-delete", version = "1" },
+                        ["io.modelcontextprotocol/clientCapabilities"] = new { }
+                    },
+                    name = "calendar_resources.delete",
+                    arguments,
+                    requestState,
+                    inputResponses = new Dictionary<string, object?>
+                    {
+                        ["confirm_delete"] = new
+                        {
+                            action = "accept",
+                            content = new { confirm = true }
+                        }
+                    }
+                }
+            }));
+            var confirmed = (await ReadRawResponseAsync(process, 3)).GetProperty("result");
+            confirmed.GetProperty("isError").GetBoolean().ShouldBeFalse(confirmed.ToString());
+            confirmed.GetProperty("structuredContent").GetProperty("outcome").GetString()
+                .ShouldBe("success");
+            confirmed.GetProperty("structuredContent").GetProperty("mutationState").GetString()
+                .ShouldBe("committed");
+            process.StandardInput.Close();
+            await process.WaitForExitAsync(TestContext.Current.CancellationToken);
+
+            await receiver.WaitForPathsAsync(["/v1/traces"], TestContext.Current.CancellationToken);
+            var spans = OtlpProtobufReader.ReadSpans(receiver.Requests);
+            var operation = spans.Single(span =>
+                span.Name == "caldav.operation"
+                && Equals(span.Attributes.GetValueOrDefault("caldav.tool.name"), "calendar_resources.delete")
+                && Equals(span.Attributes.GetValueOrDefault("caldav.outcome"), "success"));
+            operation.Attributes.GetValueOrDefault("caldav.mutation.state").ShouldBe("committed");
+            operation.Attributes.GetValueOrDefault("error.type").ShouldBeNull();
+            var httpAttempts = spans.Where(span => span.ScopeName == "DotnetAgents.CalDav.Http").ToArray();
+            httpAttempts.Count(span => Equals(span.Attributes.GetValueOrDefault("http.request.method"), "DELETE"))
+                .ShouldBe(1);
+            var verification = httpAttempts.Single(span =>
+                Equals(span.Attributes.GetValueOrDefault("http.request.method"), "GET")
+                && Equals(span.Attributes.GetValueOrDefault("http.response.status_code"), 404L));
+            verification.Attributes.GetValueOrDefault("caldav.http.request_purpose").ShouldBe("absence_probe");
+            verification.Attributes.GetValueOrDefault("caldav.http.observation").ShouldBe("expected_absence");
+            verification.Attributes.GetValueOrDefault("error.type").ShouldBeNull();
+            verification.StatusCode.ShouldBe(1);
+            var ordinaryReads = httpAttempts.Where(span =>
+                    Equals(span.Attributes.GetValueOrDefault("http.request.method"), "GET")
+                    && Equals(span.Attributes.GetValueOrDefault("http.response.status_code"), 200L))
+                .ToArray();
+            ordinaryReads.ShouldNotBeEmpty();
+            ordinaryReads.ShouldAllBe(span =>
+                span.Attributes.GetValueOrDefault("caldav.http.request_purpose") == null);
+            spans.ShouldAllBe(span => span.EventCount == 0);
+            AssertProhibitedDataAbsent(
+                receiver.Requests,
+                privateUid,
+                privateHref,
+                privateContent,
+                privateEntityTag,
+                requestState);
+            (await process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken))
+                .ShouldBeEmpty();
+            (await stderrTask).ShouldBeEmpty();
+        }
+        finally
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
+            await DeleteResourceAsync(privateHref, entityTag: null);
+        }
+    }
+
+    [Fact]
     public async Task ExactCreateReview_ExportsExpectedAbsenceAndInputRequiredOverRawStdio()
     {
         var suffix = Guid.NewGuid().ToString("N");

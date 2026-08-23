@@ -8,6 +8,7 @@ namespace DotnetAgents.CalDav.Core.Services;
 internal sealed class CalendarResourceDeleteEngine(
     ICalendarClient calendarClient,
     Func<string, CancellationToken, Task<CalendarResourceRead>> readResource,
+    Func<string, CancellationToken, Task<CalendarResourceRead>> verifyAbsence,
     TimeProvider timeProvider)
 {
     private static readonly TimeSpan ReconciliationTimeout = TimeSpan.FromSeconds(30);
@@ -81,7 +82,7 @@ internal sealed class CalendarResourceDeleteEngine(
         using var verification = new CancellationTokenSource(ReconciliationTimeout, timeProvider);
         try
         {
-            var observed = await readResource(revision.Href, verification.Token);
+            var observed = await verifyAbsence(revision.Href, verification.Token);
             return observed.Code == CalendarResourceReadCode.NotFound
                 ? Success(revision)
                 : CommittedButUnverified(observed.Snapshot);
@@ -99,7 +100,7 @@ internal sealed class CalendarResourceDeleteEngine(
         CalendarResourceRead observed;
         try
         {
-            observed = await readResource(revision.Href, reconciliation.Token);
+            observed = await verifyAbsence(revision.Href, reconciliation.Token);
         }
         catch (Exception)
         {

@@ -282,7 +282,16 @@ internal sealed class CalendarService : ICalendarService
         CancellationToken cancellationToken) => await new CalendarResourceDeleteEngine(
             _calendarClient,
             GetResourceAsync,
+            ProbeResourceAbsenceAsync,
             _timeProvider).DeleteAsync(revision, cancellationToken);
+
+    private async Task<CalendarResourceRead> ProbeResourceAbsenceAsync(
+        string href,
+        CancellationToken cancellationToken)
+    {
+        using var scope = CalendarHttpTelemetry.BeginAbsenceProbe();
+        return await GetResourceAsync(href, cancellationToken);
+    }
 
     private CalendarCreationModule CreationModule() => new(
         _calendarClient as ICalendarCreateTransport ?? new CalendarClientCreateTransport(_calendarClient),
