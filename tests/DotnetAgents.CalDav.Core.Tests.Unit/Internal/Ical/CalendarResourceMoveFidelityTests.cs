@@ -158,6 +158,65 @@ public sealed class CalendarResourceMoveFidelityTests
         CalendarResourceMoveFidelity.IsCompleteMatch(source, destination).ShouldBeTrue();
     }
 
+    [Fact]
+    public void IsCompleteMatch_NormalizesEveryRegisteredRecurrenceListPart()
+    {
+        var source = Snapshot(CalendarResourceProjectionKind.Todo, "uid-1", Resource(
+            "VERSION:2.0\r\nPRODID:-//Tests//EN\r\nBEGIN:VTODO\r\nUID:uid-1\r\n"
+            + "RRULE:FREQ=yearly;WKST=mo;UNTIL=20261231;BYSECOND=01,2;BYMINUTE=03,4;"
+            + "BYHOUR=05,6;BYMONTHDAY=+01,-2;BYYEARDAY=001,-2;BYWEEKNO=+01,-2;"
+            + "BYMONTH=01,2;BYSETPOS=+01,-2;INTERVAL=02\r\nEND:VTODO\r\n"));
+        var destination = Snapshot(CalendarResourceProjectionKind.Todo, "uid-1", Resource(
+            "VERSION:2.0\r\nPRODID:-//Tests//EN\r\nBEGIN:VTODO\r\nUID:uid-1\r\n"
+            + "RRULE:INTERVAL=2;BYSETPOS=-2,1;BYMONTH=2,1;BYWEEKNO=-2,1;"
+            + "BYYEARDAY=-2,1;BYMONTHDAY=-2,1;BYHOUR=6,5;BYMINUTE=4,3;"
+            + "BYSECOND=2,1;UNTIL=20261231;WKST=MO;FREQ=YEARLY\r\nEND:VTODO\r\n"));
+
+        CalendarResourceMoveFidelity.IsCompleteMatch(source, destination).ShouldBeTrue();
+    }
+
+    [Theory]
+    [InlineData("20261231T235959")]
+    [InlineData("20261231T235959Z")]
+    public void IsCompleteMatch_AcceptsEveryRegisteredUntilTemporalShape(string until)
+    {
+        var content = Resource(
+            "VERSION:2.0\r\nPRODID:-//Tests//EN\r\nBEGIN:VTODO\r\nUID:uid-1\r\n"
+            + $"RRULE:FREQ=DAILY;UNTIL={until}\r\nEND:VTODO\r\n");
+        var source = Snapshot(CalendarResourceProjectionKind.Todo, "uid-1", content);
+        var destination = Snapshot(CalendarResourceProjectionKind.Todo, "uid-1", content);
+
+        CalendarResourceMoveFidelity.IsCompleteMatch(source, destination).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void IsCompleteMatch_NormalizesExactFloatSignsZerosAndDecimalScale()
+    {
+        var source = Snapshot(CalendarResourceProjectionKind.Todo, "uid-1", Resource(
+            "VERSION:2.0\r\nPRODID:-//Tests//EN\r\nBEGIN:VTODO\r\nUID:uid-1\r\n"
+            + "GEO:+0001.200;-000.0\r\nEND:VTODO\r\n"));
+        var destination = Snapshot(CalendarResourceProjectionKind.Todo, "uid-1", Resource(
+            "VERSION:2.0\r\nPRODID:-//Tests//EN\r\nBEGIN:VTODO\r\nUID:uid-1\r\n"
+            + "GEO:1.2;0\r\nEND:VTODO\r\n"));
+
+        CalendarResourceMoveFidelity.IsCompleteMatch(source, destination).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void IsCompleteMatch_NormalizesEveryValidFormatTypeTokenCharacter()
+    {
+        var source = Snapshot(CalendarResourceProjectionKind.Todo, "uid-1", Resource(
+            "VERSION:2.0\r\nPRODID:-//Tests//EN\r\nBEGIN:VTODO\r\nUID:uid-1\r\n"
+            + "ATTACH;FMTTYPE=text/x-example!#$&-^_.+json:https://example.test/item\r\n"
+            + "END:VTODO\r\n"));
+        var destination = Snapshot(CalendarResourceProjectionKind.Todo, "uid-1", Resource(
+            "VERSION:2.0\r\nPRODID:-//Tests//EN\r\nBEGIN:VTODO\r\nUID:uid-1\r\n"
+            + "ATTACH;FMTTYPE=TEXT/X-EXAMPLE!#$&-^_.+JSON:https://example.test/item\r\n"
+            + "END:VTODO\r\n"));
+
+        CalendarResourceMoveFidelity.IsCompleteMatch(source, destination).ShouldBeTrue();
+    }
+
     private static string Resource(string body) => "BEGIN:VCALENDAR\r\n" + body + "END:VCALENDAR\r\n";
 
     private static CalendarResourceSnapshot Snapshot(
