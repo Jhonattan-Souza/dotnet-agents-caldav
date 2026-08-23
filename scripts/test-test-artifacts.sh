@@ -74,8 +74,8 @@ echo "PASS conformance evidence requires the exact test count"
 
 over_conformance_count="$fixture_root/over-conformance-count"
 seed_main_artifacts "$over_conformance_count"
-write_successful_trx "$over_conformance_count/strict-preconditions.trx" 11
-write_successful_trx "$over_conformance_count/alternate-time-zone.trx" 10
+write_successful_trx "$over_conformance_count/strict-preconditions.trx" 12
+write_successful_trx "$over_conformance_count/alternate-time-zone.trx" 11
 if "$verifier" "$over_conformance_count" complete >/dev/null 2>&1; then
   echo "Expected a conformance TRX above the exact test count to be rejected." >&2
   exit 1

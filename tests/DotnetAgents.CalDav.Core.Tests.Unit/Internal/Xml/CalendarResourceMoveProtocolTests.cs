@@ -70,6 +70,35 @@ public sealed class CalendarResourceMoveProtocolTests
     }
 
     [Theory]
+    [InlineData(null, "https://example.com/archive/")]
+    [InlineData("tasks/", "https://example.com/archive/")]
+    [InlineData("https://example.com/tasks", "https://example.com/archive/")]
+    [InlineData("https://other.example/tasks/", "https://example.com/archive/")]
+    [InlineData("https://example.com/private/", "https://example.com/archive/")]
+    [InlineData("https://example.com/tasks/", null)]
+    public async Task MoveAsync_RejectsInvalidAuthorizedCalendarIdentityBeforeDispatch(
+        string? authorizedSourceCalendarHref,
+        string? authorizedDestinationCalendarHref)
+    {
+        var sendCount = 0;
+        using var httpClient = new HttpClient(new Handler(_ =>
+        {
+            sendCount++;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Created));
+        }));
+        var sut = new CalendarResourceMoveProtocol(httpClient, new Uri("https://example.com"));
+
+        var result = await sut.MoveAsync(
+            Request(),
+            authorizedSourceCalendarHref,
+            authorizedDestinationCalendarHref,
+            TestContext.Current.CancellationToken);
+
+        result.Code.ShouldBe(CalendarResourceMoveDispatchCode.InvalidInput);
+        sendCount.ShouldBe(0);
+    }
+
+    [Theory]
     [InlineData(HttpStatusCode.Accepted, CalendarResourceMoveDispatchCode.PossiblyDispatched)]
     [InlineData(HttpStatusCode.NonAuthoritativeInformation, CalendarResourceMoveDispatchCode.PossiblyDispatched)]
     [InlineData(HttpStatusCode.ResetContent, CalendarResourceMoveDispatchCode.PossiblyDispatched)]
