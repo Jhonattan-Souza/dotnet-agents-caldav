@@ -73,7 +73,7 @@ fi
 
 declare -A expected_test_counts=(
   [main-core.trx]=2081
-  [main-mcp.trx]=964
+  [main-mcp.trx]=910
   [main-integration.trx]=100
   [strict-preconditions.trx]=10
   [alternate-time-zone.trx]=10

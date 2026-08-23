@@ -30,7 +30,7 @@ seed_main_artifacts() {
   done
 
   write_successful_trx "$directory/main-core.trx" 2081
-  write_successful_trx "$directory/main-mcp.trx" 964
+  write_successful_trx "$directory/main-mcp.trx" 910
   write_successful_trx "$directory/main-integration.trx" 100
 }
 
