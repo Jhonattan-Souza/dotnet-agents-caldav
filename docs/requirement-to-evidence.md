@@ -88,9 +88,9 @@ acceptance boundaries.
 | `CAL-OCC-007` | Weak or missing revisions and temporal or recurrence failures are atomic; no partial snapshot is published. | `WeakRevisionFailsAtomicallyWithoutPublishingASnapshot`, evaluator unresolved/unevaluable corpus, and pinned-Radicale typed failures |
 | `CAL-OCC-008` | The MCP adapter contains no deadline, cursor replay query, page construction, CalDAV service, or recurrence orchestration; the old service/engine removal is owned by the final legacy cleanup ticket. | Adapter constructor and pass-through structural tests; source search gate |
 
-The dated Occurrence before/after observation records the former cursor-bound
-re-execution shape and the deterministic, stdio, pinned-Radicale, and OTLP
-evidence for immutable traversal.
+The dated [Occurrence before/after observation](performance-occurrence-query-snapshots-2026-08-23.md)
+records the former cursor-bound re-execution shape and the deterministic,
+stdio, pinned-Radicale, and OTLP evidence for immutable traversal.
 
 ## Bounded multiget and Direct GET Compatibility Mode
 
