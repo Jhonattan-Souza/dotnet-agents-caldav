@@ -146,6 +146,13 @@ public sealed class LegacyContractRemovalTests
     {
         var coreTypes = typeof(ICalendarQueryModule).Assembly.GetTypes();
         coreTypes.ShouldNotContain(type => type.Name == "ICalendarQueryResourceTransport");
+        typeof(ICalendarClient).GetMethods()
+            .ShouldNotContain(method => method.Name.Contains("Query", StringComparison.Ordinal));
+        coreTypes.Single(type => type.Name == "CalendarOperationDiscovery").GetMethods(
+                System.Reflection.BindingFlags.Instance
+                | System.Reflection.BindingFlags.Public
+                | System.Reflection.BindingFlags.NonPublic)
+            .ShouldNotContain(method => method.Name.Contains("Query", StringComparison.Ordinal));
 
         var transport = coreTypes.Single(type => type.Name == "ICalendarQueryTransport");
         coreTypes.Where(type => !type.IsInterface && transport.IsAssignableFrom(type))

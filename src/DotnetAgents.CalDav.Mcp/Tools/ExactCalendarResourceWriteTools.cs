@@ -102,7 +102,7 @@ public sealed class ExactCalendarResourceWriteTools
         OpenWorld = true,
         UseStructuredContent = true,
         OutputSchemaType = typeof(CalendarEntityCreateSuccessResult)),
-     Description("Confirm and move one revision-bound resource to an explicitly provided absolute destination href.")]
+     Description("Review, confirm, and atomically move one strong-revision-bound complete resource to an explicitly provided absolute destination href with constant work and authoritative-byte verification.")]
     public Task<CallToolResult> MoveAsync(
         RequestContext<CallToolRequestParams> requestContext,
         McpServer server,
@@ -307,17 +307,102 @@ public sealed class ExactCalendarResourceWriteTools
         using var lease = await _admission.AcquireAsync(cancellationToken).ConfigureAwait(false);
         if (lease is null)
             return BusyError();
-        return await ConfirmAsync(
-            MoveOperation,
-            request.Revision,
-            BindMove(request),
-            request.DestinationHref,
+        return await ConfirmMoveAsync(
+            request,
             requestState,
             inputResponses,
             mrtrSupported,
-            token => _calendarService.ReviewExactMoveResourceAsync(request, token),
-            token => _calendarService.ExactMoveResourceAsync(request, token),
             cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<CallToolResult> ConfirmMoveAsync(
+        CalendarExactMoveRequest request,
+        string? requestState,
+        IDictionary<string, InputResponse>? inputResponses,
+        bool mrtrSupported,
+        CancellationToken cancellationToken)
+    {
+        using var deadline = new CancellationTokenSource(ConfirmationDeadline, _timeProvider);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
+        try
+        {
+            if (requestState is null && inputResponses is null)
+                return await BeginMoveConfirmationAsync(request, mrtrSupported, linked.Token).ConfigureAwait(false);
+            var confirmation = ReadMoveConfirmation(request, requestState, inputResponses);
+            if (confirmation.Decision == ConfirmationDecision.Declined)
+                return ConfirmationDeclined();
+            if (confirmation.Decision != ConfirmationDecision.Confirmed)
+                return ConfirmationError(confirmation.Decision == ConfirmationDecision.Expired);
+            if (!mrtrSupported)
+                return UnsupportedMrtrError();
+            return await ExecuteMutationAsync(
+                token => _calendarService.ExecuteConfirmedExactMoveResourceAsync(
+                    request,
+                    confirmation.Binding!,
+                    token),
+                linked.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested
+            && !cancellationToken.IsCancellationRequested)
+        {
+            return Error("limit_exhausted", "limitsAndAdmission", "The exact write review exceeded its time limit.", false,
+                "execution", "not_attempted");
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return Error("upstream_unavailable", "upstream", "The exact write review is unavailable.", true,
+                "selectionDiscoveryCapability", "not_attempted");
+        }
+        catch (Exception exception) when (exception is not (InputRequiredException or OperationCanceledException))
+        {
+            return Error("upstream_protocol_error", "upstream", "The exact write could not be completed.", false,
+                "execution", "not_attempted");
+        }
+    }
+
+    private async Task<CallToolResult> BeginMoveConfirmationAsync(
+        CalendarExactMoveRequest request,
+        bool mrtrSupported,
+        CancellationToken cancellationToken)
+    {
+        if (!mrtrSupported)
+            return UnsupportedMrtrError();
+        var review = await _calendarService
+            .ReviewExactMoveResourceAsync(request, cancellationToken)
+            .ConfigureAwait(false);
+        if (review.Outcome is not null)
+            return ToToolResult(review.Outcome);
+        if (!HasValidMoveReview(request, review))
+            return ProtocolError();
+        var message = ConfirmationMessage(MoveOperation, review.Binding!.Revision, review.Binding.DestinationHref);
+        if (!IsConfirmationPreviewWithinBudget(message))
+            return ConfirmationPreviewPayloadError();
+        var state = _stateProtector.ProtectExactMove(MoveOperation, BindMove(request), review.Binding);
+        throw new InputRequiredException(CreateConfirmationRequests(message), state);
+    }
+
+    private MoveConfirmation ReadMoveConfirmation(
+        CalendarExactMoveRequest request,
+        string? requestState,
+        IDictionary<string, InputResponse>? inputResponses)
+    {
+        if (!TryGetConfirmationResponse(requestState, inputResponses, out var response))
+            return new MoveConfirmation(ConfirmationDecision.Mismatch, null);
+        if (!_stateProtector.TryUnprotectExactMove(
+                requestState!,
+                MoveOperation,
+                request,
+                BindMove(request),
+                out var binding,
+                out var expired))
+        {
+            return new MoveConfirmation(expired ? ConfirmationDecision.Expired : ConfirmationDecision.Mismatch, null);
+        }
+        if (!TryReadConfirmation(response, out var confirmed))
+            return new MoveConfirmation(ConfirmationDecision.Mismatch, null);
+        return new MoveConfirmation(
+            confirmed ? ConfirmationDecision.Confirmed : ConfirmationDecision.Declined,
+            binding);
     }
 
     private async Task<CallToolResult> ConfirmAsync(
@@ -587,6 +672,14 @@ public sealed class ExactCalendarResourceWriteTools
     private static bool HasValidReview(CalendarExactResourceReviewResult review) =>
         review.BindingRevision is not null && review.IntentDigest.Length == SHA256.HashSizeInBytes;
 
+    private static bool HasValidMoveReview(
+        CalendarExactMoveRequest request,
+        CalendarExactMoveReviewResult review) => review.Binding is not null
+        && review.Binding.Revision == request.Revision
+        && string.Equals(review.Binding.DestinationHref, request.DestinationHref, StringComparison.Ordinal)
+        && review.Binding.SourceIntentDigest.Length == SHA256.HashSizeInBytes
+        && !string.IsNullOrWhiteSpace(review.Binding.PolicyVersion);
+
     private static bool HasValidCreateReview(CalendarExactCreateReviewResult review) =>
         review.Binding is not null
         && review.ReviewedCreate is not null
@@ -745,6 +838,7 @@ public sealed class ExactCalendarResourceWriteTools
         CalendarExactResourceCode.FidelityFailure => new("fidelity_failure", "postWriteTruth", "The committed resource differs from the reviewed intent."),
         CalendarExactResourceCode.CommittedButUnverified => new("committed_but_unverified", "postWriteTruth", "The committed resource could not be verified."),
         CalendarExactResourceCode.CommittedButConcurrencyUnavailable => new("committed_but_concurrency_unavailable", "postWriteTruth", "The committed resource has no strong Entity Tag."),
+        CalendarExactResourceCode.ConfirmationMismatch => new("confirmation_mismatch", "confirmation", "The mutation confirmation does not match the reviewed request."),
         CalendarExactResourceCode.Indeterminate => new("indeterminate", "postWriteTruth", "The mutation outcome is indeterminate."),
         _ => new("upstream_protocol_error", "upstream", "The Calendar service returned an invalid response.")
     };
@@ -832,6 +926,7 @@ public sealed class ExactCalendarResourceWriteTools
         CalendarExactResourcePhase.SelectionDiscoveryCapability => "selectionDiscoveryCapability",
         CalendarExactResourcePhase.TargetRevision => "targetRevision",
         CalendarExactResourcePhase.CompleteResourceSemantics => "completeResourceSemantics",
+        CalendarExactResourcePhase.Mrtr => "mrtr",
         CalendarExactResourcePhase.PostWriteVerificationOrReconciliation => "postWriteVerificationOrReconciliation",
         _ => "execution"
     };
@@ -855,6 +950,10 @@ public sealed class ExactCalendarResourceWriteTools
     }
 
     private sealed record Confirmation(ConfirmationDecision Decision, string? IntentBinding);
+
+    private sealed record MoveConfirmation(
+        ConfirmationDecision Decision,
+        CalendarExactMoveReviewBinding? Binding);
 
     private sealed record ConfirmationPreviewBudget(string Message, string Title, string Description);
 

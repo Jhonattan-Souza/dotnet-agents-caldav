@@ -58,6 +58,18 @@ public sealed record CalendarExactMoveRequest(
     CalendarResourceRevisionReference Revision,
     string DestinationHref);
 
+/// <summary>Stable Exact Move evidence protected across one human confirmation delay.</summary>
+public sealed record CalendarExactMoveReviewBinding(
+    CalendarResourceRevisionReference Revision,
+    string DestinationHref,
+    ReadOnlyMemory<byte> SourceIntentDigest,
+    string PolicyVersion);
+
+/// <summary>Read-only result of one constant-work Exact Move review.</summary>
+public sealed record CalendarExactMoveReviewResult(
+    CalendarExactResourceResult? Outcome,
+    CalendarExactMoveReviewBinding? Binding);
+
 /// <summary>Closed outcomes shared by exact Calendar Object Resource writes.</summary>
 public enum CalendarExactResourceCode
 {
@@ -82,6 +94,7 @@ public enum CalendarExactResourceCode
     FidelityFailure,
     CommittedButUnverified,
     CommittedButConcurrencyUnavailable,
+    ConfirmationMismatch,
     Indeterminate
 }
 
@@ -93,6 +106,7 @@ public enum CalendarExactResourcePhase
     SelectionDiscoveryCapability,
     TargetRevision,
     CompleteResourceSemantics,
+    Mrtr,
     Execution,
     PostWriteVerificationOrReconciliation
 }

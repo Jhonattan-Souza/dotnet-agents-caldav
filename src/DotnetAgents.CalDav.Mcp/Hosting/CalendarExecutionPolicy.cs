@@ -22,13 +22,12 @@ internal static class CalendarExecutionPolicy
             var requestedToolName = request.Params?.Name;
             var toolName = CalendarTelemetry.NormalizeToolName(requestedToolName);
             var mutation = IsMutation(requestedToolName);
-            var semanticMove = string.Equals(
-                requestedToolName,
-                "calendar_resources.move",
-                StringComparison.Ordinal);
+            var moveTool = requestedToolName is
+                "calendar_resources.move" or "calendar_resources.exact_move";
             using var telemetry = CalendarTelemetry.StartOperation(
                 toolName,
                 EntityKind(requestedToolName));
+            CalendarMoveTelemetrySnapshot? moveTelemetry = null;
             var report = request.Params?.ProgressToken is { } token
                 ? (Func<ProgressNotificationValue, CancellationToken, Task>)((progress, progressCancellationToken) =>
                     request.Server.NotifyProgressAsync(token, progress, options: null, progressCancellationToken))
@@ -50,18 +49,32 @@ internal static class CalendarExecutionPolicy
                 }
                 StartLegacyDiscoveryPhase(requestedToolName, telemetry);
                 using var progress = AttachLegacyProgress(requestedToolName, execution);
-                var result = await ExecuteWithinBudgetAsync(
-                    services.GetRequiredService<TimeProvider>(),
-                    mutation,
-                    requestedToolName,
-                    token => next(request, token),
-                    cancellationToken).ConfigureAwait(false);
+                CallToolResult result;
+                try
+                {
+                    result = await ExecuteWithinBudgetAsync(
+                        services.GetRequiredService<TimeProvider>(),
+                        mutation,
+                        requestedToolName,
+                        token => next(request, token),
+                        cancellationToken).ConfigureAwait(false);
+                }
+                finally
+                {
+                    moveTelemetry = CalendarOperationProgress.CurrentMoveTelemetry;
+                }
                 CompleteTelemetry(telemetry, result);
                 return result;
             }
             catch (Exception exception)
             {
-                CompleteExceptionTelemetry(telemetry, exception, mutation, semanticMove, cancellationToken);
+                CompleteExceptionTelemetry(
+                    telemetry,
+                    exception,
+                    mutation,
+                    moveTool,
+                    moveTelemetry,
+                    cancellationToken);
                 throw;
             }
         };
@@ -90,18 +103,20 @@ internal static class CalendarExecutionPolicy
         CalendarTelemetryOperation? telemetry,
         Exception exception,
         bool mutation,
-        bool semanticMove,
+        bool moveTool,
+        CalendarMoveTelemetrySnapshot? moveTelemetry,
         CancellationToken callerCancellationToken)
     {
         if (exception is InputRequiredException)
         {
             telemetry?.Complete(
                 "input_required",
-                mutationState: mutation ? "not_attempted" : null);
+                mutationState: mutation ? "not_attempted" : null,
+                moveTelemetry: moveTelemetry);
         }
         else if (exception is OperationCanceledException && callerCancellationToken.IsCancellationRequested)
         {
-            CompleteCallerCancellation(telemetry, semanticMove);
+            CompleteCallerCancellation(telemetry, moveTool, moveTelemetry);
         }
         else if (exception is OperationCanceledException)
         {
@@ -115,10 +130,11 @@ internal static class CalendarExecutionPolicy
 
     private static void CompleteCallerCancellation(
         CalendarTelemetryOperation? telemetry,
-        bool semanticMove)
+        bool moveTool,
+        CalendarMoveTelemetrySnapshot? moveTelemetry)
     {
-        var moveTelemetry = CalendarOperationProgress.CurrentMoveTelemetry;
-        if (semanticMove && moveTelemetry?.Dispatch is null or CalendarMoveDispatchClassification.Unspecified)
+        if (moveTool && moveTelemetry?.Dispatch is
+            (null or CalendarMoveDispatchClassification.Unspecified))
         {
             moveTelemetry = new CalendarMoveTelemetrySnapshot(
                 CalendarMoveDispatchClassification.NotAttempted,

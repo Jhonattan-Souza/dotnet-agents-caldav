@@ -11,6 +11,7 @@ namespace DotnetAgents.CalDav.Core.Services;
 /// <summary>Applies configured Calendar Scope to standards-based Calendar discovery.</summary>
 internal sealed class CalendarService : ICalendarService
 {
+    private readonly ICalendarClient _rawCalendarClient;
     private readonly ICalendarClient _calendarClient;
     private readonly CalendarOperationDiscovery _operationDiscovery;
     private readonly IOptions<CalDavOptions> _options;
@@ -34,6 +35,7 @@ internal sealed class CalendarService : ICalendarService
         TimeProvider timeProvider,
         ICalendarEntityIdentityGenerator identityGenerator)
     {
+        _rawCalendarClient = calendarClient;
         _options = options;
         _logger = logger;
         _timeProvider = timeProvider;
@@ -111,14 +113,18 @@ internal sealed class CalendarService : ICalendarService
         CancellationToken cancellationToken) => await ExactResourceEngine().ReviewReplaceAsync(request, cancellationToken);
 
     /// <inheritdoc />
-    public async Task<CalendarExactResourceResult> ExactMoveResourceAsync(
+    public async Task<CalendarExactMoveReviewResult> ReviewExactMoveResourceAsync(
         CalendarExactMoveRequest request,
-        CancellationToken cancellationToken) => await ExactResourceEngine().MoveAsync(request, cancellationToken);
+        CancellationToken cancellationToken) => await ExactMoveModule().ReviewAsync(request, cancellationToken);
 
     /// <inheritdoc />
-    public async Task<CalendarExactResourceReviewResult> ReviewExactMoveResourceAsync(
+    public async Task<CalendarExactResourceResult> ExecuteConfirmedExactMoveResourceAsync(
         CalendarExactMoveRequest request,
-        CancellationToken cancellationToken) => await ExactResourceEngine().ReviewMoveAsync(request, cancellationToken);
+        CalendarExactMoveReviewBinding priorBinding,
+        CancellationToken cancellationToken) => await ExactMoveModule().ExecuteConfirmedAsync(
+            request,
+            priorBinding,
+            cancellationToken);
 
     private async Task<CalendarResourceRead> GetResourceAsync(
         string href,
@@ -264,6 +270,15 @@ internal sealed class CalendarService : ICalendarService
         _options.Value,
         _timeProvider,
         ApplyScope);
+
+    private CalendarExactMoveModule ExactMoveModule() => new(
+        new CalendarOperationDiscovery(
+            _rawCalendarClient,
+            _options,
+            _discoveryPolicy.ApplyScope,
+            _discoveryPolicy.ResolveDefault),
+        _options.Value,
+        _timeProvider);
 
     private async Task<CalendarResourceRead> CreateSnapshotAsync(
         CalendarDescriptor calendar,

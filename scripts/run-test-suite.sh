@@ -85,17 +85,17 @@ run_main_project \
   tests/DotnetAgents.CalDav.Core.Tests.Unit/DotnetAgents.CalDav.Core.Tests.Unit.csproj \
   main-core \
   main-core.trx \
-  2082
+  2279
 run_main_project \
   tests/DotnetAgents.CalDav.Mcp.Tests.Unit/DotnetAgents.CalDav.Mcp.Tests.Unit.csproj \
   main-mcp \
   main-mcp.trx \
-  922
+  964
 run_main_project \
   tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj \
   main-integration \
   main-integration.trx \
-  100
+  109
 
 cobertura_reports=$("$script_directory/verify-test-artifacts.sh" "$artifacts_directory" main)
 coverage_report_directory="$artifacts_directory/coverage-report"

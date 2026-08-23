@@ -6,6 +6,7 @@ using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using Shouldly;
 using System.Diagnostics;
+using System.Reflection;
 using System.Text.Json;
 using Xunit;
 
@@ -43,10 +44,15 @@ public sealed class CalendarExecutionPolicyTests
         var context = new RequestContext<CallToolRequestParams>(
             server,
             new JsonRpcRequest { Id = new RequestId(1L), Method = "tools/call" },
-            new CallToolRequestParams { Name = "calendar_resources.delete" });
-        var filtered = CalendarExecutionPolicy.CallTool((_, _) => throw new InputRequiredException(
-            new Dictionary<string, InputRequest>(),
-            "private-state"));
+            new CallToolRequestParams { Name = "calendar_resources.exact_move" });
+        var filtered = CalendarExecutionPolicy.CallTool((_, _) =>
+        {
+            SetMoveTelemetry(
+                CalendarMoveDispatchClassification.NotAttempted,
+                CalendarMoveCollisionClassification.Unspecified,
+                CalendarMoveReconciliationClassification.NotRun);
+            throw new InputRequiredException(new Dictionary<string, InputRequest>(), "private-state");
+        });
 
         await Should.ThrowAsync<InputRequiredException>(() =>
             filtered(context, TestContext.Current.CancellationToken).AsTask());
@@ -54,9 +60,199 @@ public sealed class CalendarExecutionPolicyTests
         var operation = stopped.Single(activity => activity.OperationName == "caldav.operation");
         operation.GetTagItem("caldav.outcome").ShouldBe("input_required");
         operation.GetTagItem("caldav.mutation.state").ShouldBe("not_attempted");
+        operation.GetTagItem("caldav.move.dispatch").ShouldBe("not_attempted");
+        operation.GetTagItem("caldav.move.collision").ShouldBeNull();
+        operation.GetTagItem("caldav.move.reconciliation").ShouldBe("not_run");
         operation.GetTagItem("error.type").ShouldBeNull();
         operation.Status.ShouldBe(ActivityStatusCode.Unset);
     }
+
+    [Theory]
+    [InlineData("none")]
+    [InlineData("unspecified")]
+    [InlineData("not_attempted")]
+    [InlineData("rejected")]
+    [InlineData("dispatched")]
+    [InlineData("possibly_dispatched")]
+    public async Task PublicToolFilter_ExactMoveCallerCancellationPreservesTruthfulMoveProgress(string progress)
+    {
+        var stopped = new List<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == CalendarTelemetry.InstrumentationName,
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) =>
+                ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = stopped.Add
+        };
+        ActivitySource.AddActivityListener(listener);
+        using var services = new ServiceCollection()
+            .AddSingleton(TimeProvider.System)
+            .AddSingleton<CalendarOperationAdmission>()
+            .BuildServiceProvider();
+        await using var transport = new StreamServerTransport(
+            new MemoryStream(),
+            new MemoryStream(),
+            "exact-move-cancellation-telemetry-test",
+            Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
+        await using var server = McpServer.Create(
+            transport,
+            new McpServerOptions(),
+            Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance,
+            services);
+        var context = new RequestContext<CallToolRequestParams>(
+            server,
+            new JsonRpcRequest { Id = new RequestId(1L), Method = "tools/call" },
+            new CallToolRequestParams { Name = "calendar_resources.exact_move" });
+        using var callerCancellation = new CancellationTokenSource();
+        var scenario = ExactMoveCancellationProgress[progress];
+        var filtered = CalendarExecutionPolicy.CallTool((_, _) =>
+        {
+            if (scenario.Dispatch is { } dispatch)
+                SetMoveTelemetry(
+                    dispatch,
+                    scenario.Collision,
+                    scenario.Reconciliation);
+            callerCancellation.Cancel();
+            throw new OperationCanceledException(callerCancellation.Token);
+        });
+
+        await Should.ThrowAsync<OperationCanceledException>(() =>
+            filtered(context, callerCancellation.Token).AsTask());
+
+        var operation = stopped.Single(activity => activity.OperationName == "caldav.operation");
+        operation.GetTagItem("caldav.outcome").ShouldBe("cancelled");
+        operation.GetTagItem("caldav.mutation.state").ShouldBe(scenario.ExpectedMutationState);
+        operation.GetTagItem("caldav.move.dispatch").ShouldBe(scenario.ExpectedDispatch);
+        operation.GetTagItem("caldav.move.collision").ShouldBe(scenario.ExpectedCollision);
+        operation.GetTagItem("caldav.move.reconciliation").ShouldBe(scenario.ExpectedReconciliation);
+        operation.GetTagItem("error.type").ShouldBeNull();
+        operation.Status.ShouldBe(ActivityStatusCode.Unset);
+    }
+
+    private static void SetMoveTelemetry(
+        CalendarMoveDispatchClassification dispatch,
+        CalendarMoveCollisionClassification collision,
+        CalendarMoveReconciliationClassification reconciliation)
+    {
+        InvokeProgressSetter("SetMoveDispatch", dispatch);
+        InvokeProgressSetter("SetMoveCollision", collision);
+        InvokeProgressSetter("SetMoveReconciliation", reconciliation);
+    }
+
+    private static IReadOnlyDictionary<string, ExactMoveCancellationScenario> ExactMoveCancellationProgress { get; } =
+        new Dictionary<string, ExactMoveCancellationScenario>(StringComparer.Ordinal)
+        {
+            ["none"] = new(null, default, default, "not_attempted", null, "not_run", "not_attempted"),
+            ["unspecified"] = new(
+                CalendarMoveDispatchClassification.Unspecified,
+                CalendarMoveCollisionClassification.Unspecified,
+                CalendarMoveReconciliationClassification.NotRun,
+                "not_attempted",
+                null,
+                "not_run",
+                "not_attempted"),
+            ["not_attempted"] = new(
+                CalendarMoveDispatchClassification.NotAttempted,
+                CalendarMoveCollisionClassification.Unspecified,
+                CalendarMoveReconciliationClassification.NotRun,
+                "not_attempted",
+                null,
+                "not_run",
+                "not_attempted"),
+            ["rejected"] = new(
+                CalendarMoveDispatchClassification.Rejected,
+                CalendarMoveCollisionClassification.DestinationHref,
+                CalendarMoveReconciliationClassification.NotRun,
+                "rejected",
+                "destination_href",
+                "not_run",
+                null),
+            ["dispatched"] = new(
+                CalendarMoveDispatchClassification.Dispatched,
+                CalendarMoveCollisionClassification.None,
+                CalendarMoveReconciliationClassification.NotRun,
+                "dispatched",
+                "none",
+                "not_run",
+                null),
+            ["possibly_dispatched"] = new(
+                CalendarMoveDispatchClassification.PossiblyDispatched,
+                CalendarMoveCollisionClassification.None,
+                CalendarMoveReconciliationClassification.ObservationUnavailable,
+                "possibly_dispatched",
+                "none",
+                "observation_unavailable",
+                null)
+        };
+
+    private sealed record ExactMoveCancellationScenario(
+        CalendarMoveDispatchClassification? Dispatch,
+        CalendarMoveCollisionClassification Collision,
+        CalendarMoveReconciliationClassification Reconciliation,
+        string ExpectedDispatch,
+        string? ExpectedCollision,
+        string ExpectedReconciliation,
+        string? ExpectedMutationState);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PublicToolFilter_ExactMoveUnhandledFaultIsPrivateAndDoesNotChangeControlFlow(
+        bool withTelemetry)
+    {
+        var stopped = new List<Activity>();
+        using var listener = withTelemetry ? new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == CalendarTelemetry.InstrumentationName,
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) =>
+                ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = stopped.Add
+        } : null;
+        if (listener is not null)
+            ActivitySource.AddActivityListener(listener);
+        using var services = new ServiceCollection()
+            .AddSingleton(TimeProvider.System)
+            .AddSingleton<CalendarOperationAdmission>()
+            .BuildServiceProvider();
+        await using var transport = new StreamServerTransport(
+            new MemoryStream(),
+            new MemoryStream(),
+            "exact-move-fault-telemetry-test",
+            Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
+        await using var server = McpServer.Create(
+            transport,
+            new McpServerOptions(),
+            Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance,
+            services);
+        var context = new RequestContext<CallToolRequestParams>(
+            server,
+            new JsonRpcRequest { Id = new RequestId(1L), Method = "tools/call" },
+            new CallToolRequestParams { Name = "calendar_resources.exact_move" });
+        var filtered = CalendarExecutionPolicy.CallTool((_, _) =>
+            throw new IOException("private exact move transport detail"));
+
+        await Should.ThrowAsync<IOException>(() =>
+            filtered(context, TestContext.Current.CancellationToken).AsTask());
+
+        if (withTelemetry)
+        {
+            var operation = stopped.Single(activity => activity.OperationName == "caldav.operation");
+            operation.GetTagItem("caldav.outcome").ShouldBe("error");
+            operation.GetTagItem("error.type").ShouldBe("connection_error");
+            operation.Tags.ShouldNotContain(tag =>
+                string.Equals(tag.Value, "private exact move transport detail", StringComparison.Ordinal));
+            operation.Status.ShouldBe(ActivityStatusCode.Error);
+        }
+        else
+        {
+            stopped.ShouldBeEmpty();
+        }
+    }
+
+    private static void InvokeProgressSetter<T>(string name, T value) where T : struct =>
+        typeof(CalendarOperationProgress)
+            .GetMethod(name, BindingFlags.Static | BindingFlags.NonPublic)!
+            .Invoke(null, [value]);
 
     [Fact]
     public async Task PublicToolFilter_UnsignalledCancellationIsControlledTimeoutFailure()

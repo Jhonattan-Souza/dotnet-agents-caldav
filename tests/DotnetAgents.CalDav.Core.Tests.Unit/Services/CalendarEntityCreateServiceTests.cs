@@ -603,12 +603,6 @@ public sealed class CalendarEntityCreateServiceTests
         result.Code.ShouldBe(CalendarEntityCreateCode.InvalidCalendarData);
         result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
         await client.Received(1).GetCalendarsAsync(Arg.Any<CancellationToken>());
-        await client.DidNotReceive().QueryCalendarResourceHrefsAsync(
-            Arg.Any<string>(),
-            Arg.Any<CalendarEntityKind>(),
-            Arg.Any<DateTimeOffset?>(),
-            Arg.Any<DateTimeOffset?>(),
-            Arg.Any<CancellationToken>());
         await client.DidNotReceive().CreateCalendarResourceAsync(
             Arg.Any<CalendarResourceCreateRequest>(),
             Arg.Any<CancellationToken>());
@@ -648,12 +642,6 @@ public sealed class CalendarEntityCreateServiceTests
         result.Code.ShouldBe(CalendarEntityCreateCode.InvalidCalendarData);
         result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
         await client.Received(1).GetCalendarsAsync(Arg.Any<CancellationToken>());
-        await client.DidNotReceive().QueryCalendarResourceHrefsAsync(
-            Arg.Any<string>(),
-            Arg.Any<CalendarEntityKind>(),
-            Arg.Any<DateTimeOffset?>(),
-            Arg.Any<DateTimeOffset?>(),
-            Arg.Any<CancellationToken>());
         await client.DidNotReceive().CreateCalendarResourceAsync(
             Arg.Any<CalendarResourceCreateRequest>(),
             Arg.Any<CancellationToken>());
@@ -729,13 +717,6 @@ public sealed class CalendarEntityCreateServiceTests
         var client = Substitute.For<ICalendarClient>();
         var sut = CreateService(client, defaultEventName: "Events");
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref, "Events")]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
         client.CreateCalendarResourceAsync(
                 Arg.Any<CalendarResourceCreateRequest>(),
                 Arg.Any<CancellationToken>())
@@ -764,13 +745,6 @@ public sealed class CalendarEntityCreateServiceTests
         var client = Substitute.For<ICalendarClient>();
         var sut = CreateService(client, defaultEventName: "Events");
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref, "Events")]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
         CalendarResourceCreateRequest? dispatched = null;
         client.CreateCalendarResourceAsync(
                 Arg.Do<CalendarResourceCreateRequest>(request => dispatched = request),
@@ -831,13 +805,6 @@ public sealed class CalendarEntityCreateServiceTests
         var client = Substitute.For<ICalendarClient>();
         var sut = CreateService(client, defaultEventName: "Events");
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref, "Events")]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
         CalendarResourceCreateRequest? dispatched = null;
         client.CreateCalendarResourceAsync(
                 Arg.Do<CalendarResourceCreateRequest>(request => dispatched = request),
@@ -877,13 +844,6 @@ public sealed class CalendarEntityCreateServiceTests
         var client = Substitute.For<ICalendarClient>();
         var sut = CreateService(client, defaultEventName: "Events");
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref, "Events")]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
         CalendarResourceCreateRequest? dispatched = null;
         client.CreateCalendarResourceAsync(
                 Arg.Do<CalendarResourceCreateRequest>(request => dispatched = request),
@@ -1082,13 +1042,6 @@ public sealed class CalendarEntityCreateServiceTests
         var client = Substitute.For<ICalendarClient>();
         var sut = CreateService(client, defaultEventName: "Events");
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref, "Events")]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
         client.CreateCalendarResourceAsync(
                 Arg.Any<CalendarResourceCreateRequest>(),
                 Arg.Any<CancellationToken>())
@@ -1127,20 +1080,6 @@ public sealed class CalendarEntityCreateServiceTests
             TodoSupport = EntityKindSupport.Advertised
         };
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([shared]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Todo,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([existingHref]);
         client.CreateCalendarResourceAsync(
                 Arg.Any<CalendarResourceCreateRequest>(),
                 Arg.Any<CancellationToken>())
@@ -1156,8 +1095,6 @@ public sealed class CalendarEntityCreateServiceTests
 
         result.Code.ShouldBe(CalendarEntityCreateCode.Conflict);
         result.MutationState.ShouldBe(CalendarMutationState.NotCommitted);
-        await client.DidNotReceive().QueryCalendarResourceHrefsAsync(
-            Arg.Any<string>(), Arg.Any<CalendarEntityKind>(), null, null, Arg.Any<CancellationToken>());
         await client.DidNotReceive().GetCalendarResourceAsync(existingHref, Arg.Any<CancellationToken>());
         await client.Received(1).CreateCalendarResourceAsync(
             Arg.Any<CalendarResourceCreateRequest>(),
@@ -1177,20 +1114,6 @@ public sealed class CalendarEntityCreateServiceTests
             EventSupport = EntityKindSupport.Advertised
         };
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([shared]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Todo,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([existingHref]);
         client.CreateCalendarResourceAsync(
                 Arg.Any<CalendarResourceCreateRequest>(),
                 Arg.Any<CancellationToken>())
@@ -1205,8 +1128,6 @@ public sealed class CalendarEntityCreateServiceTests
 
         result.Code.ShouldBe(CalendarEntityCreateCode.Conflict);
         result.MutationState.ShouldBe(CalendarMutationState.NotCommitted);
-        await client.DidNotReceive().QueryCalendarResourceHrefsAsync(
-            Arg.Any<string>(), Arg.Any<CalendarEntityKind>(), null, null, Arg.Any<CancellationToken>());
         await client.DidNotReceive().GetCalendarResourceAsync(existingHref, Arg.Any<CancellationToken>());
         await client.Received(1).CreateCalendarResourceAsync(
             Arg.Any<CalendarResourceCreateRequest>(),
@@ -1226,20 +1147,6 @@ public sealed class CalendarEntityCreateServiceTests
         var sut = CreateService(client, defaultEventName: "Events");
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(
             [EventCalendar(calendarHref, "Events") with { TodoSupport = todoSupport }]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Todo,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([existingHref]);
         client.CreateCalendarResourceAsync(
                 Arg.Any<CalendarResourceCreateRequest>(),
                 Arg.Any<CancellationToken>())
@@ -1255,8 +1162,6 @@ public sealed class CalendarEntityCreateServiceTests
 
         result.Code.ShouldBe(CalendarEntityCreateCode.Conflict);
         result.MutationState.ShouldBe(CalendarMutationState.NotCommitted);
-        await client.DidNotReceive().QueryCalendarResourceHrefsAsync(
-            Arg.Any<string>(), Arg.Any<CalendarEntityKind>(), null, null, Arg.Any<CancellationToken>());
         await client.DidNotReceive().GetCalendarResourceAsync(existingHref, Arg.Any<CancellationToken>());
         await client.Received(1).CreateCalendarResourceAsync(
             Arg.Any<CalendarResourceCreateRequest>(),
@@ -1270,20 +1175,6 @@ public sealed class CalendarEntityCreateServiceTests
         var client = Substitute.For<ICalendarClient>();
         var sut = CreateService(client, defaultEventName: "Events");
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref, "Events")]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Todo,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns(Task.FromException<IReadOnlyList<string>>(new HttpRequestException("opposite query failed")));
         client.CreateCalendarResourceAsync(
                 Arg.Any<CalendarResourceCreateRequest>(),
                 Arg.Any<CancellationToken>())
@@ -1299,8 +1190,6 @@ public sealed class CalendarEntityCreateServiceTests
 
         result.Code.ShouldBe(CalendarEntityCreateCode.DestinationConflict);
         result.MutationState.ShouldBe(CalendarMutationState.NotCommitted);
-        await client.DidNotReceive().QueryCalendarResourceHrefsAsync(
-            Arg.Any<string>(), Arg.Any<CalendarEntityKind>(), null, null, Arg.Any<CancellationToken>());
         await client.Received(1).CreateCalendarResourceAsync(
             Arg.Any<CalendarResourceCreateRequest>(),
             Arg.Any<CancellationToken>());
@@ -1319,13 +1208,6 @@ public sealed class CalendarEntityCreateServiceTests
         var sut = CreateService(client, defaultEventName: "Events");
         CalendarResourceCreateRequest? dispatched = null;
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref, "Events")]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
         client.CreateCalendarResourceAsync(
                 Arg.Do<CalendarResourceCreateRequest>(request => dispatched = request),
                 Arg.Any<CancellationToken>())
@@ -1368,13 +1250,6 @@ public sealed class CalendarEntityCreateServiceTests
         var client = Substitute.For<ICalendarClient>();
         var sut = CreateService(client, defaultEventName: "Events");
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref, "Events")]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
         client.CreateCalendarResourceAsync(
                 Arg.Any<CalendarResourceCreateRequest>(),
                 Arg.Any<CancellationToken>())
@@ -1405,13 +1280,6 @@ public sealed class CalendarEntityCreateServiceTests
         var client = Substitute.For<ICalendarClient>();
         var sut = CreateService(client, defaultEventName: "Events");
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref, "Events")]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([existingHref]);
         client.GetCalendarResourceAsync(existingHref, Arg.Any<CancellationToken>())
             .Returns(new CalendarResourceRead(CalendarResourceReadCode.ConcurrencyUnavailable));
         client.CreateCalendarResourceAsync(
@@ -1431,8 +1299,6 @@ public sealed class CalendarEntityCreateServiceTests
 
         result.Code.ShouldBe(CalendarEntityCreateCode.UpstreamForbidden);
         result.MutationState.ShouldBe(CalendarMutationState.NotCommitted);
-        await client.DidNotReceive().QueryCalendarResourceHrefsAsync(
-            Arg.Any<string>(), Arg.Any<CalendarEntityKind>(), null, null, Arg.Any<CancellationToken>());
         await client.DidNotReceive().GetCalendarResourceAsync(existingHref, Arg.Any<CancellationToken>());
         await client.Received(1).CreateCalendarResourceAsync(
             Arg.Any<CalendarResourceCreateRequest>(),
@@ -1447,13 +1313,6 @@ public sealed class CalendarEntityCreateServiceTests
         var client = Substitute.For<ICalendarClient>();
         var sut = CreateService(client, defaultEventName: "Events");
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref, "Events")]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([existingHref]);
         client.GetCalendarResourceAsync(existingHref, Arg.Any<CancellationToken>())
             .Returns(new CalendarResourceRead(CalendarResourceReadCode.UpstreamProtocolError));
         client.CreateCalendarResourceAsync(
@@ -1474,8 +1333,6 @@ public sealed class CalendarEntityCreateServiceTests
             CancellationToken.None);
 
         result.Code.ShouldBe(CalendarEntityCreateCode.UpstreamForbidden);
-        await client.DidNotReceive().QueryCalendarResourceHrefsAsync(
-            Arg.Any<string>(), Arg.Any<CalendarEntityKind>(), null, null, Arg.Any<CancellationToken>());
         await client.DidNotReceive().GetCalendarResourceAsync(existingHref, Arg.Any<CancellationToken>());
         await client.Received(1).CreateCalendarResourceAsync(
             Arg.Any<CalendarResourceCreateRequest>(),
@@ -1514,15 +1371,6 @@ public sealed class CalendarEntityCreateServiceTests
         var client = Substitute.For<ICalendarClient>();
         var sut = CreateService(client, defaultEventName: "Events");
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref, "Events")]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns(Enumerable.Range(0, 5_001)
-                .Select(index => $"{calendarHref}{index}.ics")
-                .ToArray());
         client.CreateCalendarResourceAsync(
                 Arg.Any<CalendarResourceCreateRequest>(),
                 Arg.Any<CancellationToken>())
@@ -1542,12 +1390,6 @@ public sealed class CalendarEntityCreateServiceTests
 
         result.Code.ShouldBe(CalendarEntityCreateCode.Conflict);
         result.MutationState.ShouldBe(CalendarMutationState.NotCommitted);
-        await client.DidNotReceive().QueryCalendarResourceHrefsAsync(
-            Arg.Any<string>(),
-            Arg.Any<CalendarEntityKind>(),
-            Arg.Any<DateTimeOffset?>(),
-            Arg.Any<DateTimeOffset?>(),
-            Arg.Any<CancellationToken>());
         await client.DidNotReceive().GetCalendarResourceAsync(
             Arg.Any<string>(),
             Arg.Any<CancellationToken>());
@@ -1570,13 +1412,6 @@ public sealed class CalendarEntityCreateServiceTests
             TimeProvider.System,
             identities);
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref, "Events")]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
         client.CreateCalendarResourceAsync(
                 Arg.Any<CalendarResourceCreateRequest>(),
                 Arg.Any<CancellationToken>())
@@ -1608,13 +1443,6 @@ public sealed class CalendarEntityCreateServiceTests
         var client = Substitute.For<ICalendarClient>();
         var sut = CreateService(client, defaultEventName: "Events");
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref, "Events")]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
         client.CreateCalendarResourceAsync(
                 Arg.Any<CalendarResourceCreateRequest>(),
                 Arg.Any<CancellationToken>())
@@ -1652,13 +1480,6 @@ public sealed class CalendarEntityCreateServiceTests
             }),
             Substitute.For<ILogger<CalendarService>>());
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([TodoCalendar(calendarHref, "Todos")]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Todo,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
         client.CreateCalendarResourceAsync(
                 Arg.Is<CalendarResourceCreateRequest>(request =>
                     request.ResourceHref == resourceHref
@@ -1689,13 +1510,6 @@ public sealed class CalendarEntityCreateServiceTests
         var client = Substitute.For<ICalendarClient>();
         var sut = CreateTodoService(client);
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([TodoCalendar(calendarHref, "Todos")]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Todo,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
         CalendarResourceCreateRequest? dispatched = null;
         client.CreateCalendarResourceAsync(
                 Arg.Do<CalendarResourceCreateRequest>(request => dispatched = request),
@@ -1801,12 +1615,6 @@ public sealed class CalendarEntityCreateServiceTests
         }
 
         await client.DidNotReceive().GetCalendarsAsync(Arg.Any<CancellationToken>());
-        await client.DidNotReceive().QueryCalendarResourceHrefsAsync(
-            Arg.Any<string>(),
-            Arg.Any<CalendarEntityKind>(),
-            Arg.Any<DateTimeOffset?>(),
-            Arg.Any<DateTimeOffset?>(),
-            Arg.Any<CancellationToken>());
         await client.DidNotReceive().CreateCalendarResourceAsync(
             Arg.Any<CalendarResourceCreateRequest>(),
             Arg.Any<CancellationToken>());
@@ -1827,13 +1635,6 @@ public sealed class CalendarEntityCreateServiceTests
             }),
             Substitute.For<ILogger<CalendarService>>());
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([TodoCalendar(calendarHref, "Todos")]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Todo,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
         CalendarResourceCreateRequest? dispatched = null;
         client.CreateCalendarResourceAsync(
                 Arg.Do<CalendarResourceCreateRequest>(request => dispatched = request),
@@ -1968,13 +1769,6 @@ public sealed class CalendarEntityCreateServiceTests
         var client = Substitute.For<ICalendarClient>();
         var sut = CreateTodoService(client);
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([TodoCalendar(calendarHref, "Todos")]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Todo,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([existingHref]);
         client.GetCalendarResourceAsync(existingHref, Arg.Any<CancellationToken>()).Returns(
             CalendarResourceRead.Success(existingHref, "\"existing-r1\"", Todo("caller-todo", "Already stored")));
         client.CreateCalendarResourceAsync(
@@ -1991,8 +1785,6 @@ public sealed class CalendarEntityCreateServiceTests
 
         result.Code.ShouldBe(CalendarEntityCreateCode.Conflict);
         result.MutationState.ShouldBe(CalendarMutationState.NotCommitted);
-        await client.DidNotReceive().QueryCalendarResourceHrefsAsync(
-            Arg.Any<string>(), Arg.Any<CalendarEntityKind>(), null, null, Arg.Any<CancellationToken>());
         await client.DidNotReceive().GetCalendarResourceAsync(existingHref, Arg.Any<CancellationToken>());
         await client.Received(1).CreateCalendarResourceAsync(
             Arg.Any<CalendarResourceCreateRequest>(),
@@ -2011,13 +1803,6 @@ public sealed class CalendarEntityCreateServiceTests
         identities.CreateUid().Returns("todo-1", "todo-2", "todo-3", "todo-4");
         var sut = CreateTodoService(client, identities);
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([TodoCalendar(calendarHref, "Todos")]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Todo,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
         client.CreateCalendarResourceAsync(
                 Arg.Any<CalendarResourceCreateRequest>(),
                 Arg.Any<CancellationToken>())
@@ -2049,13 +1834,6 @@ public sealed class CalendarEntityCreateServiceTests
         var client = Substitute.For<ICalendarClient>();
         var sut = CreateTodoService(client);
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([TodoCalendar(calendarHref, "Todos")]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Todo,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
         CalendarResourceCreateRequest? dispatched = null;
         client.CreateCalendarResourceAsync(
                 Arg.Do<CalendarResourceCreateRequest>(request => dispatched = request),
@@ -2115,13 +1893,6 @@ public sealed class CalendarEntityCreateServiceTests
         var client = Substitute.For<ICalendarClient>();
         var sut = CreateTodoService(client);
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([TodoCalendar(calendarHref, "Todos")]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Todo,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
         CalendarResourceCreateRequest? dispatched = null;
         client.CreateCalendarResourceAsync(
                 Arg.Do<CalendarResourceCreateRequest>(request => dispatched = request),
@@ -2281,13 +2052,6 @@ public sealed class CalendarEntityCreateServiceTests
         var client = Substitute.For<ICalendarClient>();
         var sut = CreateService(client, defaultEventName: "Events");
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref, "Events")]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
         CalendarResourceCreateRequest? dispatched = null;
         client.CreateCalendarResourceAsync(
                 Arg.Do<CalendarResourceCreateRequest>(request => dispatched = request),
@@ -2321,13 +2085,6 @@ public sealed class CalendarEntityCreateServiceTests
         var client = Substitute.For<ICalendarClient>();
         var sut = CreateService(client, defaultEventName: "Events");
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref, "Events")]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
         CalendarResourceCreateRequest? dispatched = null;
         client.CreateCalendarResourceAsync(
                 Arg.Do<CalendarResourceCreateRequest>(request => dispatched = request),
@@ -2412,13 +2169,6 @@ public sealed class CalendarEntityCreateServiceTests
         var client = Substitute.For<ICalendarClient>();
         var sut = CreateService(client, defaultEventName: "Events");
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref, "Events")]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
         client.CreateCalendarResourceAsync(
                 Arg.Any<CalendarResourceCreateRequest>(),
                 Arg.Any<CancellationToken>())
@@ -2452,13 +2202,6 @@ public sealed class CalendarEntityCreateServiceTests
         using var callerCancellation = new CancellationTokenSource();
         CalendarResourceCreateRequest? dispatched = null;
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref, "Events")]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
         client.CreateCalendarResourceAsync(
                 Arg.Do<CalendarResourceCreateRequest>(request => dispatched = request),
                 Arg.Any<CancellationToken>())
@@ -2523,13 +2266,6 @@ public sealed class CalendarEntityCreateServiceTests
             Substitute.For<ICalendarEntityIdentityGenerator>());
         var readEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref, "Events")]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
         client.CreateCalendarResourceAsync(
                 Arg.Any<CalendarResourceCreateRequest>(),
                 Arg.Any<CancellationToken>())
@@ -2619,13 +2355,6 @@ public sealed class CalendarEntityCreateServiceTests
         var client = Substitute.For<ICalendarClient>();
         var sut = CreateService(client, defaultEventName: "Events");
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref, "Events")]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
         client.CreateCalendarResourceAsync(
                 Arg.Any<CalendarResourceCreateRequest>(),
                 Arg.Any<CancellationToken>())
@@ -2666,13 +2395,6 @@ public sealed class CalendarEntityCreateServiceTests
         var client = Substitute.For<ICalendarClient>();
         var sut = CreateService(client, defaultEventName: "Events");
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref, "Events")]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
         client.CreateCalendarResourceAsync(
                 Arg.Any<CalendarResourceCreateRequest>(),
                 Arg.Any<CancellationToken>())
@@ -2717,13 +2439,6 @@ public sealed class CalendarEntityCreateServiceTests
         var client = Substitute.For<ICalendarClient>();
         var sut = CreateService(client, defaultEventName: "Events");
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref, "Events")]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
         client.CreateCalendarResourceAsync(
                 Arg.Any<CalendarResourceCreateRequest>(),
                 Arg.Any<CancellationToken>())
@@ -2808,13 +2523,6 @@ public sealed class CalendarEntityCreateServiceTests
             Substitute.For<ICalendarEntityIdentityGenerator>());
         var readEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref, "Events")]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
         client.CreateCalendarResourceAsync(
                 Arg.Any<CalendarResourceCreateRequest>(),
                 Arg.Any<CancellationToken>())
@@ -2876,13 +2584,6 @@ public sealed class CalendarEntityCreateServiceTests
             timeProvider,
             Substitute.For<ICalendarEntityIdentityGenerator>());
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref, "Events")]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
         client.CreateCalendarResourceAsync(
                 Arg.Any<CalendarResourceCreateRequest>(),
                 Arg.Any<CancellationToken>())
@@ -2928,13 +2629,6 @@ public sealed class CalendarEntityCreateServiceTests
             timeProvider,
             identities);
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref, "Events")]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
         var requests = new List<CalendarResourceCreateRequest>();
         client.CreateCalendarResourceAsync(
                 Arg.Do<CalendarResourceCreateRequest>(requests.Add),
@@ -3115,13 +2809,6 @@ public sealed class CalendarEntityCreateServiceTests
         var client = Substitute.For<ICalendarClient>();
         var sut = CreateService(client, defaultEventName: "Events");
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref, "Events")]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
         CalendarResourceCreateRequest? dispatched = null;
         client.CreateCalendarResourceAsync(
                 Arg.Do<CalendarResourceCreateRequest>(request => dispatched = request),
@@ -3202,13 +2889,6 @@ public sealed class CalendarEntityCreateServiceTests
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
             EventCalendar(calendarHref, "Events")
         ]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
         client.CreateCalendarResourceAsync(
                 Arg.Any<CalendarResourceCreateRequest>(),
                 Arg.Any<CancellationToken>())
@@ -3325,13 +3005,6 @@ public sealed class CalendarEntityCreateServiceTests
                 TodoSupport = EntityKindSupport.NotAdvertised
             }
         ]);
-        client.QueryCalendarResourceHrefsAsync(
-                calendarHref,
-                CalendarEntityKind.Event,
-                null,
-                null,
-                Arg.Any<CancellationToken>())
-            .Returns([]);
         client.CreateCalendarResourceAsync(
                 Arg.Is<CalendarResourceCreateRequest>(request =>
                     request.CalendarHref == calendarHref
