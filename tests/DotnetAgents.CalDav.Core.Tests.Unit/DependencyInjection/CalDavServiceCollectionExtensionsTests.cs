@@ -5,6 +5,9 @@ using DotnetAgents.CalDav.Core.Internal;
 using DotnetAgents.CalDav.Core.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http;
+using System.Net;
+using System.Net.Http.Headers;
+using System.Diagnostics;
 using Shouldly;
 using Xunit;
 
@@ -67,6 +70,47 @@ public sealed class CalDavServiceCollectionExtensionsTests
 
         handler.RequestCount.ShouldBe(3);
         handler.Methods.ShouldAllBe(method => method == HttpMethod.Get);
+    }
+
+    [Fact]
+    public async Task AddCalDavCalendars_DoesNotRetryDefinitiveUnsupportedReportBeforeDirectGet()
+    {
+        const string calendarHref = "https://cal.example/events/";
+        const string resourceHref = calendarHref + "a.ics";
+        var handler = new UnsupportedReportThenGetHandler();
+        using var provider = BuildProvider(handler);
+        var transport = (ICalendarQueryResourceTransport)provider.GetRequiredService<ICalendarClient>();
+        using var listener = ListenToQueries();
+        using var source = new ActivitySource(CalendarQueryTelemetry.InstrumentationName, "0.1.0");
+
+        using (var first = source.StartActivity("caldav.operation", ActivityKind.Internal))
+        {
+            CalendarQueryTelemetry.Begin(false);
+            await Should.ThrowAsync<CalendarDiscoveryUnsupportedCapabilityException>(() => transport.MultigetAsync(
+                calendarHref,
+                [resourceHref],
+                TestContext.Current.CancellationToken));
+            first.ShouldNotBeNull().GetTagItem("caldav.query.multiget_resource_count").ShouldBe(1L);
+        }
+        using (var cached = source.StartActivity("caldav.operation", ActivityKind.Internal))
+        {
+            CalendarQueryTelemetry.Begin(false);
+            await Should.ThrowAsync<CalendarDiscoveryUnsupportedCapabilityException>(() => transport.MultigetAsync(
+                calendarHref,
+                [resourceHref],
+                TestContext.Current.CancellationToken));
+            cached.ShouldNotBeNull().GetTagItem("caldav.query.multiget_resource_count").ShouldBe(0L);
+        }
+        var meter = new CalendarDirectGetBudget().StartResource();
+        using var scope = CalendarHttpTelemetry.BeginQueryResourceRead(meter);
+        var read = await transport.DirectGetAsync(
+            calendarHref,
+            resourceHref,
+            TestContext.Current.CancellationToken);
+
+        read.Code.ShouldBe(CalendarResourceReadCode.Success);
+        handler.Methods.ShouldBe([new HttpMethod("REPORT"), HttpMethod.Get]);
+        meter.Attempts.ShouldBe(1);
     }
 
     [Fact]
@@ -187,6 +231,18 @@ public sealed class CalDavServiceCollectionExtensionsTests
         return services.BuildServiceProvider();
     }
 
+    private static ActivityListener ListenToQueries()
+    {
+        var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == CalendarQueryTelemetry.InstrumentationName,
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) =>
+                ActivitySamplingResult.AllDataAndRecorded
+        };
+        ActivitySource.AddActivityListener(listener);
+        return listener;
+    }
+
     private sealed class CapturingHandlerFilter(Action<HttpMessageHandler> capture) : IHttpMessageHandlerBuilderFilter
     {
         public Action<HttpMessageHandlerBuilder> Configure(Action<HttpMessageHandlerBuilder> next) => builder =>
@@ -208,6 +264,31 @@ public sealed class CalDavServiceCollectionExtensionsTests
             RequestCount++;
             Methods.Add(request.Method);
             return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.ServiceUnavailable));
+        }
+    }
+
+    private sealed class UnsupportedReportThenGetHandler : HttpMessageHandler
+    {
+        internal List<HttpMethod> Methods { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            Methods.Add(request.Method);
+            if (request.Method.Method == "REPORT")
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotImplemented)
+                {
+                    RequestMessage = request
+                });
+            }
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                RequestMessage = request,
+                Headers = { ETag = new EntityTagHeaderValue("\"r1\"") },
+                Content = new ByteArrayContent("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n"u8.ToArray())
+            });
         }
     }
 

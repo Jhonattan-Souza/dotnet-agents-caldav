@@ -93,7 +93,10 @@ public sealed class ContractCatalogTests
         var executionLimits = catalog["$defs"]!["executionLimits"]!.AsObject();
         executionLimits["additionalProperties"]!.GetValue<bool>().ShouldBeFalse();
         executionLimits["properties"]!["dimension"]!["enum"]!.AsArray()
-            .Select(item => item!.GetValue<string>()).ShouldBe(["elapsed_time"]);
+            .Select(item => item!.GetValue<string>()).ShouldBe([
+                "elapsed_time", "resource_count", "attempt_count", "byte_count"]);
+        executionLimits["properties"]!["observed"]!["minimum"]!.GetValue<int>().ShouldBe(0);
+        executionLimits["properties"]!["limit"]!["minimum"]!.GetValue<int>().ShouldBe(0);
         catalog["$defs"]!["exactMutationErrorOutcome"]!["properties"]!["limits"]!["$ref"]!
             .GetValue<string>().ShouldBe("#/$defs/executionLimits");
         var mrtr = catalog["mrtrWireContract"]!.AsObject();

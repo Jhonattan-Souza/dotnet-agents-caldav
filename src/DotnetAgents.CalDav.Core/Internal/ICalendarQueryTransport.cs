@@ -14,7 +14,7 @@ internal interface ICalendarQueryTransport
         DateTimeOffset? to,
         CancellationToken cancellationToken);
 
-    Task<IReadOnlyList<CalendarResourceRead>> MultigetAsync(
+    Task<CalendarMultigetResult> MultigetAsync(
         string calendarHref,
         IReadOnlyList<string> resourceHrefs,
         CancellationToken cancellationToken);
@@ -23,6 +23,32 @@ internal interface ICalendarQueryTransport
         string calendarHref,
         string resourceHref,
         CancellationToken cancellationToken);
+}
+
+/// <summary>Production-only CalDAV reads required by the deep query transport.</summary>
+internal interface ICalendarQueryResourceTransport
+{
+    Task<IReadOnlyList<CalendarResourceRead>> MultigetAsync(
+        string calendarHref,
+        IReadOnlyList<string> resourceHrefs,
+        CancellationToken cancellationToken);
+
+    Task<CalendarResourceRead> DirectGetAsync(
+        string calendarHref,
+        string resourceHref,
+        CancellationToken cancellationToken);
+}
+
+/// <summary>Closed authoritative result of one bounded Calendar multiget attempt.</summary>
+internal abstract record CalendarMultigetResult
+{
+    private CalendarMultigetResult()
+    {
+    }
+
+    internal sealed record Resources(IReadOnlyList<CalendarResourceRead> Values) : CalendarMultigetResult;
+
+    internal sealed record VerifiedUnavailable : CalendarMultigetResult;
 }
 
 internal sealed record CalendarQueryDiscovery(

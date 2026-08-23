@@ -57,6 +57,7 @@ public static class CalDavServiceCollectionExtensions
         // including HttpIOException/ResponseEnded from transient connection drops), circuit breaker,
         // attempt timeout, and total request timeout — all configured via Polly v8 resilience pipeline.
         services.AddTransient<CalendarHttpAttemptHandler>();
+        services.AddSingleton<CalendarQueryCapabilityState>();
         var calendarClientBuilder = services.AddHttpClient<CalDavClient>((serviceProvider, client) =>
         {
             var options = serviceProvider.GetRequiredService<IOptions<CalDavOptions>>().Value;
@@ -86,6 +87,11 @@ public static class CalDavServiceCollectionExtensions
             options.Retry.BackoffType = DelayBackoffType.Exponential;
             options.Retry.UseJitter = true;
             options.Retry.Delay = TimeSpan.FromMilliseconds(200);
+            var standardShouldHandle = options.Retry.ShouldHandle;
+            options.Retry.ShouldHandle = arguments =>
+                IsDefinitiveUnsupportedReport(arguments.Outcome.Result)
+                    ? PredicateResult.False()
+                    : standardShouldHandle(arguments);
 
             // Circuit breaker is configured with a high minimum throughput (default 100) which
             // effectively disables it for low-volume CalDAV clients. This is intentional —
@@ -129,12 +135,14 @@ public static class CalDavServiceCollectionExtensions
         });
         services.AddTransient<ICalendarQueryTransport>(serviceProvider => new CalendarQueryTransport(
             serviceProvider.GetRequiredService<CalendarOperationDiscovery>()));
+        services.AddSingleton<CalendarQueryResourceRetriever>();
         services.AddTransient(serviceProvider => new CalendarEntityQueryStartExecutor(
             () => serviceProvider.GetRequiredService<ICalendarQueryTransport>(),
             serviceProvider.GetRequiredService<IOptions<CalDavOptions>>(),
             serviceProvider.GetRequiredService<TimeProvider>(),
             serviceProvider.GetRequiredService<CalendarQuerySnapshotWriter>(),
-            serviceProvider.GetRequiredService<CalendarEntityQueryPageCodec>()));
+            serviceProvider.GetRequiredService<CalendarEntityQueryPageCodec>(),
+            serviceProvider.GetRequiredService<CalendarQueryResourceRetriever>()));
         services.AddTransient(serviceProvider => new CalendarEntityQueryContinueExecutor(
             serviceProvider.GetRequiredService<CalendarQueryCursorAuthenticator>(),
             serviceProvider.GetRequiredService<CalendarQuerySnapshotReader>(),
@@ -146,4 +154,8 @@ public static class CalDavServiceCollectionExtensions
 
         return services;
     }
+
+    private static bool IsDefinitiveUnsupportedReport(HttpResponseMessage? response) =>
+        response?.RequestMessage?.Method.Method == "REPORT"
+        && response.StatusCode is HttpStatusCode.MethodNotAllowed or HttpStatusCode.NotImplemented;
 }

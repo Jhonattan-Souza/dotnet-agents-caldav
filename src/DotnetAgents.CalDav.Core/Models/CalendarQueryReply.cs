@@ -112,7 +112,19 @@ public sealed record QueryExecutionLimits(
     int? OccurrenceCount = null,
     int? ByteCount = null,
     int? ItemCount = null,
-    int? SnapshotCount = null);
+    int? SnapshotCount = null,
+    QueryLimitDimension? Dimension = null,
+    long? Observed = null,
+    long? Limit = null);
+
+/// <summary>Closed query execution-budget dimension vocabulary.</summary>
+public enum QueryLimitDimension
+{
+    ResourceCount,
+    AttemptCount,
+    ByteCount,
+    ElapsedTime
+}
 
 /// <summary>Content-safe Calendar candidate for an ambiguous or missing selection.</summary>
 public sealed record QueryAuthorizedCandidate(

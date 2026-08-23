@@ -24,9 +24,13 @@ internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activi
         "caldav.transport.retry_count",
         "caldav.query.mode",
         "caldav.query.fetch_mode",
+        "caldav.query.fallback_reason",
         "caldav.query.phase",
         "caldav.query.candidate_count",
         "caldav.query.multiget_resource_count",
+        "caldav.query.direct_get_resource_count",
+        "caldav.query.direct_get_attempt_count",
+        "caldav.query.disappeared_resource_count",
         "caldav.query.snapshot_count",
         "caldav.query.evaluation_count",
         "caldav.query.serialization_count",
@@ -81,6 +85,9 @@ internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activi
     [
         "caldav.query.candidate_count",
         "caldav.query.multiget_resource_count",
+        "caldav.query.direct_get_resource_count",
+        "caldav.query.direct_get_attempt_count",
+        "caldav.query.disappeared_resource_count",
         "caldav.query.snapshot_count",
         "caldav.query.evaluation_count",
         "caldav.query.serialization_count",
@@ -154,6 +161,18 @@ internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activi
             activity.SetStatus(ActivityStatusCode.Ok);
             return;
         }
+        if (purpose == "query_resource_read" && HasStatusCode(activity, 404))
+        {
+            activity.SetTag("caldav.http.observation", "resource_disappeared");
+            activity.SetTag("error.type", null);
+            activity.SetStatus(ActivityStatusCode.Ok);
+            return;
+        }
+        if (purpose == "query_resource_read")
+        {
+            activity.SetTag("caldav.http.observation", null);
+            return;
+        }
 
         activity.SetTag("caldav.http.request_purpose", null);
         activity.SetTag("caldav.http.observation", null);
@@ -220,6 +239,8 @@ internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activi
         activity.SetTag("caldav.query.mode", ClosedQueryMode(activity.GetTagItem("caldav.query.mode")));
         activity.SetTag("caldav.query.fetch_mode", ClosedQueryFetchMode(
             activity.GetTagItem("caldav.query.fetch_mode")));
+        activity.SetTag("caldav.query.fallback_reason", ClosedQueryFallbackReason(
+            activity.GetTagItem("caldav.query.fallback_reason")));
         activity.SetTag("caldav.query.phase", ClosedQueryPhase(activity.GetTagItem("caldav.query.phase")));
         foreach (var name in QueryCounterNames)
             activity.SetTag(name, NonNegativeCounter(activity.GetTagItem(name)));
@@ -286,6 +307,14 @@ internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activi
     private static string? ClosedQueryFetchMode(object? value) => (value as string) switch
     {
         "multiget" => "multiget",
+        "direct_get_fallback" => "direct_get_fallback",
+        "mixed" => "mixed",
+        _ => null
+    };
+
+    private static string? ClosedQueryFallbackReason(object? value) => (value as string) switch
+    {
+        "multiget_unavailable" => "multiget_unavailable",
         _ => null
     };
 
