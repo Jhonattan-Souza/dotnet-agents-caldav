@@ -150,6 +150,12 @@ public sealed class ExactMoveMrtrRadicaleSizeEvidenceTests(
                     fixture.Runtime.VobjectVersion,
                     fixture.Runtime.RuntimeTimeZone
                 }));
+                await ObserveOpaqueOversizedCorpusAsync(
+                    probe,
+                    sourceCalendar,
+                    destinationCalendar,
+                    destinationCardinality,
+                    mode);
             }
         }
         finally
@@ -170,6 +176,225 @@ public sealed class ExactMoveMrtrRadicaleSizeEvidenceTests(
     [Fact]
     public void EvidenceModeRejectsUnknownValues() => Should.Throw<ArgumentException>(() =>
         ResolveEvidenceMode("unknown"));
+
+    private async Task ObserveOpaqueOversizedCorpusAsync(
+        HttpClient probe,
+        Uri sourceCalendar,
+        Uri destinationCalendar,
+        int destinationCardinality,
+        string mode)
+    {
+        var ordinaryHref = new Uri(destinationCalendar, "unrelated-0.ics");
+        var ordinary = await SendAsync(probe, HttpMethod.Get, ordinaryHref);
+        ordinary.Status.ShouldBe(HttpStatusCode.OK);
+        (await SendAsync(
+            probe,
+            HttpMethod.Delete,
+            ordinaryHref,
+            content: null,
+            ("If-Match", ordinary.EntityTag.ShouldNotBeNull()))).Status
+            .ShouldBeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
+        var hazardHref = new Uri(destinationCalendar, "000-opaque-oversized.ics");
+        var hazard = await PutResourceAsync(probe, hazardHref, OpaqueOversizedEvent());
+        hazard.AuthoritativeUtf8.Length.ShouldBeGreaterThan(4 * 1024 * 1024);
+        EntityTagHeaderValue.Parse(hazard.EntityTag).IsWeak.ShouldBeFalse();
+        Encoding.UTF8.GetString(hazard.AuthoritativeUtf8.Span[..256]).ShouldContain("CALSCALE:X-CUSTOM");
+        if (destinationCardinality == 1)
+            await AssertServerAcceptedOpaqueGrammarAsync(probe, sourceCalendar, destinationCalendar);
+        (await CountKindAsync(probe, destinationCalendar, "VTODO")).ShouldBe(destinationCardinality - 1);
+        (await CountKindAsync(probe, destinationCalendar, "VEVENT")).ShouldBe(1);
+        var uid = $"pinned-exact-move-mixed-{destinationCardinality}";
+        var source = await PutResourceAsync(
+            probe,
+            new Uri(sourceCalendar, $"mixed-{destinationCardinality}.ics"),
+            Todo(uid));
+        var destinationHref = new Uri(destinationCalendar, $"mixed-moved-{destinationCardinality}.ics");
+        var request = new CalendarExactMoveRequest(
+            new CalendarResourceRevisionReference(
+                source.Href.AbsoluteUri,
+                uid,
+                CalendarEntityKind.Todo,
+                source.EntityTag),
+            destinationHref.AbsoluteUri);
+        var wire = new ExactMoveTraceFilter(source.Href, destinationCalendar, destinationHref);
+        var started = Stopwatch.GetTimestamp();
+        string? movedEntityTag = null;
+        try
+        {
+            var result = await ExecuteOpaqueOversizedScenarioAsync(
+                fixture.BaseUrl,
+                $"{sourceCalendar.AbsoluteUri},{destinationCalendar.AbsoluteUri}",
+                wire,
+                request,
+                mode,
+                TestContext.Current.CancellationToken);
+            var elapsed = Stopwatch.GetElapsedTime(started);
+            if (mode == "server-authoritative")
+            {
+                Property(result, "Code").ToString().ShouldBe("Success");
+                Property(result, "MutationState").ToString().ShouldBe("Committed");
+                movedEntityTag = (string)Property(Property(result, "Snapshot"), "EntityTag");
+                AssertChangedOpaqueOversizedTrace(wire);
+            }
+            else
+            {
+                Property(result, "Code").ToString().ShouldBe("PayloadTooLarge");
+                Property(result, "MutationState").ToString().ShouldBe("NotAttempted");
+                AssertLegacyOpaqueOversizedTrace(wire);
+            }
+            WriteOpaqueOversizedObservation(mode, destinationCardinality, elapsed, wire);
+        }
+        finally
+        {
+            if (movedEntityTag is not null)
+            {
+                (await SendAsync(
+                    probe,
+                    HttpMethod.Delete,
+                    destinationHref,
+                    content: null,
+                    ("If-Match", movedEntityTag))).Status
+                    .ShouldBeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
+            }
+            else
+            {
+                (await SendAsync(
+                    probe,
+                    HttpMethod.Delete,
+                    source.Href,
+                    content: null,
+                    ("If-Match", source.EntityTag))).Status
+                    .ShouldBeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
+            }
+            (await SendAsync(
+                probe,
+                HttpMethod.Delete,
+                hazardHref,
+                content: null,
+                ("If-Match", hazard.EntityTag))).Status
+                .ShouldBeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
+            (await SendAsync(
+                probe,
+                HttpMethod.Put,
+                ordinaryHref,
+                UnrelatedTodo(0),
+                ("If-None-Match", "*"))).Status.ShouldBe(HttpStatusCode.Created);
+        }
+    }
+
+    private static async Task<object> ExecuteOpaqueOversizedScenarioAsync(
+        string baseUrl,
+        string calendarHrefs,
+        ExactMoveTraceFilter wire,
+        CalendarExactMoveRequest request,
+        string mode,
+        CancellationToken cancellationToken)
+    {
+        await using var initialProvider = CreateProvider(baseUrl, calendarHrefs, wire);
+        var initialReview = await InvokeAsync(
+            initialProvider.GetRequiredService<ICalendarService>(),
+            "ReviewExactMoveResourceAsync",
+            request,
+            cancellationToken);
+        if (mode == "legacy-scan")
+            return Property(initialReview, "Outcome");
+        OptionalProperty(initialReview, "Outcome").ShouldBeNull();
+        await using var confirmedProvider = CreateProvider(baseUrl, calendarHrefs, wire);
+        var binding = Property(initialReview, "Binding");
+        return await InvokeAsync(
+            confirmedProvider.GetRequiredService<ICalendarService>(),
+            "ExecuteConfirmedExactMoveResourceAsync",
+            request,
+            binding,
+            cancellationToken);
+    }
+
+    private static async Task AssertServerAcceptedOpaqueGrammarAsync(
+        HttpClient probe,
+        Uri sourceCalendar,
+        Uri destinationCalendar)
+    {
+        var proofHref = new Uri(sourceCalendar, "opaque-grammar-proof.ics");
+        var proof = await PutResourceAsync(probe, proofHref, OpaqueEvent(paddingLength: 0));
+        try
+        {
+            var proofWire = new ExactMoveTraceFilter(proofHref, destinationCalendar, proofHref);
+            await using var provider = CreateProvider(
+                sourceCalendar.GetLeftPart(UriPartial.Authority),
+                $"{sourceCalendar.AbsoluteUri},{destinationCalendar.AbsoluteUri}",
+                proofWire);
+            var observed = await provider.GetRequiredService<ICalendarService>()
+                .GetResourceAsync(proofHref.AbsoluteUri, TestContext.Current.CancellationToken);
+            observed.Code.ShouldBe(CalendarResourceReadCode.Success);
+            observed.Snapshot.ShouldNotBeNull().Projection.Kind.ShouldBe(CalendarResourceProjectionKind.Opaque);
+        }
+        finally
+        {
+            (await SendAsync(
+                probe,
+                HttpMethod.Delete,
+                proofHref,
+                content: null,
+                ("If-Match", proof.EntityTag))).Status
+                .ShouldBeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
+        }
+    }
+
+    private static void AssertChangedOpaqueOversizedTrace(ExactMoveTraceFilter wire)
+    {
+        wire.PropFindCount.ShouldBe(10);
+        wire.ReportCount.ShouldBe(0);
+        wire.MultigetCount.ShouldBe(0);
+        wire.SourceGetCount.ShouldBe(3);
+        wire.DestinationGetCount.ShouldBe(3);
+        wire.UnrelatedGetCount.ShouldBe(0);
+        wire.MoveCount.ShouldBe(1);
+        wire.RequestCount.ShouldBe(17);
+    }
+
+    private static void AssertLegacyOpaqueOversizedTrace(ExactMoveTraceFilter wire)
+    {
+        wire.PropFindCount.ShouldBe(5);
+        wire.ReportCount.ShouldBe(2);
+        wire.MultigetCount.ShouldBe(0);
+        wire.SourceGetCount.ShouldBe(1);
+        wire.DestinationGetCount.ShouldBe(1);
+        wire.UnrelatedGetCount.ShouldBe(1);
+        wire.MoveCount.ShouldBe(0);
+        wire.RequestCount.ShouldBe(10);
+    }
+
+    private void WriteOpaqueOversizedObservation(
+        string mode,
+        int destinationCardinality,
+        TimeSpan elapsed,
+        ExactMoveTraceFilter wire) => output.WriteLine(JsonSerializer.Serialize(new
+        {
+            Evidence = "CAL-EVIDENCE-013",
+            Operation = "exact-move-mrtr",
+            Corpus = "opaque-oversized",
+            Implementation = mode,
+            DestinationResources = destinationCardinality,
+            DurationMilliseconds = elapsed.TotalMilliseconds,
+            Requests = wire.RequestCount,
+            PropFind = wire.PropFindCount,
+            Report = wire.ReportCount,
+            Multiget = wire.MultigetCount,
+            SourceGets = wire.SourceGetCount,
+            DestinationGets = wire.DestinationGetCount,
+            UnrelatedGets = wire.UnrelatedGetCount,
+            Move = wire.MoveCount,
+            fixture.Runtime.IndexDigest,
+            fixture.Runtime.ResolvedPlatformManifestDigest,
+            fixture.Runtime.RuntimeArchitecture,
+            fixture.Runtime.RadicaleVersion,
+            fixture.Runtime.Variant,
+            fixture.Runtime.ConfiguredTimeZone,
+            fixture.Runtime.StrictPreconditions,
+            fixture.Runtime.PythonVersion,
+            fixture.Runtime.VobjectVersion,
+            fixture.Runtime.RuntimeTimeZone
+        }));
 
     private static async Task<object> ExecuteTwoRoundMrtrAsync(
         string baseUrl,
@@ -264,17 +489,20 @@ public sealed class ExactMoveMrtrRadicaleSizeEvidenceTests(
             + "<D:mkcol xmlns:D=\"DAV:\" xmlns:C=\"urn:ietf:params:xml:ns:caldav\"><D:set><D:prop>"
             + "<D:resourcetype><D:collection/><C:calendar/></D:resourcetype>"
             + $"<D:displayname>{name}</D:displayname>"
-            + "<C:supported-calendar-component-set><C:comp name=\"VTODO\"/>"
+            + "<C:supported-calendar-component-set><C:comp name=\"VEVENT\"/><C:comp name=\"VTODO\"/>"
             + "</C:supported-calendar-component-set></D:prop></D:set></D:mkcol>";
         return (await SendAsync(client, new HttpMethod("MKCOL"), calendar, body)).Status;
     }
 
-    private static async Task<int> CountTodosAsync(HttpClient client, Uri calendar)
+    private static Task<int> CountTodosAsync(HttpClient client, Uri calendar) =>
+        CountKindAsync(client, calendar, "VTODO");
+
+    private static async Task<int> CountKindAsync(HttpClient client, Uri calendar, string component)
     {
-        const string body = "<?xml version=\"1.0\" encoding=\"utf-8\" ?>"
+        var body = "<?xml version=\"1.0\" encoding=\"utf-8\" ?>"
             + "<C:calendar-query xmlns:D=\"DAV:\" xmlns:C=\"urn:ietf:params:xml:ns:caldav\">"
             + "<D:prop><D:getetag/></D:prop><C:filter><C:comp-filter name=\"VCALENDAR\">"
-            + "<C:comp-filter name=\"VTODO\"/></C:comp-filter></C:filter></C:calendar-query>";
+            + $"<C:comp-filter name=\"{component}\"/></C:comp-filter></C:filter></C:calendar-query>";
         var response = await SendAsync(client, new HttpMethod("REPORT"), calendar, body, ("Depth", "1"));
         response.Status.ShouldBe(HttpStatusCode.MultiStatus);
         return XDocument.Parse(response.Body).Descendants()
@@ -327,6 +555,15 @@ public sealed class ExactMoveMrtrRadicaleSizeEvidenceTests(
         $"BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Exact Move Evidence//EN\r\nBEGIN:VTODO\r\n"
         + $"UID:unrelated-{index}\r\nDTSTAMP:20260823T120000Z\r\nSUMMARY:unrelated {index}\r\n"
         + $"X-PRIVATE-{index}:opaque-value-{index}\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+
+    private static string OpaqueOversizedEvent() => OpaqueEvent((4 * 1024 * 1024) + 4096);
+
+    private static string OpaqueEvent(int paddingLength) =>
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Exact Move Evidence//EN\r\nCALSCALE:X-CUSTOM\r\n"
+        + "BEGIN:VEVENT\r\nUID:unrelated-opaque-oversized\r\nDTSTAMP:20260823T120000Z\r\n"
+        + "DTSTART:20260824T120000Z\r\nX-EVIDENCE-PADDING:"
+        + new string('x', paddingLength)
+        + "\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
 
     private static async Task<object> InvokeAsync(object target, string methodName, params object[] arguments)
     {

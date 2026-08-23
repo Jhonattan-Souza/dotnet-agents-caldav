@@ -89,6 +89,54 @@ public sealed class ExactMoveMrtrWorkEvidenceTests(ITestOutputHelper output)
             + $"unrelated_get={handler.UnrelatedGetCount} move={handler.MoveCount}");
     }
 
+    [Theory]
+    [InlineData(1, "opaque")]
+    [InlineData(50, "opaque")]
+    [InlineData(600, "opaque")]
+    [InlineData(1, "oversized")]
+    [InlineData(50, "oversized")]
+    [InlineData(600, "oversized")]
+    [InlineData(1, "weak-etag")]
+    [InlineData(50, "weak-etag")]
+    [InlineData(600, "weak-etag")]
+    public async Task UnrelatedResourceShapeCannotAddChangedRevisionReads(
+        int destinationCardinality,
+        string unrelatedShape)
+    {
+        using var handler = new ObservationHandler(destinationCardinality, unrelatedShape);
+        using var httpClient = new HttpClient(handler);
+        var options = OptionsForEvidence();
+        var mode = ResolveEvidenceMode(Environment.GetEnvironmentVariable("CALDAV_MOVE_EVIDENCE_MODE"));
+        ICalendarService CreateService() => CreateEvidenceService(httpClient, options);
+        var request = ExactMoveRequest();
+
+        var result = await ExecuteShapeScenarioAsync(
+            CreateService,
+            request,
+            mode,
+            unrelatedShape,
+            CancellationToken.None);
+
+        if (mode == "server-authoritative" || unrelatedShape == "opaque")
+        {
+            Property(result, "Code").ToString().ShouldBe("Success");
+            Property(result, "MutationState").ToString().ShouldBe("Committed");
+        }
+        else
+        {
+            Property(result, "Code").ToString().ShouldBe(
+                unrelatedShape == "oversized" ? "PayloadTooLarge" : "ConcurrencyUnavailable");
+            Property(result, "MutationState").ToString().ShouldBe("NotAttempted");
+        }
+        AssertShapeTrace(handler, mode, unrelatedShape, destinationCardinality);
+        output.WriteLine(
+            $"exact-move-mrtr-shape implementation={mode} shape={unrelatedShape} "
+            + $"destination_resources={destinationCardinality} requests={handler.RequestCount} "
+            + $"propfind={handler.PropFindCount} report={handler.ReportCount} "
+            + $"source_get={handler.SourceGetCount} destination_get={handler.DestinationGetCount} "
+            + $"unrelated_get={handler.UnrelatedGetCount} move={handler.MoveCount}");
+    }
+
     [Fact]
     public void EvidenceModeRejectsUnknownValues() => Should.Throw<ArgumentException>(() =>
         ResolveEvidenceMode("unknown"));
@@ -139,6 +187,92 @@ public sealed class ExactMoveMrtrWorkEvidenceTests(ITestOutputHelper output)
             cancellationToken);
     }
 
+    private static async Task<object> ExecuteShapeScenarioAsync(
+        Func<ICalendarService> createService,
+        CalendarExactMoveRequest request,
+        string mode,
+        string unrelatedShape,
+        CancellationToken cancellationToken)
+    {
+        if (mode == "server-authoritative" || unrelatedShape == "opaque")
+            return await ExecuteTwoRoundMrtrAsync(createService, request, mode, cancellationToken);
+        var review = await InvokeAsync(
+            createService(),
+            "ReviewExactMoveResourceAsync",
+            request,
+            cancellationToken);
+        return Property(review, "Outcome");
+    }
+
+    private static void AssertShapeTrace(
+        ObservationHandler handler,
+        string mode,
+        string unrelatedShape,
+        int destinationCardinality)
+    {
+        if (mode == "server-authoritative")
+        {
+            handler.PropFindCount.ShouldBe(4);
+            handler.ReportCount.ShouldBe(0);
+            handler.SourceGetCount.ShouldBe(3);
+            handler.DestinationGetCount.ShouldBe(3);
+            handler.UnrelatedGetCount.ShouldBe(0);
+            handler.MoveCount.ShouldBe(1);
+            handler.RequestCount.ShouldBe(11);
+            return;
+        }
+        if (unrelatedShape == "opaque")
+        {
+            handler.PropFindCount.ShouldBe(4);
+            handler.ReportCount.ShouldBe(6);
+            handler.SourceGetCount.ShouldBe(4);
+            handler.DestinationGetCount.ShouldBe(4);
+            handler.UnrelatedGetCount.ShouldBe(destinationCardinality * 3);
+            handler.MoveCount.ShouldBe(1);
+            handler.RequestCount.ShouldBe((destinationCardinality * 3) + 19);
+            return;
+        }
+        handler.PropFindCount.ShouldBe(2);
+        handler.ReportCount.ShouldBe(2);
+        handler.SourceGetCount.ShouldBe(1);
+        handler.DestinationGetCount.ShouldBe(1);
+        handler.UnrelatedGetCount.ShouldBe(1);
+        handler.MoveCount.ShouldBe(0);
+        handler.RequestCount.ShouldBe(7);
+    }
+
+    private static CalDavOptions OptionsForEvidence()
+    {
+        var options = new CalDavOptions
+        {
+            BaseUrl = ObservationHandler.CalendarHomeHref,
+            Username = "user",
+            Password = "secret",
+            CalendarHrefs = $"{ObservationHandler.SourceCalendarHref},{ObservationHandler.DestinationCalendarHref}"
+        };
+        options.GetType().GetProperty("InteroperabilityProfile")?.SetValue(options, "radicale-3.7.8");
+        return options;
+    }
+
+    private static ICalendarService CreateEvidenceService(HttpClient httpClient, CalDavOptions options) =>
+        new CalendarService(
+            new CalDavClient(
+                httpClient,
+                Options.Create(options),
+                Substitute.For<ILogger<CalDavClient>>()),
+            Options.Create(options),
+            Substitute.For<ILogger<CalendarService>>(),
+            TimeProvider.System,
+            Substitute.For<ICalendarEntityIdentityGenerator>());
+
+    private static CalendarExactMoveRequest ExactMoveRequest() => new(
+        new CalendarResourceRevisionReference(
+            ObservationHandler.SourceHref,
+            ObservationHandler.EntityUid,
+            CalendarEntityKind.Todo,
+            "\"r1\""),
+        ObservationHandler.DestinationHref);
+
     private static async Task<object> InvokeAsync(object target, string methodName, params object[] arguments)
     {
         var method = target.GetType().GetMethods(BindingFlags.Instance | BindingFlags.Public)
@@ -174,7 +308,9 @@ public sealed class ExactMoveMrtrWorkEvidenceTests(ITestOutputHelper output)
         internal const string DestinationHref = DestinationCalendarHref + "moved.ics";
         internal const string EntityUid = "exact-move-evidence";
         internal static readonly byte[] SourceContent = Todo(EntityUid, "Exact move evidence");
-        private readonly IReadOnlyDictionary<string, byte[]> _unrelatedResources;
+        private static readonly byte[] OversizedContent = new byte[(4 * 1024 * 1024) + 1];
+        private readonly IReadOnlySet<string> _unrelatedHrefs;
+        private readonly string _unrelatedShape;
         private int _requestCount;
         private int _propFindCount;
         private int _reportCount;
@@ -184,12 +320,12 @@ public sealed class ExactMoveMrtrWorkEvidenceTests(ITestOutputHelper output)
         private int _moveCount;
         private int _moved;
 
-        internal ObservationHandler(int destinationCardinality)
+        internal ObservationHandler(int destinationCardinality, string unrelatedShape = "ordinary")
         {
-            _unrelatedResources = Enumerable.Range(0, destinationCardinality).ToDictionary(
-                index => DestinationCalendarHref + $"unrelated-{index}.ics",
-                index => Todo($"unrelated-{index}", $"Unrelated {index}"),
-                StringComparer.Ordinal);
+            _unrelatedHrefs = Enumerable.Range(0, destinationCardinality)
+                .Select(index => DestinationCalendarHref + $"unrelated-{index}.ics")
+                .ToHashSet(StringComparer.Ordinal);
+            _unrelatedShape = unrelatedShape;
         }
 
         internal int RequestCount => Volatile.Read(ref _requestCount);
@@ -238,7 +374,7 @@ public sealed class ExactMoveMrtrWorkEvidenceTests(ITestOutputHelper output)
         private HttpResponseMessage Report()
         {
             Interlocked.Increment(ref _reportCount);
-            return Xml(string.Concat(_unrelatedResources.Keys.Select(href =>
+            return Xml(string.Concat(_unrelatedHrefs.Select(href =>
                 $"<d:response><d:href>{href}</d:href><d:status>HTTP/1.1 200 OK</d:status></d:response>")));
         }
 
@@ -258,12 +394,27 @@ public sealed class ExactMoveMrtrWorkEvidenceTests(ITestOutputHelper output)
                     ? new HttpResponseMessage(HttpStatusCode.NotFound)
                     : CalendarContent(SourceContent, "\"r2\"");
             }
-            if (_unrelatedResources.TryGetValue(href, out var content))
+            if (_unrelatedHrefs.Contains(href))
             {
                 Interlocked.Increment(ref _unrelatedGetCount);
-                return CalendarContent(content, "\"unrelated\"");
+                return UnrelatedContent(href);
             }
             return new HttpResponseMessage(HttpStatusCode.NotFound);
+        }
+
+        private HttpResponseMessage UnrelatedContent(string href)
+        {
+            var index = href[(href.LastIndexOf('-') + 1)..^4];
+            return _unrelatedShape switch
+            {
+                "opaque" => CalendarContent("not-a-calendar"u8.ToArray(), "\"unrelated\""),
+                "oversized" => CalendarContent(OversizedContent, "\"unrelated\""),
+                "weak-etag" => CalendarContent(
+                    Todo($"unrelated-{index}", $"Unrelated {index}"),
+                    "\"unrelated\"",
+                    isWeak: true),
+                _ => CalendarContent(Todo($"unrelated-{index}", $"Unrelated {index}"), "\"unrelated\"")
+            };
         }
 
         private HttpResponseMessage Move(HttpRequestMessage request, string href)
@@ -277,14 +428,17 @@ public sealed class ExactMoveMrtrWorkEvidenceTests(ITestOutputHelper output)
             return new HttpResponseMessage(HttpStatusCode.Created);
         }
 
-        private static HttpResponseMessage CalendarContent(byte[] content, string entityTag)
+        private static HttpResponseMessage CalendarContent(
+            byte[] content,
+            string entityTag,
+            bool isWeak = false)
         {
             var response = new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new ByteArrayContent(content)
             };
             response.Content.Headers.ContentType = new MediaTypeHeaderValue("text/calendar");
-            response.Headers.ETag = new EntityTagHeaderValue(entityTag);
+            response.Headers.ETag = new EntityTagHeaderValue(entityTag, isWeak);
             return response;
         }
 

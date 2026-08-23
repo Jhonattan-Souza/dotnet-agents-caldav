@@ -245,7 +245,7 @@ internal sealed class CalendarMoveModule(
 
     private CalendarResourceMoveResult? ValidateResourceHrefScope(string href)
     {
-        if (!TryParseSafeHref(href, requireTrailingSlash: false, out var resource)
+        if (!CalendarMoveHrefPolicy.TryParseSafeResourceHref(href, out var resource)
             || !CalendarMoveHrefPolicy.HasSameOrigin(new Uri(options.BaseUrl, UriKind.Absolute), resource))
         {
             return Failure(CalendarResourceMoveCode.InvalidInput);
@@ -254,25 +254,6 @@ internal sealed class CalendarMoveModule(
         return scope.Count > 0 && !scope.Any(calendarHref => CalendarMoveHrefPolicy.IsDirectResourceOf(resource, calendarHref))
             ? Failure(CalendarResourceMoveCode.OutsideScope)
             : null;
-    }
-
-    private static bool TryParseSafeHref(string href, bool requireTrailingSlash, out Uri uri)
-    {
-        uri = null!;
-        if (!Uri.TryCreate(href, UriKind.Absolute, out var candidate)
-            || !string.Equals(candidate.AbsoluteUri, href, StringComparison.Ordinal)
-            || !string.IsNullOrEmpty(candidate.UserInfo)
-            || !string.IsNullOrEmpty(candidate.Fragment)
-            || !string.IsNullOrEmpty(candidate.Query)
-            || candidate.AbsolutePath.EndsWith('/') != requireTrailingSlash
-            || candidate.AbsolutePath.Contains("%2e", StringComparison.OrdinalIgnoreCase)
-            || candidate.AbsolutePath.Contains("%2F", StringComparison.OrdinalIgnoreCase)
-            || candidate.AbsolutePath.Contains("%5C", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-        uri = candidate;
-        return true;
     }
 
     private static CalendarResourceMoveResult? ValidateRevision(
