@@ -2,7 +2,7 @@
 
 Date: 2026-08-23
 Baseline revision: `ed316f9beb46a81d69e785006c0fe65d58c2298b`
-Implementation revision: `71d7b9c`
+Implementation revision: `47aca6e`
 Configuration: .NET 10 Release; deterministic scripted CalDAV port for work counts; real MCP stdio and digest-pinned Radicale 3.7.8 for transport evidence
 
 ## Before
