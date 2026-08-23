@@ -75,8 +75,8 @@ declare -A expected_test_counts=(
   [main-core.trx]=2082
   [main-mcp.trx]=922
   [main-integration.trx]=100
-  [strict-preconditions.trx]=10
-  [alternate-time-zone.trx]=10
+  [strict-preconditions.trx]=11
+  [alternate-time-zone.trx]=11
 )
 declare -A count_policies=(
   [main-core.trx]=minimum

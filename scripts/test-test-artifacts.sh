@@ -63,8 +63,8 @@ echo "PASS truncated TRX evidence is rejected"
 
 wrong_conformance_count="$fixture_root/wrong-conformance-count"
 seed_main_artifacts "$wrong_conformance_count"
-write_successful_trx "$wrong_conformance_count/strict-preconditions.trx" 9
-write_successful_trx "$wrong_conformance_count/alternate-time-zone.trx" 10
+write_successful_trx "$wrong_conformance_count/strict-preconditions.trx" 10
+write_successful_trx "$wrong_conformance_count/alternate-time-zone.trx" 11
 if "$verifier" "$wrong_conformance_count" complete >/dev/null 2>&1; then
   echo "Expected a conformance TRX with the wrong test count to be rejected." >&2
   exit 1
@@ -134,8 +134,8 @@ echo "PASS main test evidence accepts counts above discovery baselines"
 
 complete_run="$fixture_root/complete-run"
 seed_main_artifacts "$complete_run"
-write_successful_trx "$complete_run/strict-preconditions.trx" 10
-write_successful_trx "$complete_run/alternate-time-zone.trx" 10
+write_successful_trx "$complete_run/strict-preconditions.trx" 11
+write_successful_trx "$complete_run/alternate-time-zone.trx" 11
 "$verifier" "$complete_run" complete >/dev/null
 
 echo "PASS complete test evidence matches the five-file manifest"

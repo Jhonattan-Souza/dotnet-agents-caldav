@@ -16,13 +16,13 @@ This is structural evidence, not a wall-clock service-level claim. The determini
 
 | Destination resources | Baseline resource observations | Changed resource observations | Baseline REPORTs | Changed REPORTs | Changed unrelated reads | Changed MOVEs |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | about 5 | 4 | 2 | 0 | 0 | 1 |
-| 50 | about 54 | 4 | 2 | 0 | 0 | 1 |
-| 600 | about 604 | 4 | 2 | 0 | 0 | 1 |
+| 1 | 5 | 4 | 2 | 0 | 0 | 1 |
+| 50 | 54 | 4 | 2 | 0 | 0 | 1 |
+| 600 | 604 | 4 | 2 | 0 | 0 | 1 |
 
-The baseline figures describe the prior semantic scan path: source and destination observations surrounded destination enumeration and matching work, so work grew with unrelated resources. The changed four resource observations are one source GET, one headers-only exact-destination presence probe, and the two independent destination/source reconciliation observations. Calendar discovery remains one acquisition for every size. No calendar-query REPORT, calendar-multiget REPORT, or unrelated resource GET occurs. The dispatch is exactly one MOVE and is never retried.
+The baseline counts are derived directly from `CalendarResourceMoveEngine` at the baseline revision: one source GET + one exact-destination preflight GET + `N` candidate GETs after two kind-specific UID-query REPORTs + two destination/source reconciliation GETs = `N + 4` resource observations. The fixed cardinalities therefore produce exactly 5, 54, and 604 observations. The changed four resource observations are one source GET, one headers-only exact-destination presence probe, and the two independent destination/source reconciliation observations. Calendar discovery remains one acquisition for every size. No calendar-query REPORT, calendar-multiget REPORT, or unrelated resource GET occurs. The dispatch is exactly one MOVE and is never retried.
 
-`CalendarMoveModuleTests.MoveWorkIsConstantAcrossDestinationCardinality` records the exact trace for 1, 50, and 600 resources:
+`CalendarMoveModuleTests.DestinationCardinalityDoesNotChangeMoveWork` records the exact changed-revision trace for 1, 50, and 600 resources:
 
 ```text
 discover
