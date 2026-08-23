@@ -14,6 +14,7 @@ internal sealed class CalendarService : ICalendarService
     private const int MaximumDiagnostics = 32;
     private const int MaximumCalendars = 256;
     private readonly ICalendarClient _calendarClient;
+    private readonly CalendarOperationDiscovery _operationDiscovery;
     private readonly IOptions<CalDavOptions> _options;
     private readonly ILogger<CalendarService> _logger;
     private readonly TimeProvider _timeProvider;
@@ -34,19 +35,23 @@ internal sealed class CalendarService : ICalendarService
         TimeProvider timeProvider,
         ICalendarEntityIdentityGenerator identityGenerator)
     {
-        _calendarClient = new CalendarOperationDiscovery(calendarClient, options);
         _options = options;
         _logger = logger;
         _timeProvider = timeProvider;
         _identityGenerator = identityGenerator;
+        _operationDiscovery = new CalendarOperationDiscovery(
+            calendarClient,
+            options,
+            ApplyScope,
+            ResolveDefaultCalendarCore);
+        _calendarClient = _operationDiscovery;
     }
 
     /// <inheritdoc />
     public async Task<CalendarDiscoveryResult> GetCalendarsAsync(CancellationToken cancellationToken)
     {
         _calendarClient.RediscoverCapabilities();
-        var discovered = await _calendarClient.GetCalendarsAsync(cancellationToken);
-        return ApplyScope(discovered);
+        return await _operationDiscovery.GetScopedResultAsync(cancellationToken);
     }
 
     /// <inheritdoc />
@@ -54,11 +59,16 @@ internal sealed class CalendarService : ICalendarService
         CalendarEntityKind entityKind,
         CancellationToken cancellationToken)
     {
-        var discovered = await _calendarClient.GetCalendarsAsync(cancellationToken);
-        return ResolveDefaultCalendar(entityKind, discovered, ApplyScope(discovered).Items);
+        _ = await _calendarClient.GetCalendarsAsync(cancellationToken);
+        return _operationDiscovery.ResolveDefault(entityKind);
     }
 
     private CalendarSelectionResult ResolveDefaultCalendar(
+        CalendarEntityKind entityKind,
+        IReadOnlyList<CalendarDescriptor> discovered,
+        IReadOnlyList<CalendarDescriptor> scoped) => _operationDiscovery.ResolveDefault(entityKind);
+
+    private CalendarSelectionResult ResolveDefaultCalendarCore(
         CalendarEntityKind entityKind,
         IReadOnlyList<CalendarDescriptor> discovered,
         IReadOnlyList<CalendarDescriptor> scoped)
