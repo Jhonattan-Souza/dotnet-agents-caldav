@@ -24,6 +24,15 @@ public interface ICalendarClient
     /// <summary>Reads one complete Calendar Object Resource revision by canonical absolute href.</summary>
     Task<CalendarResourceRead> GetCalendarResourceAsync(string href, CancellationToken cancellationToken);
 
+    /// <summary>Reads one resource whose absence is an expected semantic observation.</summary>
+    async Task<CalendarResourceRead> ProbeCalendarResourceAbsenceAsync(
+        string href,
+        CancellationToken cancellationToken)
+    {
+        using var scope = Internal.CalendarHttpTelemetry.BeginAbsenceProbe();
+        return await GetCalendarResourceAsync(href, cancellationToken);
+    }
+
     /// <summary>Verifies Calendar multiget support, then reads authoritative bytes with GET.</summary>
     async Task<CalendarResourceRead> GetCalendarResourceForQueryAsync(
         string calendarHref,

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using DotnetAgents.CalDav.Core.Models;
 using DotnetAgents.CalDav.Core.Services;
 using DotnetAgents.CalDav.Mcp.Hosting;
 using OpenTelemetry.Logs;
@@ -55,6 +56,78 @@ public sealed class CalendarTelemetryTests
             ]);
     }
 
+    [Theory]
+    [InlineData("success", null, ActivityStatusCode.Unset)]
+    [InlineData("success", "committed", ActivityStatusCode.Unset)]
+    [InlineData("success", "not_attempted", ActivityStatusCode.Unset)]
+    [InlineData("input_required", "not_attempted", ActivityStatusCode.Unset)]
+    [InlineData("cancelled", null, ActivityStatusCode.Unset)]
+    [InlineData("error", "not_committed", ActivityStatusCode.Error)]
+    [InlineData("error", "committed", ActivityStatusCode.Error)]
+    [InlineData("error", "unknown", ActivityStatusCode.Error)]
+    public void Operation_EmitsClosedOutcomeAndIndependentMutationStateMatrix(
+        string outcome,
+        string? mutationState,
+        ActivityStatusCode expectedStatus)
+    {
+        Activity? stoppedOperation = null;
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == CalendarTelemetry.InstrumentationName,
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) =>
+                ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity => stoppedOperation = activity
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        using (var operation = CalendarTelemetry.StartOperation("todos.complete", null))
+        {
+            operation.ShouldNotBeNull();
+            operation.Complete(outcome, mutationState: mutationState);
+        }
+
+        stoppedOperation.ShouldNotBeNull();
+        stoppedOperation.GetTagItem("caldav.outcome").ShouldBe(outcome);
+        stoppedOperation.GetTagItem("caldav.mutation.state").ShouldBe(mutationState);
+        stoppedOperation.Status.ShouldBe(expectedStatus);
+    }
+
+    [Fact]
+    public void Operation_StructuredCommittedFailureExportsOnlyControlledFailureDimensions()
+    {
+        Activity? stoppedOperation = null;
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == CalendarTelemetry.InstrumentationName,
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) =>
+                ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity => stoppedOperation = activity
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        using (var operation = CalendarTelemetry.StartOperation("events.patch", null))
+        {
+            operation.ShouldNotBeNull();
+            operation.Complete(
+                "error",
+                "fidelity_failure",
+                "postWriteTruth",
+                "committed",
+                "postWriteVerificationOrReconciliation",
+                retryable: false);
+        }
+
+        stoppedOperation.ShouldNotBeNull();
+        stoppedOperation.GetTagItem("caldav.outcome").ShouldBe("error");
+        stoppedOperation.GetTagItem("caldav.error.code").ShouldBe("fidelity_failure");
+        stoppedOperation.GetTagItem("caldav.error.category").ShouldBe("postWriteTruth");
+        stoppedOperation.GetTagItem("caldav.error.phase").ShouldBe("postWriteVerificationOrReconciliation");
+        stoppedOperation.GetTagItem("caldav.error.retryable").ShouldBe(false);
+        stoppedOperation.GetTagItem("caldav.mutation.state").ShouldBe("committed");
+        stoppedOperation.GetTagItem("error.type").ShouldBe("caldav.fidelity_failure");
+        stoppedOperation.Status.ShouldBe(ActivityStatusCode.Error);
+    }
+
     [Fact]
     public void StartOperation_WithoutListeners_ReturnsNull()
     {
@@ -92,7 +165,7 @@ public sealed class CalendarTelemetryTests
 
         activity.DisplayName.ShouldBe("resources/read");
         activity.GetTagItem("mcp.method.name").ShouldBe("resources/read");
-        activity.GetTagItem("error.type").ShouldBe("System.Net.Http.HttpRequestException");
+        activity.GetTagItem("error.type").ShouldBeNull();
         activity.GetTagItem("mcp.resource.uri").ShouldBeNull();
         activity.GetTagItem("url.full").ShouldBeNull();
         activity.GetTagItem("calendar.uid").ShouldBeNull();
@@ -143,6 +216,105 @@ public sealed class CalendarTelemetryTests
         activity.GetTagItem("error.type").ShouldBeNull();
     }
 
+    [Fact]
+    public void ExportAllowlist_RemovesPrivateLookingValuesEvenWhenLexicallyValid()
+    {
+        using var listener = ListenTo(CalendarTelemetry.InstrumentationName);
+        using var source = new ActivitySource(CalendarTelemetry.InstrumentationName);
+        using var activity = source.StartActivity("caldav.operation");
+        activity.ShouldNotBeNull();
+        activity.SetTag("caldav.outcome", "private_success");
+        activity.SetTag("caldav.error.code", "private_secret_code");
+        activity.SetTag("caldav.error.category", "privateCategory");
+        activity.SetTag("caldav.error.phase", "privatePhase");
+        activity.SetTag("caldav.mutation.state", "private_state");
+        activity.SetTag("error.type", "caldav.private_secret_code");
+        activity.Stop();
+
+        new TelemetryActivityAllowlistProcessor().OnEnd(activity);
+
+        activity.GetTagItem("caldav.outcome").ShouldBeNull();
+        activity.GetTagItem("caldav.error.code").ShouldBeNull();
+        activity.GetTagItem("caldav.error.category").ShouldBeNull();
+        activity.GetTagItem("caldav.error.phase").ShouldBeNull();
+        activity.GetTagItem("caldav.mutation.state").ShouldBeNull();
+        activity.GetTagItem("error.type").ShouldBeNull();
+    }
+
+    [Fact]
+    public void ExportAllowlist_PreservesEveryClosedOutcomeAndMutationState()
+    {
+        using var listener = ListenTo(CalendarTelemetry.InstrumentationName);
+        using var source = new ActivitySource(CalendarTelemetry.InstrumentationName);
+        var processor = new TelemetryActivityAllowlistProcessor();
+
+        foreach (var outcome in new[] { "success", "input_required", "cancelled", "error" })
+        {
+            using var activity = source.StartActivity("caldav.operation");
+            activity.ShouldNotBeNull();
+            activity.SetTag("caldav.outcome", outcome);
+            activity.Stop();
+
+            processor.OnEnd(activity);
+
+            activity.GetTagItem("caldav.outcome").ShouldBe(outcome);
+        }
+
+        foreach (var mutationState in new[] { "not_attempted", "not_committed", "committed", "unknown" })
+        {
+            using var activity = source.StartActivity("caldav.operation");
+            activity.ShouldNotBeNull();
+            activity.SetTag("caldav.mutation.state", mutationState);
+            activity.Stop();
+
+            processor.OnEnd(activity);
+
+            activity.GetTagItem("caldav.mutation.state").ShouldBe(mutationState);
+        }
+    }
+
+    [Fact]
+    public void ExportAllowlist_NormalizesEverySupportedNumericRepresentation()
+    {
+        using var listener = ListenTo(OpenTelemetryHostConfiguration.HttpInstrumentationName);
+        using var source = new ActivitySource(OpenTelemetryHostConfiguration.HttpInstrumentationName);
+        var processor = new TelemetryActivityAllowlistProcessor();
+
+        foreach (var statusCode in new object[] { (byte)207, (short)207, 207, 207L })
+        {
+            using var activity = source.StartActivity("REPORT");
+            activity.ShouldNotBeNull();
+            activity.SetTag("http.request.method", "REPORT");
+            activity.SetTag("http.response.status_code", statusCode);
+            activity.Stop();
+
+            processor.OnEnd(activity);
+
+            Convert.ToInt64(activity.GetTagItem("http.response.status_code")).ShouldBe(207);
+        }
+    }
+
+    [Fact]
+    public void ExportAllowlist_PreservesOnlyControlledErrorTypeShapes()
+    {
+        foreach (var value in new[]
+                 {
+                     "timeout", "connection_error", "response_ended", "protocol_error",
+                     "internal_error", "caldav.invalid_input", "503"
+                 })
+        {
+            CalendarTelemetryVocabulary.ErrorType(value).ShouldBe(value);
+        }
+
+        foreach (var value in new object?[]
+                 {
+                     null, 503, "caldav.private_resource", "50", "5000", "5a3"
+                 })
+        {
+            CalendarTelemetryVocabulary.ErrorType(value).ShouldBeNull();
+        }
+    }
+
     [Theory]
     [InlineData("PROPFIND", "PROPFIND")]
     [InlineData("PRIVATE", "HTTP")]
@@ -169,6 +341,151 @@ public sealed class CalendarTelemetryTests
         activity.GetTagItem("http.request.resend_count").ShouldBe(1);
         activity.GetTagItem("http.request.method_original").ShouldBeNull();
         activity.GetTagItem("url.full").ShouldBeNull();
+    }
+
+    [Fact]
+    public void ExportAllowlist_OnlyMarkedAbsenceProbeReclassifiesHttpNotFound()
+    {
+        using var listener = ListenTo("DotnetAgents.CalDav.Http");
+        using var source = new ActivitySource("DotnetAgents.CalDav.Http");
+        using var marked = source.StartActivity("GET marked");
+        marked.ShouldNotBeNull();
+        marked.SetTag("http.request.method", "GET");
+        marked.SetTag("http.response.status_code", 404);
+        marked.SetTag("error.type", "404");
+        marked.SetTag("caldav.http.request_purpose", "absence_probe");
+        marked.SetStatus(ActivityStatusCode.Error);
+        marked.Stop();
+        using var unmarked = source.StartActivity("GET unmarked");
+        unmarked.ShouldNotBeNull();
+        unmarked.SetTag("http.request.method", "GET");
+        unmarked.SetTag("http.response.status_code", 404);
+        unmarked.SetTag("error.type", "404");
+        unmarked.SetStatus(ActivityStatusCode.Error);
+        unmarked.Stop();
+
+        var processor = new TelemetryActivityAllowlistProcessor();
+        processor.OnEnd(marked);
+        processor.OnEnd(unmarked);
+
+        marked.GetTagItem("http.response.status_code").ShouldBe(404);
+        marked.GetTagItem("caldav.http.request_purpose").ShouldBe("absence_probe");
+        marked.GetTagItem("caldav.http.observation").ShouldBe("expected_absence");
+        marked.GetTagItem("error.type").ShouldBeNull();
+        marked.Status.ShouldBe(ActivityStatusCode.Ok);
+        unmarked.GetTagItem("caldav.http.request_purpose").ShouldBeNull();
+        unmarked.GetTagItem("caldav.http.observation").ShouldBeNull();
+        unmarked.GetTagItem("error.type").ShouldBe("404");
+        unmarked.Status.ShouldBe(ActivityStatusCode.Error);
+    }
+
+    [Fact]
+    public void ExportAllowlist_CountsRetriesAcrossIndependentRecoveredRequests()
+    {
+        Activity? stoppedOperation = null;
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = static source => source.Name is CalendarTelemetry.InstrumentationName or "DotnetAgents.CalDav.Http",
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) =>
+                ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity =>
+            {
+                if (activity.OperationName == "caldav.operation")
+                    stoppedOperation = activity;
+            }
+        };
+        ActivitySource.AddActivityListener(listener);
+        using var httpSource = new ActivitySource("DotnetAgents.CalDav.Http");
+
+        using (var operation = CalendarTelemetry.StartOperation("calendars.list", null))
+        {
+            operation.ShouldNotBeNull();
+            operation.StartPhase(CalendarOperationPhase.Discovery);
+            using (var failedAttempt = httpSource.StartActivity("PROPFIND failed"))
+            {
+                failedAttempt.ShouldNotBeNull();
+                failedAttempt.SetTag("http.request.method", "PROPFIND");
+                failedAttempt.SetTag("http.response.status_code", 503);
+                failedAttempt.SetTag("http.request.resend_count", 0);
+                failedAttempt.SetStatus(ActivityStatusCode.Error);
+                failedAttempt.Stop();
+                new TelemetryActivityAllowlistProcessor().OnEnd(failedAttempt);
+                failedAttempt.Status.ShouldBe(ActivityStatusCode.Error);
+            }
+            using (var recoveredAttempt = httpSource.StartActivity("PROPFIND recovered"))
+            {
+                recoveredAttempt.ShouldNotBeNull();
+                recoveredAttempt.SetTag("http.request.method", "PROPFIND");
+                recoveredAttempt.SetTag("http.response.status_code", 207);
+                recoveredAttempt.SetTag("http.request.resend_count", 1);
+                recoveredAttempt.Stop();
+                new TelemetryActivityAllowlistProcessor().OnEnd(recoveredAttempt);
+                recoveredAttempt.Status.ShouldBe(ActivityStatusCode.Unset);
+            }
+            using (var secondRecoveredAttempt = httpSource.StartActivity("REPORT recovered"))
+            {
+                secondRecoveredAttempt.ShouldNotBeNull();
+                secondRecoveredAttempt.SetTag("http.request.method", "REPORT");
+                secondRecoveredAttempt.SetTag("http.response.status_code", 207);
+                secondRecoveredAttempt.SetTag("http.request.resend_count", 1);
+                secondRecoveredAttempt.Stop();
+                new TelemetryActivityAllowlistProcessor().OnEnd(secondRecoveredAttempt);
+            }
+            operation.Complete("success");
+        }
+
+        stoppedOperation.ShouldNotBeNull();
+        stoppedOperation.GetTagItem("caldav.outcome").ShouldBe("success");
+        stoppedOperation.GetTagItem("caldav.transport.recovered").ShouldBe(true);
+        stoppedOperation.GetTagItem("caldav.transport.retry_count").ShouldBe(2);
+        stoppedOperation.Status.ShouldBe(ActivityStatusCode.Unset);
+    }
+
+    [Fact]
+    public void ExportAllowlist_DoesNotClaimRecoveryWhenOperationUltimatelyFails()
+    {
+        Activity? stoppedOperation = null;
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = static source => source.Name is CalendarTelemetry.InstrumentationName or "DotnetAgents.CalDav.Http",
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) =>
+                ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity =>
+            {
+                if (activity.OperationName == "caldav.operation")
+                    stoppedOperation = activity;
+            }
+        };
+        ActivitySource.AddActivityListener(listener);
+        using var httpSource = new ActivitySource("DotnetAgents.CalDav.Http");
+        var processor = new TelemetryActivityAllowlistProcessor();
+
+        using (var operation = CalendarTelemetry.StartOperation("calendars.list", null))
+        {
+            operation.ShouldNotBeNull();
+            operation.StartPhase(CalendarOperationPhase.Discovery);
+            using var recoveredAttempt = httpSource.StartActivity("PROPFIND recovered");
+            recoveredAttempt.ShouldNotBeNull();
+            recoveredAttempt.SetTag("http.request.method", "PROPFIND");
+            recoveredAttempt.SetTag("http.response.status_code", 207);
+            recoveredAttempt.SetTag("http.request.resend_count", 1);
+            recoveredAttempt.Stop();
+            processor.OnEnd(recoveredAttempt);
+            operation.Complete(
+                "error",
+                "upstream_unavailable",
+                "upstream",
+                mutationState: null,
+                errorPhase: "execution",
+                retryable: true);
+        }
+
+        stoppedOperation.ShouldNotBeNull();
+        processor.OnEnd(stoppedOperation);
+        stoppedOperation.GetTagItem("caldav.outcome").ShouldBe("error");
+        stoppedOperation.GetTagItem("caldav.transport.retry_count").ShouldBe(1);
+        stoppedOperation.GetTagItem("caldav.transport.recovered").ShouldBeNull();
+        stoppedOperation.Status.ShouldBe(ActivityStatusCode.Error);
     }
 
     [Fact]
@@ -207,9 +524,9 @@ public sealed class CalendarTelemetryTests
     }
 
     [Fact]
-    public void Operation_FailureRecordsOnlyExceptionType()
+    public void Operation_FailureRecordsOnlyControlledExceptionClassification()
     {
-        Activity? stoppedOperation = null;
+        var stoppedOperations = new List<Activity>();
         using var listener = new ActivityListener
         {
             ShouldListenTo = source => source.Name == CalendarTelemetry.InstrumentationName,
@@ -218,23 +535,40 @@ public sealed class CalendarTelemetryTests
             ActivityStopped = activity =>
             {
                 if (activity.OperationName == "caldav.operation")
-                    stoppedOperation = activity;
+                    stoppedOperations.Add(activity);
             }
         };
         ActivitySource.AddActivityListener(listener);
 
-        using (var operation = CalendarTelemetry.StartOperation("todos.complete", null))
+        var cases = new (Exception Exception, string ErrorType)[]
         {
+            (new TimeoutException("secret timeout"), "timeout"),
+            (new TaskCanceledException("secret cancellation"), "timeout"),
+            (new HttpRequestException(
+                HttpRequestError.ResponseEnded,
+                "secret partial body"), "response_ended"),
+            (new HttpRequestException("secret endpoint"), "connection_error"),
+            (new IOException("secret stream"), "connection_error"),
+            (new CalendarDiscoveryProtocolException("secret response"), "protocol_error"),
+            (new InvalidOperationException("secret message"), "internal_error")
+        };
+
+        foreach (var @case in cases)
+        {
+            using var operation = CalendarTelemetry.StartOperation("todos.complete", null);
             operation.ShouldNotBeNull();
             operation.StartPhase(CalendarOperationPhase.Reconcile);
-            operation.Fail(new InvalidOperationException("secret message"));
+            operation.Fail(@case.Exception);
         }
 
-        stoppedOperation.ShouldNotBeNull();
-        stoppedOperation.GetTagItem("caldav.outcome").ShouldBe("error");
-        stoppedOperation.GetTagItem("error.type").ShouldBe(typeof(InvalidOperationException).FullName);
-        stoppedOperation.Status.ShouldBe(ActivityStatusCode.Error);
-        stoppedOperation.StatusDescription.ShouldBeNull();
+        stoppedOperations.Count.ShouldBe(cases.Length);
+        foreach (var (activity, @case) in stoppedOperations.Zip(cases))
+        {
+            activity.GetTagItem("caldav.outcome").ShouldBe("error");
+            activity.GetTagItem("error.type").ShouldBe(@case.ErrorType);
+            activity.Status.ShouldBe(ActivityStatusCode.Error);
+            activity.StatusDescription.ShouldBeNull();
+        }
     }
 
     [Fact]

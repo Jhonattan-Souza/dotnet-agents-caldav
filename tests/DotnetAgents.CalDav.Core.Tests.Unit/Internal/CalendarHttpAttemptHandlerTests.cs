@@ -15,8 +15,9 @@ public sealed class CalendarHttpAttemptHandlerTests
         using var listener = Listen(stopped);
         using var parent = new Activity("test-parent").Start();
         using var request = new HttpRequestMessage(HttpMethod.Get, "https://private.example/secret.ics");
+        CalendarHttpTelemetry.MarkAbsenceProbe(request);
         using var invoker = CreateInvoker(_ => Task.FromResult(
-            new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)));
+            new HttpResponseMessage(HttpStatusCode.NotFound)));
 
         using var response = await invoker.SendAsync(request, CancellationToken.None);
 
@@ -25,8 +26,9 @@ public sealed class CalendarHttpAttemptHandlerTests
         attempt.DisplayName.ShouldBe("GET");
         attempt.GetTagItem("http.request.method").ShouldBe("GET");
         attempt.GetTagItem("http.request.resend_count").ShouldBe(0);
-        attempt.GetTagItem("http.response.status_code").ShouldBe(503);
-        attempt.GetTagItem("error.type").ShouldBe("503");
+        attempt.GetTagItem("http.response.status_code").ShouldBe(404);
+        attempt.GetTagItem("caldav.http.request_purpose").ShouldBe("absence_probe");
+        attempt.GetTagItem("error.type").ShouldBe("404");
         attempt.Status.ShouldBe(ActivityStatusCode.Error);
         attempt.Events.ShouldBeEmpty();
         attempt.TagObjects.Any(tag =>

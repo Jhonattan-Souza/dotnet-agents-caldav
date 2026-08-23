@@ -54,17 +54,38 @@ internal static class CalendarExecutionPolicy
                 CompleteTelemetry(telemetry, result);
                 return result;
             }
-            catch (OperationCanceledException)
-            {
-                telemetry?.Complete("cancelled");
-                throw;
-            }
             catch (Exception exception)
             {
-                telemetry?.Fail(exception);
+                CompleteExceptionTelemetry(telemetry, exception, mutation, cancellationToken);
                 throw;
             }
         };
+
+    private static void CompleteExceptionTelemetry(
+        CalendarTelemetryOperation? telemetry,
+        Exception exception,
+        bool mutation,
+        CancellationToken callerCancellationToken)
+    {
+        if (exception is InputRequiredException)
+        {
+            telemetry?.Complete(
+                "input_required",
+                mutationState: mutation ? "not_attempted" : null);
+        }
+        else if (exception is OperationCanceledException && callerCancellationToken.IsCancellationRequested)
+        {
+            telemetry?.Complete("cancelled");
+        }
+        else if (exception is OperationCanceledException)
+        {
+            telemetry?.Fail(new TimeoutException());
+        }
+        else
+        {
+            telemetry?.Fail(exception);
+        }
+    }
 
     private static async ValueTask<CallToolResult> ExecuteWithinBudgetAsync(
         TimeProvider timeProvider,
@@ -137,17 +158,21 @@ internal static class CalendarExecutionPolicy
             return;
 
         var structured = result.StructuredContent;
-        var errorCode = SafeDimension(structured, "code");
-        var errorCategory = SafeDimension(structured, "category");
+        var errorCode = CalendarTelemetryVocabulary.ErrorCode(StringProperty(structured, "code"));
+        var errorCategory = CalendarTelemetryVocabulary.ErrorCategory(StringProperty(structured, "category"));
+        var errorPhase = CalendarTelemetryVocabulary.ErrorPhase(StringProperty(structured, "phase"));
+        var retryable = SafeBoolean(structured, "retryable");
         var mutationState = SafeMutationState(structured);
         telemetry.Complete(
             result.IsError == true ? "error" : "success",
             errorCode,
             errorCategory,
-            mutationState);
+            mutationState,
+            errorPhase,
+            retryable);
     }
 
-    private static string? SafeDimension(JsonElement? structured, string propertyName)
+    private static string? StringProperty(JsonElement? structured, string propertyName)
     {
         if (structured is not { ValueKind: JsonValueKind.Object } value
             || !value.TryGetProperty(propertyName, out var property)
@@ -156,15 +181,11 @@ internal static class CalendarExecutionPolicy
             return null;
         }
 
-        var candidate = property.GetString();
-        return candidate is { Length: > 0 and <= 64 }
-            && candidate.All(character => char.IsAsciiLetterOrDigit(character) || character == '_')
-                ? candidate
-                : null;
+        return property.GetString();
     }
 
     private static string? SafeMutationState(JsonElement? structured) =>
-        SafeDimension(structured, "mutationState") switch
+        StringProperty(structured, "mutationState") switch
         {
             "not_attempted" => "not_attempted",
             "not_committed" => "not_committed",
@@ -172,6 +193,22 @@ internal static class CalendarExecutionPolicy
             "unknown" => "unknown",
             _ => null
         };
+
+    private static bool? SafeBoolean(JsonElement? structured, string propertyName)
+    {
+        if (structured is not { ValueKind: JsonValueKind.Object } value
+            || !value.TryGetProperty(propertyName, out var property))
+        {
+            return null;
+        }
+
+        return property.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            _ => null
+        };
+    }
 
     internal static async Task ReportProgressAsync(
         TimeProvider timeProvider,

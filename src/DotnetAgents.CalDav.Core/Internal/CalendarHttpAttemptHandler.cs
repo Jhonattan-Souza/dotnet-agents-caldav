@@ -15,8 +15,8 @@ internal sealed class CalendarHttpAttemptHandler : DelegatingHandler
             sequence = new CalendarHttpTelemetry.AttemptSequence();
             request.Options.Set(CalendarHttpTelemetry.AttemptSequenceKey, sequence);
         }
-
         var resendCount = sequence.NextResendCount();
+        request.Options.Set(CalendarHttpTelemetry.ResendCountKey, resendCount);
         using var activity = StartAttempt(request, resendCount);
         try
         {
@@ -37,6 +37,11 @@ internal sealed class CalendarHttpAttemptHandler : DelegatingHandler
         var activity = CalendarHttpTelemetry.ActivitySource.StartActivity(method, ActivityKind.Client);
         activity?.SetTag("http.request.method", method);
         activity?.SetTag("http.request.resend_count", resendCount);
+        if (request.Options.TryGetValue(CalendarHttpTelemetry.RequestPurposeKey, out var purpose)
+            && purpose == CalendarHttpTelemetry.AbsenceProbe)
+        {
+            activity?.SetTag("caldav.http.request_purpose", CalendarHttpTelemetry.AbsenceProbe);
+        }
         return activity;
     }
 
@@ -46,7 +51,6 @@ internal sealed class CalendarHttpAttemptHandler : DelegatingHandler
         activity?.SetTag("http.response.status_code", numericStatus);
         if (numericStatus < 400)
             return;
-
         activity?.SetTag("error.type", numericStatus.ToString(CultureInfo.InvariantCulture));
         activity?.SetStatus(ActivityStatusCode.Error);
     }
