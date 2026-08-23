@@ -19,6 +19,7 @@ internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activi
         "gen_ai.operation.name",
         "gen_ai.tool.name",
         "http.request.method",
+        "http.request.resend_count",
         "http.response.status_code",
         "mcp.method.name",
         "mcp.protocol.version",
@@ -72,7 +73,7 @@ internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activi
         data.SetStatus(data.Status);
         if (data.Source.Name == OpenTelemetryHostConfiguration.McpInstrumentationName)
             SanitizeMcpActivity(data);
-        else if (data.Source.Name == "System.Net.Http")
+        else if (data.Source.Name == OpenTelemetryHostConfiguration.HttpInstrumentationName)
             SanitizeHttpActivity(data);
         else if (data.Source.Name == OpenTelemetryHostConfiguration.InstrumentationName)
             data.DisplayName = data.OperationName;

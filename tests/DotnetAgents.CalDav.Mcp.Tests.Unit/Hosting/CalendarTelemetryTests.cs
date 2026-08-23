@@ -150,12 +150,13 @@ public sealed class CalendarTelemetryTests
         string method,
         string expectedDisplayName)
     {
-        using var listener = ListenTo("System.Net.Http");
-        using var source = new ActivitySource("System.Net.Http");
+        using var listener = ListenTo(OpenTelemetryHostConfiguration.HttpInstrumentationName);
+        using var source = new ActivitySource(OpenTelemetryHostConfiguration.HttpInstrumentationName);
         using var activity = source.StartActivity("GET https://calendar.example/private.ics");
         activity.ShouldNotBeNull();
         activity.SetTag("http.request.method", "_OTHER");
         activity.SetTag("http.request.method_original", method);
+        activity.SetTag("http.request.resend_count", 1);
         activity.SetTag("http.response.status_code", 207);
         activity.SetTag("url.full", "https://calendar.example/private.ics?token=secret");
         activity.Stop();
@@ -165,6 +166,7 @@ public sealed class CalendarTelemetryTests
         activity.DisplayName.ShouldBe(expectedDisplayName);
         activity.GetTagItem("http.request.method").ShouldBe(expectedDisplayName);
         activity.GetTagItem("http.response.status_code").ShouldBe(207);
+        activity.GetTagItem("http.request.resend_count").ShouldBe(1);
         activity.GetTagItem("http.request.method_original").ShouldBeNull();
         activity.GetTagItem("url.full").ShouldBeNull();
     }

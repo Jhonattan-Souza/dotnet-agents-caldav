@@ -56,7 +56,8 @@ public static class CalDavServiceCollectionExtensions
         // Standard resilience handler adds retry with exponential backoff (handles HttpRequestException
         // including HttpIOException/ResponseEnded from transient connection drops), circuit breaker,
         // attempt timeout, and total request timeout — all configured via Polly v8 resilience pipeline.
-        services.AddHttpClient<CalDavClient>((serviceProvider, client) =>
+        services.AddTransient<CalendarHttpAttemptHandler>();
+        var calendarClientBuilder = services.AddHttpClient<CalDavClient>((serviceProvider, client) =>
         {
             var options = serviceProvider.GetRequiredService<IOptions<CalDavOptions>>().Value;
             client.BaseAddress = new Uri(options.BaseUrl.TrimEnd('/') + "/");
@@ -74,8 +75,8 @@ public static class CalDavServiceCollectionExtensions
             AutomaticDecompression = DecompressionMethods.All,
             PooledConnectionLifetime = TimeSpan.FromMinutes(2),
             PooledConnectionIdleTimeout = TimeSpan.FromSeconds(20)
-        })
-        .AddStandardResilienceHandler(options =>
+        });
+        calendarClientBuilder.AddStandardResilienceHandler(options =>
         {
             // Three total attempts are available only to idempotent reads. A conditional write can
             // still have an ambiguous transport outcome and must be reconciled before another dispatch.
@@ -94,6 +95,7 @@ public static class CalDavServiceCollectionExtensions
             options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(30);
             options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(30);
         });
+        calendarClientBuilder.AddHttpMessageHandler<CalendarHttpAttemptHandler>();
 
         services.AddTransient<ICalendarClient>(serviceProvider => serviceProvider.GetRequiredService<CalDavClient>());
         services.AddSingleton<TimeProvider>(TimeProvider.System);
