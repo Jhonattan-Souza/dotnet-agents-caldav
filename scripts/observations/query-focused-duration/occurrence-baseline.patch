@@ -1,10 +1,7 @@
 diff --git a/tests/DotnetAgents.CalDav.Mcp.Tests.Unit/CalendarOccurrenceToolsTests.cs b/tests/DotnetAgents.CalDav.Mcp.Tests.Unit/CalendarOccurrenceToolsTests.cs
 --- a/tests/DotnetAgents.CalDav.Mcp.Tests.Unit/CalendarOccurrenceToolsTests.cs
 +++ b/tests/DotnetAgents.CalDav.Mcp.Tests.Unit/CalendarOccurrenceToolsTests.cs
-@@ -16,6 +16,50 @@ public sealed class CalendarOccurrenceToolsTests
-     private static readonly CalendarEntityUtcArgument From = new("utcDateTime", "2026-08-15T12:00:00Z");
-     private static readonly CalendarEntityUtcArgument To = new("utcDateTime", "2026-08-16T12:00:00Z");
- 
+@@ -22,3 +22,47 @@ public sealed class CalendarOccurrenceToolsTests
 +    [Theory]
 +    [InlineData(1)]
 +    [InlineData(50)]
