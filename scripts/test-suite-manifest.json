@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "artifacts": [
+    {
+      "name": "main-core",
+      "project": "tests/DotnetAgents.CalDav.Core.Tests.Unit/DotnetAgents.CalDav.Core.Tests.Unit.csproj",
+      "trx": "main-core.trx",
+      "exactTests": 2307,
+      "coveragePrefix": "main-core",
+      "phase": "main",
+      "environment": {}
+    },
+    {
+      "name": "main-mcp",
+      "project": "tests/DotnetAgents.CalDav.Mcp.Tests.Unit/DotnetAgents.CalDav.Mcp.Tests.Unit.csproj",
+      "trx": "main-mcp.trx",
+      "exactTests": 978,
+      "coveragePrefix": "main-mcp",
+      "phase": "main",
+      "environment": {}
+    },
+    {
+      "name": "main-integration",
+      "project": "tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj",
+      "trx": "main-integration.trx",
+      "exactTests": 109,
+      "coveragePrefix": "main-integration",
+      "phase": "main",
+      "environment": {
+        "RADICALE_CONFORMANCE_VARIANT": "baseline"
+      },
+      "requiredResult": {
+        "className": "DotnetAgents.CalDav.IntegrationTests.RadicaleConformanceHarnessTests",
+        "exactPassed": 11
+      }
+    },
+    {
+      "name": "strict-preconditions",
+      "project": "tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj",
+      "trx": "strict-preconditions.trx",
+      "exactTests": 11,
+      "phase": "complete",
+      "filterClass": "*RadicaleConformanceHarnessTests",
+      "environment": {
+        "RADICALE_CONFORMANCE_VARIANT": "strict-preconditions"
+      }
+    },
+    {
+      "name": "alternate-time-zone",
+      "project": "tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj",
+      "trx": "alternate-time-zone.trx",
+      "exactTests": 11,
+      "phase": "complete",
+      "filterClass": "*RadicaleConformanceHarnessTests",
+      "environment": {
+        "RADICALE_CONFORMANCE_VARIANT": "alternate-time-zone"
+      }
+    }
+  ]
+}

@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json.Nodes;
 using DotnetAgents.CalDav.Core.Models;
 using DotnetAgents.CalDav.Mcp.Hosting;
@@ -9,15 +11,95 @@ namespace DotnetAgents.CalDav.Mcp.Tests.Unit;
 public sealed class ContractCatalogTests
 {
     [Fact]
-    public void Requirement_catalog_explicitly_supersedes_the_old_temporal_rule()
+    public void Requirement_catalog_is_the_exact_closed_active_set_with_complete_passing_evidence()
     {
-        var evidence = File.ReadAllText(Path.Combine(RepositoryRoot(), "docs", "requirement-to-evidence.md"));
+        var rows = RequirementEvidenceRows();
+        var expected = new HashSet<string>(StringComparer.Ordinal);
+        AddRange(expected, "DISC", 7, 13);
+        AddRange(expected, "OBS", 1, 11);
+        AddRange(expected, "QUERY", 1, 26);
+        AddRange(expected, "DAV", 5, 13);
+        AddRange(expected, "TIME", 5, 12);
+        AddRange(expected, "RESOURCE", 14, 27);
+        AddRange(expected, "EVIDENCE", 11, 16);
+        expected.Add("CAL-ERROR-004");
 
-        evidence.ShouldContain("`CAL-TIME-002` (superseded)");
-        evidence.ShouldContain("ADR 0005 and the configured Temporal Evaluation Context replace");
-        evidence.ShouldContain("explicitly supersede `CAL-TIME-002`");
-        evidence.ShouldNotContain("later Occurrence and To-do", Case.Insensitive);
-        evidence.ShouldNotContain("To-do module cutover", Case.Insensitive);
+        rows.Count.ShouldBe(82);
+        rows.Select(row => row.Requirement).Distinct(StringComparer.Ordinal).Count().ShouldBe(rows.Count);
+        rows.Select(row => row.Requirement).ToHashSet(StringComparer.Ordinal).SetEquals(expected).ShouldBeTrue();
+        rows.ShouldAllBe(row => row.Cells.All(cell => !string.IsNullOrWhiteSpace(cell)));
+        rows.ShouldAllBe(row => row.Status == "Passing");
+        var normativePayload = string.Concat(rows.OrderBy(row => row.Requirement, StringComparer.Ordinal)
+            .Select(row => $"{row.Requirement}\t{row.NormativeStatement}\n"));
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(normativePayload))).ToLowerInvariant()
+            .ShouldBe("d95244f9640936cbef348fea8ec844f0bda4e02308d32288e6bb868bcbbd8ad0");
+        rows.Single(row => row.Requirement == "CAL-QUERY-001").NormativeStatement
+            .ShouldContain("closed Start or Continue request");
+        var directGetActivation = rows.Single(row => row.Requirement == "CAL-DAV-005").NormativeStatement;
+        directGetActivation.ShouldContain("HTTP 405");
+        directGetActivation.ShouldContain("HTTP 501");
+        rows.Single(row => row.Requirement == "CAL-QUERY-022").NormativeStatement
+            .ShouldContain("dated non-recurring To-do remains an Entity");
+        rows.Single(row => row.Requirement == "CAL-RESOURCE-027").NormativeStatement
+            .ShouldContain("non-public reviewed plan");
+    }
+
+    [Fact]
+    public void Requirement_catalog_records_only_the_five_accepted_supersessions()
+    {
+        var supersessions = RequirementEvidenceRows()
+            .Where(row => row.Supersedes != "None")
+            .ToDictionary(row => row.Requirement, row => row.Supersedes, StringComparer.Ordinal);
+
+        supersessions.ShouldBe(new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["CAL-QUERY-001"] = "CAL-MCP-007 pagination orchestration",
+            ["CAL-QUERY-015"] = "query-result admission portion of CAL-BOUND-008",
+            ["CAL-QUERY-022"] = "prior synthetic-Occurrence treatment of dated non-recurring To-dos",
+            ["CAL-DAV-005"] = "narrowed CAL-DAV-001 fallback behavior",
+            ["CAL-TIME-005"] = "CAL-TIME-002"
+        }, ignoreOrder: true);
+    }
+
+    [Fact]
+    public void Configuration_metadata_union_and_architecture_records_remain_intentional_and_unreleased()
+    {
+        var root = RepositoryRoot();
+        var catalog = ReadJson("mcp-tool-catalog.json");
+        var server = JsonNode.Parse(File.ReadAllText(
+            Path.Combine(root, "src", "DotnetAgents.CalDav.Mcp", ".mcp", "server.json")))!.AsObject();
+        var readme = File.ReadAllText(Path.Combine(root, "README.md"));
+        var readmeNames = readme.Split('\n')
+            .Where(line => line.StartsWith("| `", StringComparison.Ordinal))
+            .Select(line => line.Split('`')[1])
+            .Where(name => name.All(character => character is >= 'A' and <= 'Z' or >= '0' and <= '9' or '_'))
+            .ToArray();
+        var catalogNames = catalog["environment"]!.AsArray()
+            .Select(item => item!["name"]!.GetValue<string>()).ToArray();
+        var serverNames = server["packages"]![0]!["environmentVariables"]!.AsArray()
+            .Select(item => item!["name"]!.GetValue<string>()).ToArray();
+
+        serverNames.ShouldBe(readmeNames);
+        serverNames.Except(catalogNames, StringComparer.Ordinal).ShouldBe([
+            "OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_PROTOCOL", "OTEL_EXPORTER_OTLP_HEADERS",
+            "OTEL_SERVICE_NAME", "OTEL_SDK_DISABLED"]);
+        catalogNames.ShouldContain("CALDAV_EVALUATION_TIME_ZONE");
+        catalogNames.ShouldContain("CALDAV_EXPOSE_EXACT_TOOLS");
+        server["version"]!.GetValue<string>().ShouldBe("0.0.0");
+        server["packages"]![0]!["version"]!.GetValue<string>().ShouldBe("0.0.0");
+        server["_meta"]!["io.modelcontextprotocol.registry/publisher-provided"]!["version"]!
+            .GetValue<string>().ShouldBe("0.0.0");
+        foreach (var adr in new[] { "0004-deep-query-result-snapshot-module.md",
+                     "0005-configured-temporal-evaluation-context.md",
+                     "0006-server-authoritative-semantic-move.md" })
+        {
+            File.Exists(Path.Combine(root, "docs", "adr", adr)).ShouldBeTrue();
+        }
+        var evidence = File.ReadAllText(Path.Combine(root, "docs", "requirement-to-evidence.md"));
+        evidence.ShouldContain("ADR 0004");
+        evidence.ShouldContain("ADR 0005");
+        evidence.ShouldContain("ADR 0006");
+        File.ReadAllText(Path.Combine(root, "CHANGELOG.md")).ShouldContain("## [Unreleased]");
     }
 
     [Fact]
@@ -462,6 +544,40 @@ public sealed class ContractCatalogTests
     }
 
     private const string RadicaleConformanceIndexDigest = "sha256:3a0080ea51ac69dcd74e345b9587dc14a8c8af0652046069005749f9a75c5c80";
+
+    private static IReadOnlyList<RequirementEvidenceRow> RequirementEvidenceRows()
+    {
+        const string header = "| Requirement | Normative statement | Owning decision | Applicable report finding | Supersedes | Evidence layer | Scenario or fixture | Objective oracle | Status |";
+        var lines = File.ReadAllLines(Path.Combine(RepositoryRoot(), "docs", "requirement-to-evidence.md"));
+        var headerIndexes = lines.Select((line, index) => (line, index))
+            .Where(item => item.line == header).Select(item => item.index).ToArray();
+        headerIndexes.ShouldHaveSingleItem();
+        var headerIndex = headerIndexes[0];
+        lines[headerIndex + 1].ShouldBe("| --- | --- | --- | --- | --- | --- | --- | --- | --- |");
+        var dataLines = lines.Skip(headerIndex + 2).Where(line => line.StartsWith("| ", StringComparison.Ordinal))
+            .ToArray();
+        return dataLines.Select(line =>
+        {
+            var cells = line.Trim().Trim('|').Split('|', StringSplitOptions.None)
+                .Select(cell => cell.Trim()).ToArray();
+            cells.Length.ShouldBe(9, line);
+            return new RequirementEvidenceRow(cells);
+        }).ToArray();
+    }
+
+    private static void AddRange(ISet<string> requirements, string area, int first, int last)
+    {
+        for (var number = first; number <= last; number++)
+            requirements.Add($"CAL-{area}-{number:000}");
+    }
+
+    private sealed record RequirementEvidenceRow(string[] Cells)
+    {
+        internal string Requirement => Cells[0].Trim('`');
+        internal string NormativeStatement => Cells[1];
+        internal string Supersedes => Cells[4];
+        internal string Status => Cells[8];
+    }
 
     private static JsonObject ReadJson(string fileName) => JsonNode.Parse(File.ReadAllText(
         fileName == "mcp-tool-catalog.json"

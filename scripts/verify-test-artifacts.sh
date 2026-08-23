@@ -5,34 +5,29 @@ if [[ $# -ne 2 ]]; then
   echo "Usage: $0 <artifact-directory> <main|complete>" >&2
   exit 64
 fi
-
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "python3 is required to validate TRX evidence." >&2
-  exit 69
-fi
-
+command -v python3 >/dev/null 2>&1 || { echo "python3 is required to validate TRX evidence." >&2; exit 69; }
 artifact_directory=$1
 phase=$2
-if [[ ! -d "$artifact_directory" ]]; then
-  echo "Artifact directory does not exist: $artifact_directory" >&2
-  exit 65
-fi
-if [[ "$phase" != main && "$phase" != complete ]]; then
-  echo "Unknown artifact phase: $phase" >&2
-  exit 64
-fi
-
+[[ -d "$artifact_directory" ]] || { echo "Artifact directory does not exist: $artifact_directory" >&2; exit 65; }
+[[ "$phase" == main || "$phase" == complete ]] || { echo "Unknown artifact phase: $phase" >&2; exit 64; }
 artifact_directory=$(realpath -- "$artifact_directory")
-if [[ "$artifact_directory" == *';'* || "$artifact_directory" == *$'\n'* ]]; then
-  echo "Artifact directory cannot contain semicolons or newlines." >&2
-  exit 65
-fi
+[[ "$artifact_directory" != *';'* && "$artifact_directory" != *$'\n'* ]] || {
+  echo "Artifact directory cannot contain semicolons or newlines." >&2; exit 65;
+}
+script_directory=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+manifest="$script_directory/test-suite-manifest.json"
+python3 "$script_directory/validate-test-suite-manifest.py" "$manifest"
 
-coverage_prefixes=(main-core main-mcp main-integration)
+mapfile -t coverage_prefixes < <(python3 - "$manifest" <<'PY'
+import json, sys
+for artifact in json.load(open(sys.argv[1], encoding="utf-8"))["artifacts"]:
+    if artifact.get("coveragePrefix"):
+        print(artifact["coveragePrefix"])
+PY
+)
 coverage_formats=(cobertura opencover)
 cobertura_reports=()
 expected_coverage_count=0
-
 shopt -s nullglob
 for prefix in "${coverage_prefixes[@]}"; do
   for format in "${coverage_formats[@]}"; do
@@ -42,135 +37,105 @@ for prefix in "${coverage_prefixes[@]}"; do
       exit 66
     fi
     ((expected_coverage_count += 1))
-    if [[ "$format" == cobertura ]]; then
-      cobertura_reports+=("${matches[0]}")
-    fi
+    [[ "$format" != cobertura ]] || cobertura_reports+=("${matches[0]}")
   done
 done
-
 root_xml_reports=("$artifact_directory"/*.xml)
-if [[ ${#root_xml_reports[@]} -ne $expected_coverage_count ]]; then
-  echo "Expected exactly $expected_coverage_count root coverage XML files, found ${#root_xml_reports[@]}." >&2
-  exit 66
-fi
+[[ ${#root_xml_reports[@]} -eq $expected_coverage_count ]] || {
+  echo "Expected exactly $expected_coverage_count root coverage XML files, found ${#root_xml_reports[@]}." >&2; exit 66;
+}
 
-expected_trx=(main-core.trx main-mcp.trx main-integration.trx)
-if [[ "$phase" == complete ]]; then
-  expected_trx+=(strict-preconditions.trx alternate-time-zone.trx)
-fi
-for filename in "${expected_trx[@]}"; do
-  if [[ ! -f "$artifact_directory/$filename" ]]; then
-    echo "Missing expected TRX result: $filename" >&2
-    exit 67
-  fi
-done
-
-root_trx=("$artifact_directory"/*.trx)
-if [[ ${#root_trx[@]} -ne ${#expected_trx[@]} ]]; then
-  echo "Expected exactly ${#expected_trx[@]} root TRX files, found ${#root_trx[@]}." >&2
-  exit 67
-fi
-
-declare -A expected_test_counts=(
-  [main-core.trx]=2279
-  [main-mcp.trx]=964
-  [main-integration.trx]=109
-  [strict-preconditions.trx]=11
-  [alternate-time-zone.trx]=11
-)
-declare -A count_policies=(
-  [main-core.trx]=minimum
-  [main-mcp.trx]=minimum
-  [main-integration.trx]=minimum
-  [strict-preconditions.trx]=exact
-  [alternate-time-zone.trx]=exact
-)
-
-validation_arguments=()
-for filename in "${expected_trx[@]}"; do
-  validation_arguments+=(
-    "$artifact_directory/$filename"
-    "${count_policies[$filename]}"
-    "${expected_test_counts[$filename]}"
-  )
-done
-
-python3 - "${validation_arguments[@]}" <<'PY'
+python3 - "$manifest" "$artifact_directory" "$phase" <<'PY'
+import json
+import pathlib
 import sys
 import xml.etree.ElementTree as ET
 
-unsuccessful_counters = (
-    "failed",
-    "error",
-    "timeout",
-    "aborted",
-    "inconclusive",
-    "passedButRunAborted",
-    "notRunnable",
-    "notExecuted",
-    "disconnected",
-    "warning",
-    "inProgress",
-    "pending",
-)
+manifest_path, artifact_text, phase = sys.argv[1:]
+artifact_directory = pathlib.Path(artifact_text)
+manifest = json.load(open(manifest_path, encoding="utf-8"))
+items = manifest.get("artifacts", [])
+if manifest.get("schemaVersion") != 1 or len(items) != 5:
+    raise SystemExit("Test-suite manifest must contain exactly five schema-v1 artifacts.")
+names = [item.get("name") for item in items]
+trx_names = [item.get("trx") for item in items]
+if len(set(names)) != 5 or len(set(trx_names)) != 5:
+    raise SystemExit("Test-suite manifest names and TRX paths must be unique.")
+if any(pathlib.PurePath(name).name != name or not name.endswith(".trx") for name in trx_names):
+    raise SystemExit("Test-suite manifest TRX paths must be safe basenames.")
+if sum(item.get("phase") == "main" for item in items) != 3 or sum(item.get("phase") == "complete" for item in items) != 2:
+    raise SystemExit("Test-suite manifest must contain three main and two complete artifacts.")
+if any(not isinstance(item.get("exactTests"), int) or item["exactTests"] < 1 for item in items):
+    raise SystemExit("Test-suite manifest exact counts must be positive integers.")
+selected = [item for item in items if item["phase"] == "main" or phase == "complete"]
+expected_names = {item["trx"] for item in selected}
+actual_names = {path.name for path in artifact_directory.glob("*.trx")}
+if actual_names != expected_names:
+    raise SystemExit(f"TRX manifest mismatch: expected {sorted(expected_names)}, found {sorted(actual_names)}")
 
-
-def local_name(element):
+unsuccessful = ("failed", "error", "timeout", "aborted", "inconclusive", "passedButRunAborted",
+                "notRunnable", "notExecuted", "disconnected", "warning", "inProgress", "pending")
+def local(element):
     return element.tag.rsplit("}", 1)[-1]
 
-
-arguments = sys.argv[1:]
-if len(arguments) % 3 != 0:
-    raise SystemExit("Internal error: malformed TRX validation arguments")
-
-for index in range(0, len(arguments), 3):
-    path, count_policy, expected_count_text = arguments[index : index + 3]
-    expected_count = int(expected_count_text)
+for item in selected:
+    path = artifact_directory / item["trx"]
     try:
         root = ET.parse(path).getroot()
     except (ET.ParseError, OSError) as error:
         raise SystemExit(f"Incomplete or malformed TRX evidence in {path}: {error}") from error
-
-    if local_name(root) != "TestRun":
+    if local(root) != "TestRun":
         raise SystemExit(f"TRX evidence has an unexpected root element: {path}")
-
-    summaries = [element for element in root.iter() if local_name(element) == "ResultSummary"]
+    summaries = [element for element in root.iter() if local(element) == "ResultSummary"]
     if len(summaries) != 1 or summaries[0].get("outcome") != "Completed":
         raise SystemExit(f"TRX evidence has no completed ResultSummary: {path}")
-
-    counters = [element for element in summaries[0] if local_name(element) == "Counters"]
+    counters = [element for element in summaries[0] if local(element) == "Counters"]
     if len(counters) != 1:
         raise SystemExit(f"TRX evidence has no final Counters element: {path}")
-
     values = counters[0].attrib
-    if any(int(values.get(name, "0")) != 0 for name in unsuccessful_counters):
-        raise SystemExit(f"TRX evidence contains unsuccessful tests: {path}")
-
-    total = int(values.get("total", "-1"))
-    executed = int(values.get("executed", "-1"))
-    passed = int(values.get("passed", "-1"))
-    if total < 1 or total != executed or total != passed:
-        raise SystemExit(f"TRX evidence is incomplete: {path}")
-    if count_policy == "minimum" and total < expected_count:
-        raise SystemExit(
-            f"TRX evidence contains {total} tests, expected at least {expected_count}: {path}"
-        )
-    if count_policy == "exact" and total != expected_count:
-        raise SystemExit(
-            f"TRX evidence contains {total} tests, expected exactly {expected_count}: {path}"
-        )
+    if any(int(values.get(name, "0")) != 0 for name in unsuccessful):
+        raise SystemExit(f"TRX evidence contains unsuccessful counters: {path}")
+    expected = item["exactTests"]
+    if any(int(values.get(name, "-1")) != expected for name in ("total", "executed", "passed")):
+        raise SystemExit(f"TRX evidence does not contain exactly {expected} completed passes: {path}")
+    results = [element for element in root.iter() if local(element) == "UnitTestResult"]
+    if len(results) != expected:
+        raise SystemExit(f"TRX evidence contains {len(results)} result records, expected {expected}: {path}")
+    if any(result.get("outcome") != "Passed" for result in results):
+        raise SystemExit(f"TRX evidence contains a non-passing result record: {path}")
+    execution_ids = [result.get("executionId") for result in results]
+    if None in execution_ids or len(set(execution_ids)) != expected:
+        raise SystemExit(f"TRX evidence contains missing or duplicate execution IDs: {path}")
+    result_identities = [(result.get("testId"), result.get("testName")) for result in results]
+    if any(None in identity for identity in result_identities) or len(set(result_identities)) != expected:
+        raise SystemExit(f"TRX evidence contains missing or duplicate result identities: {path}")
+    entries = [element for element in root.iter() if local(element) == "TestEntry"]
+    entry_execution_ids = [entry.get("executionId") for entry in entries]
+    if len(entries) != expected or None in entry_execution_ids or set(entry_execution_ids) != set(execution_ids):
+        raise SystemExit(f"TRX evidence TestEntry rows do not match executed results: {path}")
+    required = item.get("requiredResult")
+    class_by_test = {}
+    definitions = [element for element in root.iter() if local(element) == "UnitTest"]
+    definition_ids = [definition.get("id") for definition in definitions]
+    if None in definition_ids or len(set(definition_ids)) != len(definition_ids):
+        raise SystemExit(f"TRX evidence contains missing or duplicate test definition IDs: {path}")
+    for definition in definitions:
+        methods = [child for child in definition.iter() if local(child) == "TestMethod"]
+        if len(methods) != 1:
+            raise SystemExit(f"TRX evidence contains a malformed test definition: {path}")
+        class_by_test[definition.get("id")] = methods[0].get("className")
+    result_test_ids = [result.get("testId") for result in results]
+    if None in result_test_ids or any(test_id not in class_by_test for test_id in result_test_ids):
+        raise SystemExit(f"TRX evidence contains an unknown result test ID: {path}")
+    if set(result_test_ids) != set(definition_ids):
+        raise SystemExit(f"TRX evidence test definitions and result IDs do not match: {path}")
+    if required:
+        matching = [result for result in results if class_by_test.get(result.get("testId")) == required["className"]]
+        if len(matching) != required["exactPassed"]:
+            raise SystemExit(f"TRX evidence contains {len(matching)} passing {required['className']} results, expected {required['exactPassed']}: {path}")
 PY
 
 if [[ "$phase" == complete ]]; then
-  script_directory=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-  repository_root=$(cd -- "$script_directory/.." && pwd)
-  mapfile -d '' test_sources < <(find "$repository_root/tests" -type f -name '*.cs' -print0)
-  if grep -En \
-    '(^|\[)(Fact|Theory)\([^)]*Skip[[:space:]]*=|(^|\[)(Fact|Theory)\([^)]*Explicit[[:space:]]*=[[:space:]]*true|Quarantined|Flaky' \
-    "${test_sources[@]}" >&2; then
-    echo "Skipped, explicit, quarantined, or flaky test evidence is forbidden." >&2
-    exit 68
-  fi
+  python3 "$script_directory/verify-test-source-policy.py" "$script_directory/../tests"
 fi
-
 printf '%s;%s;%s\n' "${cobertura_reports[@]}"
