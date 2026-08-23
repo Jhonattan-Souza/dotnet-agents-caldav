@@ -330,13 +330,24 @@ public sealed class CalendarEntityToolsTests
     public async Task QueryRawAsync_PropagatesCallerCancellationToTheModule()
     {
         var module = Substitute.For<ICalendarQueryModule>();
+        var moduleEntered = new TaskCompletionSource<CancellationToken>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseModule = new TaskCompletionSource<QueryReply<CalendarEntityQueryItem>>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
         module.QueryEntitiesAsync(Arg.Any<CalendarEntityQueryRequest>(), Arg.Any<CancellationToken>())
-            .Returns(call => WaitForCancellation(call.ArgAt<CancellationToken>(1)));
+            .Returns(call =>
+            {
+                var token = call.ArgAt<CancellationToken>(1);
+                moduleEntered.TrySetResult(token);
+                return releaseModule.Task.WaitAsync(token);
+            });
         using var cancellation = new CancellationTokenSource();
         var pending = new CalendarEntityTools(module).QueryRawAsync(
             Arguments(("cursor", "opaque")),
             cancellation.Token);
 
+        var observedToken = await moduleEntered.Task.WaitAsync(TestContext.Current.CancellationToken);
+        observedToken.ShouldBe(cancellation.Token);
         cancellation.Cancel();
 
         await Should.ThrowAsync<OperationCanceledException>(() => pending);
@@ -482,10 +493,4 @@ public sealed class CalendarEntityToolsTests
         return arguments;
     }
 
-    private static async Task<QueryReply<CalendarEntityQueryItem>> WaitForCancellation(
-        CancellationToken cancellationToken)
-    {
-        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
-        return PageReply();
-    }
 }
