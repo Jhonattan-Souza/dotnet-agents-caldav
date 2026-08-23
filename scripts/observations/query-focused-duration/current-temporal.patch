@@ -17,10 +17,7 @@ diff --git a/tests/DotnetAgents.CalDav.Core.Tests.Unit/Services/CalendarQueryMod
          var transportConstructionCount = 0;
          await using var provider = CreateProvider(
              transport,
-@@ -45,9 +45,13 @@ public sealed class CalendarQueryModuleTests
-                 Now.AddDays(1))),
-             CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Failure>();
- 
+@@ -48,6 +48,10 @@ public sealed class CalendarQueryModuleTests
          failure.Error.Code.ShouldBe(QueryFailureCode.InvalidInput);
          transportConstructionCount.ShouldBe(0);
          transport.DiscoveryCount.ShouldBe(0);
