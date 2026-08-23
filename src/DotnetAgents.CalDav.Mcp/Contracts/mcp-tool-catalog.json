@@ -8679,8 +8679,19 @@
         },
         "dimension": {
           "enum": [
-            "elapsed_time"
+            "elapsed_time",
+            "resource_count",
+            "attempt_count",
+            "byte_count"
           ]
+        },
+        "observed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 0
         }
       }
     },
