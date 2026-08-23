@@ -1517,6 +1517,33 @@ public sealed class CalendarQueryModuleTests
     }
 
     [Fact]
+    public async Task DuplicatePeriodIdentityDoesNotInflateTheEntityRecurrenceBudget()
+    {
+        const string calendarHref = "https://cal.example/calendars/work/";
+        const string resourceHref = calendarHref + "deduplicated.ics";
+        var content = Ics(
+            "BEGIN:VEVENT\r\nUID:deduplicated\r\nDTSTAMP:20260823T120000Z\r\n"
+            + "DTSTART:20260823T120000Z\r\nRRULE:FREQ=SECONDLY;COUNT=2000\r\n"
+            + "RDATE;VALUE=PERIOD:20260823T120000Z/PT1H\r\nEND:VEVENT\r\n");
+        var transport = new ScriptedCalendarQueryTransport(
+            [Calendar(calendarHref)],
+            static () => [resourceHref],
+            reads: _ => [CalendarResourceRead.Success(resourceHref, "\"r1\"", content)]);
+        await using var provider = CreateProvider(transport, new MutableTimeProvider(Now));
+
+        var page = (await provider.GetRequiredService<ICalendarQueryModule>().QueryEntitiesAsync(
+            new CalendarEntityQueryRequest.Start(new CalendarEntityQuery(
+                CalendarEntityScope.All,
+                [CalendarEntityKind.Event],
+                Now,
+                Now.AddHours(1))),
+            CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Page>();
+
+        page.Value.Items.ShouldHaveSingleItem();
+        Href(page).ShouldBe(resourceHref);
+    }
+
+    [Fact]
     public async Task TotalRecurrenceWorkLimitAccumulatesAcrossResourcesWithoutPartialPage()
     {
         const string calendarHref = "https://cal.example/calendars/work/";
@@ -1583,6 +1610,45 @@ public sealed class CalendarQueryModuleTests
             reply.ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Page>().Value.Items.Count.ShouldBe(expectedItems);
     }
 
+    [Theory]
+    [InlineData(
+        "RDATE;TZID=Private/Unknown;VALUE=PERIOD:20260824T120000/20260824T130000\r\n",
+        QueryFailureCode.TemporalUnresolved)]
+    [InlineData(
+        "RDATE;VALUE=PERIOD:20260824T120000Z/-PT1H\r\n",
+        QueryFailureCode.RecurrenceUnevaluable)]
+    [InlineData(
+        "RDATE;VALUE=PERIOD:20260824T120000Z/20260824T115959Z\r\n",
+        QueryFailureCode.RecurrenceUnevaluable)]
+    public async Task EntityPeriodRecurrenceFailureIsAtomic(
+        string recurrenceDate,
+        QueryFailureCode expected)
+    {
+        const string calendarHref = "https://cal.example/calendars/work/";
+        const string resourceHref = calendarHref + "period.ics";
+        var content = Ics(
+            "BEGIN:VEVENT\r\nUID:period\r\nDTSTAMP:20260823T120000Z\r\n"
+            + "DTSTART:20260830T120000Z\r\n"
+            + recurrenceDate
+            + "END:VEVENT\r\n");
+        var transport = new ScriptedCalendarQueryTransport(
+            [Calendar(calendarHref)],
+            static () => [resourceHref],
+            reads: _ => [CalendarResourceRead.Success(resourceHref, "\"r1\"", content)]);
+        await using var provider = CreateProvider(transport, new MutableTimeProvider(Now));
+
+        var failure = (await provider.GetRequiredService<ICalendarQueryModule>().QueryEntitiesAsync(
+            new CalendarEntityQueryRequest.Start(new CalendarEntityQuery(
+                CalendarEntityScope.All,
+                [CalendarEntityKind.Event],
+                Now,
+                Now.AddDays(4))),
+            CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Failure>();
+
+        failure.Error.Code.ShouldBe(expected);
+        provider.GetRequiredService<CalendarQuerySnapshotStore>().ActiveSnapshotCount.ShouldBe(0);
+    }
+
     public static IEnumerable<object[]> TemporalSemanticCases()
     {
         yield return [
@@ -1616,6 +1682,26 @@ public sealed class CalendarQueryModuleTests
             + "DTSTART:20260830T120000Z\r\nRDATE;VALUE=PERIOD:20260824T120000Z/PT1H\r\nEND:VEVENT\r\n",
             CalendarEntityKind.Event,
             1];
+        yield return [
+            "BEGIN:VEVENT\r\nUID:event-period-end\r\nDTSTAMP:20260823T120000Z\r\n"
+            + "DTSTART:20260830T120000Z\r\n"
+            + "RDATE;VALUE=PERIOD:20260824T120000Z/20260824T130000Z\r\nEND:VEVENT\r\n",
+            CalendarEntityKind.Event,
+            1];
+        yield return [
+            "BEGIN:VEVENT\r\nUID:event-period-excluded\r\nDTSTAMP:20260823T120000Z\r\n"
+            + "DTSTART:20260830T120000Z\r\nRDATE;VALUE=PERIOD:20260824T120000Z/PT1H\r\n"
+            + "EXDATE:20260824T120000Z\r\nEND:VEVENT\r\n",
+            CalendarEntityKind.Event,
+            0];
+        yield return [
+            "BEGIN:VEVENT\r\nUID:event-period-override\r\nDTSTAMP:20260823T120000Z\r\n"
+            + "DTSTART:20260830T120000Z\r\nRDATE;VALUE=PERIOD:20260824T120000Z/PT1H\r\nEND:VEVENT\r\n"
+            + "BEGIN:VEVENT\r\nUID:event-period-override\r\nDTSTAMP:20260823T120000Z\r\n"
+            + "RECURRENCE-ID:20260824T120000Z\r\nDTSTART:20260828T120000Z\r\n"
+            + "DURATION:PT1H\r\nEND:VEVENT\r\n",
+            CalendarEntityKind.Event,
+            0];
         yield return [
             "BEGIN:VTODO\r\nUID:todo-due\r\nDTSTAMP:20260823T120000Z\r\n"
             + "DUE:20260824T120000Z\r\nEND:VTODO\r\n",

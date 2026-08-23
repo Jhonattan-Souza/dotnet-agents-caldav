@@ -1,10 +1,5 @@
-using System.Text;
 using System.Xml;
 using DotnetAgents.CalDav.Core.Models;
-using Ical.Net;
-using Ical.Net.CalendarComponents;
-using Ical.Net.DataTypes;
-using Ical.Net.Evaluation;
 using CalendarProperty = DotnetAgents.CalDav.Core.Models.CalendarProperty;
 using IcalCalendar = Ical.Net.Calendar;
 
@@ -26,8 +21,6 @@ internal readonly record struct CalendarEntityTemporalResult(
 /// <summary>Applies final instant-window predicates to authoritative snapshot properties.</summary>
 internal static class CalendarEntityTemporalMatcher
 {
-    private const int MaximumEntityOccurrences = 2000;
-    private const int MaximumUnmatchedIncrements = 10_000;
     private static readonly string[] TemporalPropertyNames =
         ["DTSTART", "DTEND", "DUE", "RDATE", "EXDATE", "RECURRENCE-ID"];
 
@@ -89,11 +82,11 @@ internal static class CalendarEntityTemporalMatcher
         if (recurrence == RecurrenceDisposition.Recurring)
             return MatchRecurring(
                 snapshot,
+                document,
                 calendar,
-                entityProperties,
-                resolver,
                 from.Value,
                 to.Value,
+                evaluationTimeZone,
                 cancellationToken);
         var match = snapshot.Projection.Kind == CalendarResourceProjectionKind.Event
             ? MatchEvent(masterProperties, resolver, from.Value, to.Value)
@@ -113,38 +106,38 @@ internal static class CalendarEntityTemporalMatcher
 
     private static CalendarEntityTemporalResult MatchRecurring(
         CalendarResourceSnapshot snapshot,
+        CalendarContentDocument document,
         IcalCalendar? typedCalendar,
-        IReadOnlyList<CalendarProperty> entityProperties,
-        CalendarTemporalResolver resolver,
         DateTimeOffset from,
         DateTimeOffset to,
+        string? evaluationTimeZone,
         CancellationToken cancellationToken)
     {
-        try
+        var evaluated = CalendarOccurrenceEvaluator.Evaluate(
+            snapshot,
+            new CalendarOccurrenceQuery(
+                CalendarEntityScope.All,
+                from,
+                to,
+                evaluationTimeZone),
+            document,
+            typedCalendar,
+            cancellationToken);
+        return evaluated.Code switch
         {
-            if (typedCalendar is null)
-                return new(CalendarEntityTemporalMatch.Unevaluable);
-            var calendar = typedCalendar;
-            cancellationToken.ThrowIfCancellationRequested();
-            var searchStart = SubtractSafely(from, GetMaximumLookback(entityProperties, resolver, cancellationToken));
-            var options = new EvaluationOptions { MaxUnmatchedIncrementsLimit = MaximumUnmatchedIncrements };
-            var occurrences = snapshot.Projection.Kind == CalendarResourceProjectionKind.Event
-                ? calendar.GetOccurrences<CalendarEvent>(new CalDateTime(searchStart.UtcDateTime), options)
-                : calendar.GetOccurrences<Todo>(new CalDateTime(searchStart.UtcDateTime), options);
-            return EvaluateOccurrences(occurrences, resolver, from, to, cancellationToken);
-        }
-        catch (EvaluationLimitExceededException)
-        {
-            return new(CalendarEntityTemporalMatch.LimitExhausted);
-        }
-        catch (EvaluationOutOfRangeException)
-        {
-            return new(CalendarEntityTemporalMatch.Unevaluable);
-        }
-        catch (Exception exception) when (exception is FormatException or ArgumentException or InvalidOperationException)
-        {
-            return new(CalendarEntityTemporalMatch.Unevaluable);
-        }
+            CalendarOccurrenceQueryCode.Success => new(
+                evaluated.Items.Count > 0
+                    ? CalendarEntityTemporalMatch.Match
+                    : CalendarEntityTemporalMatch.NoMatch,
+                evaluated.ObservedOccurrenceCount),
+            CalendarOccurrenceQueryCode.TemporalUnresolved => new(
+                CalendarEntityTemporalMatch.Unresolved,
+                evaluated.ObservedOccurrenceCount),
+            CalendarOccurrenceQueryCode.LimitExhausted => new(
+                CalendarEntityTemporalMatch.LimitExhausted,
+                evaluated.ObservedOccurrenceCount),
+            _ => new(CalendarEntityTemporalMatch.Unevaluable, evaluated.ObservedOccurrenceCount)
+        };
     }
 
     private static RecurrenceDisposition ClassifyRecurrence(
@@ -171,151 +164,6 @@ internal static class CalendarEntityTemporalMatcher
     private static bool HasUnsupportedRangeParameter(CalendarProperty property) =>
         property.Name.Equals("RECURRENCE-ID", StringComparison.OrdinalIgnoreCase)
         && property.Parameters.Any(parameter => parameter.Name.Equals("RANGE", StringComparison.OrdinalIgnoreCase));
-
-    private static CalendarEntityTemporalResult EvaluateOccurrences(
-        IEnumerable<Occurrence> occurrences,
-        CalendarTemporalResolver resolver,
-        DateTimeOffset from,
-        DateTimeOffset to,
-        CancellationToken cancellationToken)
-    {
-        var count = 0;
-        var matched = false;
-        foreach (var occurrence in occurrences)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (!TryResolveOccurrence(occurrence, resolver, out var start, out var end, out var failure))
-                return new(failure, count);
-            if (start >= to)
-                break;
-            count++;
-            if (count > MaximumEntityOccurrences)
-                return new(CalendarEntityTemporalMatch.LimitExhausted, count);
-            matched |= Overlaps(start, end, from, to) == CalendarEntityTemporalMatch.Match;
-        }
-        return new(matched ? CalendarEntityTemporalMatch.Match : CalendarEntityTemporalMatch.NoMatch, count);
-    }
-
-    private static bool TryResolveOccurrence(
-        Occurrence occurrence,
-        CalendarTemporalResolver resolver,
-        out DateTimeOffset start,
-        out DateTimeOffset end,
-        out CalendarEntityTemporalMatch failure)
-    {
-        start = default;
-        end = default;
-        failure = CalendarEntityTemporalMatch.Unevaluable;
-        var resolvedStart = resolver.Resolve(occurrence.Period.StartTime);
-        if (resolvedStart.Value is null)
-        {
-            failure = ToFailure(resolvedStart);
-            return false;
-        }
-        start = resolvedStart.Value.Value;
-        var effectiveEnd = occurrence.Period.EffectiveEndTime;
-        if (effectiveEnd is null)
-        {
-            if (occurrence.Period.StartTime.HasTime)
-            {
-                end = start;
-                return true;
-            }
-            var followingDate = resolver.ResolveFollowingCivilDate(occurrence.Period.StartTime);
-            if (followingDate.Value is null)
-            {
-                failure = ToFailure(followingDate);
-                return false;
-            }
-            end = followingDate.Value.Value;
-            return true;
-        }
-        var resolvedEnd = resolver.Resolve(effectiveEnd);
-        if (resolvedEnd.Value is null)
-        {
-            failure = ToFailure(resolvedEnd);
-            return false;
-        }
-        end = resolvedEnd.Value.Value;
-        return true;
-    }
-
-    private static TimeSpan GetMaximumLookback(
-        IReadOnlyList<CalendarProperty> properties,
-        CalendarTemporalResolver resolver,
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        var maximum = properties
-            .GroupBy(property => property.ComponentPath[1].Occurrence)
-            .Select(group => GetComponentSpan(group.ToArray(), resolver))
-            .DefaultIfEmpty(TimeSpan.Zero)
-            .Max();
-        foreach (var property in properties.Where(property =>
-                     property.Name.Equals("RDATE", StringComparison.OrdinalIgnoreCase)
-                     && property.ValueType == CalendarPropertyValueType.Period))
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            foreach (var period in property.RawEncodedValue.Split(',', StringSplitOptions.None))
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                maximum = Max(maximum, GetPeriodSpan(property, period, resolver));
-            }
-        }
-        return maximum;
-    }
-
-    private static TimeSpan GetComponentSpan(
-        IReadOnlyList<CalendarProperty> properties,
-        CalendarTemporalResolver resolver)
-    {
-        var startProperty = GetProperty(properties, "DTSTART");
-        var start = resolver.Resolve(startProperty).Value;
-        if (start is null)
-            return TimeSpan.Zero;
-        var end = resolver.Resolve(GetProperty(properties, "DTEND") ?? GetProperty(properties, "DUE")).Value;
-        if (end > start)
-            return end.Value - start.Value;
-        var duration = GetDuration(properties);
-        if (duration > TimeSpan.Zero)
-            return duration.Value;
-        var followingDate = startProperty is { ValueType: CalendarPropertyValueType.Date }
-            ? resolver.ResolveFollowingCivilDate(startProperty).Value
-            : null;
-        return followingDate > start ? followingDate.Value - start.Value : TimeSpan.Zero;
-    }
-
-    private static TimeSpan GetPeriodSpan(
-        CalendarProperty property,
-        string period,
-        CalendarTemporalResolver resolver)
-    {
-        var parts = period.Split('/', StringSplitOptions.None);
-        if (parts.Length != 2)
-            return TimeSpan.Zero;
-        var start = resolver.ResolveToken(property, parts[0]).Value;
-        if (start is null)
-            return TimeSpan.Zero;
-        if (parts[1].StartsWith('P') || parts[1].StartsWith("-P", StringComparison.Ordinal))
-        {
-            try
-            {
-                var duration = XmlConvert.ToTimeSpan(parts[1]);
-                return duration > TimeSpan.Zero ? duration : TimeSpan.Zero;
-            }
-            catch (FormatException)
-            {
-                return TimeSpan.Zero;
-            }
-        }
-        var end = resolver.ResolveToken(property, parts[1]).Value;
-        return end > start ? end.Value - start.Value : TimeSpan.Zero;
-    }
-
-    private static TimeSpan Max(TimeSpan left, TimeSpan right) => left >= right ? left : right;
-
-    private static DateTimeOffset SubtractSafely(DateTimeOffset instant, TimeSpan lookback) =>
-        instant - DateTimeOffset.MinValue < lookback ? DateTimeOffset.MinValue : instant - lookback;
 
     private static bool HasUnresolvedTemporalValue(
         IEnumerable<CalendarProperty> properties,
