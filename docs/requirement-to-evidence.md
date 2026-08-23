@@ -30,7 +30,9 @@ This catalog links the active performance requirements to durable repository evi
 | `CAL-OBS-003` | `CalendarTelemetryTests.Operation_StructuredCommittedFailureExportsOnlyControlledFailureDimensions` and `OpenTelemetryStdioIntegrationTests.CommittedCreateWithoutStrongRevision_ExportsControlledCommittedFailureOverStdio` prove evidence-backed Mutation State, including Error Operations that truthfully remain `committed`; the main opt-in stdio witness proves committed success. |
 | `CAL-OBS-004` | `CalendarExecutionPolicyTests.PublicToolFilter_MrtrInputRequiredIsExpectedControlFlow` and `OpenTelemetryStdioIntegrationTests.ExactCreateReview_ExportsExpectedAbsenceAndInputRequiredOverRawStdio` prove MRTR is `input_required`, Unset, `not_attempted`, and exception-free. |
 | `CAL-OBS-005` | `CalendarTelemetryTests.ExportAllowlist_OnlyMarkedAbsenceProbeReclassifiesHttpNotFound`, `CalendarCreationModuleTests.ClosedCreateCommandsUseOnlyTheConstantWorkTransportPort`, the exact-create stdio witness, and `OpenTelemetryStdioIntegrationTests.ConfirmedDelete_ExportsExpectedAbsenceWithoutErrorOverStdio` prove that only explicit absence probes reclassify 404 to `expected_absence` and Ok. |
+| `CAL-OBS-006` | `CalendarTelemetryTests.ExportAllowlist_PreservesQueryReadPurposeOnEveryWireOutcome` proves the purpose marker on every direct query GET outcome and retry; its 404 case alone preserves status 404 while exporting `resource_disappeared`, Ok, and no `error.type`. `CalendarQueryDirectGetTests.DiscardedPartialMultigetAbsenceIsCountedOnceFromFinalFallbackTruth` proves the aggregate counts final canonical disappearances rather than discarded intermediate observations. `OpenTelemetryStdioIntegrationTests.QueryCompatibilityMode_ExportsMixedAndCachedDirectGetTruthOverBuiltStdio` carries the 200/404 classifications through the built MCP and real OTLP exporter. |
 | `CAL-OBS-007` | `CalendarTelemetryTests.ExportAllowlist_CountsRetriesAcrossIndependentRecoveredRequests`, `OpenTelemetryStdioIntegrationTests.TransientReadFailure_ExportsDistinctSafeHttpAttempts`, and `OpenTelemetryStdioIntegrationTests.ExhaustedReadRetries_KeepEveryAttemptAndOperationFailureTruthful` prove distinct failed and successful wire attempts, truthful resend counts, summed retries, recovered success, and exhausted failure without a recovery claim. |
+| `CAL-OBS-008` | `CalendarQueryModuleTests.QueryTelemetryReportsActualWorkAndContinuationOnlyReadsSnapshot`, `CalendarQueryTelemetryTests.ConcurrentFallbackWorkPreservesMixedModeAndExactClosedCounters`, and `CalendarTelemetryTests.QueryTelemetryAllowlistKeepsEveryClosedFallbackModeAndReason` prove the closed `multiget`, `direct_get_fallback`, and `mixed` modes, the `multiget_unavailable` reason, exact operation-local counters under concurrent reads, and the privacy allowlist. `OpenTelemetryStdioIntegrationTests.CalendarEntityStartContinue_ExportsSafeModulePhasesAndZeroContinuationWireWork` proves conforming Radicale uses real multiget and zero GETs; `QueryCompatibilityMode_ExportsMixedAndCachedDirectGetTruthOverBuiltStdio` proves the mixed and cached direct modes with physical REPORT/GET counts. Fetch mode and reason appear only after actual retrieval work. |
 | `CAL-OBS-009` | `CalendarExecutionPolicyTests.PublicToolFilter_EmitsParentedOperationPhaseAndSafeResultDimensions`, `CalendarExecutionPolicyTests.PublicToolFilter_UnsignalledCancellationIsControlledTimeoutFailure`, and `CalendarTelemetryTests.ExportAllowlist_RemovesPrivateLookingValuesEvenWhenLexicallyValid` prove structured and unhandled failures export only controlled code, category, phase, retryability, and error-type fields. |
 | `CAL-OBS-010` | `CalendarTelemetryTests.ExportAllowlist_RemovesIdentifiersPayloadsUrlsAndExceptionDetails`, the invalid-client-dimension stdio test, and every stdio matrix witness prove allowlist privacy and zero exported exception events. |
 | `CAL-OBS-011` | Every `OpenTelemetryStdioIntegrationTests` witness requires clean stdout and stderr; `StdioLoggingIntegrationTests.McpProcess_WithHangingOtlpCollector_PreservesToolResultAndTwoSecondShutdown` proves collector failure and shutdown isolation. |
@@ -40,8 +42,9 @@ stderr, and assert that spans contain no exception events. The main opt-in and
 invalid-client-dimension tests additionally search the encoded OTLP payloads
 for private UIDs, hrefs, Entity Tags, cursor and MRTR state, credentials,
 payload markers, trace state, exception details, and client-controlled labels.
-`CAL-OBS-006` and `CAL-OBS-008` remain query-owned and are added by the query
-retrieval work rather than this general telemetry branch.
+The query retrieval witnesses additionally distinguish physical wire attempts
+from cached capability decisions: a dispatched REPORT contributes its requested
+slots, while a Capability State hit with no REPORT contributes zero.
 
 ## Calendar Entity deep query module and snapshots
 
@@ -72,13 +75,33 @@ records the baseline request/serialization shape and the focused zero-work
 continuation, exact-byte, capacity, real stdio, pinned-Radicale, and OTLP
 acceptance boundaries.
 
+## Bounded multiget and Direct GET Compatibility Mode
+
+| Requirement | Implementation evidence | Verification evidence |
+| --- | --- | --- |
+| `CAL-DAV-005` | `CalendarQueryResourceRetriever` plans 50-resource multiget batches. `CalDavClient` returns a closed internal `Resources | VerifiedUnavailable` outcome and accepts only 405, 501, `DAV:supported-report`, or `CALDAV:supported-calendar-data` as verification. | `SuccessfulMultigetUsesFiftyResourceBatchesAndZeroGets`; `CalendarMultigetCachesOnlyClosedVerifiedUnavailableOutcomes`; `AddCalDavCalendars_DoesNotRetryDefinitiveUnsupportedReportBeforeDirectGet` |
+| `CAL-DAV-006` | `CalendarQueryCapabilityState` is a 256-entry stop-caching singleton keyed by opaque canonical authorization/configuration context and guarded by a generation. Generic failures remain typed protocol or upstream failures. | `CalendarMultigetNeverCachesGenericOrTransientReportFailure`; invalid UTF-8, malformed DAV error, cache-full, canonical credential, configuration-change, rediscovery, and stale-in-flight tests |
+| `CAL-DAV-007` | Retrieval indexes complete multiget batches by safe canonical href and commits them only after exact set validation. Only explicit returned 404 disappears. | Missing, duplicate, nested, unsafe, unrequested, wrong-count, reversed-order, mixed-status, and discarded-partial-disappearance regressions in `CalDavClientTests` and `CalendarQueryDirectGetTests` |
+| `CAL-DAV-008` | The streaming multiget parser joins one unambiguous `calendar-data` and strong `getetag` truth per href. Direct GET uses one bounded body and strong ETag from the same response, with final identity validation. | Complementary/conflicting propstat, weak/missing ETag, 4 MiB, strict UTF-8, response-envelope, redirect identity, and exact-order tests |
+| `CAL-DAV-009` | `CalendarDirectGetBudget` meters 200 logical resources, 32 MiB of decompressed bodies across every physical attempt, 4 MiB per attempt body, three physical attempts, and the module's 30-second deadline. The HTTP handler begins an attempt before dispatch and charges partial bodies incrementally. | `CalendarDirectGetBudgetTests`; `CalendarHttpAttemptHandlerTests`; `ThreeRealAttemptTimeoutsBecomeTheClosedAttemptCountLimit`; elapsed-limit module tests |
+| `CAL-DAV-010` | One process-wide origin permit pool is held for a logical read across redirects and retries. The retriever schedules canonical waves of four, awaits the failing wave, selects its lowest canonical failure, and starts no later wave. | `FiveFallbackResourcesRunAsOneWaveOfFourThenOne`; `ConcurrentQueriesShareTheFourPerOriginPermit`; `SameWaveFailuresChooseCanonicalHrefAndNeverScheduleLaterWave`; fourth-attempt and concurrent-body tests |
+| `CAL-DAV-011` | Fallback planning rejects 201 resources before scheduling a GET. Public limit evidence uses the closed generic dimensions `resource_count`, `attempt_count`, `byte_count`, and `elapsed_time` with observed and limit values; elapsed values are milliseconds. | `KnownUnavailableWithTwoHundredOneCandidatesFailsBeforeTheFirstGet`; exact resource, attempt, byte, and elapsed boundary tests; live catalog schema tests |
+| `CAL-DAV-012` | External cancellation stops later waves, cancels the current wave, awaits cleanup, and returns no partial page. Explicit 404 is retained as the only non-terminal resource outcome. | `ExternalCancellationAwaitsCurrentWaveCleanupAndReleasesEveryPermit`; 404 and post-cancellation permit-reuse assertions |
+| `CAL-DAV-013` | Retrieval mode is automatic and internal. Operation-local telemetry derives `multiget`, `direct_get_fallback`, or `mixed` from successful work and exports no public mode field or success diagnostic. | deterministic module mode/counter tests, closed allowlist tests, and MCP schema/catalog structural assertions |
+
+These requirements narrow `CAL-DAV-001` for query resource retrieval: there is
+no Depth-1 crawl or response-mismatch fallback. The dated
+[Direct GET observation](performance-direct-get-compatibility-2026-08-23.md)
+records the code-derived sequential baseline, focused deterministic work
+counts, and the applicable real-server boundary.
+
 ## Shared performance evidence
 
 | Requirement | Evidence |
 | --- | --- |
-| `CAL-EVIDENCE-011` | Focused deterministic regressions count discovery acquisitions and real PROPFIND boundaries; durations remain supporting observations only. |
-| `CAL-EVIDENCE-012` | The smallest sufficient corpus is one in-scope Calendar and one Event patch. Radicale is not used because the regression is structural rather than server-dependent. |
-| `CAL-EVIDENCE-013` | The [before/after report](performance-discovery-reuse-2026-08-23.md) records scenario, configuration, exact baseline and changed revisions, acquisition counts, supporting durations, and cleanup. |
+| `CAL-EVIDENCE-011` | Focused deterministic regressions count discovery acquisitions and real PROPFIND boundaries, plus multiget REPORT slots, direct GET resources and attempts, waves, and transfer limits. Durations remain supporting observations only. |
+| `CAL-EVIDENCE-012` | The smallest sufficient corpus is selected per boundary. One Calendar and one Event patch prove discovery reuse; deterministic 1/4/5/50/51/200/201-resource corpora prove orchestration and limits. Digest-pinned Radicale is reserved for conforming multiget and zero-GET behavior. |
+| `CAL-EVIDENCE-013` | The [discovery report](performance-discovery-reuse-2026-08-23.md) and [Direct GET report](performance-direct-get-compatibility-2026-08-23.md) record scenario, configuration, exact baseline and changed revision anchors, work counts, supporting durations where observed, server qualification, and cleanup. |
 | `CAL-EVIDENCE-014` | No universal benchmark platform, threshold, SLA, or process-wide cache was introduced. |
-| `CAL-EVIDENCE-015` | The focused and complete suites preserve correctness, lossless Calendar evidence, operation cancellation, credential privacy, bounded scope/diagnostics, and authoritative later mutation outcomes. |
-| `CAL-EVIDENCE-016` | This permanent catalog links accepted requirements to durable implementation and executable evidence. Superseded evidence should be replaced here rather than accumulated as a competing contract. |
+| `CAL-EVIDENCE-015` | The focused and complete suites preserve correctness, lossless Calendar evidence, strong revision truth, all-or-nothing results, operation cancellation, credential privacy, bounded scope/diagnostics, and authoritative later mutation outcomes. |
+| `CAL-EVIDENCE-016` | This permanent catalog links accepted requirements to durable implementation and executable evidence. The query retrieval entries explicitly narrow `CAL-DAV-001`; query snapshots supersede `CAL-MCP-007` pagination and `CAL-BOUND-008` result admission, while their owning sections retain the temporal and dated non-recurring To-do supersession links. Superseded evidence is replaced here rather than accumulated as a competing contract. |
