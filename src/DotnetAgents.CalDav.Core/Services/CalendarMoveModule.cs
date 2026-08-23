@@ -30,49 +30,54 @@ internal sealed class CalendarMoveModule(
             return inputFailure;
         using var deadline = new CancellationTokenSource(PreDispatchTimeout, timeProvider);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
+        var failurePhase = CalendarResourceMovePhase.SelectionDiscoveryCapability;
         try
         {
-            return await MoveCoreAsync(request, linked.Token);
+            return await MoveCoreAsync(request, phase => failurePhase = phase, linked.Token);
         }
         catch (OperationCanceledException) when (deadline.IsCancellationRequested
             && !cancellationToken.IsCancellationRequested)
         {
             return Failure(
                 CalendarResourceMoveCode.LimitExhausted,
-                limitDimension: CalendarResourceMoveLimitDimension.ElapsedTime);
+                limitDimension: CalendarResourceMoveLimitDimension.ElapsedTime,
+                phase: failurePhase);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            return Failure(CalendarResourceMoveCode.UpstreamUnavailable, retryable: true);
+            return Failure(CalendarResourceMoveCode.UpstreamUnavailable, retryable: true, phase: failurePhase);
         }
         catch (HttpRequestException exception)
         {
-            return FromPreflightHttpFailure(exception.StatusCode);
+            return FromPreflightHttpFailure(exception.StatusCode, failurePhase);
         }
         catch (Exception exception) when (exception is IOException or TimeoutException)
         {
-            return Failure(CalendarResourceMoveCode.UpstreamUnavailable, retryable: true);
+            return Failure(CalendarResourceMoveCode.UpstreamUnavailable, retryable: true, phase: failurePhase);
         }
         catch (Exception exception) when (exception is XmlException or CalendarDiscoveryProtocolException)
         {
-            return Failure(CalendarResourceMoveCode.UpstreamProtocolError);
+            return Failure(CalendarResourceMoveCode.UpstreamProtocolError, phase: failurePhase);
         }
         catch (CalendarDiscoveryUnsupportedCapabilityException)
         {
-            return Failure(CalendarResourceMoveCode.UnsupportedCapability);
+            return Failure(CalendarResourceMoveCode.UnsupportedCapability, phase: failurePhase);
         }
         catch (CalendarDiscoveryLimitException exception)
         {
             return Failure(
                 CalendarResourceMoveCode.LimitExhausted,
-                calendarCount: exception.CalendarCount);
+                calendarCount: exception.CalendarCount,
+                phase: failurePhase);
         }
     }
 
     private async Task<CalendarResourceMoveResult> MoveCoreAsync(
         CalendarResourceMoveRequest request,
+        Action<CalendarResourceMovePhase> setFailurePhase,
         CancellationToken cancellationToken)
     {
+        setFailurePhase(CalendarResourceMovePhase.SelectionDiscoveryCapability);
         var destination = await ResolveDestinationAsync(request, cancellationToken);
         if (destination.Failure is not null)
             return destination.Failure;
@@ -89,31 +94,41 @@ internal sealed class CalendarMoveModule(
                 candidates: [destinationCalendar],
                 phase: CalendarResourceMovePhase.SelectionDiscoveryCapability);
         }
+        if (string.Equals(destinationCalendar.Href, sourceCalendar.Href, StringComparison.Ordinal))
+        {
+            return Failure(
+                CalendarResourceMoveCode.InvalidInput,
+                phase: CalendarResourceMovePhase.SelectionDiscoveryCapability);
+        }
 
         var concurrencyFailure = ValidateStrongRevision(request.Revision);
         if (concurrencyFailure is not null)
             return concurrencyFailure;
 
+        setFailurePhase(CalendarResourceMovePhase.TargetRevision);
         var sourceRead = Attach(
             sourceCalendar.Href,
-            await transport.ReadSourceAsync(request.Revision.Href, cancellationToken));
+            await transport.ReadSourceAsync(sourceCalendar.Href, request.Revision.Href, cancellationToken));
         if (sourceRead.Code != CalendarResourceReadCode.Success || sourceRead.Snapshot is null)
             return FromReadFailure(sourceRead.Code);
         var revisionFailure = ValidateRevision(request.Revision, sourceRead.Snapshot);
         if (revisionFailure is not null)
             return RecordRevisionFailure(revisionFailure);
-        if (string.Equals(destinationCalendar.Href, sourceRead.Snapshot.CalendarHref, StringComparison.Ordinal))
-            return Failure(CalendarResourceMoveCode.InvalidInput);
-
         var destinationHref = CalendarResourceCreateProtocol.BuildResourceHref(
             destinationCalendar.Href,
             request.Revision.EntityUid);
-        var destinationRead = await transport.ProbeDestinationPresenceAsync(destinationHref, cancellationToken);
+        setFailurePhase(CalendarResourceMovePhase.Execution);
+        var destinationRead = await transport.ProbeDestinationPresenceAsync(
+            destinationCalendar.Href,
+            destinationHref,
+            cancellationToken);
         if (destinationRead.Code != CalendarResourceReadCode.NotFound)
             return RecordDestinationPreflightFailure(destinationRead);
         CalendarOperationProgress.SetMoveCollision(CalendarMoveCollisionClassification.None);
 
         var dispatch = await transport.DispatchAsync(
+            sourceCalendar.Href,
+            destinationCalendar.Href,
             new CalendarResourceMoveDispatchRequest(
                 request.Revision.Href,
                 destinationHref,
@@ -218,7 +233,7 @@ internal sealed class CalendarMoveModule(
         {
             return Attach(
                 calendarHref,
-                await transport.ObserveResourceAsync(resourceHref, cancellationToken));
+                await transport.ObserveResourceAsync(calendarHref, resourceHref, cancellationToken));
         }
         catch (Exception)
         {
@@ -545,18 +560,26 @@ internal sealed class CalendarMoveModule(
         retryable: dispatch.Code == CalendarResourceMoveDispatchCode.UpstreamRateLimited,
         phase: CalendarResourceMovePhase.Execution);
 
-    private static CalendarResourceMoveResult FromPreflightHttpFailure(System.Net.HttpStatusCode? statusCode) =>
+    private static CalendarResourceMoveResult FromPreflightHttpFailure(
+        System.Net.HttpStatusCode? statusCode,
+        CalendarResourceMovePhase phase) =>
         statusCode switch
         {
-            System.Net.HttpStatusCode.Unauthorized => Failure(CalendarResourceMoveCode.UpstreamUnauthorized),
-            System.Net.HttpStatusCode.Forbidden => Failure(CalendarResourceMoveCode.UpstreamForbidden),
-            System.Net.HttpStatusCode.RequestEntityTooLarge => Failure(CalendarResourceMoveCode.PayloadTooLarge),
-            System.Net.HttpStatusCode.TooManyRequests => Failure(CalendarResourceMoveCode.UpstreamRateLimited, retryable: true),
+            System.Net.HttpStatusCode.Unauthorized => Failure(CalendarResourceMoveCode.UpstreamUnauthorized, phase: phase),
+            System.Net.HttpStatusCode.Forbidden => Failure(CalendarResourceMoveCode.UpstreamForbidden, phase: phase),
+            System.Net.HttpStatusCode.RequestEntityTooLarge => Failure(CalendarResourceMoveCode.PayloadTooLarge, phase: phase),
+            System.Net.HttpStatusCode.TooManyRequests => Failure(
+                CalendarResourceMoveCode.UpstreamRateLimited,
+                retryable: true,
+                phase: phase),
             System.Net.HttpStatusCode.MethodNotAllowed or System.Net.HttpStatusCode.NotImplemented =>
-                Failure(CalendarResourceMoveCode.UnsupportedCapability),
-            System.Net.HttpStatusCode.InsufficientStorage => Failure(CalendarResourceMoveCode.UpstreamUnavailable),
-            >= System.Net.HttpStatusCode.InternalServerError => Failure(CalendarResourceMoveCode.UpstreamUnavailable, retryable: true),
-            _ => Failure(CalendarResourceMoveCode.UpstreamProtocolError)
+                Failure(CalendarResourceMoveCode.UnsupportedCapability, phase: phase),
+            System.Net.HttpStatusCode.InsufficientStorage => Failure(CalendarResourceMoveCode.UpstreamUnavailable, phase: phase),
+            >= System.Net.HttpStatusCode.InternalServerError => Failure(
+                CalendarResourceMoveCode.UpstreamUnavailable,
+                retryable: true,
+                phase: phase),
+            _ => Failure(CalendarResourceMoveCode.UpstreamProtocolError, phase: phase)
         };
 
     private static CalendarResourceMoveResult SelectionFailure(CalendarSelectionResult selection) => Failure(

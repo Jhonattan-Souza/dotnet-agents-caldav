@@ -22,7 +22,7 @@ public sealed class CalendarResourceMoveServiceTests
         const string destinationCalendarHref = "https://cal.example/archive/";
         const string uid = "reviewed-move";
         var destinationHref = CalendarResourceCreateProtocol.BuildResourceHref(destinationCalendarHref, uid);
-        var client = Substitute.For<ICalendarClient, ICalendarResourcePresenceTransport>();
+        var client = MoveClient();
         var presence = (ICalendarResourcePresenceTransport)client;
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
             TodoCalendar("https://cal.example/tasks/", "Tasks"),
@@ -1103,10 +1103,41 @@ public sealed class CalendarResourceMoveServiceTests
 
     private static ICalendarClient MoveClient()
     {
-        var client = Substitute.For<ICalendarClient, ICalendarResourcePresenceTransport>();
+        var client = (ICalendarClient)Substitute.For(
+            [
+                typeof(ICalendarClient),
+                typeof(ICalendarResourcePresenceTransport),
+                typeof(ICalendarMoveResourceTransport)
+            ],
+            []);
+        var moveTransport = (ICalendarMoveResourceTransport)client;
+        moveTransport.ReadMoveResourceAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<bool>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call => client.GetCalendarResourceAsync(
+                call.ArgAt<string>(1),
+                call.ArgAt<CancellationToken>(3)));
         ((ICalendarResourcePresenceTransport)client)
             .ProbeCalendarResourcePresenceAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new CalendarResourceRead(CalendarResourceReadCode.NotFound));
+        moveTransport.ProbeMoveResourcePresenceAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call => ((ICalendarResourcePresenceTransport)client)
+                .ProbeCalendarResourcePresenceAsync(
+                    call.ArgAt<string>(1),
+                    call.ArgAt<CancellationToken>(2)));
+        moveTransport.DispatchMoveAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<CalendarResourceMoveDispatchRequest>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call => client.MoveCalendarResourceAsync(
+                call.ArgAt<CalendarResourceMoveDispatchRequest>(2),
+                call.ArgAt<CancellationToken>(3)));
         return client;
     }
 

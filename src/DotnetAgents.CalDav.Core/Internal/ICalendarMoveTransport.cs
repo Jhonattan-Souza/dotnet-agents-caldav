@@ -8,13 +8,44 @@ internal interface ICalendarMoveTransport
 {
     Task<CalendarMoveDiscoveryResult> DiscoverCalendarsAsync(CancellationToken cancellationToken);
 
-    Task<CalendarResourceRead> ReadSourceAsync(string href, CancellationToken cancellationToken);
+    Task<CalendarResourceRead> ReadSourceAsync(
+        string sourceCalendarHref,
+        string href,
+        CancellationToken cancellationToken);
 
-    Task<CalendarResourceRead> ProbeDestinationPresenceAsync(string href, CancellationToken cancellationToken);
+    Task<CalendarResourceRead> ProbeDestinationPresenceAsync(
+        string destinationCalendarHref,
+        string href,
+        CancellationToken cancellationToken);
 
-    Task<CalendarResourceRead> ObserveResourceAsync(string href, CancellationToken cancellationToken);
+    Task<CalendarResourceRead> ObserveResourceAsync(
+        string authorizedCalendarHref,
+        string href,
+        CancellationToken cancellationToken);
 
     Task<CalendarResourceMoveDispatchResult> DispatchAsync(
+        string sourceCalendarHref,
+        string destinationCalendarHref,
+        CalendarResourceMoveDispatchRequest request,
+        CancellationToken cancellationToken);
+}
+
+internal interface ICalendarMoveResourceTransport
+{
+    Task<CalendarResourceRead> ReadMoveResourceAsync(
+        string authorizedCalendarHref,
+        string href,
+        bool absenceProbe,
+        CancellationToken cancellationToken);
+
+    Task<CalendarResourceRead> ProbeMoveResourcePresenceAsync(
+        string authorizedCalendarHref,
+        string href,
+        CancellationToken cancellationToken);
+
+    Task<CalendarResourceMoveDispatchResult> DispatchMoveAsync(
+        string sourceCalendarHref,
+        string destinationCalendarHref,
         CalendarResourceMoveDispatchRequest request,
         CancellationToken cancellationToken);
 }

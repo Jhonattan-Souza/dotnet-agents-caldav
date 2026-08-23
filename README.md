@@ -19,7 +19,6 @@ Add this MCP server to VS Code, Claude Desktop, Cursor, or any MCP client:
         "CALDAV_USERNAME": "user",
         "CALDAV_PASSWORD": "password",
         "CALDAV_EVALUATION_TIME_ZONE": "America/Sao_Paulo",
-        "CALDAV_INTEROPERABILITY_PROFILE": "radicale-3.7.8",
         "CALDAV_DEFAULT_EVENT_CALENDAR_NAME": "Events",
         "CALDAV_DEFAULT_TODO_CALENDAR_NAME": "To-dos"
       }

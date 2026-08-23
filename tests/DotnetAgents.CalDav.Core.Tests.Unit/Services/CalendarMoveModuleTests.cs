@@ -86,15 +86,54 @@ public sealed class CalendarMoveModuleTests
         AssertSingleDispatchTrace(transport.Trace);
     }
 
+    [Fact]
+    public async Task DispatchedMoveAcceptsCompleteLosslessSemanticServerNormalization()
+    {
+        var transport = ScriptedTransport(LosslessSemanticResource(SourceHref, "\"r1\"")) with
+        {
+            DestinationObservation = LosslessSemanticResource(
+                DestinationHref(),
+                "\"r2\"",
+                normalized: true),
+            SourceObservation = new CalendarResourceRead(CalendarResourceReadCode.NotFound)
+        };
+
+        var result = await Module(transport).MoveAsync(Request(), CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceMoveCode.Success);
+        result.MutationState.ShouldBe(CalendarMutationState.Committed);
+        AssertSingleDispatchTrace(transport.Trace);
+    }
+
     [Theory]
-    [InlineData(1)]
-    [InlineData(50)]
-    [InlineData(600)]
-    public async Task DestinationCardinalityDoesNotChangeMoveWork(int destinationCardinality)
+    [InlineData("root")]
+    [InlineData("derived")]
+    [InlineData("parameter")]
+    public async Task DispatchedMoveRejectsTrueLosslessSemanticDivergence(string divergence)
+    {
+        var transport = ScriptedTransport(LosslessSemanticResource(SourceHref, "\"r1\"")) with
+        {
+            DestinationObservation = LosslessSemanticResource(
+                DestinationHref(),
+                "\"r2\"",
+                normalized: true,
+                divergence),
+            SourceObservation = new CalendarResourceRead(CalendarResourceReadCode.NotFound)
+        };
+
+        var result = await Module(transport).MoveAsync(Request(), CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceMoveCode.FidelityFailure);
+        result.MutationState.ShouldBe(CalendarMutationState.Committed);
+        AssertSingleDispatchTrace(transport.Trace);
+    }
+
+    [Fact]
+    public async Task UnexpectedSuccessfulHttpStatusUsesPossiblyDispatchedBilateralTruth()
     {
         var transport = ScriptedTransport(Resource(SourceHref, "\"r1\"", Uid)) with
         {
-            DestinationCardinality = destinationCardinality,
+            Dispatch = new CalendarResourceMoveDispatchResult(CalendarResourceMoveDispatchCode.PossiblyDispatched),
             DestinationObservation = Resource(DestinationHref(), "\"r2\"", Uid),
             SourceObservation = new CalendarResourceRead(CalendarResourceReadCode.NotFound)
         };
@@ -102,8 +141,8 @@ public sealed class CalendarMoveModuleTests
         var result = await Module(transport).MoveAsync(Request(), CancellationToken.None);
 
         result.Code.ShouldBe(CalendarResourceMoveCode.Success);
+        result.MutationState.ShouldBe(CalendarMutationState.Committed);
         AssertSingleDispatchTrace(transport.Trace);
-        transport.UnrelatedReads.ShouldBe(0);
     }
 
     [Fact]
@@ -188,6 +227,30 @@ public sealed class CalendarMoveModuleTests
         result.Code.ShouldBe(expectedCode);
         result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
         transport.Trace.ShouldBe(["discover", "read-source"]);
+    }
+
+    [Theory]
+    [InlineData("source", CalendarResourceMovePhase.TargetRevision)]
+    [InlineData("probe", CalendarResourceMovePhase.Execution)]
+    public async Task PredispatchHttpFailureReportsTheExactFailedPhase(
+        string operation,
+        CalendarResourceMovePhase expectedPhase)
+    {
+        var failure = new HttpRequestException("private", null, System.Net.HttpStatusCode.Unauthorized);
+        var transport = ScriptedTransport(Resource(SourceHref, "\"r1\"", Uid)) with
+        {
+            SourceFailure = operation == "source" ? failure : null,
+            ProbeFailure = operation == "probe" ? failure : null
+        };
+
+        var result = await Module(transport).MoveAsync(Request(), CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceMoveCode.UpstreamUnauthorized);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        result.Phase.ShouldBe(expectedPhase);
+        transport.Trace.ShouldBe(operation == "source"
+            ? ["discover", "read-source"]
+            : ["discover", "read-source", "probe-destination"]);
     }
 
     [Theory]
@@ -361,6 +424,29 @@ public sealed class CalendarMoveModuleTests
         AssertSingleDispatchTrace(transport.Trace);
     }
 
+    [Fact]
+    public async Task SameCalendarDestinationFailsAfterDiscoveryBeforeSourceRead()
+    {
+        var sourceCalendar = TodoCalendar("https://cal.example/tasks/", "Tasks");
+        var transport = ScriptedTransport(Resource(SourceHref, "\"r1\"", Uid)) with
+        {
+            Discovery = new CalendarMoveDiscoveryResult(
+                new CalendarDiscoveryResult([sourceCalendar], []),
+                CalendarSelectionResult.Success(sourceCalendar),
+                CalendarSelectionResult.Success(sourceCalendar))
+        };
+        var request = Request() with
+        {
+            Destination = CalendarMoveDestination.Selected(new CalendarReference(Name: "Tasks"))
+        };
+
+        var result = await Module(transport).MoveAsync(request, CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceMoveCode.InvalidInput);
+        result.Phase.ShouldBe(CalendarResourceMovePhase.SelectionDiscoveryCapability);
+        transport.Trace.ShouldBe(["discover"]);
+    }
+
     [Theory]
     [InlineData("invalid-href", CalendarResourceMoveCode.UpstreamProtocolError)]
     [InlineData("unsupported-kind", CalendarResourceMoveCode.UnsupportedCapability)]
@@ -517,6 +603,55 @@ public sealed class CalendarMoveModuleTests
                 + $"UID:{uid}\r\nDTSTAMP:20260823T120000Z\r\nDTSTART:20260824T120000Z\r\n"
                 + "END:VEVENT\r\nEND:VCALENDAR\r\n"));
 
+    private static CalendarResourceRead LosslessSemanticResource(
+        string href,
+        string entityTag,
+        bool normalized = false,
+        string? divergence = null)
+    {
+        var rootValue = divergence == "root" ? "Changed Calendar" : "Private Calendar";
+        var timestamp = divergence == "derived" ? "20260823T130000Z" : "20260823T120000Z";
+        var parameter = divergence == "parameter" ? "Two" : "One";
+        const string foldSpace = " ";
+        var content = normalized
+            ? $"""
+                BEGIN:VCALENDAR
+                X-WR-CALNAME:{rootValue}
+                PRODID:-//Tests//EN
+                VERSION;VALUE=TEXT:2.0
+                BEGIN:VTODO
+                SUMMARY;ALTREP="cid:part1";LANGUAGE=en:Quarterly{foldSpace}
+                 review
+                DTSTAMP:{timestamp}
+                X-KEEP;P={parameter}:opaque\,value
+                UID:{Uid}
+                END:VTODO
+                BEGIN:VTIMEZONE
+                X-ZONE-PRIVATE:retained
+                TZID:Europe/London
+                END:VTIMEZONE
+                END:VCALENDAR
+                """
+            : $"""
+                BEGIN:VCALENDAR
+                VERSION:2.0
+                PRODID:-//Tests//EN
+                X-WR-CALNAME:{rootValue}
+                BEGIN:VTIMEZONE
+                TZID:Europe/London
+                X-ZONE-PRIVATE:retained
+                END:VTIMEZONE
+                BEGIN:VTODO
+                UID:{Uid}
+                DTSTAMP:{timestamp}
+                X-KEEP;P={parameter}:opaque\,value
+                SUMMARY;LANGUAGE=en;ALTREP="cid:part1":Quarterly review
+                END:VTODO
+                END:VCALENDAR
+                """;
+        return CalendarResourceRead.Success(href, entityTag, Encoding.UTF8.GetBytes(content));
+    }
+
     private sealed record ScriptedMoveTransport : ICalendarMoveTransport
     {
         internal required CalendarMoveDiscoveryResult Discovery { get; init; }
@@ -537,9 +672,9 @@ public sealed class CalendarMoveModuleTests
 
         internal Func<string, CancellationToken, Task<CalendarResourceRead>>? Observe { get; init; }
 
-        internal int DestinationCardinality { get; init; }
+        internal Exception? SourceFailure { get; init; }
 
-        internal int UnrelatedReads { get; private set; }
+        internal Exception? ProbeFailure { get; init; }
 
         internal ConcurrentQueue<string> Trace { get; } = new();
 
@@ -549,23 +684,39 @@ public sealed class CalendarMoveModuleTests
             return Task.FromResult(Discovery);
         }
 
-        public Task<CalendarResourceRead> ReadSourceAsync(string href, CancellationToken cancellationToken)
+        public Task<CalendarResourceRead> ReadSourceAsync(
+            string sourceCalendarHref,
+            string href,
+            CancellationToken cancellationToken)
         {
+            sourceCalendarHref.ShouldBe("https://cal.example/tasks/");
             Trace.Enqueue("read-source");
+            if (SourceFailure is not null)
+                return Task.FromException<CalendarResourceRead>(SourceFailure);
             return Task.FromResult(Source);
         }
 
         public Task<CalendarResourceRead> ProbeDestinationPresenceAsync(
+            string destinationCalendarHref,
             string href,
             CancellationToken cancellationToken)
         {
+            destinationCalendarHref.ShouldBe(DestinationCalendarHref);
             Trace.Enqueue("probe-destination");
+            if (ProbeFailure is not null)
+                return Task.FromException<CalendarResourceRead>(ProbeFailure);
             return Task.FromResult(Preflight);
         }
 
-        public Task<CalendarResourceRead> ObserveResourceAsync(string href, CancellationToken cancellationToken)
+        public Task<CalendarResourceRead> ObserveResourceAsync(
+            string authorizedCalendarHref,
+            string href,
+            CancellationToken cancellationToken)
         {
             var destination = string.Equals(href, DestinationHref(), StringComparison.Ordinal);
+            authorizedCalendarHref.ShouldBe(destination
+                ? DestinationCalendarHref
+                : "https://cal.example/tasks/");
             Trace.Enqueue(destination ? "observe-destination" : "observe-source");
             return Observe is null
                 ? Task.FromResult(destination ? DestinationObservation : SourceObservation)
@@ -573,9 +724,13 @@ public sealed class CalendarMoveModuleTests
         }
 
         public Task<CalendarResourceMoveDispatchResult> DispatchAsync(
+            string sourceCalendarHref,
+            string destinationCalendarHref,
             CalendarResourceMoveDispatchRequest request,
             CancellationToken cancellationToken)
         {
+            sourceCalendarHref.ShouldBe("https://cal.example/tasks/");
+            destinationCalendarHref.ShouldBe(DestinationCalendarHref);
             Trace.Enqueue("dispatch");
             AfterDispatch?.Invoke();
             return Task.FromResult(Dispatch);

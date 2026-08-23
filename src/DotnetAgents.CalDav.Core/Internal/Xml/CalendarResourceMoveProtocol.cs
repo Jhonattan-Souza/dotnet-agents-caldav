@@ -13,14 +13,33 @@ internal sealed class CalendarResourceMoveProtocol(
 
     public async Task<CalendarResourceMoveDispatchResult> MoveAsync(
         CalendarResourceMoveDispatchRequest request,
+        CancellationToken cancellationToken) => await MoveAsync(
+        request,
+        ParentHref(request.SourceHref),
+        ParentHref(request.DestinationHref),
+        cancellationToken);
+
+    public async Task<CalendarResourceMoveDispatchResult> MoveAsync(
+        CalendarResourceMoveDispatchRequest request,
+        string? authorizedSourceCalendarHref,
+        string? authorizedDestinationCalendarHref,
         CancellationToken cancellationToken)
     {
-        if (!TryValidateRequest(request, out var sourceUri, out var destinationUri, out var entityTag))
+        if (!TryValidateRequest(
+                request,
+                authorizedSourceCalendarHref,
+                authorizedDestinationCalendarHref,
+                out var sourceUri,
+                out var destinationUri,
+                out var sourceCalendarUri,
+                out var entityTag))
+        {
             return new CalendarResourceMoveDispatchResult(CalendarResourceMoveDispatchCode.InvalidInput);
+        }
         cancellationToken.ThrowIfCancellationRequested();
         try
         {
-            return await SendAsync(sourceUri, destinationUri, entityTag, cancellationToken);
+            return await SendAsync(sourceUri, sourceCalendarUri, destinationUri, entityTag, cancellationToken);
         }
         catch (Exception exception) when (exception is HttpRequestException
             or IOException
@@ -33,6 +52,7 @@ internal sealed class CalendarResourceMoveProtocol(
 
     private async Task<CalendarResourceMoveDispatchResult> SendAsync(
         Uri initialSourceUri,
+        Uri sourceCalendarUri,
         Uri destinationUri,
         EntityTagHeaderValue entityTag,
         CancellationToken cancellationToken)
@@ -50,6 +70,7 @@ internal sealed class CalendarResourceMoveProtocol(
             if (redirectCount >= CalendarMutationProtocolPrimitives.MaximumRedirects
                 || !TryResolveRedirect(
                     currentSourceUri,
+                    sourceCalendarUri,
                     destinationUri,
                     response.Headers.Location,
                     out var redirectUri))
@@ -75,14 +96,20 @@ internal sealed class CalendarResourceMoveProtocol(
 
     private bool TryValidateRequest(
         CalendarResourceMoveDispatchRequest request,
+        string? authorizedSourceCalendarHref,
+        string? authorizedDestinationCalendarHref,
         out Uri sourceUri,
         out Uri destinationUri,
+        out Uri sourceCalendarUri,
         out EntityTagHeaderValue entityTag)
     {
         sourceUri = null!;
         destinationUri = null!;
+        sourceCalendarUri = null!;
         entityTag = null!;
         if (!TryValidateEndpoints(request, out sourceUri, out destinationUri)
+            || !TryValidateCalendarIdentity(authorizedSourceCalendarHref, sourceUri, out sourceCalendarUri)
+            || !TryValidateCalendarIdentity(authorizedDestinationCalendarHref, destinationUri, out _)
             || !TryValidateEntityTag(request.EntityTag, out var parsedEntityTag))
         {
             return false;
@@ -113,6 +140,7 @@ internal sealed class CalendarResourceMoveProtocol(
 
     private bool TryResolveRedirect(
         Uri currentUri,
+        Uri sourceCalendarUri,
         Uri destinationUri,
         Uri? location,
         out Uri redirectUri)
@@ -121,12 +149,30 @@ internal sealed class CalendarResourceMoveProtocol(
             configuredBaseUri,
             currentUri,
             location,
-            candidate => !string.Equals(
-                candidate.AbsoluteUri,
-                destinationUri.AbsoluteUri,
-                StringComparison.Ordinal),
+            candidate => IsDirectResourceOf(sourceCalendarUri, candidate)
+                && !string.Equals(candidate.AbsoluteUri, destinationUri.AbsoluteUri, StringComparison.Ordinal),
             out redirectUri);
     }
+
+    private bool TryValidateCalendarIdentity(string? calendarHref, Uri resourceUri, out Uri calendarUri)
+    {
+        calendarUri = null!;
+        return calendarHref is not null
+            && CalendarMutationProtocolPrimitives.TryValidateAbsoluteUri(calendarHref, out calendarUri)
+            && calendarUri.AbsolutePath.EndsWith("/", StringComparison.Ordinal)
+            && CalendarMutationProtocolPrimitives.HasSameOrigin(configuredBaseUri, calendarUri)
+            && IsDirectResourceOf(calendarUri, resourceUri);
+    }
+
+    private static bool IsDirectResourceOf(Uri calendarUri, Uri resourceUri) => string.Equals(
+        new Uri(resourceUri, ".").AbsoluteUri,
+        calendarUri.AbsoluteUri,
+        StringComparison.Ordinal);
+
+    private static string? ParentHref(string resourceHref) =>
+        Uri.TryCreate(resourceHref, UriKind.Absolute, out var resourceUri)
+            ? new Uri(resourceUri, ".").AbsoluteUri
+            : null;
 
     private async Task<CalendarResourceMoveDispatchResult> MapResponseAsync(
         HttpResponseMessage response,
@@ -155,6 +201,7 @@ internal sealed class CalendarResourceMoveProtocol(
         CalendarMutationHttpOutcome.Dispatched =>
             new(CalendarResourceMoveDispatchCode.Dispatched),
         CalendarMutationHttpOutcome.PossiblyDispatched => new(CalendarResourceMoveDispatchCode.PossiblyDispatched),
+        CalendarMutationHttpOutcome.OtherSuccess => new(CalendarResourceMoveDispatchCode.PossiblyDispatched),
         CalendarMutationHttpOutcome.NotFound => new(CalendarResourceMoveDispatchCode.NotFound),
         CalendarMutationHttpOutcome.Conflict =>
             new(
