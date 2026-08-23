@@ -64,7 +64,7 @@ public sealed class CalendarQuerySnapshotStoreTests
     [Fact]
     public void DuplicatePublicationRollsBackTheSecondReservation()
     {
-        using var store = new CalendarQuerySnapshotStore(TimeProvider.System);
+        using var store = new CalendarQuerySnapshotStore(new FixedTimeProvider());
         var id = Guid.NewGuid();
         var first = store.TryReserve(Snapshot(id, 7));
         first.Lease!.Commit().ShouldBeTrue();
