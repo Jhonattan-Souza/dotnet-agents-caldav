@@ -656,6 +656,111 @@ public sealed class CalendarTelemetryTests
         activity.GetTagItem("caldav.query.snapshot_count").ShouldBeNull();
     }
 
+    [Theory]
+    [InlineData("discovery")]
+    [InlineData("candidate")]
+    [InlineData("fetch")]
+    [InlineData("evaluation")]
+    [InlineData("serialization")]
+    [InlineData("reservation")]
+    [InlineData("snapshot_lookup")]
+    [InlineData("page_admission")]
+    public void QueryPhaseAllowlistPreservesEveryClosedValue(string phase)
+    {
+        using var listener = ListenTo(CalendarTelemetry.InstrumentationName);
+        using var source = new ActivitySource(CalendarTelemetry.InstrumentationName);
+        using var activity = source.StartActivity("caldav.query.phase");
+        activity.ShouldNotBeNull();
+        activity.SetTag("caldav.query.phase", phase);
+        activity.Stop();
+
+        new TelemetryActivityAllowlistProcessor().OnEnd(activity);
+
+        activity.GetTagItem("caldav.query.phase").ShouldBe(phase);
+    }
+
+    [Fact]
+    public void QueryCounterAllowlistAcceptsIntegralRepresentationsAndExactBoundsOnly()
+    {
+        using var listener = ListenTo(CalendarTelemetry.InstrumentationName);
+        using var source = new ActivitySource(CalendarTelemetry.InstrumentationName);
+        using var activity = source.StartActivity("caldav.operation");
+        activity.ShouldNotBeNull();
+        activity.SetTag("caldav.query.mode", "continue");
+        activity.SetTag("caldav.query.candidate_count", (byte)1);
+        activity.SetTag("caldav.query.multiget_resource_count", (short)2);
+        activity.SetTag("caldav.query.snapshot_count", 3);
+        activity.SetTag("caldav.query.evaluation_count", 4L);
+        activity.SetTag("caldav.query.serialization_count", 100_000_000L);
+        activity.SetTag("caldav.query.snapshot_lookup_count", 100_000_001L);
+        activity.SetTag("caldav.query.page_admission_count", "private");
+        activity.Stop();
+
+        new TelemetryActivityAllowlistProcessor().OnEnd(activity);
+
+        activity.GetTagItem("caldav.query.mode").ShouldBe("continue");
+        activity.GetTagItem("caldav.query.candidate_count").ShouldBe(1L);
+        activity.GetTagItem("caldav.query.multiget_resource_count").ShouldBe(2L);
+        activity.GetTagItem("caldav.query.snapshot_count").ShouldBe(3L);
+        activity.GetTagItem("caldav.query.evaluation_count").ShouldBe(4L);
+        activity.GetTagItem("caldav.query.serialization_count").ShouldBe(100_000_000L);
+        activity.GetTagItem("caldav.query.snapshot_lookup_count").ShouldBeNull();
+        activity.GetTagItem("caldav.query.page_admission_count").ShouldBeNull();
+    }
+
+    [Fact]
+    public void FailedRetryAndOrphanRetryDoNotClaimRecovery()
+    {
+        using var calendarListener = ListenTo(CalendarTelemetry.InstrumentationName);
+        using var httpListener = ListenTo(OpenTelemetryHostConfiguration.HttpInstrumentationName);
+        using var calendarSource = new ActivitySource(CalendarTelemetry.InstrumentationName);
+        using var httpSource = new ActivitySource(OpenTelemetryHostConfiguration.HttpInstrumentationName);
+        var processor = new TelemetryActivityAllowlistProcessor();
+
+        using (var orphan = httpSource.StartActivity("HTTP"))
+        {
+            orphan.ShouldNotBeNull();
+            orphan.SetTag("http.request.resend_count", 1);
+            orphan.Stop();
+            processor.OnEnd(orphan);
+        }
+
+        using var operation = calendarSource.StartActivity("caldav.operation");
+        operation.ShouldNotBeNull();
+        operation.SetTag("caldav.outcome", "success");
+        using (var failed = httpSource.StartActivity("HTTP"))
+        {
+            failed.ShouldNotBeNull();
+            failed.SetStatus(ActivityStatusCode.Error);
+            failed.SetTag("http.request.resend_count", (short)1);
+            failed.Stop();
+            processor.OnEnd(failed);
+        }
+        operation.Stop();
+        processor.OnEnd(operation);
+
+        operation.GetTagItem("caldav.transport.retry_count").ShouldBe(1);
+        operation.GetTagItem("caldav.transport.recovered").ShouldBeNull();
+    }
+
+    [Fact]
+    public void UnknownInstrumentationCannotRetainCalendarQueryDimensions()
+    {
+        const string sourceName = "Private.Unknown.Instrumentation";
+        using var listener = ListenTo(sourceName);
+        using var source = new ActivitySource(sourceName);
+        using var activity = source.StartActivity("private operation");
+        activity.ShouldNotBeNull();
+        activity.SetTag("caldav.query.mode", "start");
+        activity.SetTag("private.href", "https://cal.example/private.ics");
+        activity.Stop();
+
+        new TelemetryActivityAllowlistProcessor().OnEnd(activity);
+
+        activity.GetTagItem("caldav.query.mode").ShouldBeNull();
+        activity.GetTagItem("private.href").ShouldBeNull();
+    }
+
     private static ActivityListener ListenTo(string sourceName)
     {
         var listener = new ActivityListener

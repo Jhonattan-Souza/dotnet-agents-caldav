@@ -4494,6 +4494,13 @@
             "originScopeAuthorization"
           ]
         },
+        "violations": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/violation"
+          }
+        },
         "limits": {
           "$ref": "#/$defs/executionLimits"
         },
