@@ -271,5 +271,16 @@
       "exact.delete.confirmed",
       "todo.delete.confirmed"
     ]
+  },
+  "resolutionFollowUp": {
+    "status": "resolved_after_measurement",
+    "pullRequest": 118,
+    "fixCommit": "a2971841151b4ca0a686aedca55f9cbef1fdc009",
+    "regression": "OpenTelemetryStdioIntegrationTests.ConfirmedDelete_ExportsExpectedAbsenceWithoutErrorOverStdio",
+    "preservedHistoricalTraceIds": [
+      "64a2567e50223f4a6ef5e055819363f9",
+      "85f4f19d3f59d6278ed70d2502f7053c",
+      "832f5dfaa2cb47955ef791954eafa5e0"
+    ]
   }
 }
