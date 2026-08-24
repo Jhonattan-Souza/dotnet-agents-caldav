@@ -1,5 +1,27 @@
 # Release Notes
 
+## 0.2.3 — 2026-08-23
+
+Calendar Entity, Occurrence, and compact To-do queries now execute once into
+immutable ten-minute Query Result Snapshots. Continuation calls authenticate a
+cursor and read only retained projected bytes: they perform no CalDAV reads,
+parsing, filtering, or recurrence expansion. Bounded query Starts use an
+explicit caller or configured IANA Temporal Evaluation Context, and Direct GET
+compatibility activates only after verified `calendar-multiget`
+unavailability.
+
+Semantic and Exact Move now use one conditional server-authoritative MOVE with
+bounded bilateral reconciliation under the verified Radicale 3.7.8 profile.
+Destination enumeration and UID scans are removed, Exact Move uses a protected
+one-use execution plan across MRTR, and collision results remain deliberately
+non-disclosing. Discovery work is reused once per MCP tool call.
+
+The stdio server also adds opt-in privacy-allowlisted OTLP traces, metrics, and
+correlated logs with truthful Operation outcomes, Mutation State, and
+per-wire-attempt recovery evidence. Test execution has moved to Microsoft
+Testing Platform v2 and xUnit 4, with isolated coverage and complete-result
+gates. See [the 0.2.2 to 0.2.3 migration guide](docs/migrating-0.2.2-to-0.2.3.md).
+
 ## 0.2.2 — 2026-08-21
 
 Event, To-do, and opt-in Exact Create now delegate collision authority to the

@@ -50,7 +50,7 @@ verify_identity() {
 require_entry() {
   local archive=$1
   local entry=$2
-  if ! unzip -Z1 "$archive" | grep -Fxq "$entry"; then
+  if ! unzip -Z1 "$archive" | grep -Fx "$entry" >/dev/null; then
     echo "missing required package entry: $entry" >&2
     return 1
   fi

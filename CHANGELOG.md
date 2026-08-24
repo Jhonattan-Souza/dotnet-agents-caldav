@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-08-23
+
 ### Added
 
 - Added immutable ten-minute Query Result Snapshot pagination for `calendar_entities.query`, including authenticated replayable Continuation Cursors, variable page sizes, and typed `cursor_expired` and `busy` failures.
@@ -18,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added opt-in OTLP traces, MCP metrics, and trace-correlated safe logs for the stdio server, including CalDAV aggregate-phase and outbound HTTP attempt waterfalls.
 - Added automated loopback OTLP coverage for trace parentage, metrics, log correlation, redaction, disabled defaults, collector failure isolation, and stdin-EOF shutdown.
 - Added truthful Operation outcome and Mutation State telemetry, explicit expected-absence observations, and per-wire-attempt retry recovery evidence through the built MCP stdio server.
+
+### Fixed
+
+- Fixed final-package entry validation so larger archives cannot turn an existing entry into a false missing-entry failure under `pipefail`.
 
 ### Changed
 
