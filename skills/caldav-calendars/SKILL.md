@@ -1,40 +1,43 @@
 ---
 name: caldav-calendars
-description: >
-  Manage CalDAV Calendars, Events, and To-dos through the unified 0.2 MCP tools. Use for
-  calendar discovery, event or task queries, creation, revision-bound changes, recurrence,
-  completion, moves, deletion, and exact Calendar Object Resource operations.
+description: Use the installed dotnet-agents-caldav MCP tools to inspect or manage CalDAV Calendars, Events, To-dos, recurring Occurrences, and exact Calendar Object Resources.
 ---
 
 # CalDAV Calendars
 
-Use the semantic catalog for normal work. It preserves Calendar Object Resources while exposing typed Event and To-do fields. Reach for exact tools only when the user explicitly asks to read, create, replace, or move a complete resource and the exact catalog is enabled.
+Use the installed `dotnet-agents-caldav` MCP tools directly. Their current names, availability, descriptions, and input schemas are authoritative; this skill supplies intent routing, identity rules, and safe call sequencing. If a named tool is absent, report that catalog or client limitation instead of approximating the operation through unrelated tools.
 
-## 1. Establish Calendar Scope
+## Resolve Calendar Scope
 
-Call `calendars.list` before the first Calendar operation. Retain canonical Calendar hrefs, display names, Event/To-do support, and the independent defaults for the rest of the conversation.
+Call `calendars.list` when the intended Calendar, its canonical href, its Event or To-do capability, or its default status is unknown. Retain the returned canonical hrefs and independent Event and To-do defaults while completing the request.
 
-- A canonical Calendar href is identity. A Calendar Name is display metadata.
-- Omitted selection uses the default for the requested Entity Kind only.
-- Use selected scope for one named or href-addressed Calendar. Use all scope only when the user explicitly asks across Calendars.
-- Present authorized candidates and ask when a name is ambiguous. An explicit failed selection never falls back.
+- Treat a Calendar href as identity and its name as display metadata.
+- Use `selected` for one reviewed Calendar and `all` only for an explicitly cross-Calendar request.
+- Use `default` only when the live tool schema offers it and the user has not selected a Calendar.
+- When a name matches multiple Calendars, present the authorized candidates and ask the user to choose. A failed explicit selection remains a failure.
 
-This step is complete when the intended scope resolves to the requested Entity Kind without guessing.
+Scope is resolved when every call has one schema-valid scope that supports the requested Entity Kind without guessing.
 
-## 2. Choose the Read Model
+## Route Reads
 
-- Use `calendar_entities.query` for persisted Event or To-do snapshots. Follow `nextCursor` until the requested bounded result is complete.
-- Use `calendar_occurrences.query` for derived recurrence instances in a non-empty half-open UTC window. Supply an IANA evaluation time zone when floating or date-only values require one.
-- Use `todos.query` for routine compact To-do lists. Provide an explicit selected or all-Calendar Scope; the server normalizes completion evidence and returns strong revision targets.
-- Use `calendar_resources.get` for the authoritative semantic-or-opaque snapshot of one confirmed absolute resource href.
+- `calendar_entities.query`: persisted Event or To-do resource snapshots. A Start uses `selected` or `all` scope plus `entityKinds`; an optional UTC `from`/`to` pair makes it bounded.
+- `calendar_occurrences.query`: derived Event and To-do Occurrences in a non-empty half-open UTC `from`/`to` window. Occurrences are read-only views of a containing resource revision.
+- `todos.query`: compact normalized To-do results, completion-state and due-time filters, and an allowlisted projection. A Start uses explicit `selected` or `all` scope.
+- `calendar_resources.get`: one authoritative semantic-or-opaque snapshot at a confirmed absolute resource href.
 
-An Occurrence is read-only. Any mutation targets its containing resource revision and, when applicable, its original Recurrence Identity.
+The three query tools use immutable Query Result Snapshots:
 
-This step is complete when the chosen tool returns the requested bounded snapshots or Occurrences, or a typed failure that the user can act on.
+1. Start with the complete scope, filters, window, Temporal Evaluation Context, and optional `pageSize` accepted by the live schema.
+2. While `pagination.nextCursor` is non-null and more requested results are needed, Continue with only that `cursor` and an optional `pageSize`. Do not repeat or change Start arguments.
+3. A Continue performs no CalDAV retrieval or semantic reevaluation. Its cursor is process-local and expires after ten minutes; on `cursor_expired`, run a new Start and disclose that the result is a fresh snapshot.
 
-## 3. Bind Every Existing-Resource Mutation
+For a bounded `calendar_entities.query` Start and every `calendar_occurrences.query` or `todos.query` Start, use the user's known IANA zone as `evaluationTimeZone` or rely on the server's validated configured zone. If neither is available, ask for an IANA zone after the typed failure. An unbounded Entity Start does not accept an unused caller override. Preserve the returned `temporalEvaluationContext` when explaining time-sensitive results.
 
-Carry the exact `snapshot.entityRevision` returned by the latest query or direct read:
+Read routing is complete when the requested bounded results have been obtained from one snapshot traversal, or a typed failure has been reported with the missing decision identified.
+
+## Bind Writes to Fresh Revisions
+
+Immediately before changing an existing resource, query it or call `calendar_resources.get` and let the user disambiguate candidates. Entity and Occurrence reads expose the complete strong reference as `snapshot.entityRevision`; compact `todos.query` results expose it as `completionTarget.entityRevision` when that target is available:
 
 ```json
 {
@@ -45,32 +48,30 @@ Carry the exact `snapshot.entityRevision` returned by the latest query or direct
 }
 ```
 
-Use that whole reference with `events.patch`, `todos.patch`, `todos.complete`, Occurrence mutation tools, `calendar_resources.move`, or `calendar_resources.delete`. Summary, Calendar Name, current start time, and result position are never mutation identities. On `conflict`, show the authorized current snapshot and ask the user to review it; do not merge or retry the write automatically.
+Pass that exact object under the argument name required by the live schema: `snapshot` for patches, completion, and Occurrence mutations; `revision` for semantic move and delete. Summary, Calendar name, times, and result position are presentation data, not mutation identity.
 
-This step is complete when every proposed existing-resource mutation is bound to one freshly reviewed href, UID, Entity Kind, and strong Entity Tag.
+- Create one typed resource with `events.create` or `todos.create` in a default or selected destination accepted by the schema.
+- Change fields with `events.patch` or `todos.patch`. Choose `master`, `one-occurrence`, `this-and-future`, or `entire-set` explicitly; use `replaceAll` only for an intentional whole-collection replacement.
+- Complete a To-do with `todos.complete`, adding the exact original `recurrenceIdentity` from the read or direct completion target when completion targets one recurring Occurrence. Resolve `occurrence_required` with an Occurrence query; an `unavailable` target is not writable through this shortcut.
+- Change recurrence membership or cancellation with `calendar_occurrences.add`, `calendar_occurrences.exclude`, `calendar_occurrences.restore_exclusion`, `calendar_occurrences.cancel`, or `calendar_occurrences.restore_cancellation`, using the exact recurrence identity returned by a read.
+- Move one reviewed semantic resource with `calendar_resources.move`; the server uses a conditional, server-authoritative MOVE and bounded reconciliation under its verified interoperability profile.
+- Delete one reviewed resource with `calendar_resources.delete`.
 
-## 4. Apply One Explicit Intent
+One call changes at most one Calendar Object Resource. On `conflict`, present the authorized current snapshot or typed conflict and ask the user to review it; a new write requires a fresh revision and intent. Never merge or retry an ambiguous write automatically.
 
-- Create one Event with `events.create` or one To-do with `todos.create`. Choose the default or one selected Calendar.
-- Patch scalar fields with explicit `set` or `clear`. Patch repeated fields with `addRemove`; use `replaceAll` only when replacing the entire collection is the user's stated intent.
-- Complete a non-recurring To-do, or one original recurring identity, with `todos.complete`. The server records the completion instant.
-- Add or change one recurrence identity with `calendar_occurrences.add`, `calendar_occurrences.exclude`, `calendar_occurrences.restore_exclusion`, `calendar_occurrences.cancel`, or `calendar_occurrences.restore_cancellation`. Never infer one-occurrence, this-and-future, or entire-set scope from vague wording.
-- Move or delete only the reviewed revision. One call mutates at most one Calendar Object Resource.
+A write is complete only when its structured outcome establishes the result. Report `no_change`, declined confirmation, `mutationState`, and typed failures without implying a committed mutation.
 
-Preserve structured outcomes in the response. `no_change` and declined confirmation are successful non-writes. Expected failures use `isError: true` with a typed `code`, `phase`, and, for mutations, `mutationState`.
+## Continue MCP Multi Round-Trips
 
-This step is complete when the result matches one explicit user intent and its structured outcome is reported without implying a write that was not verified.
+High-impact operations can return MCP `input_required`, including delete, complete-resource writes, whole-collection replacements, and broad recurrence changes. Present the server's review as returned, obtain the requested confirmation, and continue the same tool with its opaque `requestState` and `inputResponses`.
 
-## 5. Complete Multi Round-Trip Requests (MRTR)
+Keep `requestState` opaque and single-use. Expiry, mismatch, changed arguments, changed revision, or decline completes the exchange without a write. If the MCP client cannot continue Multi Round-Trip Requests, report that client limitation and leave the operation uncommitted.
 
-Delete, exact writes, `replaceAll`, recurrence-definition changes, this-and-future, and entire-set mutations may return MCP `input_required`. Present the server's preview without weakening it, collect the requested confirmation, and continue the same call with its opaque `requestState` and `inputResponses`.
+## Use Exact Resources Deliberately
 
-Treat expiry, mismatch, changed arguments, changed revision, or decline as a completed non-write. Never manufacture, edit, log, or reuse `requestState`.
+Use the semantic tools for normal Calendar work. When the user explicitly needs byte-preserving access or supplies a complete Calendar Object Resource, use the opt-in exact catalog if it is exposed:
 
-This step is complete when the same MRTR exchange either verifies the requested mutation or ends with an explicit, accurately reported non-write.
+- `calendar_resources.exact_get` returns a protected MCP resource link for one confirmed absolute href.
+- `calendar_resources.exact_create`, `calendar_resources.exact_replace`, and `calendar_resources.exact_move` require complete caller-authored content, explicit absolute hrefs, applicable strong revisions, and MCP Multi Round-Trip confirmation.
 
-## Exact Operations
-
-When `CALDAV_EXPOSE_EXACT_TOOLS=true`, the separate exact catalog contains `calendar_resources.exact_get`, `calendar_resources.exact_create`, `calendar_resources.exact_replace`, and `calendar_resources.exact_move`. Exact reads return a protected MCP resource link. Exact writes require complete caller-authored content, explicit absolute hrefs, revision checks where applicable, and MRTR confirmation. URI values and scheduling data remain inert storage; the server does not fetch content or send invitations.
-
-For an upgrade from the removed 0.1.x contract, read [Migrating from 0.1.x to 0.2.0](../../docs/migrating-0.1.x-to-0.2.0.md) before using the new catalog.
+Exact content remains inert storage: URI values are not fetched and scheduling data does not send invitations.
