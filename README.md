@@ -13,7 +13,7 @@ Add this MCP server to VS Code, Claude Desktop, Cursor, or any MCP client:
   "mcpServers": {
     "caldav-calendars": {
       "command": "dnx",
-      "args": ["--yes", "dotnet-agents-caldav@0.2.2"],
+      "args": ["--yes", "dotnet-agents-caldav@0.2.3"],
       "env": {
         "CALDAV_URL": "https://caldav.example.com",
         "CALDAV_USERNAME": "user",
@@ -68,7 +68,7 @@ Add this MCP server to VS Code, Claude Desktop, Cursor, or any MCP client:
 - `calendar_resources.move` — Move one reviewed resource with exact `If-Match`, `Overwrite: F`, server-authoritative UID collision truth, and bounded bilateral reconciliation; requires a verified interoperability profile.
 - `calendar_resources.delete` — Delete an entire resource from an explicitly supplied revision reference (href, UID, kind, and exact strong ETag) after MCP MRTR review and confirmation; success requires verified absence.
 
-The 0.2.2 default catalog contains exactly these 17 tools in the order shown. It has no legacy task aliases or compatibility mode.
+The 0.2.3 default catalog contains exactly these 17 tools in the order shown. It has no legacy task aliases or compatibility mode.
 
 ### Exact Calendar resource tools
 
@@ -105,12 +105,14 @@ Exported spans show the MCP request, `caldav.operation`, the applicable `discove
 
 ## Supported servers
 
-The verified interoperability profile is the official Radicale 3.7.8 image pinned in the [Radicale 3.7.8 profile](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/v0.2.2/contracts/0.2.2/radicale-3.7.8-profile.json). Set `CALDAV_INTEROPERABILITY_PROFILE=radicale-3.7.8` only for that runtime. Server-authoritative Semantic and Exact Move fail closed with `unsupported_capability` when the profile is omitted because atomic `If-Match`, `Overwrite: F`, and `CALDAV:no-uid-conflict` enforcement cannot be inferred from stored resources or generic DAV discovery. No collection-scan compatibility fallback is provided. Other CalDAV servers remain unverified profiles even when capability negotiation allows other operations.
+The verified interoperability profile is the official Radicale 3.7.8 image pinned in the [Radicale 3.7.8 profile](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/v0.2.3/contracts/0.2.3/radicale-3.7.8-profile.json). Set `CALDAV_INTEROPERABILITY_PROFILE=radicale-3.7.8` only for that runtime. Server-authoritative Semantic and Exact Move fail closed with `unsupported_capability` when the profile is omitted because atomic `If-Match`, `Overwrite: F`, and `CALDAV:no-uid-conflict` enforcement cannot be inferred from stored resources or generic DAV discovery. No collection-scan compatibility fallback is provided. Other CalDAV servers remain unverified profiles even when capability negotiation allows other operations.
 
-## Migrating from 0.2.1
+## Migrating from 0.2.2
 
-Version 0.2.2 changes Create collision handling while keeping tool names and
-input shapes stable. Read [Migrating from 0.2.1 to 0.2.2](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/v0.2.2/docs/migrating-0.2.1-to-0.2.2.md)
+Version 0.2.3 replaces query replay with immutable Query Result Snapshots,
+requires an explicit Temporal Evaluation Context for bounded query Starts, and
+makes Move server-authoritative under the verified profile. Read
+[Migrating from 0.2.2 to 0.2.3](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/v0.2.3/docs/migrating-0.2.2-to-0.2.3.md)
 before upgrading.
 
 ## Migrating from 0.1.x

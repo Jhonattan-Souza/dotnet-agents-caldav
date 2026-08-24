@@ -1,0 +1,26 @@
+{
+  "contractVersion": "0.2.3",
+  "verifiedAt": "2026-08-23",
+  "protocol": {
+    "revision": "2026-07-28",
+    "stableTag": "2026-07-28",
+    "commit": "5f5440bb26a62e2cf3440b92da5a667efa03b267",
+    "sourceDocuments": [
+      { "category": "specification", "url": "https://github.com/modelcontextprotocol/modelcontextprotocol/tree/5f5440bb26a62e2cf3440b92da5a667efa03b267/docs/specification/2026-07-28" },
+      { "category": "changelog", "url": "https://github.com/modelcontextprotocol/modelcontextprotocol/blob/5f5440bb26a62e2cf3440b92da5a667efa03b267/docs/specification/2026-07-28/changelog.mdx" },
+      { "category": "discovery", "url": "https://github.com/modelcontextprotocol/modelcontextprotocol/blob/5f5440bb26a62e2cf3440b92da5a667efa03b267/docs/specification/2026-07-28/server/discover.mdx" },
+      { "category": "tools", "url": "https://github.com/modelcontextprotocol/modelcontextprotocol/blob/5f5440bb26a62e2cf3440b92da5a667efa03b267/docs/specification/2026-07-28/server/tools.mdx" },
+      { "category": "multiRoundTripRequests", "url": "https://github.com/modelcontextprotocol/modelcontextprotocol/blob/5f5440bb26a62e2cf3440b92da5a667efa03b267/docs/specification/2026-07-28/basic/patterns/mrtr.mdx" },
+      { "category": "stdio", "url": "https://github.com/modelcontextprotocol/modelcontextprotocol/blob/5f5440bb26a62e2cf3440b92da5a667efa03b267/docs/specification/2026-07-28/basic/transports/stdio.mdx" }
+    ]
+  },
+  "sdk": {
+    "package": "ModelContextProtocol",
+    "version": "2.2.0",
+    "release": "https://github.com/modelcontextprotocol/csharp-sdk/releases/tag/v2.2.0"
+  },
+  "authorityPolicy": {
+    "acceptedSources": ["stableSpecification", "stableChangelog", "officialFeatureDocumentation", "officialCSharpSdk"],
+    "excludedSources": ["draftSpecification", "deprecatedSamples", "thirdPartyExamples"]
+  }
+}
