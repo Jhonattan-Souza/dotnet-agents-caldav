@@ -2463,6 +2463,64 @@ public class CalDavClientTests
         requests.ShouldAllBe(request => request.RequestUri!.Host == "example.com");
     }
 
+    [Theory]
+    [InlineData(HttpStatusCode.OK, "Dispatched")]
+    [InlineData(HttpStatusCode.Created, "Dispatched")]
+    [InlineData(HttpStatusCode.NoContent, "Dispatched")]
+    [InlineData(HttpStatusCode.Accepted, "PossiblyDispatched")]
+    [InlineData(HttpStatusCode.MultiStatus, "PossiblyDispatched")]
+    [InlineData(HttpStatusCode.NotFound, "NotFound")]
+    [InlineData(HttpStatusCode.MethodNotAllowed, "UnsupportedCapability")]
+    [InlineData(HttpStatusCode.NotImplemented, "UnsupportedCapability")]
+    [InlineData(HttpStatusCode.Conflict, "Conflict")]
+    [InlineData(HttpStatusCode.PreconditionFailed, "Conflict")]
+    [InlineData(HttpStatusCode.RequestEntityTooLarge, "PayloadTooLarge")]
+    [InlineData(HttpStatusCode.Unauthorized, "UpstreamUnauthorized")]
+    [InlineData(HttpStatusCode.Forbidden, "UpstreamForbidden")]
+    [InlineData(HttpStatusCode.TooManyRequests, "UpstreamRateLimited")]
+    [InlineData(HttpStatusCode.ServiceUnavailable, "UpstreamUnavailable")]
+    [InlineData(HttpStatusCode.BadRequest, "ProtocolError")]
+    public async Task CreateCalendarCollectionAsync_MapsHttpStatusToDispatchCode(
+        HttpStatusCode statusCode,
+        string expectedCode)
+    {
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(statusCode));
+        var sut = CreateSut(handler, "https://example.com/calendars/user/");
+
+        var result = await sut.CreateCalendarCollectionAsync(
+            new CalendarCollectionCreateDispatchRequest(
+                "https://example.com/calendars/user/planning/",
+                "Planning",
+                [CalendarEntityKind.Event]),
+            CancellationToken.None);
+
+        result.Code.ToString().ShouldBe(expectedCode);
+        result.StatusCode.ShouldBe((int)statusCode);
+    }
+
+    [Fact]
+    public async Task DeleteCalendarCollectionAsync_SendsDepthInfinityAndPreservesRetryAfter()
+    {
+        var requests = new List<HttpRequestMessage>();
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            requests.Add(request);
+            var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+            response.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromSeconds(3));
+            return response;
+        });
+        var sut = CreateSut(handler, "https://example.com/calendars/user/");
+
+        var result = await sut.DeleteCalendarCollectionAsync(
+            "https://example.com/calendars/user/planning/",
+            CancellationToken.None);
+
+        result.Code.ToString().ShouldBe("UpstreamRateLimited");
+        result.RetryAfterMilliseconds.ShouldBe(3_000);
+        requests.ShouldHaveSingleItem().Method.ShouldBe(HttpMethod.Delete);
+        requests[0].Headers.GetValues("Depth").ShouldHaveSingleItem().ShouldBe("infinity");
+    }
+
     #endregion
 
     #region Helper Methods
