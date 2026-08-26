@@ -207,8 +207,6 @@ public sealed class CalendarCollectionTools
                 return Error(expired ? "confirmation_expired" : "confirmation_mismatch", "confirmation", expired
                     ? "The mutation confirmation has expired."
                     : "The mutation confirmation does not match the reviewed request.", false, "mrtr", "not_attempted");
-            if (decision == ConfirmationDecision.Mismatch)
-                return Error("confirmation_mismatch", "confirmation", "The mutation confirmation does not match the reviewed request.", false, "mrtr", "not_attempted");
             if (decision == ConfirmationDecision.Declined)
                 return new()
                 {
@@ -263,7 +261,7 @@ public sealed class CalendarCollectionTools
         out ConfirmationDecision decision,
         out bool expired)
     {
-        decision = ConfirmationDecision.Mismatch;
+        decision = ConfirmationDecision.Declined;
         expired = false;
         if (string.IsNullOrEmpty(requestState)
             || inputResponses is null
@@ -431,7 +429,6 @@ public sealed class CalendarCollectionTools
 
     private enum ConfirmationDecision
     {
-        Mismatch,
         Declined,
         Confirmed
     }
