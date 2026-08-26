@@ -53,6 +53,8 @@ public sealed class CalendarMcpStdioIntegrationTests
         listedTools.Tools.Select(tool => tool.Name).ShouldBe(
         [
             "calendars.list",
+            "calendars.create",
+            "calendars.delete",
             "calendar_entities.query",
             "calendar_occurrences.query",
             "todos.query",
@@ -1215,6 +1217,95 @@ public sealed class CalendarMcpStdioIntegrationTests
     }
 
     [Fact]
+    public async Task CalendarCollectionTools_CreateAllComponentShapesAndDeleteNonEmptyCollectionOverStdio()
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        var stderr = new ConcurrentQueue<string>();
+        await using var client = await CreateClientAsync(
+            stderr,
+            exposeExact: false,
+            calendarHrefs: "",
+            confirmMutations: true);
+
+        async Task<string> CreateCollection(string name, string[] kinds)
+        {
+            var result = await client.CallToolAsync(
+                "calendars.create",
+                new Dictionary<string, object?>
+                {
+                    ["displayName"] = $"{name}-{suffix}",
+                    ["entityKinds"] = kinds
+                },
+                cancellationToken: TestContext.Current.CancellationToken);
+            result.IsError.ShouldBe(false, result.StructuredContent?.ToString());
+            result.StructuredContent!.Value.GetProperty("outcome").GetString().ShouldBe("success");
+            return result.StructuredContent.Value.GetProperty("calendar").GetProperty("calendar").GetProperty("href").GetString()!;
+        }
+
+        var eventsHref = await CreateCollection("Created Events", ["event"]);
+        var todosHref = await CreateCollection("Created Tasks", ["todo"]);
+        var mixedHref = await CreateCollection("Created Mixed", ["event", "todo"]);
+
+        var eventResult = await client.CallToolAsync(
+            "events.create",
+            new Dictionary<string, object?>
+            {
+                ["destination"] = new Dictionary<string, object?>
+                {
+                    ["mode"] = "selected",
+                    ["calendar"] = new Dictionary<string, object?> { ["by"] = "name", ["name"] = $"Created Mixed-{suffix}" }
+                },
+                ["entity"] = new Dictionary<string, object?>
+                {
+                    ["kind"] = "event",
+                    ["uid"] = $"collection-event-{suffix}",
+                    ["fields"] = new Dictionary<string, object?>
+                    {
+                        ["summary"] = "Collection event",
+                        ["start"] = new Dictionary<string, object?>
+                        {
+                            ["kind"] = "utcDateTime",
+                            ["value"] = "2026-08-18T13:00:00Z"
+                        }
+                    }
+                }
+            },
+            cancellationToken: TestContext.Current.CancellationToken);
+        var todoResult = await client.CallToolAsync(
+            "todos.create",
+            new Dictionary<string, object?>
+            {
+                ["destination"] = new Dictionary<string, object?>
+                {
+                    ["mode"] = "selected",
+                    ["calendar"] = new Dictionary<string, object?> { ["by"] = "href", ["href"] = mixedHref }
+                },
+                ["entity"] = new Dictionary<string, object?>
+                {
+                    ["kind"] = "todo",
+                    ["uid"] = $"collection-todo-{suffix}",
+                    ["fields"] = new Dictionary<string, object?> { ["summary"] = "Collection task" }
+                }
+            },
+            cancellationToken: TestContext.Current.CancellationToken);
+        eventResult.IsError.ShouldBe(false, eventResult.StructuredContent?.ToString());
+        todoResult.IsError.ShouldBe(false, todoResult.StructuredContent?.ToString());
+
+        foreach (var href in new[] { eventsHref, todosHref, mixedHref })
+        {
+            var deleted = await client.CallToolAsync(
+                "calendars.delete",
+                new Dictionary<string, object?> { ["href"] = href },
+                cancellationToken: TestContext.Current.CancellationToken);
+            deleted.IsError.ShouldBe(false, deleted.StructuredContent?.ToString());
+            deleted.StructuredContent!.Value.GetProperty("outcome").GetString().ShouldBe("success");
+            (await GetStatusAsync(href)).ShouldBe(HttpStatusCode.NotFound);
+        }
+
+        stderr.ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task CalendarEntityQuery_InvalidRawShapesReturnTypedErrorsWithoutNetwork()
     {
         var stderr = new ConcurrentQueue<string>();
@@ -1336,6 +1427,8 @@ public sealed class CalendarMcpStdioIntegrationTests
         tools.Tools.Select(tool => tool.Name).ShouldBe(
         [
             "calendars.list",
+            "calendars.create",
+            "calendars.delete",
             "calendar_entities.query",
             "calendar_occurrences.query",
             "todos.query",

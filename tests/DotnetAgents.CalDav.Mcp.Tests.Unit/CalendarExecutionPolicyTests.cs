@@ -447,6 +447,8 @@ public sealed class CalendarExecutionPolicyTests
 
     [Theory]
     [InlineData("events.create")]
+    [InlineData("calendars.create")]
+    [InlineData("calendars.delete")]
     [InlineData("events.patch")]
     [InlineData("todos.create")]
     [InlineData("todos.patch")]
@@ -546,6 +548,8 @@ public sealed class CalendarExecutionPolicyTests
 
     [Theory]
     [InlineData("calendars.list")]
+    [InlineData("calendars.create")]
+    [InlineData("calendars.delete")]
     [InlineData("calendar_entities.query")]
     [InlineData("calendar_occurrences.query")]
     [InlineData("todos.query")]
@@ -857,10 +861,11 @@ public sealed class CalendarExecutionPolicyTests
         var reads = new[]
         {
             "calendars.list", "calendar_entities.query", "calendar_occurrences.query",
-            "calendar_resources.get", "calendar_resources.exact_get"
+            "todos.query", "calendar_resources.get", "calendar_resources.exact_get"
         };
         var mutations = new[]
         {
+            "calendars.create", "calendars.delete",
             "events.create", "events.patch", "todos.create", "todos.patch", "todos.complete",
             "calendar_occurrences.add", "calendar_occurrences.exclude",
             "calendar_occurrences.restore_exclusion", "calendar_occurrences.cancel",
@@ -871,7 +876,7 @@ public sealed class CalendarExecutionPolicyTests
 
         reads.ShouldAllBe(toolName => !CalendarExecutionPolicy.IsMutation(toolName));
         mutations.ShouldAllBe(toolName => CalendarExecutionPolicy.IsMutation(toolName));
-        (reads.Length + mutations.Length).ShouldBe(20);
+        (reads.Length + mutations.Length).ShouldBe(23);
     }
 
     [Theory]

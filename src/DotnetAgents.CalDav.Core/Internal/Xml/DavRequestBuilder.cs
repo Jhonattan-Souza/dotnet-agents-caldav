@@ -52,6 +52,26 @@ internal static class DavRequestBuilder
         return doc.ToString(SaveOptions.DisableFormatting);
     }
 
+    /// <summary>Builds the RFC 4791 MKCALENDAR property initialization body.</summary>
+    public static string BuildMkCalendar(
+        string displayName,
+        IReadOnlyList<CalendarEntityKind> entityKinds)
+    {
+        var components = entityKinds.Select(kind => new XElement(
+            CalDav + "comp",
+            new XAttribute("name", kind == CalendarEntityKind.Event ? "VEVENT" : "VTODO")));
+        var doc = new XDocument(
+            new XDeclaration("1.0", "utf-8", null),
+            new XElement(CalDav + "mkcalendar",
+                new XAttribute(XNamespace.Xmlns + "d", Dav.NamespaceName),
+                new XAttribute(XNamespace.Xmlns + "c", CalDav.NamespaceName),
+                new XElement(Dav + "set",
+                    new XElement(Dav + "prop",
+                        new XElement(Dav + "displayname", displayName),
+                        new XElement(CalDav + "supported-calendar-component-set", components)))));
+        return doc.ToString(SaveOptions.DisableFormatting);
+    }
+
     /// <summary>Builds a minimal Calendar Entity candidate REPORT for one requested kind.</summary>
     public static string BuildCalendarEntityQuery(
         CalendarEntityKind entityKind,

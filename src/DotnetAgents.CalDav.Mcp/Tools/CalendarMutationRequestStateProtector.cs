@@ -12,6 +12,7 @@ internal sealed class CalendarMutationRequestStateProtector
 {
     internal const int MaximumRequestStateCharacters = 2048;
     private const string DeleteOperation = "calendar_resources.delete";
+    private const string CollectionDeleteOperation = "calendars.delete";
     private static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(10);
     private readonly byte[] _encryptionKey;
     private readonly byte[] _bindingKey;
@@ -66,6 +67,36 @@ internal sealed class CalendarMutationRequestStateProtector
             BindRevision(revision),
             requestBinding,
             intentDigest);
+
+    public string ProtectCalendarCollectionDelete(CalendarCollectionDeleteReviewBinding binding)
+    {
+        var href = Encoding.UTF8.GetBytes(binding.Href);
+        return ProtectCore(
+            CollectionDeleteOperation,
+            Bind(href),
+            href,
+            SerializeCollectionDeleteBinding(binding));
+    }
+
+    public bool TryUnprotectCalendarCollectionDelete(
+        string state,
+        CalendarCollectionDeleteReviewBinding binding,
+        out bool expired)
+    {
+        var href = Encoding.UTF8.GetBytes(binding.Href);
+        if (!TryUnprotectCore(
+                state,
+                CollectionDeleteOperation,
+                Bind(href),
+                href,
+                out var intentBinding,
+                out expired))
+        {
+            return false;
+        }
+
+        return HasFixedTimeMatch(intentBinding, Bind(SerializeCollectionDeleteBinding(binding)));
+    }
 
     public string ProtectExactCreate(
         string operation,
@@ -281,6 +312,13 @@ internal sealed class CalendarMutationRequestStateProtector
             binding.EntityKind == CalendarEntityKind.Event ? "event" : "todo",
             Convert.ToHexStringLower(binding.IntentDigest.Span),
             binding.PolicyVersion));
+
+    private static byte[] SerializeCollectionDeleteBinding(CalendarCollectionDeleteReviewBinding binding) =>
+        JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            binding.Href,
+            binding.DescriptorDigest
+        });
 
     private static byte[] SerializeExactMoveBinding(CalendarExactMoveReviewBinding binding) =>
         JsonSerializer.SerializeToUtf8Bytes(ToProtectedExactMoveBinding(binding));

@@ -37,6 +37,8 @@ public sealed class CalendarOutputSchemaGuardTests
     [Theory]
     [InlineData("calendar_entities.query", false)]
     [InlineData("events.create", true)]
+    [InlineData("calendars.create", true)]
+    [InlineData("calendars.delete", true)]
     [InlineData("calendar_resources.exact_create", true)]
     public void Validate_CoversAdmissionRejectionsOutsideTheToolHandler(string toolName, bool mutation)
     {
@@ -47,6 +49,8 @@ public sealed class CalendarOutputSchemaGuardTests
 
     [Theory]
     [InlineData("calendars.list", false)]
+    [InlineData("calendars.create", true)]
+    [InlineData("calendars.delete", true)]
     [InlineData("calendar_entities.query", false)]
     [InlineData("calendar_occurrences.query", false)]
     [InlineData("calendar_resources.get", false)]
