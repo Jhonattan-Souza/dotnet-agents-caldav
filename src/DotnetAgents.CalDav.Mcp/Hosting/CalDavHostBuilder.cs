@@ -47,7 +47,8 @@ public sealed class CalDavHostBuilder
             .WithTools<CalendarEntityCreateTools>()
             .WithTools<CalendarEntityPatchTools>()
             .WithTools<CalendarResourceMoveTools>()
-            .WithTools<CalendarResourceDeleteTools>();
+            .WithTools<CalendarResourceDeleteTools>()
+            .WithTools<CalendarCollectionTools>();
 
         if (exposeExactTools)
         {
@@ -89,6 +90,8 @@ public sealed class CalDavHostBuilder
 
         options.ToolCollection = new OrderedToolCollection(options.ToolCollection.ToArray());
         ConfigureTool(options.ToolCollection, "calendars.list");
+        ConfigureTool(options.ToolCollection, "calendars.create");
+        ConfigureTool(options.ToolCollection, "calendars.delete");
         ConfigureTool(options.ToolCollection, "calendar_entities.query");
         ConfigureTool(options.ToolCollection, "calendar_occurrences.query");
         ConfigureTool(options.ToolCollection, "todos.query");

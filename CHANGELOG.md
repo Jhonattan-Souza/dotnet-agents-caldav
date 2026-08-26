@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added `calendars.create` with native CalDAV `MKCALENDAR` support for Event, To-do, and mixed collections, including exact Calendar Scope enforcement and post-write descriptor verification.
+- Added `calendars.delete` with exact-href MRTR confirmation, recursive collection deletion, fresh review binding, and truthful post-delete reconciliation.
+
 ## [0.2.3] - 2026-08-23
 
 ### Added

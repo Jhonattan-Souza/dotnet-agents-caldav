@@ -51,6 +51,8 @@ Add this MCP server to VS Code, Claude Desktop, Cursor, or any MCP client:
 ### Semantic Calendar tools
 
 - `calendars.list` — Discover the configured Calendar Scope.
+- `calendars.create` — Create an Event-only, To-do-only, or mixed Calendar collection with native `MKCALENDAR`.
+- `calendars.delete` — Confirm and recursively delete one exact Calendar collection, including its resources.
 - `calendar_entities.query` — Start a persisted Event and To-do query across Calendar Scope, or continue its immutable Query Result Snapshot without repeating CalDAV work. A bounded Start requires an explicit caller or configured IANA Temporal Evaluation Context and reports the frozen context on every page.
 - `calendar_occurrences.query` — Start one bounded Event and To-do Occurrence query under an explicit caller or configured IANA Temporal Evaluation Context, or continue its immutable Query Result Snapshot with no CalDAV or recurrence work.
 - `todos.query` — Start a compact normalized To-do query over one authoritative VTODO-only corpus, or continue its immutable Query Result Snapshot without remote or semantic re-execution. Every Start requires a caller or configured IANA Temporal Evaluation Context.
@@ -68,7 +70,7 @@ Add this MCP server to VS Code, Claude Desktop, Cursor, or any MCP client:
 - `calendar_resources.move` — Move one reviewed resource with exact `If-Match`, `Overwrite: F`, server-authoritative UID collision truth, and bounded bilateral reconciliation; requires a verified interoperability profile.
 - `calendar_resources.delete` — Delete an entire resource from an explicitly supplied revision reference (href, UID, kind, and exact strong ETag) after MCP MRTR review and confirmation; success requires verified absence.
 
-The 0.2.3 default catalog contains exactly these 17 tools in the order shown. It has no legacy task aliases or compatibility mode.
+The default semantic catalog contains exactly these 19 tools in the order shown. It has no legacy task aliases or compatibility mode.
 
 ### Exact Calendar resource tools
 

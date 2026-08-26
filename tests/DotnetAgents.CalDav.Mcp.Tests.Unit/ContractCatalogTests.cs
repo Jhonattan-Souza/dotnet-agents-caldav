@@ -186,9 +186,9 @@ public sealed class ContractCatalogTests
 
         catalog.ShouldNotContainKey("contractVersion");
         catalog["protocolRevision"]!.GetValue<string>().ShouldBe("2026-07-28");
-        catalog["discoveryOrder"]!.AsArray().Count.ShouldBe(17);
+        catalog["discoveryOrder"]!.AsArray().Count.ShouldBe(19);
         catalog["exactTools"]!.AsArray().Count.ShouldBe(4);
-        catalog["tools"]!.AsArray().Count.ShouldBe(21);
+        catalog["tools"]!.AsArray().Count.ShouldBe(23);
         var createSemantics = catalog["createSemantics"]!.AsObject();
         createSemantics["authoritativeOperation"]!.GetValue<string>().ShouldBe("conditional_put");
         createSemantics["preflightEnumeration"]!.GetValue<bool>().ShouldBeFalse();
@@ -232,7 +232,7 @@ public sealed class ContractCatalogTests
         catalog["$defs"]!["exactMutationErrorOutcome"]!["properties"]!["limits"]!["$ref"]!
             .GetValue<string>().ShouldBe("#/$defs/executionLimits");
         var mrtr = catalog["mrtrWireContract"]!.AsObject();
-        mrtr["toolsCallParams"]!["oneOf"]!.AsArray().Count.ShouldBe(21);
+        mrtr["toolsCallParams"]!["oneOf"]!.AsArray().Count.ShouldBe(23);
         mrtr["toolsCallParams"]!["oneOf"]![0]!["properties"]!["arguments"]!["$ref"].ShouldNotBeNull();
         var callBranches = mrtr["toolsCallParams"]!["oneOf"]!.AsArray();
         callBranches.All(branch => branch!["required"]!.ToJsonString().Contains("_meta", StringComparison.Ordinal)).ShouldBeTrue();
@@ -289,6 +289,10 @@ public sealed class ContractCatalogTests
         calendarListInput["additionalProperties"]!.GetValue<bool>().ShouldBeFalse();
         FindTool(catalog, "calendars.list")["inputSchema"]!["$ref"]!.GetValue<string>()
             .ShouldBe("#/$defs/calendarScopeInput");
+        FindTool(catalog, "calendars.create")["inputSchema"]!["$ref"]!.GetValue<string>()
+            .ShouldBe("#/$defs/calendarCollectionCreateInput");
+        FindTool(catalog, "calendars.delete")["inputSchema"]!["$ref"]!.GetValue<string>()
+            .ShouldBe("#/$defs/calendarCollectionDeleteInput");
         FindTool(catalog, "calendar_resources.get")["inputSchema"]!["$ref"]!.GetValue<string>()
             .ShouldBe("#/$defs/resourceAddressInput");
         FindTool(catalog, "calendar_resources.exact_get")["inputSchema"]!["$ref"]!.GetValue<string>()
@@ -636,6 +640,7 @@ public sealed class ContractCatalogTests
         path.Contains(".inputRequests", StringComparison.Ordinal) ||
         path.Contains(".requestedSchema.properties.properties", StringComparison.Ordinal) ||
         path.Contains("io.modelcontextprotocol/clientCapabilities", StringComparison.Ordinal) ||
+        path.Contains("$defs.toolsCallMetadata", StringComparison.Ordinal) ||
         path.Contains(".properties._meta", StringComparison.Ordinal) ||
         path.Contains("$defs.mrtrInputResponse.oneOf[0].properties.content", StringComparison.Ordinal);
 

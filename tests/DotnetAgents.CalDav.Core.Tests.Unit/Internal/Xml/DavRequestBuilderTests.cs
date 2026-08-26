@@ -1,5 +1,6 @@
 using System.Xml.Linq;
 using DotnetAgents.CalDav.Core.Internal.Xml;
+using DotnetAgents.CalDav.Core.Models;
 using Shouldly;
 using Xunit;
 
@@ -67,6 +68,36 @@ public class DavRequestBuilderTests
         // Assert
         var doc = XDocument.Parse(xml);
         doc.ShouldNotBeNull();
+    }
+
+    [Theory]
+    [InlineData(CalendarEntityKind.Event, "VEVENT")]
+    [InlineData(CalendarEntityKind.Todo, "VTODO")]
+    public void BuildMkCalendar_InitializesDisplayNameAndRequestedComponent(
+        CalendarEntityKind entityKind,
+        string componentName)
+    {
+        var xml = DavRequestBuilder.BuildMkCalendar("Work & Home", [entityKind]);
+        var document = XDocument.Parse(xml);
+        var root = document.Root;
+
+        root!.Name.ShouldBe(CalDav + "mkcalendar");
+        root.Element(Dav + "set")!.Element(Dav + "prop")!
+            .Element(Dav + "displayname")!.Value.ShouldBe("Work & Home");
+        root.Descendants(CalDav + "comp").Single().Attribute("name")!.Value.ShouldBe(componentName);
+    }
+
+    [Fact]
+    public void BuildMkCalendar_MixedComponentSetIsDeterministic()
+    {
+        var xml = DavRequestBuilder.BuildMkCalendar(
+            "Mixed",
+            [CalendarEntityKind.Event, CalendarEntityKind.Todo]);
+        var components = XDocument.Parse(xml).Descendants(CalDav + "comp")
+            .Select(element => element.Attribute("name")!.Value)
+            .ToArray();
+
+        components.ShouldBe(["VEVENT", "VTODO"]);
     }
 
 }

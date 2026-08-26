@@ -33,7 +33,7 @@ internal static class CalendarTelemetry
 
     internal static string NormalizeToolName(string? toolName) => toolName switch
     {
-        "calendars.list" or "calendar_entities.query" or "calendar_occurrences.query"
+        "calendars.list" or "calendars.create" or "calendars.delete" or "calendar_entities.query" or "calendar_occurrences.query"
             or "todos.query" or "calendar_resources.get" or "events.create" or "events.patch"
             or "todos.create" or "todos.patch" or "todos.complete" or "calendar_occurrences.add"
             or "calendar_occurrences.exclude" or "calendar_occurrences.restore_exclusion"

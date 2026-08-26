@@ -5,7 +5,7 @@
       "name": "main-core",
       "project": "tests/DotnetAgents.CalDav.Core.Tests.Unit/DotnetAgents.CalDav.Core.Tests.Unit.csproj",
       "trx": "main-core.trx",
-      "exactTests": 2307,
+      "exactTests": 2322,
       "coveragePrefix": "main-core",
       "phase": "main",
       "environment": {}
@@ -14,7 +14,7 @@
       "name": "main-mcp",
       "project": "tests/DotnetAgents.CalDav.Mcp.Tests.Unit/DotnetAgents.CalDav.Mcp.Tests.Unit.csproj",
       "trx": "main-mcp.trx",
-      "exactTests": 978,
+      "exactTests": 994,
       "coveragePrefix": "main-mcp",
       "phase": "main",
       "environment": {}
@@ -23,7 +23,7 @@
       "name": "main-integration",
       "project": "tests/DotnetAgents.CalDav.IntegrationTests/DotnetAgents.CalDav.IntegrationTests.csproj",
       "trx": "main-integration.trx",
-      "exactTests": 111,
+      "exactTests": 112,
       "coveragePrefix": "main-integration",
       "phase": "main",
       "environment": {

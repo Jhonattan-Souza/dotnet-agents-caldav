@@ -190,7 +190,8 @@ public class CalDavHostBuilderTests
             typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarEntityCreateTools),
             typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarEntityPatchTools),
             typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarResourceMoveTools),
-            typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarResourceDeleteTools)
+            typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarResourceDeleteTools),
+            typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarCollectionTools)
         ]);
 
     }
@@ -510,6 +511,8 @@ public class CalDavHostBuilderTests
         tools.ShouldBe(
         [
             "calendars.list",
+            "calendars.create",
+            "calendars.delete",
             "calendar_entities.query",
             "calendar_occurrences.query",
             "todos.query",
@@ -610,7 +613,7 @@ public class CalDavHostBuilderTests
         var catalog = JsonNode.Parse(File.ReadAllText(Path.Combine(
             RepositoryRoot(), "src", "DotnetAgents.CalDav.Mcp", "Contracts", "mcp-tool-catalog.json")))!.AsObject();
 
-        registered.Count.ShouldBe(21);
+        registered.Count.ShouldBe(23);
         foreach (var expected in catalog["tools"]!.AsArray())
         {
             var name = expected!["name"]!.GetValue<string>();

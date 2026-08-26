@@ -55,6 +55,8 @@ public sealed class McpStartupSmokeTests
             listedTools.Tools.Select(tool => tool.Name).ShouldBe(
             [
                 "calendars.list",
+                "calendars.create",
+                "calendars.delete",
                 "calendar_entities.query",
                 "calendar_occurrences.query",
                 "todos.query",

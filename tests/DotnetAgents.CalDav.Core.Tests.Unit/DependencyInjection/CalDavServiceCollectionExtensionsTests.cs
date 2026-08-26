@@ -161,6 +161,25 @@ public sealed class CalDavServiceCollectionExtensionsTests
     }
 
     [Fact]
+    public async Task AddCalDavCalendars_DoesNotRetryMkCalendar()
+    {
+        var handler = new CountingUnavailableHandler();
+        using var provider = BuildProvider(handler);
+        var transport = provider.GetRequiredService<ICalendarCollectionTransport>();
+
+        var result = await transport.CreateAsync(
+            new CalendarCollectionCreateDispatchRequest(
+                "https://cal.example/calendars/user/new/",
+                "New",
+                [CalendarEntityKind.Event]),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarCollectionDispatchCode.UpstreamUnavailable);
+        handler.RequestCount.ShouldBe(1);
+        handler.Methods.ShouldHaveSingleItem().Method.ShouldBe("MKCALENDAR");
+    }
+
+    [Fact]
     public async Task AddCalDavCalendars_DoesNotRetryWebDavMove()
     {
         var handler = new CountingUnavailableHandler();

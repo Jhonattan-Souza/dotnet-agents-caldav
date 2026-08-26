@@ -18,7 +18,7 @@ namespace DotnetAgents.CalDav.Core.Internal;
 
 /// <summary>
 /// HttpClient-based CalDAV client for Calendar Object Resources.
-/// Handles PROPFIND, REPORT, GET, PUT, DELETE verbs with XML/iCalendar encoding.
+/// Handles PROPFIND, REPORT, GET, PUT, MKCALENDAR, and DELETE verbs with XML/iCalendar encoding.
 /// </summary>
 internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport, ICalendarMoveResourceTransport
 {
@@ -26,6 +26,7 @@ internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport, 
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private static readonly HttpMethod PropFindMethod = new("PROPFIND");
     private static readonly HttpMethod ReportMethod = new("REPORT");
+    private static readonly HttpMethod MkCalendarMethod = new("MKCALENDAR");
 
     private readonly HttpClient _httpClient;
     private readonly IOptions<CalDavOptions> _options;
@@ -66,12 +67,16 @@ internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport, 
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<CalendarDescriptor>> GetCalendarsAsync(CancellationToken cancellationToken)
+        => (await DiscoverCalendarCollectionsAsync(cancellationToken).ConfigureAwait(false)).Items;
+
+    internal async Task<CalendarCollectionDiscoverySnapshot> DiscoverCalendarCollectionsAsync(
+        CancellationToken cancellationToken)
     {
         CalendarOperationProgress.SetPhase(CalendarOperationPhase.Discovery);
 
         var homeSetHref = await DiscoverCalendarHomeSetAsync(cancellationToken, failOnNotFound: true);
         if (homeSetHref is null)
-            return [];
+            throw new CalendarDiscoveryProtocolException("Calendar-home-set was not discovered.");
 
         var configuredBaseUri = new Uri(_options.Value.BaseUrl, UriKind.Absolute);
         if (!TryCanonicalizeCalendarHref(configuredBaseUri, homeSetHref, out var canonicalHomeSetHref))
@@ -90,9 +95,91 @@ internal sealed class CalDavClient : ICalendarClient, ICalendarCreateTransport, 
                 throw new CalendarDiscoveryProtocolException("Unsafe Calendar href.");
         }
 
-        return calendars
-            .OrderBy(calendar => calendar.Href, StringComparer.Ordinal)
-            .ToArray();
+        return new CalendarCollectionDiscoverySnapshot(
+            canonicalHomeSetHref,
+            calendars.OrderBy(calendar => calendar.Href, StringComparer.Ordinal).ToArray());
+    }
+
+    internal async Task<CalendarCollectionDispatchResult> CreateCalendarCollectionAsync(
+        CalendarCollectionCreateDispatchRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!TryCanonicalizeCalendarHref(
+                new Uri(_options.Value.BaseUrl, UriKind.Absolute),
+                request.Href,
+                out var canonicalHref))
+        {
+            return new(CalendarCollectionDispatchCode.ProtocolError);
+        }
+
+        var body = DavRequestBuilder.BuildMkCalendar(request.DisplayName, request.EntityKinds);
+        using var message = new HttpRequestMessage(MkCalendarMethod, canonicalHref)
+        {
+            Content = new StringContent(body, Encoding.UTF8, "application/xml")
+        };
+        using var response = await _httpClient.SendAsync(
+            message,
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken).ConfigureAwait(false);
+        return MapCollectionResponse(response);
+    }
+
+    internal async Task<CalendarCollectionDispatchResult> DeleteCalendarCollectionAsync(
+        string href,
+        CancellationToken cancellationToken)
+    {
+        if (!TryCanonicalizeCalendarHref(
+                new Uri(_options.Value.BaseUrl, UriKind.Absolute),
+                href,
+                out var canonicalHref))
+        {
+            return new(CalendarCollectionDispatchCode.ProtocolError);
+        }
+
+        using var message = new HttpRequestMessage(HttpMethod.Delete, canonicalHref);
+        message.Headers.Add("Depth", "infinity");
+        using var response = await _httpClient.SendAsync(
+            message,
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken).ConfigureAwait(false);
+        return MapCollectionResponse(response);
+    }
+
+    private static CalendarCollectionDispatchResult MapCollectionResponse(HttpResponseMessage response)
+    {
+        var status = response.StatusCode;
+        var numericStatus = (int)status;
+        if (response.IsSuccessStatusCode)
+        {
+            // MKCALENDAR 207 and collection DELETE 207 can contain partial truth. Keep the
+            // dispatch possibly-committed until the module performs a fresh discovery.
+            return new(
+                status is HttpStatusCode.Accepted or HttpStatusCode.MultiStatus
+                    ? CalendarCollectionDispatchCode.PossiblyDispatched
+                    : CalendarCollectionDispatchCode.Dispatched,
+                numericStatus);
+        }
+
+        var retryAfter = response.Headers.RetryAfter?.Delta is { } delta
+            ? (int?)Math.Max(0, delta.TotalMilliseconds)
+            : null;
+        return status switch
+        {
+            HttpStatusCode.NotFound => new(CalendarCollectionDispatchCode.NotFound, numericStatus),
+            HttpStatusCode.MethodNotAllowed or HttpStatusCode.NotImplemented =>
+                new(CalendarCollectionDispatchCode.UnsupportedCapability, numericStatus),
+            HttpStatusCode.Conflict or HttpStatusCode.PreconditionFailed =>
+                new(CalendarCollectionDispatchCode.Conflict, numericStatus),
+            HttpStatusCode.RequestEntityTooLarge =>
+                new(CalendarCollectionDispatchCode.PayloadTooLarge, numericStatus),
+            HttpStatusCode.Unauthorized => new(CalendarCollectionDispatchCode.UpstreamUnauthorized, numericStatus),
+            HttpStatusCode.Forbidden => new(CalendarCollectionDispatchCode.UpstreamForbidden, numericStatus),
+            HttpStatusCode.TooManyRequests =>
+                new(CalendarCollectionDispatchCode.UpstreamRateLimited, numericStatus, retryAfter),
+            >= HttpStatusCode.InternalServerError =>
+                new(CalendarCollectionDispatchCode.UpstreamUnavailable, numericStatus),
+            _ => new(CalendarCollectionDispatchCode.ProtocolError, numericStatus)
+        };
     }
 
     /// <inheritdoc />

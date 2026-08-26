@@ -84,6 +84,7 @@ public static class CalDavServiceCollectionExtensions
             options.Retry.MaxRetryAttempts = 2;
             options.Retry.DisableForUnsafeHttpMethods();
             options.Retry.DisableFor(new HttpMethod("MOVE"));
+            options.Retry.DisableFor(new HttpMethod("MKCALENDAR"));
             options.Retry.BackoffType = DelayBackoffType.Exponential;
             options.Retry.UseJitter = true;
             options.Retry.Delay = TimeSpan.FromMilliseconds(200);
@@ -104,6 +105,8 @@ public static class CalDavServiceCollectionExtensions
         calendarClientBuilder.AddHttpMessageHandler<CalendarHttpAttemptHandler>();
 
         services.AddTransient<ICalendarClient>(serviceProvider => serviceProvider.GetRequiredService<CalDavClient>());
+        services.AddTransient<ICalendarCollectionTransport>(serviceProvider => new CalDavCollectionTransport(
+            serviceProvider.GetRequiredService<CalDavClient>()));
         services.AddSingleton<TimeProvider>(TimeProvider.System);
         services.AddSingleton(serviceProvider => new CalendarQueryPolicy(
             serviceProvider.GetRequiredService<TimeProvider>()));
@@ -187,6 +190,7 @@ public static class CalDavServiceCollectionExtensions
             serviceProvider.GetRequiredService<CalendarTodoQueryStartExecutor>(),
             serviceProvider.GetRequiredService<CalendarTodoQueryContinueExecutor>()));
         services.AddTransient<ICalendarService, CalendarService>();
+        services.AddTransient<ICalendarCollectionModule, CalendarCollectionModule>();
 
         return services;
     }

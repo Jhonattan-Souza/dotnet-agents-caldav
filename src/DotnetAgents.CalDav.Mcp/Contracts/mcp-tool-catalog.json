@@ -160,6 +160,66 @@
           ],
           "properties": {
             "name": {
+              "const": "calendars.create"
+            },
+            "arguments": {
+              "$ref": "#/$defs/calendarCollectionCreateInput"
+            },
+            "requestState": {
+              "type": "string",
+              "minLength": 1
+            },
+            "inputResponses": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/mrtrInputResponse"
+              }
+            },
+            "_meta": {
+              "$ref": "#/$defs/toolsCallMetadata"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "_meta",
+            "arguments"
+          ],
+          "properties": {
+            "name": {
+              "const": "calendars.delete"
+            },
+            "arguments": {
+              "$ref": "#/$defs/calendarCollectionDeleteInput"
+            },
+            "requestState": {
+              "type": "string",
+              "minLength": 1
+            },
+            "inputResponses": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/mrtrInputResponse"
+              }
+            },
+            "_meta": {
+              "$ref": "#/$defs/toolsCallMetadata"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "_meta",
+            "arguments"
+          ],
+          "properties": {
+            "name": {
               "const": "calendar_entities.query"
             },
             "arguments": {
@@ -2381,6 +2441,8 @@
   ],
   "discoveryOrder": [
     "calendars.list",
+    "calendars.create",
+    "calendars.delete",
     "calendar_entities.query",
     "calendar_occurrences.query",
     "todos.query",
@@ -2424,6 +2486,46 @@
         "openWorldHint": true
       },
       "description": "List every configured Calendar with independent Event and To-do capability evidence."
+    },
+    {
+      "name": "calendars.create",
+      "cache": {
+        "ttlMs": 0,
+        "cacheScope": "private"
+      },
+      "inputSchema": {
+        "$ref": "#/$defs/calendarCollectionCreateInput"
+      },
+      "outputSchema": {
+        "$ref": "#/$defs/calendarCollectionCreateOutcome"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Create one CalDAV Calendar collection for Events, To-dos, or both using MKCALENDAR."
+    },
+    {
+      "name": "calendars.delete",
+      "cache": {
+        "ttlMs": 0,
+        "cacheScope": "private"
+      },
+      "inputSchema": {
+        "$ref": "#/$defs/calendarCollectionDeleteInput"
+      },
+      "outputSchema": {
+        "$ref": "#/$defs/calendarCollectionDeleteOutcome"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Confirm and delete one exact CalDAV Calendar collection, including its resources."
     },
     {
       "name": "calendar_entities.query",
@@ -3315,6 +3417,50 @@
     "calendarScopeInput": {
       "type": "object",
       "additionalProperties": false
+    },
+    "calendarCollectionCreateInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "displayName",
+        "entityKinds"
+      ],
+      "properties": {
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "entityKinds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "event",
+              "todo"
+            ]
+          }
+        },
+        "destinationHref": {
+          "type": "string",
+          "format": "uri"
+        }
+      }
+    },
+    "calendarCollectionDeleteInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "href"
+      ],
+      "properties": {
+        "href": {
+          "type": "string",
+          "format": "uri"
+        }
+      }
     },
     "entityQueryInput": {
       "type": "object",
@@ -8705,6 +8851,111 @@
         }
       }
     },
+    "toolsCallMetadata": {
+      "type": "object",
+      "required": [
+        "io.modelcontextprotocol/protocolVersion",
+        "io.modelcontextprotocol/clientCapabilities"
+      ],
+      "properties": {
+        "io.modelcontextprotocol/protocolVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "io.modelcontextprotocol/clientCapabilities": {
+          "type": "object",
+          "properties": {
+            "elicitation": {
+              "type": "object",
+              "properties": {
+                "form": {
+                  "type": "object",
+                  "additionalProperties": true
+                },
+                "url": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        "io.modelcontextprotocol/clientInfo": {
+          "type": "object",
+          "required": [
+            "name",
+            "version"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "title": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "websiteUrl": {
+              "type": "string",
+              "format": "uri"
+            },
+            "icons": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "src": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "sizes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "theme": {
+                    "enum": [
+                      "light",
+                      "dark"
+                    ]
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          },
+          "additionalProperties": true
+        },
+        "io.modelcontextprotocol/logLevel": {
+          "enum": [
+            "debug",
+            "info",
+            "notice",
+            "warning",
+            "error",
+            "critical",
+            "alert",
+            "emergency"
+          ]
+        },
+        "progressToken": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": true
+    },
     "mrtrInputRequest": {
       "type": "object",
       "additionalProperties": false,
@@ -8796,6 +9047,83 @@
               ]
             }
           }
+        }
+      ]
+    },
+    "calendarCollectionCreateSuccess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcome",
+        "mutationState",
+        "calendar",
+        "diagnostics"
+      ],
+      "properties": {
+        "outcome": {
+          "const": "success"
+        },
+        "mutationState": {
+          "const": "committed"
+        },
+        "calendar": {
+          "$ref": "#/$defs/calendarDescriptor"
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        }
+      }
+    },
+    "calendarCollectionDeleteSuccess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcome",
+        "mutationState",
+        "calendar",
+        "diagnostics"
+      ],
+      "properties": {
+        "outcome": {
+          "const": "success"
+        },
+        "mutationState": {
+          "const": "committed"
+        },
+        "calendar": {
+          "$ref": "#/$defs/calendarDescriptor"
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        }
+      }
+    },
+    "calendarCollectionCreateOutcome": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/calendarCollectionCreateSuccess"
+        },
+        {
+          "$ref": "#/$defs/mutationErrorOutcome"
+        }
+      ]
+    },
+    "calendarCollectionDeleteOutcome": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/calendarCollectionDeleteSuccess"
+        },
+        {
+          "$ref": "#/$defs/nonMutatingMutationSuccess"
+        },
+        {
+          "$ref": "#/$defs/mutationErrorOutcome"
         }
       ]
     },
