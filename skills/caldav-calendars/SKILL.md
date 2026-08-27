@@ -95,7 +95,7 @@ Semantic tools are the normal path. Use `calendar_resources.exact_get`, `calenda
 Finish only when:
 
 - every requested read range or mutation is accounted for;
-- every mutation had an authorized destination selection before the first write and unique resolution before commit;
+- every create and move had an authorized destination selection before the first write and unique resolution before commit;
 - discovery and query calls were not repeated without new information;
 - each existing-resource write used the latest returned revision and exact recurrence identity when applicable;
 - every MRTR exchange reached a confirmed terminal outcome or a clearly reported harness limitation; and
