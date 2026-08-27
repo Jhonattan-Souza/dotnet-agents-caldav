@@ -51,7 +51,13 @@ def parse_arguments() -> argparse.Namespace:
         required=True,
         choices=("hit", "miss", "not-reported"),
     )
-    parser.add_argument("--baseline-isolated-suite-seconds", type=float)
+    parser.add_argument(
+        "--baseline-phase",
+        action="append",
+        default=[],
+        metavar="NAME=SECONDS",
+        help="Comparable before-change duration for a reported phase.",
+    )
     return parser.parse_args()
 
 
@@ -116,6 +122,14 @@ def parse_phases(values: list[str]) -> list[tuple[str, float]]:
     return phases
 
 
+def parse_baseline_phases(values: list[str]) -> list[tuple[str, float]]:
+    phases = parse_phases(values)
+    for name, seconds in phases:
+        if seconds == 0:
+            raise SystemExit(f"Baseline phase duration must be positive: {name!r}.")
+    return phases
+
+
 def format_duration(seconds: float) -> str:
     minutes, remaining = divmod(seconds, 60)
     if minutes >= 1:
@@ -131,7 +145,7 @@ def render(
     phases: list[tuple[str, float]],
     tests: list[TestDuration],
     cache_status: str,
-    baseline_suite: float | None,
+    baseline_phases: list[tuple[str, float]],
 ) -> str:
     lines = ["## CI timing", "", f"Dependency cache: **{cache_status}**", ""]
     lines.extend(("| Phase | Duration |", "| --- | ---: |"))
@@ -174,15 +188,17 @@ def render(
             f"| {escape_cell(test.name)} | {escape_cell(test.evidence)} | {format_duration(test.seconds)} |"
         )
 
-    comparisons = []
-    if baseline_suite is not None and "isolated-suite" in phase_values:
-        comparisons.append(("Isolated suite", baseline_suite, phase_values["isolated-suite"]))
+    comparisons = [
+        (PHASE_LABELS.get(name, name.replace("-", " ").capitalize()), baseline, phase_values[name])
+        for name, baseline in baseline_phases
+        if name in phase_values
+    ]
     if comparisons:
         lines.extend((
             "",
             "### Baseline comparison",
             "",
-            "| Measure | Baseline | Current | Change |",
+            "| Phase | Before | After | Change |",
             "| --- | ---: | ---: | ---: |",
         ))
         for label, baseline, current in comparisons:
@@ -197,11 +213,12 @@ def main() -> int:
     arguments = parse_arguments()
     tests = read_test_durations(arguments.artifacts_dir)
     phases = parse_phases(arguments.phase)
+    baseline_phases = parse_baseline_phases(arguments.baseline_phase)
     print(render(
         phases,
         tests,
         arguments.cache_status,
-        arguments.baseline_isolated_suite_seconds,
+        baseline_phases,
     ), end="")
     return 0
 

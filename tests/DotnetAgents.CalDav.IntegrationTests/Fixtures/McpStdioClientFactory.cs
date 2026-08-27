@@ -13,6 +13,8 @@ internal sealed record McpStdioServerLaunch(
 internal static class McpStdioClientFactory
 {
     internal static readonly TimeSpan ShutdownTimeout = TimeSpan.FromMilliseconds(250);
+    internal static readonly TimeSpan SdkDefaultShutdownTimeout =
+        new StdioClientTransportOptions { Command = "dotnet" }.ShutdownTimeout;
 
     public static McpStdioServerLaunch CreateBuiltServerLaunch(
         IReadOnlyDictionary<string, string?> environmentVariables,
@@ -27,18 +29,43 @@ internal static class McpStdioClientFactory
         McpStdioServerLaunch launch,
         McpClientOptions? clientOptions = null,
         ILoggerFactory? loggerFactory = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) => ConnectCoreAsync(
+            launch,
+            clientOptions,
+            loggerFactory,
+            ShutdownTimeout,
+            cancellationToken);
+
+    internal static Task<McpClient> ConnectWithSdkDefaultShutdownAsync(
+        McpStdioServerLaunch launch,
+        McpClientOptions? clientOptions,
+        ILoggerFactory? loggerFactory,
+        CancellationToken cancellationToken) => ConnectCoreAsync(
+            launch,
+            clientOptions,
+            loggerFactory,
+            shutdownTimeout: null,
+            cancellationToken);
+
+    private static Task<McpClient> ConnectCoreAsync(
+        McpStdioServerLaunch launch,
+        McpClientOptions? clientOptions,
+        ILoggerFactory? loggerFactory,
+        TimeSpan? shutdownTimeout,
+        CancellationToken cancellationToken)
     {
-        var transport = new StdioClientTransport(new StdioClientTransportOptions
+        var transportOptions = new StdioClientTransportOptions
         {
             Command = launch.Command,
             Arguments = [.. launch.Arguments],
             WorkingDirectory = launch.WorkingDirectory,
             InheritEnvironmentVariables = true,
             EnvironmentVariables = launch.EnvironmentVariables.ToDictionary(),
-            StandardErrorLines = launch.StandardErrorLines,
-            ShutdownTimeout = ShutdownTimeout
-        }, loggerFactory);
+            StandardErrorLines = launch.StandardErrorLines
+        };
+        if (shutdownTimeout is { } explicitShutdownTimeout)
+            transportOptions.ShutdownTimeout = explicitShutdownTimeout;
+        var transport = new StdioClientTransport(transportOptions, loggerFactory);
         return McpClient.CreateAsync(transport, clientOptions, loggerFactory, cancellationToken);
     }
 

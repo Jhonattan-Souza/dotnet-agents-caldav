@@ -76,9 +76,18 @@ Dependency cache: **hit**
 
 ### Baseline comparison
 
-| Measure | Baseline | Current | Change |
+| Phase | Before | After | Change |
 | --- | ---: | ---: | ---: |
-| Isolated suite | 7m 6.000s | 7m 6.000s | 0.0% |
+| Restore local tools | 16.000s | 8.000s | -50.0% |
+| Restore NuGet packages | 12.000s | 6.000s | -50.0% |
+| Release build | 52.000s | 26.000s | -50.0% |
+| Main core | 52.600s | 26.300s | -50.0% |
+| Main MCP | 18.400s | 9.200s | -50.0% |
+| Main integration | 10m 44.400s | 5m 22.200s | -50.0% |
+| Coverage report | 3.600s | 1.800s | -50.0% |
+| Strict preconditions | 40.800s | 20.400s | -50.0% |
+| Alternate time zone | 41.200s | 20.600s | -50.0% |
+| Isolated suite | 14m 12.000s | 7m 6.000s | -50.0% |
 EOF
 
 python3 "$script_directory/trx-timing-summary.py" \
@@ -93,8 +102,18 @@ python3 "$script_directory/trx-timing-summary.py" \
   --phase strict-preconditions=20.4 \
   --phase alternate-time-zone=20.6 \
   --phase isolated-suite=426 \
+  --baseline-phase restore-local-tools=16 \
+  --baseline-phase restore-nuget-packages=12 \
+  --baseline-phase release-build=52 \
+  --baseline-phase main-core=52.6 \
+  --baseline-phase main-mcp=18.4 \
+  --baseline-phase main-integration=644.4 \
+  --baseline-phase coverage-report=3.6 \
+  --baseline-phase strict-preconditions=40.8 \
+  --baseline-phase alternate-time-zone=41.2 \
+  --baseline-phase isolated-suite=852 \
   --cache-status hit \
-  --baseline-isolated-suite-seconds 426 > "$fixture_root/actual.md"
+  > "$fixture_root/actual.md"
 
 diff -u "$fixture_root/expected.md" "$fixture_root/actual.md"
 echo "PASS stable TRX timing summary"

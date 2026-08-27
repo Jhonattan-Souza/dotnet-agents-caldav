@@ -279,6 +279,56 @@ fi
 }
 echo "PASS concurrent failure awaits started siblings and stops new work"
 
+deterministic_failure_root="$fixture_root/deterministic-concurrent-failure"
+mkdir -p -- "$deterministic_failure_root"
+deterministic_failure_callback() {
+  local _project=$1 row_trx=$2 _prefix=$3 _filter=$4 _environment=$5
+  touch "$deterministic_failure_root/$row_trx.started"
+  case "$row_trx" in
+    main-core.trx)
+      local deadline=$((SECONDS + 2))
+      while [[ ! -f "$deterministic_failure_root/main-mcp.trx.failed" ]]; do
+        if (( SECONDS >= deadline )); then
+          return 91
+        fi
+      done
+      touch "$deterministic_failure_root/$row_trx.failed"
+      return 42
+      ;;
+    main-mcp.trx)
+      touch "$deterministic_failure_root/$row_trx.failed"
+      return 43
+      ;;
+    *)
+      touch "$deterministic_failure_root/$row_trx.started-unexpectedly"
+      ;;
+  esac
+}
+deterministic_status=0
+if deterministic_output=$(run_test_suite_manifest_phase \
+    "$manifest" main 2 deterministic_failure_callback 2>&1); then
+  echo "Expected deterministic concurrent manifest failure to propagate." >&2
+  exit 1
+else
+  deterministic_status=$?
+fi
+[[ $deterministic_status -eq 42 ]] || {
+  echo "Expected the earliest manifest failure status 42, got $deterministic_status." >&2
+  exit 1
+}
+printf '%s\n' "$deterministic_output" | grep -F \
+  "FAIL test manifest phase [main]: first manifest failure [main-core.trx] (exit 42)" >/dev/null
+[[ -f "$deterministic_failure_root/main-core.trx.failed" \
+   && -f "$deterministic_failure_root/main-mcp.trx.failed" ]] || {
+  echo "Concurrent runner did not await every failing sibling." >&2
+  exit 1
+}
+[[ ! -f "$deterministic_failure_root/main-integration.trx.started-unexpectedly" ]] || {
+  echo "Concurrent runner started new work after a concurrent failure." >&2
+  exit 1
+}
+echo "PASS concurrent failures propagate deterministic manifest status and identification"
+
 early_exit_tmp="$fixture_root/early-exit-tmp"
 mkdir -p -- "$early_exit_tmp"
 if TMPDIR="$early_exit_tmp" "$script_directory/run-test-suite.sh" invalid >/dev/null 2>&1; then

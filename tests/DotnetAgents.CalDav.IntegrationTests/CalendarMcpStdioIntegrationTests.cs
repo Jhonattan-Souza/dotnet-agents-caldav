@@ -1963,20 +1963,5 @@ public sealed class CalendarMcpStdioIntegrationTests
 
     private sealed record ObservedRevision(string Href, string EntityTag);
 
-    private static string GetServerAssemblyPath()
-    {
-        var directory = AppContext.BaseDirectory;
-        while (directory is not null)
-        {
-            var candidate = Path.Combine(directory, "src", "DotnetAgents.CalDav.Mcp", "bin", "Release", "net10.0", "DotnetAgents.CalDav.Mcp.dll");
-            if (File.Exists(candidate))
-                return candidate;
-
-            directory = Directory.GetParent(directory)?.FullName;
-        }
-
-        throw new FileNotFoundException("Could not locate the built MCP server assembly.");
-    }
-
     private sealed record ObservedResource(string EntityTag, byte[] Utf8);
 }
