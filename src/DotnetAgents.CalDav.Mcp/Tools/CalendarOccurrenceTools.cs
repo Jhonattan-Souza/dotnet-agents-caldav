@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Models;
+using DotnetAgents.CalDav.Mcp.Hosting;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -80,29 +81,33 @@ public sealed class CalendarOccurrenceTools
             QueryFailurePhase.AdmissionAndPayload,
             new QueryExecutionLimits(ByteCount: byteCount))));
 
-    private static CallToolResult ErrorWithoutBounding(QueryFailure failure) => new()
+    private static CallToolResult ErrorWithoutBounding(QueryFailure failure)
     {
-        IsError = true,
-        StructuredContent = JsonSerializer.SerializeToElement(new CalendarOccurrenceQueryErrorResult(
-            Code(failure.Code),
-            Category(failure.Category),
-            failure.Message,
-            failure.Retryable,
-            Phase(failure.Phase),
-            failure.Limits is null ? null : new CalendarEntityExecutionLimits(
-                failure.Limits.ResourcesInspected,
-                failure.Limits.CalendarCount,
-                failure.Limits.OccurrenceCount,
-                failure.Limits.ByteCount,
-                failure.Limits.ItemCount,
-                failure.Limits.SnapshotCount,
-                LimitDimension(failure.Limits.Dimension),
-                failure.Limits.Observed,
-                failure.Limits.Limit),
-            failure.AuthorizedCandidates?.Select(Candidate).ToArray(),
-            failure.RetryAfterMs)),
-        Content = [new TextContentBlock { Text = "Occurrence query failed." }]
-    };
+        CalendarTelemetry.ObserveStructuredError(CalendarTelemetryFacts.From(failure));
+        return new CallToolResult
+        {
+            IsError = true,
+            StructuredContent = JsonSerializer.SerializeToElement(new CalendarOccurrenceQueryErrorResult(
+                Code(failure.Code),
+                Category(failure.Category),
+                failure.Message,
+                failure.Retryable,
+                Phase(failure.Phase),
+                failure.Limits is null ? null : new CalendarEntityExecutionLimits(
+                    failure.Limits.ResourcesInspected,
+                    failure.Limits.CalendarCount,
+                    failure.Limits.OccurrenceCount,
+                    failure.Limits.ByteCount,
+                    failure.Limits.ItemCount,
+                    failure.Limits.SnapshotCount,
+                    LimitDimension(failure.Limits.Dimension),
+                    failure.Limits.Observed,
+                    failure.Limits.Limit),
+                failure.AuthorizedCandidates?.Select(Candidate).ToArray(),
+                failure.RetryAfterMs)),
+            Content = [new TextContentBlock { Text = "Occurrence query failed." }]
+        };
+    }
 
     private static bool TryCreateRequest(
         IDictionary<string, JsonElement>? arguments,

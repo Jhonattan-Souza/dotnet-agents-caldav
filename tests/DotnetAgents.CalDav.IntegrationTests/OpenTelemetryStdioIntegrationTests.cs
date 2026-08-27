@@ -746,6 +746,8 @@ public sealed class OpenTelemetryStdioIntegrationTests
             $"{privateUid}.ics",
             privateContent);
         var privateEntityTag = await GetEntityTagAsync(privateHref);
+        var ordinaryMissingHref =
+            $"{_fixture.BaseUrl}{_fixture.TodoCalendarHref}ordinary-missing-{suffix}.ics";
         await using var receiver = OtlpLoopbackReceiver.Start();
         using var process = CreateRawTelemetryProcess(receiver.Endpoint);
         process.Start();
@@ -775,6 +777,19 @@ public sealed class OpenTelemetryStdioIntegrationTests
                 method = "tools/call",
                 @params = new
                 {
+                    name = "calendar_resources.get",
+                    arguments = new { href = ordinaryMissingHref }
+                }
+            }));
+            var ordinaryMissing = (await ReadRawResponseAsync(process, 2)).GetProperty("result");
+            ordinaryMissing.GetProperty("isError").GetBoolean().ShouldBeTrue(ordinaryMissing.ToString());
+            await WriteRawAsync(process, JsonSerializer.Serialize(new
+            {
+                jsonrpc = "2.0",
+                id = 3,
+                method = "tools/call",
+                @params = new
+                {
                     _meta = new Dictionary<string, object?>
                     {
                         ["io.modelcontextprotocol/protocolVersion"] = "2026-07-28",
@@ -785,7 +800,7 @@ public sealed class OpenTelemetryStdioIntegrationTests
                     arguments
                 }
             }));
-            var review = (await ReadRawResponseAsync(process, 2)).GetProperty("result");
+            var review = (await ReadRawResponseAsync(process, 3)).GetProperty("result");
             review.GetProperty("inputRequests").TryGetProperty("confirm_delete", out _)
                 .ShouldBeTrue(review.ToString());
             var requestState = review.GetProperty("requestState").GetString()
@@ -793,7 +808,7 @@ public sealed class OpenTelemetryStdioIntegrationTests
             await WriteRawAsync(process, JsonSerializer.Serialize(new
             {
                 jsonrpc = "2.0",
-                id = 3,
+                id = 4,
                 method = "tools/call",
                 @params = new
                 {
@@ -816,7 +831,7 @@ public sealed class OpenTelemetryStdioIntegrationTests
                     }
                 }
             }));
-            var confirmed = (await ReadRawResponseAsync(process, 3)).GetProperty("result");
+            var confirmed = (await ReadRawResponseAsync(process, 4)).GetProperty("result");
             confirmed.GetProperty("isError").GetBoolean().ShouldBeFalse(confirmed.ToString());
             confirmed.GetProperty("structuredContent").GetProperty("outcome").GetString()
                 .ShouldBe("success");
@@ -838,11 +853,21 @@ public sealed class OpenTelemetryStdioIntegrationTests
                 .ShouldBe(1);
             var verification = httpAttempts.Single(span =>
                 Equals(span.Attributes.GetValueOrDefault("http.request.method"), "GET")
-                && Equals(span.Attributes.GetValueOrDefault("http.response.status_code"), 404L));
+                && Equals(span.Attributes.GetValueOrDefault("http.response.status_code"), 404L)
+                && Equals(
+                    span.Attributes.GetValueOrDefault("caldav.http.request_purpose"),
+                    "absence_probe"));
             verification.Attributes.GetValueOrDefault("caldav.http.request_purpose").ShouldBe("absence_probe");
             verification.Attributes.GetValueOrDefault("caldav.http.observation").ShouldBe("expected_absence");
             verification.Attributes.GetValueOrDefault("error.type").ShouldBeNull();
             verification.StatusCode.ShouldBe(1);
+            var ordinaryNotFound = httpAttempts.Single(span =>
+                Equals(span.Attributes.GetValueOrDefault("http.request.method"), "GET")
+                && Equals(span.Attributes.GetValueOrDefault("http.response.status_code"), 404L)
+                && span.Attributes.GetValueOrDefault("caldav.http.request_purpose") is null);
+            ordinaryNotFound.Attributes.GetValueOrDefault("caldav.http.observation").ShouldBeNull();
+            ordinaryNotFound.Attributes.GetValueOrDefault("error.type").ShouldBe("404");
+            ordinaryNotFound.StatusCode.ShouldBe(2);
             var ordinaryReads = httpAttempts.Where(span =>
                     Equals(span.Attributes.GetValueOrDefault("http.request.method"), "GET")
                     && Equals(span.Attributes.GetValueOrDefault("http.response.status_code"), 200L))
@@ -855,6 +880,7 @@ public sealed class OpenTelemetryStdioIntegrationTests
                 receiver.Requests,
                 privateUid,
                 privateHref,
+                ordinaryMissingHref,
                 privateContent,
                 privateEntityTag,
                 requestState);

@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text.Json;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Models;
+using DotnetAgents.CalDav.Mcp.Hosting;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -302,6 +303,7 @@ public sealed class CalendarOccurrenceMutationTools
 
     private static CallToolResult ToToolResult(CalendarEntityPatchResult result, string operation)
     {
+        CalendarTelemetry.ObserveMutationState(result.MutationState);
         var mapped = result.Code switch
         {
             CalendarEntityPatchCode.Success when result.Snapshot is not null => Success(result.Snapshot, operation),
@@ -339,23 +341,29 @@ public sealed class CalendarOccurrenceMutationTools
         Content = [new TextContentBlock { Text = operation + " made no change." }]
     };
 
-    private static CallToolResult Error(CalendarEntityPatchResult result, string operation) => new()
+    private static CallToolResult Error(CalendarEntityPatchResult result, string operation)
     {
-        IsError = true,
-        StructuredContent = JsonSerializer.SerializeToElement(new CalendarEntityCreateErrorResult(
-            Code(result.Code),
-            Category(result.Code),
-            $"The {operation} could not be completed.",
-            result.Retryable,
-            Phase(result.Phase),
-            MutationState(result.MutationState),
-            CurrentSnapshot: result.Snapshot is null ? null : CalendarSnapshotResult.FromSnapshot(result.Snapshot),
-            RetryAfterMs: result.RetryAfterMilliseconds,
-            Limits: result.LimitDimension is null
-                ? null
-                : new CalendarEntityCreateLimits(Dimension: "elapsed_time"))),
-        Content = [new TextContentBlock { Text = operation + " failed." }]
-    };
+        CalendarTelemetry.ObserveStructuredError(
+            CalendarTelemetryFacts.From(result),
+            result.MutationState);
+        return new CallToolResult
+        {
+            IsError = true,
+            StructuredContent = JsonSerializer.SerializeToElement(new CalendarEntityCreateErrorResult(
+                Code(result.Code),
+                Category(result.Code),
+                $"The {operation} could not be completed.",
+                result.Retryable,
+                Phase(result.Phase),
+                MutationState(result.MutationState),
+                CurrentSnapshot: result.Snapshot is null ? null : CalendarSnapshotResult.FromSnapshot(result.Snapshot),
+                RetryAfterMs: result.RetryAfterMilliseconds,
+                Limits: result.LimitDimension is null
+                    ? null
+                    : new CalendarEntityCreateLimits(Dimension: "elapsed_time"))),
+            Content = [new TextContentBlock { Text = operation + " failed." }]
+        };
+    }
 
     private static string Code(CalendarEntityPatchCode code) => string.Concat(code.ToString().SelectMany(
         (character, index) => char.IsUpper(character) && index > 0
@@ -391,16 +399,18 @@ public sealed class CalendarOccurrenceMutationTools
         _ => "execution"
     };
 
-    private static string MutationState(CalendarMutationState state) => state switch
+    private static string MutationState(CalendarMutationState state)
     {
-        CalendarMutationState.NotAttempted => "not_attempted",
-        CalendarMutationState.NotCommitted => "not_committed",
-        CalendarMutationState.Committed => "committed",
-        _ => "unknown"
-    };
+        CalendarTelemetry.ObserveMutationState(state);
+        return CalendarTelemetryVocabulary.MutationStateName(state);
+    }
 
-    private static CallToolResult InputError(bool payloadTooLarge) => payloadTooLarge
-        ? NamedError(
+    private static CallToolResult InputError(bool payloadTooLarge)
+    {
+        CalendarTelemetry.ObserveStructuredError(
+            CalendarTelemetryFacts.FromInputGuard(payloadTooLarge),
+            CalendarMutationState.NotAttempted);
+        return payloadTooLarge ? NamedError(
             "payload_too_large",
             "limitsAndAdmission",
             "The Occurrence mutation arguments exceed the safe payload limit.",
@@ -412,6 +422,7 @@ public sealed class CalendarOccurrenceMutationTools
             "The Occurrence mutation input is invalid.",
             "schemaLexicalDiscriminator",
             "not_attempted");
+    }
 
     internal static CallToolResult CreateInputGuardError(bool payloadTooLarge) => InputError(payloadTooLarge);
 

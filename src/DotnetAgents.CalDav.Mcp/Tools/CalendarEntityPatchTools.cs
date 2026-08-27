@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Text.Json;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Models;
+using DotnetAgents.CalDav.Mcp.Hosting;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -500,6 +501,7 @@ internal sealed class CalendarEntityPatchTools
 
     private static CallToolResult ToToolResult(CalendarEntityPatchResult result)
     {
+        CalendarTelemetry.ObserveMutationState(result.MutationState);
         var mapped = result.Code switch
         {
             CalendarEntityPatchCode.Success when result.Snapshot is not null => Success(result.Snapshot),
@@ -524,33 +526,43 @@ internal sealed class CalendarEntityPatchTools
         Content = [new TextContentBlock { Text = "Calendar Entity patch made no change." }]
     };
 
-    private static CallToolResult ConfirmationDeclined() => new()
+    private static CallToolResult ConfirmationDeclined()
     {
-        IsError = false,
-        StructuredContent = JsonSerializer.SerializeToElement(new CalendarEntityPatchNoChangeResult(
-            "confirmation_declined",
-            "not_attempted",
-            [])),
-        Content = [new TextContentBlock { Text = "Calendar Entity patch confirmation was declined." }]
-    };
+        CalendarTelemetry.ObserveMutationState(CalendarMutationState.NotAttempted);
+        return new CallToolResult
+        {
+            IsError = false,
+            StructuredContent = JsonSerializer.SerializeToElement(new CalendarEntityPatchNoChangeResult(
+                "confirmation_declined",
+                "not_attempted",
+                [])),
+            Content = [new TextContentBlock { Text = "Calendar Entity patch confirmation was declined." }]
+        };
+    }
 
-    private static CallToolResult Error(CalendarEntityPatchResult result) => new()
+    private static CallToolResult Error(CalendarEntityPatchResult result)
     {
-        IsError = true,
-        StructuredContent = JsonSerializer.SerializeToElement(new CalendarEntityCreateErrorResult(
-            Code(result.Code),
-            Category(result.Code),
-            Message(result.Code),
-            result.Retryable,
-            Phase(result.Phase),
-            MutationState(result.MutationState),
-            CurrentSnapshot: result.Snapshot is null ? null : CalendarSnapshotResult.FromSnapshot(result.Snapshot),
-            RetryAfterMs: result.RetryAfterMilliseconds,
-            Limits: result.LimitDimension is null
-                ? null
-                : new CalendarEntityCreateLimits(Dimension: LimitDimension(result.LimitDimension.Value)))),
-        Content = [new TextContentBlock { Text = "Calendar Entity patch failed." }]
-    };
+        CalendarTelemetry.ObserveStructuredError(
+            CalendarTelemetryFacts.From(result),
+            result.MutationState);
+        return new CallToolResult
+        {
+            IsError = true,
+            StructuredContent = JsonSerializer.SerializeToElement(new CalendarEntityCreateErrorResult(
+                Code(result.Code),
+                Category(result.Code),
+                Message(result.Code),
+                result.Retryable,
+                Phase(result.Phase),
+                MutationState(result.MutationState),
+                CurrentSnapshot: result.Snapshot is null ? null : CalendarSnapshotResult.FromSnapshot(result.Snapshot),
+                RetryAfterMs: result.RetryAfterMilliseconds,
+                Limits: result.LimitDimension is null
+                    ? null
+                    : new CalendarEntityCreateLimits(Dimension: LimitDimension(result.LimitDimension.Value)))),
+            Content = [new TextContentBlock { Text = "Calendar Entity patch failed." }]
+        };
+    }
 
     private static string Code(CalendarEntityPatchCode code) => code switch
     {
@@ -597,13 +609,11 @@ internal sealed class CalendarEntityPatchTools
         _ => "execution"
     };
 
-    private static string MutationState(CalendarMutationState state) => state switch
+    private static string MutationState(CalendarMutationState state)
     {
-        CalendarMutationState.NotAttempted => "not_attempted",
-        CalendarMutationState.NotCommitted => "not_committed",
-        CalendarMutationState.Committed => "committed",
-        _ => "unknown"
-    };
+        CalendarTelemetry.ObserveMutationState(state);
+        return CalendarTelemetryVocabulary.MutationStateName(state);
+    }
 
     private static string LimitDimension(CalendarEntityPatchLimitDimension dimension) => dimension switch
     {
@@ -624,13 +634,18 @@ internal sealed class CalendarEntityPatchTools
         Content = [new TextContentBlock { Text = "Calendar Entity patch failed." }]
     };
 
-    internal static CallToolResult CreateInputGuardError(bool payloadTooLarge) => payloadTooLarge
-        ? NamedError(
+    internal static CallToolResult CreateInputGuardError(bool payloadTooLarge)
+    {
+        CalendarTelemetry.ObserveStructuredError(
+            CalendarTelemetryFacts.FromInputGuard(payloadTooLarge),
+            CalendarMutationState.NotAttempted);
+        return payloadTooLarge ? NamedError(
             "payload_too_large",
             "limitsAndAdmission",
             "The Calendar Entity patch arguments exceed the safe payload limit.",
             "admissionAndPayload")
         : Error();
+    }
 
     private static CallToolResult UnsupportedMrtrError() => NamedError(
         "unsupported_capability",

@@ -34,7 +34,7 @@ public sealed class CalendarTelemetryTests
             operation.StartPhase(CalendarOperationPhase.Fetch);
             operation.StartPhase(CalendarOperationPhase.Filter);
             operation.StartPhase(CalendarOperationPhase.Expand);
-            operation.Complete(outcome: "success");
+            operation.Complete(CalendarOperationOutcome.Success, default);
         }
 
         var operationActivity = stopped.Single(activity => activity.OperationName == "caldav.operation");
@@ -83,7 +83,9 @@ public sealed class CalendarTelemetryTests
         using (var operation = CalendarTelemetry.StartOperation("todos.complete", null))
         {
             operation.ShouldNotBeNull();
-            operation.Complete(outcome, mutationState: mutationState);
+            operation.Complete(
+                OperationOutcome(outcome),
+                OperationTelemetry(mutationState));
         }
 
         stoppedOperation.ShouldNotBeNull();
@@ -109,12 +111,17 @@ public sealed class CalendarTelemetryTests
         {
             operation.ShouldNotBeNull();
             operation.Complete(
-                "success",
-                mutationState: "committed",
-                moveTelemetry: new CalendarMoveTelemetrySnapshot(
-                    CalendarMoveDispatchClassification.PossiblyDispatched,
-                    CalendarMoveCollisionClassification.None,
-                    CalendarMoveReconciliationClassification.FaithfulDestinationSourceAbsent));
+                CalendarOperationOutcome.Success,
+                new CalendarOperationTelemetrySnapshot(
+                    CalendarTelemetryFact<CalendarMutationState>.FromValue(
+                        CalendarMutationState.Committed),
+                    new CalendarMoveTelemetrySnapshot(
+                        CalendarTelemetryFact<CalendarMoveDispatchClassification>.FromValue(
+                            CalendarMoveDispatchClassification.PossiblyDispatched),
+                        CalendarTelemetryFact<CalendarMoveCollisionClassification>.FromValue(
+                            CalendarMoveCollisionClassification.None),
+                        CalendarTelemetryFact<CalendarMoveReconciliationClassification>.FromValue(
+                            CalendarMoveReconciliationClassification.FaithfulDestinationSourceAbsent))));
         }
 
         stoppedOperation.ShouldNotBeNull();
@@ -140,13 +147,14 @@ public sealed class CalendarTelemetryTests
         using (var operation = CalendarTelemetry.StartOperation("events.patch", null))
         {
             operation.ShouldNotBeNull();
+            operation.ObserveStructuredError(new CalendarStructuredErrorFacts(
+                CalendarTelemetryErrorCode.FidelityFailure,
+                CalendarTelemetryErrorCategory.PostWriteTruth,
+                CalendarTelemetryErrorPhase.PostWriteVerificationOrReconciliation,
+                Retryable: false));
             operation.Complete(
-                "error",
-                "fidelity_failure",
-                "postWriteTruth",
-                "committed",
-                "postWriteVerificationOrReconciliation",
-                retryable: false);
+                CalendarOperationOutcome.Error,
+                OperationTelemetry("committed"));
         }
 
         stoppedOperation.ShouldNotBeNull();
@@ -524,7 +532,7 @@ public sealed class CalendarTelemetryTests
                 secondRecoveredAttempt.Stop();
                 new TelemetryActivityAllowlistProcessor().OnEnd(secondRecoveredAttempt);
             }
-            operation.Complete("success");
+            operation.Complete(CalendarOperationOutcome.Success, default);
         }
 
         stoppedOperation.ShouldNotBeNull();
@@ -564,13 +572,12 @@ public sealed class CalendarTelemetryTests
             recoveredAttempt.SetTag("http.request.resend_count", 1);
             recoveredAttempt.Stop();
             processor.OnEnd(recoveredAttempt);
-            operation.Complete(
-                "error",
-                "upstream_unavailable",
-                "upstream",
-                mutationState: null,
-                errorPhase: "execution",
-                retryable: true);
+            operation.ObserveStructuredError(new CalendarStructuredErrorFacts(
+                CalendarTelemetryErrorCode.UpstreamUnavailable,
+                CalendarTelemetryErrorCategory.Upstream,
+                CalendarTelemetryErrorPhase.Execution,
+                Retryable: true));
+            operation.Complete(CalendarOperationOutcome.Error, default);
         }
 
         stoppedOperation.ShouldNotBeNull();
@@ -612,7 +619,7 @@ public sealed class CalendarTelemetryTests
             CalendarTelemetryEntityKind.Todo);
         operation.ShouldNotBeNull();
         operation.StartPhase(CalendarOperationPhase.Reconcile);
-        operation.Complete("error", "private-code", "private-category", "changed");
+        operation.Complete(CalendarOperationOutcome.Error, default);
         operation.Fail(new InvalidOperationException("secret"));
     }
 
@@ -883,6 +890,30 @@ public sealed class CalendarTelemetryTests
         activity.GetTagItem("caldav.query.mode").ShouldBeNull();
         activity.GetTagItem("private.href").ShouldBeNull();
     }
+
+    private static CalendarOperationOutcome OperationOutcome(string outcome) => outcome switch
+    {
+        "success" => CalendarOperationOutcome.Success,
+        "input_required" => CalendarOperationOutcome.InputRequired,
+        "cancelled" => CalendarOperationOutcome.Cancelled,
+        "error" => CalendarOperationOutcome.Error,
+        _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, null)
+    };
+
+    private static CalendarOperationTelemetrySnapshot OperationTelemetry(string? mutationState) =>
+        mutationState switch
+        {
+            null => default,
+            "not_attempted" => CalendarOperationTelemetrySnapshot.WithMutationState(
+                CalendarMutationState.NotAttempted),
+            "not_committed" => CalendarOperationTelemetrySnapshot.WithMutationState(
+                CalendarMutationState.NotCommitted),
+            "committed" => CalendarOperationTelemetrySnapshot.WithMutationState(
+                CalendarMutationState.Committed),
+            "unknown" => CalendarOperationTelemetrySnapshot.WithMutationState(
+                CalendarMutationState.Unknown),
+            _ => throw new ArgumentOutOfRangeException(nameof(mutationState), mutationState, null)
+        };
 
     private static ActivityListener ListenTo(string sourceName)
     {

@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using System.Xml;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Models;
+using DotnetAgents.CalDav.Mcp.Hosting;
 using DotnetAgents.CalDav.Core.Services;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -112,22 +113,30 @@ public sealed class CalendarResourceTools
             : candidate;
     }
 
-    internal static CallToolResult CreateError(CalendarResourceReadCode code, int? observedByteCount = null) => code switch
+    internal static CallToolResult CreateError(CalendarResourceReadCode code, int? observedByteCount = null)
     {
-        CalendarResourceReadCode.InvalidInput => Error("invalid_input", "input", "The resource href is invalid.", false, "originScopeAuthorization"),
-        CalendarResourceReadCode.OutsideScope => Error("outside_scope", "selection", "The resource is outside the configured Calendar Scope.", false, "originScopeAuthorization"),
-        CalendarResourceReadCode.NotFound => Error("not_found", "selection", "The Calendar Object Resource was not found.", false, "targetRevision"),
-        CalendarResourceReadCode.ConcurrencyUnavailable => Error("concurrency_unavailable", "state", "The server did not return a strong Entity Tag.", false, "targetRevision"),
-        CalendarResourceReadCode.PayloadTooLarge => Error("payload_too_large", "limitsAndAdmission", "The Calendar Object Resource exceeds the safe payload limit.", false, "admissionAndPayload", observedByteCount),
-        _ => Error("upstream_protocol_error", "upstream", "The Calendar Object Resource response was invalid.", false, "execution")
-    };
+        CalendarTelemetry.ObserveStructuredError(CalendarTelemetryFacts.From(code));
+        return code switch
+        {
+            CalendarResourceReadCode.InvalidInput => Error("invalid_input", "input", "The resource href is invalid.", false, "originScopeAuthorization"),
+            CalendarResourceReadCode.OutsideScope => Error("outside_scope", "selection", "The resource is outside the configured Calendar Scope.", false, "originScopeAuthorization"),
+            CalendarResourceReadCode.NotFound => Error("not_found", "selection", "The Calendar Object Resource was not found.", false, "targetRevision"),
+            CalendarResourceReadCode.ConcurrencyUnavailable => Error("concurrency_unavailable", "state", "The server did not return a strong Entity Tag.", false, "targetRevision"),
+            CalendarResourceReadCode.PayloadTooLarge => Error("payload_too_large", "limitsAndAdmission", "The Calendar Object Resource exceeds the safe payload limit.", false, "admissionAndPayload", observedByteCount),
+            _ => Error("upstream_protocol_error", "upstream", "The Calendar Object Resource response was invalid.", false, "execution")
+        };
+    }
 
-    internal static CallToolResult CreateInputGuardError(bool payloadTooLarge) => Error(
-        payloadTooLarge ? "payload_too_large" : "invalid_input",
-        payloadTooLarge ? "limitsAndAdmission" : "input",
-        payloadTooLarge ? "The resource read arguments are too large." : "The resource read input is invalid.",
-        false,
-        payloadTooLarge ? "admissionAndPayload" : "schemaLexicalDiscriminator");
+    internal static CallToolResult CreateInputGuardError(bool payloadTooLarge)
+    {
+        CalendarTelemetry.ObserveStructuredError(CalendarTelemetryFacts.FromInputGuard(payloadTooLarge));
+        return Error(
+            payloadTooLarge ? "payload_too_large" : "invalid_input",
+            payloadTooLarge ? "limitsAndAdmission" : "input",
+            payloadTooLarge ? "The resource read arguments are too large." : "The resource read input is invalid.",
+            false,
+            payloadTooLarge ? "admissionAndPayload" : "schemaLexicalDiscriminator");
+    }
 
     private static CallToolResult CreateHttpError(HttpStatusCode? statusCode) => statusCode switch
     {

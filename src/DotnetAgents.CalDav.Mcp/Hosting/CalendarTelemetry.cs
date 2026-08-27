@@ -9,6 +9,7 @@ internal static class CalendarTelemetry
     internal const string InstrumentationName = "DotnetAgents.CalDav";
     internal const string InstrumentationVersion = "0.1.0";
     private static readonly ActivitySource Source = new(InstrumentationName, InstrumentationVersion);
+    private static readonly AsyncLocal<CalendarTelemetryOperation?> CurrentOperation = new();
 
     internal static CalendarTelemetryOperation? StartOperation(
         string toolName,
@@ -44,12 +45,44 @@ internal static class CalendarTelemetry
         _ => "unknown"
     };
 
+    internal static IDisposable Attach(CalendarTelemetryOperation? operation)
+    {
+        var previous = CurrentOperation.Value;
+        CurrentOperation.Value = operation;
+        return new OperationScope(previous, operation);
+    }
+
+    internal static void ObserveStructuredError(CalendarStructuredErrorFacts facts) =>
+        CurrentOperation.Value?.ObserveStructuredError(facts);
+
+    internal static void ObserveMutationState(CalendarMutationState mutationState) =>
+        CalendarOperationProgress.ObserveMutationState(mutationState);
+
+    internal static void ObserveStructuredError(
+        CalendarStructuredErrorFacts facts,
+        CalendarMutationState mutationState)
+    {
+        ObserveStructuredError(facts);
+        ObserveMutationState(mutationState);
+    }
+
     private static string EntityKindName(CalendarTelemetryEntityKind entityKind) => entityKind switch
     {
         CalendarTelemetryEntityKind.Event => "event",
         CalendarTelemetryEntityKind.Todo => "todo",
         _ => throw new ArgumentOutOfRangeException(nameof(entityKind), entityKind, null)
     };
+
+    private sealed class OperationScope(
+        CalendarTelemetryOperation? previous,
+        CalendarTelemetryOperation? operation) : IDisposable
+    {
+        public void Dispose()
+        {
+            if (ReferenceEquals(CurrentOperation.Value, operation))
+                CurrentOperation.Value = previous;
+        }
+    }
 }
 
 internal enum CalendarTelemetryEntityKind
@@ -57,6 +90,80 @@ internal enum CalendarTelemetryEntityKind
     Event,
     Todo
 }
+
+internal enum CalendarOperationOutcome
+{
+    Success,
+    InputRequired,
+    Cancelled,
+    Error
+}
+
+internal enum CalendarTelemetryErrorCode
+{
+    Ambiguous,
+    Busy,
+    CommittedButConcurrencyUnavailable,
+    CommittedButUnverified,
+    CompletionStateConflict,
+    ConcurrencyUnavailable,
+    ConfirmationExpired,
+    CursorExpired,
+    ConfirmationMismatch,
+    Conflict,
+    DestinationConflict,
+    EntityKindMismatch,
+    FidelityFailure,
+    Indeterminate,
+    InvalidCalendarData,
+    InvalidInput,
+    LimitExhausted,
+    NotFound,
+    OpaqueResource,
+    OutsideScope,
+    PayloadTooLarge,
+    RecurrenceUnevaluable,
+    TemporalUnresolved,
+    UnsupportedCapability,
+    UpstreamForbidden,
+    UpstreamProtocolError,
+    UpstreamRateLimited,
+    UpstreamUnauthorized,
+    UpstreamUnavailable
+}
+
+internal enum CalendarTelemetryErrorCategory
+{
+    CapabilityAndProjection,
+    Confirmation,
+    Input,
+    LimitsAndAdmission,
+    PostWriteTruth,
+    Selection,
+    State,
+    Upstream
+}
+
+internal enum CalendarTelemetryErrorPhase
+{
+    AdmissionAndPayload,
+    CompleteResourceSemantics,
+    Execution,
+    Mrtr,
+    OriginScopeAuthorization,
+    Pagination,
+    PostWriteVerificationOrReconciliation,
+    SchemaLexicalDiscriminator,
+    SelectionDiscoveryCapability,
+    TargetRevision,
+    TransportAuthorization
+}
+
+internal readonly record struct CalendarStructuredErrorFacts(
+    CalendarTelemetryErrorCode Code,
+    CalendarTelemetryErrorCategory Category,
+    CalendarTelemetryErrorPhase Phase,
+    bool Retryable);
 
 internal static class CalendarTelemetryVocabulary
 {
@@ -94,6 +201,79 @@ internal static class CalendarTelemetryVocabulary
     internal static string? ErrorPhase(string? value) => Known(value, ErrorPhases);
 
     internal static IReadOnlySet<string> KnownErrorPhases => ErrorPhases;
+
+    internal static string ErrorCodeName(CalendarTelemetryErrorCode code) => code switch
+    {
+        CalendarTelemetryErrorCode.Ambiguous => "ambiguous",
+        CalendarTelemetryErrorCode.Busy => "busy",
+        CalendarTelemetryErrorCode.CommittedButConcurrencyUnavailable => "committed_but_concurrency_unavailable",
+        CalendarTelemetryErrorCode.CommittedButUnverified => "committed_but_unverified",
+        CalendarTelemetryErrorCode.CompletionStateConflict => "completion_state_conflict",
+        CalendarTelemetryErrorCode.ConcurrencyUnavailable => "concurrency_unavailable",
+        CalendarTelemetryErrorCode.ConfirmationExpired => "confirmation_expired",
+        CalendarTelemetryErrorCode.CursorExpired => "cursor_expired",
+        CalendarTelemetryErrorCode.ConfirmationMismatch => "confirmation_mismatch",
+        CalendarTelemetryErrorCode.Conflict => "conflict",
+        CalendarTelemetryErrorCode.DestinationConflict => "destination_conflict",
+        CalendarTelemetryErrorCode.EntityKindMismatch => "entity_kind_mismatch",
+        CalendarTelemetryErrorCode.FidelityFailure => "fidelity_failure",
+        CalendarTelemetryErrorCode.Indeterminate => "indeterminate",
+        CalendarTelemetryErrorCode.InvalidCalendarData => "invalid_calendar_data",
+        CalendarTelemetryErrorCode.InvalidInput => "invalid_input",
+        CalendarTelemetryErrorCode.LimitExhausted => "limit_exhausted",
+        CalendarTelemetryErrorCode.NotFound => "not_found",
+        CalendarTelemetryErrorCode.OpaqueResource => "opaque_resource",
+        CalendarTelemetryErrorCode.OutsideScope => "outside_scope",
+        CalendarTelemetryErrorCode.PayloadTooLarge => "payload_too_large",
+        CalendarTelemetryErrorCode.RecurrenceUnevaluable => "recurrence_unevaluable",
+        CalendarTelemetryErrorCode.TemporalUnresolved => "temporal_unresolved",
+        CalendarTelemetryErrorCode.UnsupportedCapability => "unsupported_capability",
+        CalendarTelemetryErrorCode.UpstreamForbidden => "upstream_forbidden",
+        CalendarTelemetryErrorCode.UpstreamProtocolError => "upstream_protocol_error",
+        CalendarTelemetryErrorCode.UpstreamRateLimited => "upstream_rate_limited",
+        CalendarTelemetryErrorCode.UpstreamUnauthorized => "upstream_unauthorized",
+        CalendarTelemetryErrorCode.UpstreamUnavailable => "upstream_unavailable",
+        _ => throw new ArgumentOutOfRangeException(nameof(code), code, null)
+    };
+
+    internal static string ErrorCategoryName(CalendarTelemetryErrorCategory category) => category switch
+    {
+        CalendarTelemetryErrorCategory.CapabilityAndProjection => "capabilityAndProjection",
+        CalendarTelemetryErrorCategory.Confirmation => "confirmation",
+        CalendarTelemetryErrorCategory.Input => "input",
+        CalendarTelemetryErrorCategory.LimitsAndAdmission => "limitsAndAdmission",
+        CalendarTelemetryErrorCategory.PostWriteTruth => "postWriteTruth",
+        CalendarTelemetryErrorCategory.Selection => "selection",
+        CalendarTelemetryErrorCategory.State => "state",
+        CalendarTelemetryErrorCategory.Upstream => "upstream",
+        _ => throw new ArgumentOutOfRangeException(nameof(category), category, null)
+    };
+
+    internal static string ErrorPhaseName(CalendarTelemetryErrorPhase phase) => phase switch
+    {
+        CalendarTelemetryErrorPhase.AdmissionAndPayload => "admissionAndPayload",
+        CalendarTelemetryErrorPhase.CompleteResourceSemantics => "completeResourceSemantics",
+        CalendarTelemetryErrorPhase.Execution => "execution",
+        CalendarTelemetryErrorPhase.Mrtr => "mrtr",
+        CalendarTelemetryErrorPhase.OriginScopeAuthorization => "originScopeAuthorization",
+        CalendarTelemetryErrorPhase.Pagination => "pagination",
+        CalendarTelemetryErrorPhase.PostWriteVerificationOrReconciliation =>
+            "postWriteVerificationOrReconciliation",
+        CalendarTelemetryErrorPhase.SchemaLexicalDiscriminator => "schemaLexicalDiscriminator",
+        CalendarTelemetryErrorPhase.SelectionDiscoveryCapability => "selectionDiscoveryCapability",
+        CalendarTelemetryErrorPhase.TargetRevision => "targetRevision",
+        CalendarTelemetryErrorPhase.TransportAuthorization => "transportAuthorization",
+        _ => throw new ArgumentOutOfRangeException(nameof(phase), phase, null)
+    };
+
+    internal static string MutationStateName(CalendarMutationState state) => state switch
+    {
+        CalendarMutationState.NotAttempted => "not_attempted",
+        CalendarMutationState.NotCommitted => "not_committed",
+        CalendarMutationState.Committed => "committed",
+        CalendarMutationState.Unknown => "unknown",
+        _ => throw new ArgumentOutOfRangeException(nameof(state), state, null)
+    };
 
     internal static string? MoveDispatch(string? value) => value switch
     {
@@ -137,6 +317,7 @@ internal sealed class CalendarTelemetryOperation : IDisposable
     private readonly ActivitySource _source;
     private readonly Activity _operation;
     private Activity? _phase;
+    private CalendarStructuredErrorFacts? _structuredError;
 
     internal CalendarTelemetryOperation(ActivitySource source, Activity operation)
     {
@@ -152,33 +333,37 @@ internal sealed class CalendarTelemetryOperation : IDisposable
             _phase.SetTag("caldav.phase", PhaseName(phase));
     }
 
+    internal void ObserveStructuredError(CalendarStructuredErrorFacts facts) => _structuredError = facts;
+
     internal void Complete(
-        string outcome,
-        string? errorCode = null,
-        string? errorCategory = null,
-        string? mutationState = null,
-        string? errorPhase = null,
-        bool? retryable = null,
-        CalendarMoveTelemetrySnapshot? moveTelemetry = null)
+        CalendarOperationOutcome outcome,
+        CalendarOperationTelemetrySnapshot telemetry)
     {
         if (!_operation.IsAllDataRequested)
             return;
 
-        if (outcome is not ("success" or "input_required" or "cancelled" or "error"))
-            throw new ArgumentOutOfRangeException(nameof(outcome), outcome, null);
-
-        _operation.SetTag("caldav.outcome", outcome);
-        _operation.SetTag("caldav.error.code", errorCode);
-        _operation.SetTag("caldav.error.category", errorCategory);
-        _operation.SetTag("caldav.error.phase", errorPhase);
-        _operation.SetTag("caldav.error.retryable", retryable);
-        _operation.SetTag("caldav.mutation.state", mutationState);
-        _operation.SetTag("caldav.move.dispatch", MoveDispatch(moveTelemetry?.Dispatch));
-        _operation.SetTag("caldav.move.collision", MoveCollision(moveTelemetry?.Collision));
-        _operation.SetTag("caldav.move.reconciliation", MoveReconciliation(moveTelemetry?.Reconciliation));
-        if (string.Equals(outcome, "error", StringComparison.Ordinal))
+        var outcomeName = OutcomeName(outcome);
+        _operation.SetTag("caldav.outcome", outcomeName);
+        _operation.SetTag("caldav.mutation.state", MutationStateName(telemetry.MutationState));
+        _operation.SetTag("caldav.move.dispatch", MoveDispatch(telemetry.Move.Dispatch));
+        _operation.SetTag("caldav.move.collision", MoveCollision(telemetry.Move.Collision));
+        _operation.SetTag("caldav.move.reconciliation", MoveReconciliation(telemetry.Move.Reconciliation));
+        if (outcome == CalendarOperationOutcome.Error && _structuredError is { } error)
         {
-            _operation.SetTag("error.type", errorCode is null ? null : $"caldav.{errorCode}");
+            var errorCode = CalendarTelemetryVocabulary.ErrorCodeName(error.Code);
+            _operation.SetTag("caldav.error.code", errorCode);
+            _operation.SetTag(
+                "caldav.error.category",
+                CalendarTelemetryVocabulary.ErrorCategoryName(error.Category));
+            _operation.SetTag(
+                "caldav.error.phase",
+                CalendarTelemetryVocabulary.ErrorPhaseName(error.Phase));
+            _operation.SetTag("caldav.error.retryable", error.Retryable);
+            _operation.SetTag("error.type", $"caldav.{errorCode}");
+            _operation.SetStatus(ActivityStatusCode.Error);
+        }
+        else if (outcome == CalendarOperationOutcome.Error)
+        {
             _operation.SetStatus(ActivityStatusCode.Error);
         }
     }
@@ -188,7 +373,7 @@ internal sealed class CalendarTelemetryOperation : IDisposable
         if (!_operation.IsAllDataRequested)
             return;
 
-        _operation.SetTag("caldav.outcome", "error");
+        _operation.SetTag("caldav.outcome", OutcomeName(CalendarOperationOutcome.Error));
         _operation.SetTag("error.type", ClassifyException(exception));
         _operation.SetStatus(ActivityStatusCode.Error);
     }
@@ -228,26 +413,44 @@ internal sealed class CalendarTelemetryOperation : IDisposable
         _ => "internal_error"
     };
 
-    private static string? MoveDispatch(CalendarMoveDispatchClassification? classification) => classification switch
+    private static string OutcomeName(CalendarOperationOutcome outcome) => outcome switch
+    {
+        CalendarOperationOutcome.Success => "success",
+        CalendarOperationOutcome.InputRequired => "input_required",
+        CalendarOperationOutcome.Cancelled => "cancelled",
+        CalendarOperationOutcome.Error => "error",
+        _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, null)
+    };
+
+    private static string? MutationStateName(CalendarTelemetryFact<CalendarMutationState> fact) =>
+        fact.HasValue ? CalendarTelemetryVocabulary.MutationStateName(fact.Value) : null;
+
+    private static string? MoveDispatch(
+        CalendarTelemetryFact<CalendarMoveDispatchClassification> fact) =>
+        fact.HasValue ? fact.Value switch
     {
         CalendarMoveDispatchClassification.NotAttempted => "not_attempted",
         CalendarMoveDispatchClassification.Rejected => "rejected",
         CalendarMoveDispatchClassification.Dispatched => "dispatched",
         CalendarMoveDispatchClassification.PossiblyDispatched => "possibly_dispatched",
-        _ => null
-    };
+        _ => throw new ArgumentOutOfRangeException(nameof(fact), fact.Value, null)
+    } : null;
 
-    private static string? MoveCollision(CalendarMoveCollisionClassification? classification) => classification switch
+    private static string? MoveCollision(
+        CalendarTelemetryFact<CalendarMoveCollisionClassification> fact) =>
+        fact.HasValue ? fact.Value switch
     {
         CalendarMoveCollisionClassification.None => "none",
         CalendarMoveCollisionClassification.SourceRevision => "source_revision",
         CalendarMoveCollisionClassification.DestinationHref => "destination_href",
         CalendarMoveCollisionClassification.Uid => "uid",
         CalendarMoveCollisionClassification.Unclassified => "unclassified",
-        _ => null
-    };
+        _ => throw new ArgumentOutOfRangeException(nameof(fact), fact.Value, null)
+    } : null;
 
-    private static string? MoveReconciliation(CalendarMoveReconciliationClassification? classification) => classification switch
+    private static string? MoveReconciliation(
+        CalendarTelemetryFact<CalendarMoveReconciliationClassification> fact) =>
+        fact.HasValue ? fact.Value switch
     {
         CalendarMoveReconciliationClassification.NotRun => "not_run",
         CalendarMoveReconciliationClassification.FaithfulDestinationSourceAbsent =>
@@ -258,6 +461,6 @@ internal sealed class CalendarTelemetryOperation : IDisposable
         CalendarMoveReconciliationClassification.UnchangedSourceDestinationAbsent =>
             "unchanged_source_destination_absent",
         CalendarMoveReconciliationClassification.Indeterminate => "indeterminate",
-        _ => null
-    };
+        _ => throw new ArgumentOutOfRangeException(nameof(fact), fact.Value, null)
+    } : null;
 }

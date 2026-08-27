@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Models;
+using DotnetAgents.CalDav.Mcp.Hosting;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -92,24 +93,28 @@ public sealed class CalendarEntityTools
         Content = [new TextContentBlock { Text = "Calendar Entity query failed." }]
     });
 
-    private static CallToolResult Error(QueryFailure failure) => Error(new CalendarEntityQueryErrorResult(
-        Code(failure.Code),
-        Category(failure.Category),
-        failure.Message,
-        failure.Retryable,
-        Phase(failure.Phase),
-        failure.Limits is null ? null : new CalendarEntityExecutionLimits(
-            failure.Limits.ResourcesInspected,
-            failure.Limits.CalendarCount,
-            failure.Limits.OccurrenceCount,
-            failure.Limits.ByteCount,
-            failure.Limits.ItemCount,
-            failure.Limits.SnapshotCount,
-            LimitDimension(failure.Limits.Dimension),
-            failure.Limits.Observed,
-            failure.Limits.Limit),
-        failure.AuthorizedCandidates?.Select(Candidate).ToArray(),
-        failure.RetryAfterMs));
+    private static CallToolResult Error(QueryFailure failure)
+    {
+        CalendarTelemetry.ObserveStructuredError(CalendarTelemetryFacts.From(failure));
+        return Error(new CalendarEntityQueryErrorResult(
+            Code(failure.Code),
+            Category(failure.Category),
+            failure.Message,
+            failure.Retryable,
+            Phase(failure.Phase),
+            failure.Limits is null ? null : new CalendarEntityExecutionLimits(
+                failure.Limits.ResourcesInspected,
+                failure.Limits.CalendarCount,
+                failure.Limits.OccurrenceCount,
+                failure.Limits.ByteCount,
+                failure.Limits.ItemCount,
+                failure.Limits.SnapshotCount,
+                LimitDimension(failure.Limits.Dimension),
+                failure.Limits.Observed,
+                failure.Limits.Limit),
+            failure.AuthorizedCandidates?.Select(Candidate).ToArray(),
+            failure.RetryAfterMs));
+    }
 
     private static CalendarAuthorizedCandidateResult Candidate(QueryAuthorizedCandidate candidate) => new(
         new CalendarHref(candidate.CalendarHref),
@@ -341,8 +346,14 @@ public sealed class CalendarEntityTools
         _ => throw new ArgumentOutOfRangeException(nameof(phase), phase, null)
     };
 
-    private static CallToolResult CreatePayloadLimitError(int byteCount, bool humanReadable) => Error(
-        CalendarQueryFailure(
+    private static CallToolResult CreatePayloadLimitError(int byteCount, bool humanReadable)
+    {
+        CalendarTelemetry.ObserveStructuredError(new CalendarStructuredErrorFacts(
+            CalendarTelemetryErrorCode.PayloadTooLarge,
+            CalendarTelemetryErrorCategory.LimitsAndAdmission,
+            CalendarTelemetryErrorPhase.AdmissionAndPayload,
+            false));
+        return Error(CalendarQueryFailure(
             "payload_too_large",
             "limitsAndAdmission",
             humanReadable
@@ -351,6 +362,7 @@ public sealed class CalendarEntityTools
             false,
             "admissionAndPayload",
             new CalendarEntityExecutionLimits(ByteCount: byteCount)));
+    }
 
     private static CalendarEntityQueryErrorResult CalendarQueryFailure(
         string code,

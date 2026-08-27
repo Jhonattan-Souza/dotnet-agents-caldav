@@ -4,6 +4,7 @@ using System.Text.Json.Serialization;
 using System.Xml;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Models;
+using DotnetAgents.CalDav.Mcp.Hosting;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -88,6 +89,7 @@ public sealed class CalendarEntityCreateTools
         try
         {
             var result = await create(linked.Token);
+            CalendarTelemetry.ObserveMutationState(result.MutationState);
             var mapped = result.Code == CalendarEntityCreateCode.Success && result.Snapshot is not null
                 ? Success(result.Snapshot)
                 : Error(result);
@@ -176,6 +178,9 @@ public sealed class CalendarEntityCreateTools
 
     private static CallToolResult Error(CalendarEntityCreateResult result)
     {
+        CalendarTelemetry.ObserveStructuredError(
+            CalendarTelemetryFacts.From(result),
+            result.MutationState);
         var (code, category, message, phase) = Describe(result.Code);
         if (result.Code == CalendarEntityCreateCode.NotFound
             && result.MutationState == CalendarMutationState.NotCommitted)
@@ -252,8 +257,12 @@ public sealed class CalendarEntityCreateTools
             ("indeterminate", "postWriteTruth", "The Calendar mutation outcome is indeterminate.", "postWriteVerificationOrReconciliation")
     };
 
-    private static CallToolResult InputError(bool payloadTooLarge) => payloadTooLarge
-        ? Error(
+    private static CallToolResult InputError(bool payloadTooLarge)
+    {
+        CalendarTelemetry.ObserveStructuredError(
+            CalendarTelemetryFacts.FromInputGuard(payloadTooLarge),
+            CalendarMutationState.NotAttempted);
+        return payloadTooLarge ? Error(
             "payload_too_large",
             "limitsAndAdmission",
             "The Calendar Entity create arguments exceed the safe payload limit.",
@@ -267,6 +276,7 @@ public sealed class CalendarEntityCreateTools
             false,
             "schemaLexicalDiscriminator",
             "not_attempted");
+    }
 
     private static CallToolResult Error(
         string code,
@@ -306,13 +316,11 @@ public sealed class CalendarEntityCreateTools
                 "admissionAndPayload",
                 MutationState(mutationState)));
 
-    private static string MutationState(CalendarMutationState state) => state switch
+    private static string MutationState(CalendarMutationState state)
     {
-        CalendarMutationState.NotAttempted => "not_attempted",
-        CalendarMutationState.NotCommitted => "not_committed",
-        CalendarMutationState.Committed => "committed",
-        _ => "unknown"
-    };
+        CalendarTelemetry.ObserveMutationState(state);
+        return CalendarTelemetryVocabulary.MutationStateName(state);
+    }
 }
 
 public sealed record CalendarEntityCreateSuccessResult(

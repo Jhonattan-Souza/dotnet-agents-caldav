@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Models;
+using DotnetAgents.CalDav.Mcp.Hosting;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -79,8 +80,10 @@ public sealed class CalendarTodoTools
         Content = [new TextContentBlock { Text = page.HumanText }]
     };
 
-    private static CallToolResult Error(QueryFailure failure) => CalendarQueryToolSupport.EnsureBoundedResult(
-        new CallToolResult
+    private static CallToolResult Error(QueryFailure failure)
+    {
+        CalendarTelemetry.ObserveStructuredError(CalendarTelemetryFacts.From(failure));
+        return CalendarQueryToolSupport.EnsureBoundedResult(new CallToolResult
         {
             IsError = true,
             StructuredContent = JsonSerializer.SerializeToElement(new CalendarTodoQueryErrorResult(
@@ -104,21 +107,30 @@ public sealed class CalendarTodoTools
             Content = [new TextContentBlock { Text = "Compact To-do query failed." }]
         },
         CreatePayloadLimitError);
+    }
 
-    private static CallToolResult CreatePayloadLimitError(int byteCount, bool humanReadable) => new()
+    private static CallToolResult CreatePayloadLimitError(int byteCount, bool humanReadable)
     {
-        IsError = true,
-        StructuredContent = JsonSerializer.SerializeToElement(new CalendarTodoQueryErrorResult(
-            "payload_too_large",
-            "limitsAndAdmission",
-            humanReadable
-                ? "The To-do query human-readable result exceeds the safe payload limit."
-                : "The To-do query result exceeds the safe payload limit.",
-            false,
-            "admissionAndPayload",
-            new CalendarEntityExecutionLimits(ByteCount: byteCount))),
-        Content = [new TextContentBlock { Text = "Compact To-do query failed." }]
-    };
+        CalendarTelemetry.ObserveStructuredError(new CalendarStructuredErrorFacts(
+            CalendarTelemetryErrorCode.PayloadTooLarge,
+            CalendarTelemetryErrorCategory.LimitsAndAdmission,
+            CalendarTelemetryErrorPhase.AdmissionAndPayload,
+            false));
+        return new CallToolResult
+        {
+            IsError = true,
+            StructuredContent = JsonSerializer.SerializeToElement(new CalendarTodoQueryErrorResult(
+                "payload_too_large",
+                "limitsAndAdmission",
+                humanReadable
+                    ? "The To-do query human-readable result exceeds the safe payload limit."
+                    : "The To-do query result exceeds the safe payload limit.",
+                false,
+                "admissionAndPayload",
+                new CalendarEntityExecutionLimits(ByteCount: byteCount))),
+            Content = [new TextContentBlock { Text = "Compact To-do query failed." }]
+        };
+    }
 
     private static bool TryCreateRequest(
         IDictionary<string, JsonElement>? arguments,
