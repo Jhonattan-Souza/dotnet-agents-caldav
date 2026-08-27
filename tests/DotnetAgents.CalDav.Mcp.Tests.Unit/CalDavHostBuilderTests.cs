@@ -631,6 +631,26 @@ public class CalDavHostBuilderTests
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BuildHost_RegisteredMutationToolsAreClassifiedByTheExecutionPolicy(bool exposeExactTools)
+    {
+        var builder = CalDavHostBuilder.CreateBuilder(exposeExactTools);
+        builder.Services.ConfigureCalDav(ValidOptions);
+        using var host = builder.Build();
+
+        var registeredMutations = host.Services
+            .GetRequiredService<IOptions<ModelContextProtocol.Server.McpServerOptions>>()
+            .Value.ToolCollection!
+            .ToArray()
+            .Where(tool => tool.ProtocolTool.Annotations!.ReadOnlyHint == false)
+            .Select(tool => tool.ProtocolTool.Name);
+
+        registeredMutations.ShouldNotBeEmpty();
+        registeredMutations.ShouldAllBe(name => CalendarExecutionPolicy.IsMutation(name));
+    }
+
     [Fact]
     public void BuildHost_ExactCatalogConstructionDoesNotContactConfiguredOrigin()
     {

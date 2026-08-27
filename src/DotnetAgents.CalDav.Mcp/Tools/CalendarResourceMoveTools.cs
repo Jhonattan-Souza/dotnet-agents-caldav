@@ -16,24 +16,20 @@ public sealed class CalendarResourceMoveTools
     private static readonly TimeSpan ExecutionDeadline = TimeSpan.FromSeconds(60);
     private readonly ICalendarService _calendarService;
     private readonly TimeProvider _timeProvider;
-    private readonly CalendarMutationAdmission _admission;
 
     public CalendarResourceMoveTools(IServiceProvider services)
         : this(
             services.GetRequiredService<ICalendarService>(),
-            services.GetRequiredService<TimeProvider>(),
-            services.GetRequiredService<CalendarMutationAdmission>())
+            services.GetRequiredService<TimeProvider>())
     {
     }
 
     internal CalendarResourceMoveTools(
         ICalendarService calendarService,
-        TimeProvider timeProvider,
-        CalendarMutationAdmission admission)
+        TimeProvider timeProvider)
     {
         _calendarService = calendarService;
         _timeProvider = timeProvider;
-        _admission = admission;
     }
 
     [McpServerTool(
@@ -57,9 +53,6 @@ public sealed class CalendarResourceMoveTools
     {
         if (MeasureArguments(arguments) > MaximumArgumentBytes)
             return InputError(payloadTooLarge: true);
-        using var lease = await _admission.AcquireAsync(cancellationToken).ConfigureAwait(false);
-        if (lease is null)
-            return BusyError();
         if (!CalendarResourceMoveArgumentParser.TryParse(arguments, out var request))
             return InputError(payloadTooLarge: false);
         return await ExecuteAsync(request, cancellationToken).ConfigureAwait(false);
@@ -245,15 +238,6 @@ public sealed class CalendarResourceMoveTools
         false,
         payloadTooLarge ? "admissionAndPayload" : "schemaLexicalDiscriminator",
         "not_attempted");
-
-    private static CallToolResult BusyError() => Error(
-        "busy",
-        "limitsAndAdmission",
-        "Calendar mutation admission is busy.",
-        true,
-        "admissionAndPayload",
-        "not_attempted",
-        retryAfterMs: CalendarMutationAdmission.RetryAfterMilliseconds);
 
     private static CallToolResult SelectionUnavailableError() => Error(
         "upstream_unavailable",

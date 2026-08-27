@@ -72,7 +72,6 @@ public sealed class CalDavHostBuilder
 
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<CalendarOperationAdmission>();
-        builder.Services.AddSingleton<CalendarMutationAdmission>();
         builder.Services.AddSingleton<CalendarMutationRequestStateProtector>();
         builder.Services.AddTransient(serviceProvider => new CalendarEntityTools(
             serviceProvider.GetRequiredService<DotnetAgents.CalDav.Core.Abstractions.ICalendarQueryModule>()));

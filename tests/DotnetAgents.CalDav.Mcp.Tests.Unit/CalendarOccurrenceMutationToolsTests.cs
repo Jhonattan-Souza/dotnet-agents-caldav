@@ -84,9 +84,7 @@ public sealed class CalendarOccurrenceMutationToolsTests
             .Returns(new CalendarEntityPatchResult(
                 CalendarEntityPatchCode.NoChange,
                 CalendarMutationState.NotAttempted));
-        var sut = new CalendarOccurrenceMutationTools(
-            service,
-            new CalendarMutationAdmission(TimeProvider.System));
+        var sut = new CalendarOccurrenceMutationTools(service);
         var arguments = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
             "{\"snapshot\":{\"href\":\"https://cal.example/work/series.ics\","
             + "\"entityUid\":\"series-1\",\"entityKind\":\"event\",\"entityTag\":\"\\\"v1\\\"\"},"
@@ -127,9 +125,7 @@ public sealed class CalendarOccurrenceMutationToolsTests
             .Returns(noChange);
         service.RestoreOccurrenceCancellationAsync(Arg.Any<CalendarOccurrenceMutationRequest>(), Arg.Any<CancellationToken>())
             .Returns(noChange);
-        var sut = new CalendarOccurrenceMutationTools(
-            service,
-            new CalendarMutationAdmission(TimeProvider.System));
+        var sut = new CalendarOccurrenceMutationTools(service);
         var arguments = ValidArguments();
 
         var result = operation switch
@@ -274,9 +270,7 @@ public sealed class CalendarOccurrenceMutationToolsTests
         }
     }
 
-    private static CalendarOccurrenceMutationTools CreateSut(ICalendarService service) => new(
-        service,
-        new CalendarMutationAdmission(TimeProvider.System));
+    private static CalendarOccurrenceMutationTools CreateSut(ICalendarService service) => new(service);
 
     private static CalendarResourceSnapshot EventSnapshot()
     {

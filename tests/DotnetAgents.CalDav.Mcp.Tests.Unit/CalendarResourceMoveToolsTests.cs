@@ -20,10 +20,7 @@ public sealed class CalendarResourceMoveToolsTests
                 Arg.Do<CalendarResourceMoveRequest>(request => observed = request),
                 Arg.Any<CancellationToken>())
             .Returns(CalendarResourceMoveResult.Success(Snapshot()));
-        var sut = new CalendarResourceMoveTools(
-            service,
-            TimeProvider.System,
-            new CalendarMutationAdmission(TimeProvider.System));
+        var sut = new CalendarResourceMoveTools(service, TimeProvider.System);
         var arguments = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
             "{\"revision\":{\"href\":\"https://cal.example/tasks/reviewed.ics\","
             + "\"entityUid\":\"move-1\",\"entityKind\":\"todo\",\"entityTag\":\"\\\"r1\\\"\"},"
@@ -281,8 +278,7 @@ public sealed class CalendarResourceMoveToolsTests
 
     private static CalendarResourceMoveTools CreateTool(ICalendarService service) => new(
         service,
-        TimeProvider.System,
-        new CalendarMutationAdmission(TimeProvider.System));
+        TimeProvider.System);
 
     private static Dictionary<string, JsonElement> Arguments(string destination) =>
         JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(

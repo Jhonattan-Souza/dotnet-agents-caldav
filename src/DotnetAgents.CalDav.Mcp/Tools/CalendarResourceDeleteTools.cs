@@ -21,27 +21,23 @@ public sealed class CalendarResourceDeleteTools
     private readonly ICalendarService _calendarService;
     private readonly CalendarMutationRequestStateProtector _stateProtector;
     private readonly TimeProvider _timeProvider;
-    private readonly CalendarMutationAdmission _admission;
 
     public CalendarResourceDeleteTools(IServiceProvider services)
         : this(
             services.GetRequiredService<ICalendarService>(),
             services.GetRequiredService<CalendarMutationRequestStateProtector>(),
-            services.GetRequiredService<TimeProvider>(),
-            services.GetRequiredService<CalendarMutationAdmission>())
+            services.GetRequiredService<TimeProvider>())
     {
     }
 
     internal CalendarResourceDeleteTools(
         ICalendarService calendarService,
         CalendarMutationRequestStateProtector stateProtector,
-        TimeProvider timeProvider,
-        CalendarMutationAdmission admission)
+        TimeProvider timeProvider)
     {
         _calendarService = calendarService;
         _stateProtector = stateProtector;
         _timeProvider = timeProvider;
-        _admission = admission;
     }
 
     [McpServerTool(
@@ -83,9 +79,6 @@ public sealed class CalendarResourceDeleteTools
                 "not_attempted");
         }
 
-        using var lease = await _admission.AcquireAsync(cancellationToken).ConfigureAwait(false);
-        if (lease is null)
-            return BusyError();
         if (!CalendarResourceDeleteArgumentParser.TryParse(arguments, out var revision))
             return InputError();
         if (CalendarResourceDeleteArgumentParser.IsWeakEntityTag(revision.EntityTag))
@@ -523,15 +516,6 @@ public sealed class CalendarResourceDeleteTools
         false,
         "schemaLexicalDiscriminator",
         "not_attempted");
-
-    private static CallToolResult BusyError() => Error(
-        "busy",
-        "limitsAndAdmission",
-        "The Calendar mutation admission queue is busy.",
-        true,
-        "admissionAndPayload",
-        "not_attempted",
-        retryAfterMs: CalendarMutationAdmission.RetryAfterMilliseconds);
 
     private static CallToolResult DeadlineError() => Error(
         "limit_exhausted",

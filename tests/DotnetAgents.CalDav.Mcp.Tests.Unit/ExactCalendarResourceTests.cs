@@ -48,11 +48,7 @@ public sealed class ExactCalendarResourceTests
                 Password = "secret"
             }),
             Enumerable.Range(0, 64).Select(value => (byte)value).ToArray());
-        var sut = new ExactCalendarResourceWriteTools(
-            service,
-            protector,
-            timeProvider,
-            new CalendarMutationAdmission(timeProvider));
+        var sut = new ExactCalendarResourceWriteTools(service, protector, timeProvider);
         var arguments = new Dictionary<string, System.Text.Json.JsonElement>
         {
             ["destinationHref"] = System.Text.Json.JsonSerializer.SerializeToElement(destinationHref),
@@ -1731,35 +1727,6 @@ public sealed class ExactCalendarResourceTests
     }
 
     [Theory]
-    [InlineData("create")]
-    [InlineData("replace")]
-    [InlineData("move")]
-    public async Task ExactWriteRawAsync_BusyAdmissionDoesNotReview(string operation)
-    {
-        var service = Substitute.For<ICalendarService>();
-        var time = new FixedTimeProvider(DateTimeOffset.Parse("2026-08-17T12:00:00Z"));
-        var admission = new CalendarMutationAdmission(time);
-        var held = await admission.AcquireAsync(CancellationToken.None);
-        held.ShouldNotBeNull();
-        var sut = CreateWriteTools(service, time, admission);
-        var revision = ExactRevision();
-
-        var result = operation switch
-        {
-            "create" => await sut.CreateRawAsync(
-                CreateArguments("https://cal.example/events/busy.ics", ExactEvent("busy")), null, null, true, CancellationToken.None),
-            "replace" => await sut.ReplaceRawAsync(
-                ReplaceArguments(revision, ExactEvent(revision.EntityUid)), null, null, true, CancellationToken.None),
-            _ => await sut.MoveRawAsync(MoveArguments(revision), null, null, true, CancellationToken.None)
-        };
-
-        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("busy");
-        result.StructuredContent.Value.GetProperty("retryAfterMs").GetInt32()
-            .ShouldBe(CalendarMutationAdmission.RetryAfterMilliseconds);
-        held.Dispose();
-    }
-
-    [Theory]
     [InlineData("missing-revision")]
     [InlineData("short-digest")]
     public async Task ExactCreateRawAsync_RejectsMalformedReviewEvidence(string scenario)
@@ -2228,8 +2195,7 @@ public sealed class ExactCalendarResourceTests
 
     private static ExactCalendarResourceWriteTools CreateWriteTools(
         ICalendarService service,
-        TimeProvider? suppliedTime = null,
-        CalendarMutationAdmission? suppliedAdmission = null)
+        TimeProvider? suppliedTime = null)
     {
         var timeProvider = suppliedTime
             ?? new FixedTimeProvider(new DateTimeOffset(2026, 8, 17, 12, 0, 0, TimeSpan.Zero));
@@ -2242,11 +2208,7 @@ public sealed class ExactCalendarResourceTests
                 Password = "secret"
             }),
             Enumerable.Range(0, 64).Select(value => (byte)value).ToArray());
-        return new ExactCalendarResourceWriteTools(
-            service,
-            protector,
-            timeProvider,
-            suppliedAdmission ?? new CalendarMutationAdmission(timeProvider));
+        return new ExactCalendarResourceWriteTools(service, protector, timeProvider);
     }
 
     private static ExactCalendarResourceWriteTools CreateWriteTools(
@@ -2264,11 +2226,7 @@ public sealed class ExactCalendarResourceTests
                 Password = password
             }),
             keyMaterial);
-        return new ExactCalendarResourceWriteTools(
-            service,
-            protector,
-            timeProvider,
-            new CalendarMutationAdmission(timeProvider));
+        return new ExactCalendarResourceWriteTools(service, protector, timeProvider);
     }
 
     private static ExactCalendarResourceWriteTools CreateWriteTools(
@@ -2281,11 +2239,7 @@ public sealed class ExactCalendarResourceTests
             timeProvider,
             Options.Create(options),
             keyMaterial);
-        return new ExactCalendarResourceWriteTools(
-            service,
-            protector,
-            timeProvider,
-            new CalendarMutationAdmission(timeProvider));
+        return new ExactCalendarResourceWriteTools(service, protector, timeProvider);
     }
 
     private static CalDavOptions MoveStateOptions() => new()
