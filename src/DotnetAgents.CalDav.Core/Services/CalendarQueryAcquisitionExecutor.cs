@@ -42,7 +42,7 @@ internal sealed class CalendarQueryAcquisitionExecutor(
         if (prevalidation is not null)
             return AcquiredCalendarQuery.Failure(prevalidation);
         var transport = transportFactory();
-        CalendarQueryDiscovery discovery;
+        CalendarOperationDiscoveryResult discovery;
         using (CalendarQueryTelemetry.StartPhase("discovery"))
             discovery = await transport.DiscoverAsync(cancellationToken).ConfigureAwait(false);
         discovery = ValidateDiscovery(discovery);
@@ -178,7 +178,7 @@ internal sealed class CalendarQueryAcquisitionExecutor(
 
     private static SelectionResult Select(
         CalendarQueryAcquisitionRequest request,
-        CalendarQueryDiscovery discovery) => request.Scope.Mode switch
+        CalendarOperationDiscoveryResult discovery) => request.Scope.Mode switch
         {
             CalendarEntityScopeMode.Default => SelectDefaults(request.EntityKinds, discovery),
             CalendarEntityScopeMode.Selected => SelectExplicit(request, discovery.Discovery.Items),
@@ -191,7 +191,7 @@ internal sealed class CalendarQueryAcquisitionExecutor(
 
     private static SelectionResult SelectDefaults(
         IReadOnlyList<CalendarEntityKind> kinds,
-        CalendarQueryDiscovery discovery)
+        CalendarOperationDiscoveryResult discovery)
     {
         var selected = new List<(CalendarDescriptor Calendar, CalendarEntityKind Kind)>();
         foreach (var kind in kinds)
@@ -225,7 +225,7 @@ internal sealed class CalendarQueryAcquisitionExecutor(
         return SelectionResult.Success(request.EntityKinds.Select(kind => (matches[0], kind)).ToArray(), diagnostics);
     }
 
-    private CalendarQueryDiscovery ValidateDiscovery(CalendarQueryDiscovery discovery)
+    private CalendarOperationDiscoveryResult ValidateDiscovery(CalendarOperationDiscoveryResult discovery)
     {
         var items = discovery.Discovery.Items;
         if (items.Count > 256
@@ -235,7 +235,8 @@ internal sealed class CalendarQueryAcquisitionExecutor(
             throw new CalendarDiscoveryProtocolException("The scoped Calendar discovery result is invalid.");
         var frozen = items.OrderBy(calendar => calendar.Href, StringComparer.Ordinal).Select(Freeze).ToArray();
         var byHref = frozen.ToDictionary(calendar => calendar.Href, StringComparer.Ordinal);
-        return new CalendarQueryDiscovery(
+        return new CalendarOperationDiscoveryResult(
+            discovery.Key,
             new CalendarDiscoveryResult(
                 frozen,
                 discovery.Discovery.Diagnostics.Select(FreezeDiagnostic).ToArray()),

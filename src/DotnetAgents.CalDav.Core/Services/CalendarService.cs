@@ -11,7 +11,6 @@ namespace DotnetAgents.CalDav.Core.Services;
 /// <summary>Applies configured Calendar Scope to standards-based Calendar discovery.</summary>
 internal sealed class CalendarService : ICalendarService
 {
-    private readonly ICalendarClient _rawCalendarClient;
     private readonly ICalendarClient _calendarClient;
     private readonly CalendarOperationDiscovery _operationDiscovery;
     private readonly IOptions<CalDavOptions> _options;
@@ -35,25 +34,24 @@ internal sealed class CalendarService : ICalendarService
         TimeProvider timeProvider,
         ICalendarEntityIdentityGenerator identityGenerator)
     {
-        _rawCalendarClient = calendarClient;
         _options = options;
         _logger = logger;
         _timeProvider = timeProvider;
         _identityGenerator = identityGenerator;
         _discoveryPolicy = new CalendarDiscoveryPolicy(options, logger);
         _operationDiscovery = new CalendarOperationDiscovery(
-            calendarClient,
+            new CalendarClientDiscoveryTransport(calendarClient),
             options,
             _discoveryPolicy.ApplyScope,
             _discoveryPolicy.ResolveDefault);
-        _calendarClient = _operationDiscovery;
+        _calendarClient = calendarClient;
     }
 
     /// <inheritdoc />
     public async Task<CalendarDiscoveryResult> GetCalendarsAsync(CancellationToken cancellationToken)
     {
         _calendarClient.RediscoverCapabilities();
-        return await _operationDiscovery.GetScopedResultAsync(cancellationToken);
+        return (await _operationDiscovery.DiscoverAsync(cancellationToken)).Discovery;
     }
 
     /// <inheritdoc />
@@ -61,14 +59,8 @@ internal sealed class CalendarService : ICalendarService
         CalendarEntityKind entityKind,
         CancellationToken cancellationToken)
     {
-        _ = await _calendarClient.GetCalendarsAsync(cancellationToken);
-        return _operationDiscovery.ResolveDefault(entityKind);
+        return (await _operationDiscovery.DiscoverAsync(cancellationToken)).Default(entityKind);
     }
-
-    private CalendarSelectionResult ResolveDefaultCalendar(
-        CalendarEntityKind entityKind,
-        IReadOnlyList<CalendarDescriptor> discovered,
-        IReadOnlyList<CalendarDescriptor> scoped) => _operationDiscovery.ResolveDefault(entityKind);
 
     /// <inheritdoc />
     public Task<CalendarResourceRead> GetResourceAsync(string href, CancellationToken cancellationToken) =>
@@ -138,7 +130,7 @@ internal sealed class CalendarService : ICalendarService
         if (configuredScope.Count > 0 && !configuredScope.Any(calendarHref => IsDirectResourceOf(resourceUri, calendarHref)))
             return new CalendarResourceRead(CalendarResourceReadCode.OutsideScope);
 
-        var calendars = ApplyScope(await _calendarClient.GetCalendarsAsync(cancellationToken)).Items;
+        var calendars = (await _operationDiscovery.DiscoverAsync(cancellationToken)).Discovery.Items;
         var calendar = calendars
             .Where(candidate => IsDirectResourceOf(resourceUri, candidate.Href))
             .OrderByDescending(candidate => candidate.Href.Length)
@@ -219,7 +211,7 @@ internal sealed class CalendarService : ICalendarService
     public async Task<CalendarResourceMoveResult> MoveResourceAsync(
         CalendarResourceMoveRequest request,
         CancellationToken cancellationToken) => await new CalendarMoveModule(
-            _operationDiscovery,
+            new CalendarClientMoveTransport(_operationDiscovery, _calendarClient),
             _options.Value,
             _timeProvider).MoveAsync(request, cancellationToken);
 
@@ -241,12 +233,10 @@ internal sealed class CalendarService : ICalendarService
     }
 
     private CalendarCreationModule CreationModule() => new(
-        _calendarClient as ICalendarCreateTransport ?? new CalendarClientCreateTransport(_calendarClient),
+        new CalendarClientCreateTransport(_operationDiscovery, _calendarClient),
         _options.Value,
         _timeProvider,
-        _identityGenerator,
-        ApplyScope,
-        ResolveDefaultCalendar);
+        _identityGenerator);
 
     private static CalendarEntityCreateResult RequireSemantic(CalendarCreationOutcome outcome) => outcome switch
     {
@@ -272,11 +262,13 @@ internal sealed class CalendarService : ICalendarService
         ApplyScope);
 
     private CalendarExactMoveModule ExactMoveModule() => new(
-        new CalendarOperationDiscovery(
-            _rawCalendarClient,
-            _options,
-            _discoveryPolicy.ApplyScope,
-            _discoveryPolicy.ResolveDefault),
+        new CalendarClientMoveTransport(
+            new CalendarOperationDiscovery(
+                new CalendarClientDiscoveryTransport(_calendarClient),
+                _options,
+                _discoveryPolicy.ApplyScope,
+                _discoveryPolicy.ResolveDefault),
+            _calendarClient),
         _options.Value,
         _timeProvider);
 

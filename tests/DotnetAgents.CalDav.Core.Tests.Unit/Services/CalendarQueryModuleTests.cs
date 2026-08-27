@@ -919,7 +919,7 @@ public sealed class CalendarQueryModuleTests
         var transport = new DelegateTransport(discover: _ =>
         {
             discoveryCount++;
-            return Task.FromResult(new CalendarQueryDiscovery(
+            return Task.FromResult(new CalendarOperationDiscoveryResult(
                 new CalendarDiscoveryResult([calendar], []),
                 CalendarSelectionResult.Failure(CalendarSelectionCode.OutsideScope, [calendar]),
                 CalendarSelectionResult.Failure(CalendarSelectionCode.NotFound, [calendar])));
@@ -955,7 +955,7 @@ public sealed class CalendarQueryModuleTests
             {
                 discoveryCount++;
                 var calendar = Calendar(current);
-                return Task.FromResult(new CalendarQueryDiscovery(
+                return Task.FromResult(new CalendarOperationDiscoveryResult(
                     new CalendarDiscoveryResult([calendar], []),
                     CalendarSelectionResult.Success(calendar),
                     CalendarSelectionResult.Failure(CalendarSelectionCode.NotFound)));
@@ -1097,7 +1097,7 @@ public sealed class CalendarQueryModuleTests
             "unsupported" => new CalendarDiscoveryUnsupportedCapabilityException("private"),
             _ => throw new ArgumentOutOfRangeException(nameof(scenario))
         };
-        var transport = new DelegateTransport(discover: _ => Task.FromException<CalendarQueryDiscovery>(exception));
+        var transport = new DelegateTransport(discover: _ => Task.FromException<CalendarOperationDiscoveryResult>(exception));
         await using var provider = CreateProvider(transport, new MutableTimeProvider(Now));
 
         var failure = (await provider.GetRequiredService<ICalendarQueryModule>().QueryEntitiesAsync(
@@ -1198,7 +1198,7 @@ public sealed class CalendarQueryModuleTests
     {
         const string calendarHref = "https://cal.example/calendars/work/";
         var calendar = Calendar(calendarHref);
-        var discovery = new CalendarQueryDiscovery(
+        var discovery = new CalendarOperationDiscoveryResult(
             new CalendarDiscoveryResult([calendar], []),
             CalendarSelectionResult.Failure(selectionCode, [calendar]),
             CalendarSelectionResult.Failure(CalendarSelectionCode.NotFound, [calendar]));
@@ -1225,7 +1225,7 @@ public sealed class CalendarQueryModuleTests
             EventSupport = EntityKindSupport.NotAdvertised,
             TodoSupport = EntityKindSupport.Advertised
         };
-        var discovery = new CalendarQueryDiscovery(
+        var discovery = new CalendarOperationDiscoveryResult(
             new CalendarDiscoveryResult([todos, events], []),
             CalendarSelectionResult.Success(events),
             CalendarSelectionResult.Success(todos));
@@ -1253,7 +1253,7 @@ public sealed class CalendarQueryModuleTests
     {
         const string calendarHref = "https://cal.example/calendars/work/";
         var calendar = Calendar(calendarHref);
-        var discovery = new CalendarQueryDiscovery(
+        var discovery = new CalendarOperationDiscoveryResult(
             new CalendarDiscoveryResult([calendar], []),
             CalendarSelectionResult.Success(calendar),
             CalendarSelectionResult.Failure(CalendarSelectionCode.NotFound));
@@ -1276,7 +1276,7 @@ public sealed class CalendarQueryModuleTests
         const string secondHref = "https://cal.example/calendars/second/";
         var first = Calendar(firstHref) with { DisplayName = " Work ", EventSupport = EntityKindSupport.NotAdvertised };
         var second = Calendar(secondHref) with { DisplayName = "work", EventSupport = EntityKindSupport.NotAdvertised };
-        var discovery = new CalendarQueryDiscovery(
+        var discovery = new CalendarOperationDiscoveryResult(
             new CalendarDiscoveryResult([first, second], []),
             CalendarSelectionResult.Failure(CalendarSelectionCode.NotFound, [first, second]),
             CalendarSelectionResult.Failure(CalendarSelectionCode.NotFound, [first, second]));
@@ -1348,7 +1348,7 @@ public sealed class CalendarQueryModuleTests
     {
         const string calendarHref = "https://cal.example/calendars/work/";
         var calendar = Calendar(calendarHref) with { EventSupport = EntityKindSupport.NotAdvertised };
-        var discovery = new CalendarQueryDiscovery(
+        var discovery = new CalendarOperationDiscoveryResult(
             new CalendarDiscoveryResult([calendar],
             [
                 new CalendarDiagnostic("duplicate_calendar_href", "private duplicate", CalendarDiagnosticSeverity.Info),
@@ -1402,7 +1402,7 @@ public sealed class CalendarQueryModuleTests
             "missing_success_default" => new CalendarSelectionResult(CalendarSelectionCode.Success, null, []),
             _ => CalendarSelectionResult.Success(calendars[0])
         };
-        var discovery = new CalendarQueryDiscovery(
+        var discovery = new CalendarOperationDiscoveryResult(
             new CalendarDiscoveryResult(calendars, diagnostics),
             eventDefault,
             CalendarSelectionResult.Failure(CalendarSelectionCode.NotFound, calendars));
@@ -2035,14 +2035,14 @@ public sealed class CalendarQueryModuleTests
 
         internal int MultigetCount { get; private set; }
 
-        public Task<CalendarQueryDiscovery> DiscoverAsync(CancellationToken cancellationToken)
+        public Task<CalendarOperationDiscoveryResult> DiscoverAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             DiscoveryCount++;
             var scoped = new CalendarDiscoveryResult(calendars, []);
             var eventDefault = CalendarSelectionResult.Success(calendars[0]);
             var todoDefault = CalendarSelectionResult.Failure(CalendarSelectionCode.NotFound, calendars);
-            return Task.FromResult(new CalendarQueryDiscovery(scoped, eventDefault, todoDefault));
+            return Task.FromResult(new CalendarOperationDiscoveryResult(scoped, eventDefault, todoDefault));
         }
 
         public Task<IReadOnlyList<string>> QueryCandidateHrefsAsync(
@@ -2088,7 +2088,7 @@ public sealed class CalendarQueryModuleTests
 
         internal List<string> MultigetCalls { get; } = [];
 
-        public Task<CalendarQueryDiscovery> DiscoverAsync(CancellationToken cancellationToken)
+        public Task<CalendarOperationDiscoveryResult> DiscoverAsync(CancellationToken cancellationToken)
         {
             var calendars = new[]
             {
@@ -2103,7 +2103,7 @@ public sealed class CalendarQueryModuleTests
                     TodoSupport = EntityKindSupport.Advertised
                 }
             };
-            return Task.FromResult(new CalendarQueryDiscovery(
+            return Task.FromResult(new CalendarOperationDiscoveryResult(
                 new CalendarDiscoveryResult(calendars, []),
                 CalendarSelectionResult.Success(calendars[0]),
                 CalendarSelectionResult.Success(calendars[1])));
@@ -2142,15 +2142,15 @@ public sealed class CalendarQueryModuleTests
     }
 
     private sealed class DelegateTransport(
-        Func<CancellationToken, Task<CalendarQueryDiscovery>>? discover = null,
+        Func<CancellationToken, Task<CalendarOperationDiscoveryResult>>? discover = null,
         Func<string, CalendarEntityKind, DateTimeOffset?, DateTimeOffset?, CancellationToken,
             Task<IReadOnlyList<string>>>? candidates = null,
         Func<string, IReadOnlyList<string>, CancellationToken,
             Task<IReadOnlyList<CalendarResourceRead>>>? multiget = null) : ICalendarQueryTransport
     {
-        public Task<CalendarQueryDiscovery> DiscoverAsync(CancellationToken cancellationToken) =>
+        public Task<CalendarOperationDiscoveryResult> DiscoverAsync(CancellationToken cancellationToken) =>
             discover?.Invoke(cancellationToken)
-            ?? Task.FromResult(new CalendarQueryDiscovery(
+            ?? Task.FromResult(new CalendarOperationDiscoveryResult(
                 new CalendarDiscoveryResult([Calendar("https://cal.example/calendars/work/")], []),
                 CalendarSelectionResult.Success(Calendar("https://cal.example/calendars/work/")),
                 CalendarSelectionResult.Failure(CalendarSelectionCode.NotFound)));

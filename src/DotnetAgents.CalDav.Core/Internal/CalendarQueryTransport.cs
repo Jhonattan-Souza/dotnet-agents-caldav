@@ -7,14 +7,8 @@ internal sealed class CalendarQueryTransport(
     CalendarOperationDiscovery discovery,
     CalDavClient client) : ICalendarQueryTransport
 {
-    public async Task<CalendarQueryDiscovery> DiscoverAsync(CancellationToken cancellationToken)
-    {
-        var scoped = await discovery.GetScopedResultAsync(cancellationToken).ConfigureAwait(false);
-        return new CalendarQueryDiscovery(
-            scoped,
-            discovery.ResolveDefault(CalendarEntityKind.Event),
-            discovery.ResolveDefault(CalendarEntityKind.Todo));
-    }
+    public Task<CalendarOperationDiscoveryResult> DiscoverAsync(CancellationToken cancellationToken) =>
+        discovery.DiscoverAsync(cancellationToken);
 
     public async Task<IReadOnlyList<string>> QueryCandidateHrefsAsync(
         string calendarHref,

@@ -532,7 +532,7 @@ public sealed class CalendarTodoQueryModuleTests
 
         internal List<IReadOnlyList<string>> MultigetRequests { get; } = [];
 
-        public Task<CalendarQueryDiscovery> DiscoverAsync(CancellationToken cancellationToken)
+        public Task<CalendarOperationDiscoveryResult> DiscoverAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             DiscoveryCount++;
@@ -544,7 +544,7 @@ public sealed class CalendarTodoQueryModuleTests
                 EventSupport = EntityKindSupport.Advertised,
                 TodoSupport = EntityKindSupport.Advertised
             };
-            return Task.FromResult(new CalendarQueryDiscovery(
+            return Task.FromResult(new CalendarOperationDiscoveryResult(
                 new CalendarDiscoveryResult([calendar], []),
                 CalendarSelectionResult.Success(calendar),
                 CalendarSelectionResult.Success(calendar)));

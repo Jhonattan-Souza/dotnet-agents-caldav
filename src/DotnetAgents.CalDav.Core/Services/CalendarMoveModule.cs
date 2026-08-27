@@ -140,8 +140,8 @@ internal sealed class CalendarMoveModule(
         CalendarResourceMoveRequest request,
         CancellationToken cancellationToken)
     {
-        var discovery = await transport.DiscoverCalendarsAsync(cancellationToken);
-        var scoped = discovery.ScopedDiscovery.Items;
+        var discovery = await transport.DiscoverAsync(cancellationToken);
+        var scoped = discovery.Discovery.Items;
         var sourceUri = new Uri(request.Revision.Href, UriKind.Absolute);
         var sourceCalendar = scoped
             .Where(calendar => CalendarMoveHrefPolicy.IsSafeCalendarHref(calendar.Href, options.BaseUrl)
@@ -176,11 +176,11 @@ internal sealed class CalendarMoveModule(
     private static CalendarSelectionResult SelectCalendar(
         CalendarMoveDestination destination,
         CalendarEntityKind entityKind,
-        CalendarMoveDiscoveryResult discovery,
+        CalendarOperationDiscoveryResult discovery,
         IReadOnlyList<CalendarDescriptor> scoped)
     {
         if (destination.Mode == CalendarEntityScopeMode.Default)
-            return discovery.ResolveDefault(entityKind);
+            return discovery.Default(entityKind);
         var matches = FindCalendarMatches(scoped, destination.Calendar!);
         if (matches.Length == 0)
             return CalendarSelectionResult.Failure(CalendarSelectionCode.NotFound, scoped.Take(MaximumDiagnostics).ToArray());

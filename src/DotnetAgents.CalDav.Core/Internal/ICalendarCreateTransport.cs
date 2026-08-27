@@ -5,7 +5,7 @@ namespace DotnetAgents.CalDav.Core.Internal;
 
 internal interface ICalendarCreateTransport
 {
-    Task<IReadOnlyList<CalendarDescriptor>> GetCalendarsAsync(CancellationToken cancellationToken);
+    Task<CalendarOperationDiscoveryResult> DiscoverAsync(CancellationToken cancellationToken);
 
     Task<CalendarResourceRead> GetCalendarResourceAsync(string href, CancellationToken cancellationToken);
 
@@ -22,10 +22,12 @@ internal interface ICalendarCreateTransport
         CancellationToken cancellationToken);
 }
 
-internal sealed class CalendarClientCreateTransport(ICalendarClient client) : ICalendarCreateTransport
+internal sealed class CalendarClientCreateTransport(
+    CalendarOperationDiscovery discovery,
+    ICalendarClient client) : ICalendarCreateTransport
 {
-    public Task<IReadOnlyList<CalendarDescriptor>> GetCalendarsAsync(CancellationToken cancellationToken) =>
-        client.GetCalendarsAsync(cancellationToken);
+    public Task<CalendarOperationDiscoveryResult> DiscoverAsync(CancellationToken cancellationToken) =>
+        discovery.DiscoverAsync(cancellationToken);
 
     public Task<CalendarResourceRead> GetCalendarResourceAsync(string href, CancellationToken cancellationToken) =>
         client.GetCalendarResourceAsync(href, cancellationToken);

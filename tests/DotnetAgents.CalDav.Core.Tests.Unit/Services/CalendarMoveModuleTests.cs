@@ -443,7 +443,7 @@ public sealed class CalendarMoveModuleTests
         var sourceCalendar = TodoCalendar("https://cal.example/tasks/", "Tasks");
         var transport = ScriptedTransport(Resource(SourceHref, "\"r1\"", Uid)) with
         {
-            Discovery = new CalendarMoveDiscoveryResult(
+            Discovery = new CalendarOperationDiscoveryResult(
                 new CalendarDiscoveryResult([sourceCalendar], []),
                 CalendarSelectionResult.Success(sourceCalendar),
                 CalendarSelectionResult.Success(sourceCalendar))
@@ -475,7 +475,7 @@ public sealed class CalendarMoveModuleTests
             };
         var transport = ScriptedTransport(Resource(SourceHref, "\"r1\"", Uid)) with
         {
-            Discovery = new CalendarMoveDiscoveryResult(
+            Discovery = new CalendarOperationDiscoveryResult(
                 new CalendarDiscoveryResult([
                     TodoCalendar("https://cal.example/tasks/", "Tasks"),
                     destination
@@ -514,7 +514,7 @@ public sealed class CalendarMoveModuleTests
     {
         var discovery = ScriptedTransport(Resource(SourceHref, "\"r1\"", Uid)).Discovery;
 
-        var selection = discovery.ResolveDefault((CalendarEntityKind)999);
+        var selection = discovery.Default((CalendarEntityKind)999);
 
         selection.Code.ShouldBe(CalendarSelectionCode.NotFound);
         selection.Calendar.ShouldBeNull();
@@ -533,7 +533,7 @@ public sealed class CalendarMoveModuleTests
         var destination = TodoCalendar(DestinationCalendarHref, "Archive");
         var transport = ScriptedTransport(Resource(SourceHref, "\"r1\"", Uid)) with
         {
-            Discovery = new CalendarMoveDiscoveryResult(
+            Discovery = new CalendarOperationDiscoveryResult(
                 new CalendarDiscoveryResult([
                     TodoCalendar(sourceCalendarHref, "Invalid source"),
                     destination
@@ -566,7 +566,7 @@ public sealed class CalendarMoveModuleTests
 
     private static ScriptedMoveTransport ScriptedTransport(CalendarResourceRead source) => new()
     {
-        Discovery = new CalendarMoveDiscoveryResult(
+        Discovery = new CalendarOperationDiscoveryResult(
             new CalendarDiscoveryResult([
                 TodoCalendar("https://cal.example/tasks/", "Tasks"),
                 TodoCalendar(DestinationCalendarHref, "Archive")
@@ -672,7 +672,7 @@ public sealed class CalendarMoveModuleTests
 
     private sealed record ScriptedMoveTransport : ICalendarMoveTransport
     {
-        internal required CalendarMoveDiscoveryResult Discovery { get; init; }
+        internal required CalendarOperationDiscoveryResult Discovery { get; init; }
 
         internal required CalendarResourceRead Source { get; init; }
 
@@ -696,7 +696,7 @@ public sealed class CalendarMoveModuleTests
 
         internal ConcurrentQueue<string> Trace { get; } = new();
 
-        public Task<CalendarMoveDiscoveryResult> DiscoverCalendarsAsync(CancellationToken cancellationToken)
+        public Task<CalendarOperationDiscoveryResult> DiscoverAsync(CancellationToken cancellationToken)
         {
             Trace.Enqueue("discover");
             return Task.FromResult(Discovery);

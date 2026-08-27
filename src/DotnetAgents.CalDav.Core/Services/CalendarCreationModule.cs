@@ -13,10 +13,7 @@ internal sealed class CalendarCreationModule(
     ICalendarCreateTransport transport,
     CalDavOptions options,
     TimeProvider timeProvider,
-    ICalendarEntityIdentityGenerator identityGenerator,
-    Func<IReadOnlyList<CalendarDescriptor>, CalendarDiscoveryResult> applyScope,
-    Func<CalendarEntityKind, IReadOnlyList<CalendarDescriptor>, IReadOnlyList<CalendarDescriptor>, CalendarSelectionResult>
-        resolveDefaultCalendar)
+    ICalendarEntityIdentityGenerator identityGenerator)
 {
     private const int MaximumAttempts = 3;
     private const int MaximumDiagnostics = 32;
@@ -353,10 +350,10 @@ internal sealed class CalendarCreationModule(
         CalendarEntityKind entityKind,
         CancellationToken cancellationToken)
     {
-        var discovered = await transport.GetCalendarsAsync(cancellationToken);
-        var scoped = applyScope(discovered).Items;
+        var discovery = await transport.DiscoverAsync(cancellationToken);
+        var scoped = discovery.Discovery.Items;
         if (destination.Mode == CalendarEntityScopeMode.Default)
-            return resolveDefaultCalendar(entityKind, discovered, scoped);
+            return discovery.Default(entityKind);
 
         var matches = FindCalendarMatches(scoped, destination.Calendar!);
         if (matches.Length == 0)
@@ -747,7 +744,7 @@ internal sealed class CalendarCreationModule(
         try
         {
             return new ExactDiscoveryAttempt(
-                applyScope(await transport.GetCalendarsAsync(cancellationToken)).Items,
+                (await transport.DiscoverAsync(cancellationToken)).Discovery.Items,
                 null);
         }
         catch (Exception exception) when (IsExactPhaseFailure(exception, cancellationToken))

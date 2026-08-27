@@ -142,8 +142,8 @@ internal sealed class CalendarExactMoveModule(
         CalendarExactMoveRequest request,
         CancellationToken cancellationToken)
     {
-        var discovery = await transport.DiscoverCalendarsAsync(cancellationToken).ConfigureAwait(false);
-        var calendars = discovery.ScopedDiscovery.Items;
+        var discovery = await transport.DiscoverAsync(cancellationToken).ConfigureAwait(false);
+        var calendars = discovery.Discovery.Items;
         var sourceCalendar = FindCalendar(request.Revision.Href, calendars);
         var destinationCalendar = FindCalendar(request.DestinationHref, calendars);
         if (sourceCalendar is null || destinationCalendar is null)

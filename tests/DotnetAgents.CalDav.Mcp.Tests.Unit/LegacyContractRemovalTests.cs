@@ -142,17 +142,27 @@ public sealed class LegacyContractRemovalTests
     }
 
     [Fact]
-    public void ShippedCore_HasOneQueryTransportSeamAndOneProductionAdapter()
+    public void ShippedCore_HasOneDiscoveryAuthorityAndNarrowProductionAdapters()
     {
         var coreTypes = typeof(ICalendarQueryModule).Assembly.GetTypes();
         coreTypes.ShouldNotContain(type => type.Name == "ICalendarQueryResourceTransport");
         typeof(ICalendarClient).GetMethods()
             .ShouldNotContain(method => method.Name.Contains("Query", StringComparison.Ordinal));
-        coreTypes.Single(type => type.Name == "CalendarOperationDiscovery").GetMethods(
+        var discovery = coreTypes.Single(type => type.Name == "CalendarOperationDiscovery");
+        discovery.GetMethods(
                 System.Reflection.BindingFlags.Instance
                 | System.Reflection.BindingFlags.Public
-                | System.Reflection.BindingFlags.NonPublic)
-            .ShouldNotContain(method => method.Name.Contains("Query", StringComparison.Ordinal));
+                | System.Reflection.BindingFlags.DeclaredOnly)
+            .Select(method => method.Name)
+            .ShouldBe(["DiscoverAsync"]);
+        typeof(ICalendarClient).IsAssignableFrom(discovery).ShouldBeFalse();
+        coreTypes.Single(type => type.Name == "ICalendarCreateTransport").IsAssignableFrom(discovery).ShouldBeFalse();
+        coreTypes.Single(type => type.Name == "ICalendarMoveTransport").IsAssignableFrom(discovery).ShouldBeFalse();
+
+        var discoveryTransport = coreTypes.Single(type => type.Name == "ICalendarDiscoveryTransport");
+        coreTypes.Where(type => !type.IsInterface && discoveryTransport.IsAssignableFrom(type))
+            .Select(type => type.Name)
+            .ShouldBe(["CalendarClientDiscoveryTransport"]);
 
         var transport = coreTypes.Single(type => type.Name == "ICalendarQueryTransport");
         coreTypes.Where(type => !type.IsInterface && transport.IsAssignableFrom(type))
