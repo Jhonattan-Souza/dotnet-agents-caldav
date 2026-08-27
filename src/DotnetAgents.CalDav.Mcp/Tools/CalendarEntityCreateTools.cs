@@ -89,21 +89,20 @@ public sealed class CalendarEntityCreateTools
         try
         {
             var result = await create(linked.Token);
-            CalendarTelemetry.ObserveMutationState(result.MutationState);
-            var mapped = result.Code == CalendarEntityCreateCode.Success && result.Snapshot is not null
-                ? Success(result.Snapshot)
+            var terminal = result.Code == CalendarEntityCreateCode.Success && result.Snapshot is not null
+                ? CalendarToolResult.Success(Success(result.Snapshot), result.MutationState)
                 : Error(result);
-            return EnsureBounded(mapped, result.MutationState);
+            return terminal.FinalizeBounded((_, _) => PayloadLimitError(result.MutationState));
         }
         catch (OperationCanceledException) when (deadline.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
-            return Error(
-                "limit_exhausted",
-                "limitsAndAdmission",
+            return Error(new CalendarStructuredErrorFacts(
+                CalendarTelemetryErrorCode.LimitExhausted,
+                CalendarTelemetryErrorCategory.LimitsAndAdmission,
+                CalendarTelemetryErrorPhase.Execution,
+                false),
                 "The Calendar mutation exhausted its elapsed_time execution budget.",
-                false,
-                "execution",
-                "unknown");
+                CalendarMutationState.Unknown).FinalizeResult();
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -111,14 +110,14 @@ public sealed class CalendarEntityCreateTools
         }
         catch (CalendarDiscoveryLimitException exception)
         {
-            return Error(
-                "limit_exhausted",
-                "limitsAndAdmission",
+            return Error(new CalendarStructuredErrorFacts(
+                CalendarTelemetryErrorCode.LimitExhausted,
+                CalendarTelemetryErrorCategory.LimitsAndAdmission,
+                CalendarTelemetryErrorPhase.SelectionDiscoveryCapability,
+                false),
                 "The Calendar mutation exceeded its Calendar discovery limit.",
-                false,
-                "selectionDiscoveryCapability",
-                "not_attempted",
-                limits: new CalendarEntityCreateLimits(CalendarCount: exception.CalendarCount));
+                CalendarMutationState.NotAttempted,
+                limits: new CalendarEntityCreateLimits(CalendarCount: exception.CalendarCount)).FinalizeResult();
         }
         catch (HttpRequestException)
         {
@@ -134,33 +133,33 @@ public sealed class CalendarEntityCreateTools
         }
         catch (Exception exception) when (exception is XmlException or CalendarDiscoveryProtocolException)
         {
-            return Error(
-                "upstream_protocol_error",
-                "upstream",
+            return Error(new CalendarStructuredErrorFacts(
+                CalendarTelemetryErrorCode.UpstreamProtocolError,
+                CalendarTelemetryErrorCategory.Upstream,
+                CalendarTelemetryErrorPhase.SelectionDiscoveryCapability,
+                false),
                 "Calendar discovery returned an invalid response.",
-                false,
-                "selectionDiscoveryCapability",
-                "not_attempted");
+                CalendarMutationState.NotAttempted).FinalizeResult();
         }
         catch (CalendarDiscoveryUnsupportedCapabilityException)
         {
-            return Error(
-                "unsupported_capability",
-                "capabilityAndProjection",
+            return Error(new CalendarStructuredErrorFacts(
+                CalendarTelemetryErrorCode.UnsupportedCapability,
+                CalendarTelemetryErrorCategory.CapabilityAndProjection,
+                CalendarTelemetryErrorPhase.SelectionDiscoveryCapability,
+                false),
                 "The server does not support the required Calendar discovery capability.",
-                false,
-                "selectionDiscoveryCapability",
-                "not_attempted");
+                CalendarMutationState.NotAttempted).FinalizeResult();
         }
     }
 
-    private static CallToolResult SelectionUnavailableError() => Error(
-        "upstream_unavailable",
-        "upstream",
+    private static CallToolResult SelectionUnavailableError() => Error(new CalendarStructuredErrorFacts(
+        CalendarTelemetryErrorCode.UpstreamUnavailable,
+        CalendarTelemetryErrorCategory.Upstream,
+        CalendarTelemetryErrorPhase.SelectionDiscoveryCapability,
+        true),
         "Calendar discovery is temporarily unavailable.",
-        true,
-        "selectionDiscoveryCapability",
-        "not_attempted");
+        CalendarMutationState.NotAttempted).FinalizeResult();
 
     private static int MeasureArguments(IDictionary<string, JsonElement>? arguments) =>
         CalendarQueryToolSupport.MeasureArguments(arguments, arguments ?? new Dictionary<string, JsonElement>());
@@ -176,31 +175,14 @@ public sealed class CalendarEntityCreateTools
         Content = [new TextContentBlock { Text = "Calendar Entity creation completed." }]
     };
 
-    private static CallToolResult Error(CalendarEntityCreateResult result)
+    private static CalendarToolResult Error(CalendarEntityCreateResult result)
     {
-        CalendarTelemetry.ObserveStructuredError(
-            CalendarTelemetryFacts.From(result),
-            result.MutationState);
-        var (code, category, message, phase) = Describe(result.Code);
-        if (result.Code == CalendarEntityCreateCode.NotFound
-            && result.MutationState == CalendarMutationState.NotCommitted)
-        {
-            phase = "execution";
-        }
-        else if (result.MutationState == CalendarMutationState.NotAttempted
-            && result.Code is CalendarEntityCreateCode.UpstreamUnavailable
-                or CalendarEntityCreateCode.UpstreamProtocolError)
-        {
-            phase = "selectionDiscoveryCapability";
-        }
+        var facts = CalendarTelemetryFacts.From(result);
+        var message = Describe(result.Code);
         return Error(
-            code,
-            category,
+            facts,
             message,
-            retryable: result.Code == CalendarEntityCreateCode.UpstreamRateLimited
-                && result.MutationState == CalendarMutationState.NotCommitted,
-            phase,
-            MutationState(result.MutationState),
+            result.MutationState,
             result.AuthorizedCandidates is { Count: > 0 }
                 ? result.AuthorizedCandidates.Select(CalendarAuthorizedCandidateResult.FromDescriptor).ToArray()
                 : null,
@@ -208,119 +190,69 @@ public sealed class CalendarEntityCreateTools
             limits: result.Limits is null ? null : CalendarEntityCreateLimits.FromLimits(result.Limits));
     }
 
-    private static (string Code, string Category, string Message, string Phase) Describe(
+    private static string Describe(
         CalendarEntityCreateCode code) => code switch
     {
         CalendarEntityCreateCode.InvalidInput =>
-            ("invalid_input", "input", "The Calendar Entity create input is invalid.", "schemaLexicalDiscriminator"),
-        CalendarEntityCreateCode.InvalidCalendarData =>
-            ("invalid_calendar_data", "input", "The complete Calendar Entity is invalid.", "completeResourceSemantics"),
-        CalendarEntityCreateCode.NotFound =>
-            ("not_found", "selection", "No matching authorized Calendar was found.", "selectionDiscoveryCapability"),
-        CalendarEntityCreateCode.Ambiguous =>
-            ("ambiguous", "selection", "The Calendar selector matched more than one authorized Calendar.", "selectionDiscoveryCapability"),
-        CalendarEntityCreateCode.OutsideScope =>
-            ("outside_scope", "selection", "The selected Calendar is outside the configured Calendar Scope.", "originScopeAuthorization"),
-        CalendarEntityCreateCode.UnsupportedCapability =>
-            ("unsupported_capability", "capabilityAndProjection", "The selected Calendar does not advertise the requested Entity Kind.", "selectionDiscoveryCapability"),
-        CalendarEntityCreateCode.RecurrenceUnevaluable =>
-            ("recurrence_unevaluable", "capabilityAndProjection", "The Recurrence Set could not be evaluated.", "completeResourceSemantics"),
-        CalendarEntityCreateCode.OpaqueResource =>
-            ("opaque_resource", "capabilityAndProjection", "An existing Calendar resource cannot be projected safely.", "targetRevision"),
-        CalendarEntityCreateCode.ConcurrencyUnavailable =>
-            ("concurrency_unavailable", "state", "An existing Calendar revision has no strong Entity Tag.", "targetRevision"),
-        CalendarEntityCreateCode.DestinationConflict =>
-            ("destination_conflict", "state", "The destination Calendar resource already exists.", "execution"),
-        CalendarEntityCreateCode.Conflict =>
-            ("conflict", "state", "The requested Calendar Entity identity already exists.", "execution"),
-        CalendarEntityCreateCode.LimitExhausted =>
-            ("limit_exhausted", "limitsAndAdmission", "The Calendar mutation exceeded its bounded work limit.", "execution"),
-        CalendarEntityCreateCode.PayloadTooLarge =>
-            ("payload_too_large", "limitsAndAdmission", "The Calendar Entity exceeds the safe payload limit.", "admissionAndPayload"),
-        CalendarEntityCreateCode.UpstreamUnauthorized =>
-            ("upstream_unauthorized", "upstream", "The Calendar mutation was not authorized.", "execution"),
-        CalendarEntityCreateCode.UpstreamForbidden =>
-            ("upstream_forbidden", "upstream", "The Calendar mutation was forbidden.", "execution"),
-        CalendarEntityCreateCode.UpstreamRateLimited =>
-            ("upstream_rate_limited", "upstream", "The Calendar mutation is rate limited.", "execution"),
-        CalendarEntityCreateCode.UpstreamUnavailable =>
-            ("upstream_unavailable", "upstream", "The Calendar mutation is unavailable.", "execution"),
-        CalendarEntityCreateCode.UpstreamProtocolError =>
-            ("upstream_protocol_error", "upstream", "The Calendar mutation returned an invalid response.", "execution"),
-        CalendarEntityCreateCode.FidelityFailure =>
-            ("fidelity_failure", "postWriteTruth", "The committed server revision differs from the requested semantics.", "postWriteVerificationOrReconciliation"),
-        CalendarEntityCreateCode.CommittedButUnverified =>
-            ("committed_but_unverified", "postWriteTruth", "The committed Calendar mutation could not be verified.", "postWriteVerificationOrReconciliation"),
-        CalendarEntityCreateCode.CommittedButConcurrencyUnavailable =>
-            ("committed_but_concurrency_unavailable", "postWriteTruth", "The committed server revision has no strong Entity Tag.", "postWriteVerificationOrReconciliation"),
-        _ =>
-            ("indeterminate", "postWriteTruth", "The Calendar mutation outcome is indeterminate.", "postWriteVerificationOrReconciliation")
+            "The Calendar Entity create input is invalid.",
+        CalendarEntityCreateCode.InvalidCalendarData => "The complete Calendar Entity is invalid.",
+        CalendarEntityCreateCode.NotFound => "No matching authorized Calendar was found.",
+        CalendarEntityCreateCode.Ambiguous => "The Calendar selector matched more than one authorized Calendar.",
+        CalendarEntityCreateCode.OutsideScope => "The selected Calendar is outside the configured Calendar Scope.",
+        CalendarEntityCreateCode.UnsupportedCapability => "The selected Calendar does not advertise the requested Entity Kind.",
+        CalendarEntityCreateCode.RecurrenceUnevaluable => "The Recurrence Set could not be evaluated.",
+        CalendarEntityCreateCode.OpaqueResource => "An existing Calendar resource cannot be projected safely.",
+        CalendarEntityCreateCode.ConcurrencyUnavailable => "An existing Calendar revision has no strong Entity Tag.",
+        CalendarEntityCreateCode.DestinationConflict => "The destination Calendar resource already exists.",
+        CalendarEntityCreateCode.Conflict => "The requested Calendar Entity identity already exists.",
+        CalendarEntityCreateCode.LimitExhausted => "The Calendar mutation exceeded its bounded work limit.",
+        CalendarEntityCreateCode.PayloadTooLarge => "The Calendar Entity exceeds the safe payload limit.",
+        CalendarEntityCreateCode.UpstreamUnauthorized => "The Calendar mutation was not authorized.",
+        CalendarEntityCreateCode.UpstreamForbidden => "The Calendar mutation was forbidden.",
+        CalendarEntityCreateCode.UpstreamRateLimited => "The Calendar mutation is rate limited.",
+        CalendarEntityCreateCode.UpstreamUnavailable => "The Calendar mutation is unavailable.",
+        CalendarEntityCreateCode.UpstreamProtocolError => "The Calendar mutation returned an invalid response.",
+        CalendarEntityCreateCode.FidelityFailure => "The committed server revision differs from the requested semantics.",
+        CalendarEntityCreateCode.CommittedButUnverified => "The committed Calendar mutation could not be verified.",
+        CalendarEntityCreateCode.CommittedButConcurrencyUnavailable => "The committed server revision has no strong Entity Tag.",
+        _ => "The Calendar mutation outcome is indeterminate."
     };
 
-    private static CallToolResult InputError(bool payloadTooLarge)
-    {
-        CalendarTelemetry.ObserveStructuredError(
-            CalendarTelemetryFacts.FromInputGuard(payloadTooLarge),
-            CalendarMutationState.NotAttempted);
-        return payloadTooLarge ? Error(
-            "payload_too_large",
-            "limitsAndAdmission",
-            "The Calendar Entity create arguments exceed the safe payload limit.",
-            false,
-            "admissionAndPayload",
-            "not_attempted")
-        : Error(
-            "invalid_input",
-            "input",
-            "The Calendar Entity create input is invalid.",
-            false,
-            "schemaLexicalDiscriminator",
-            "not_attempted");
-    }
+    private static CallToolResult InputError(bool payloadTooLarge) => Error(
+        CalendarTelemetryFacts.FromInputGuard(payloadTooLarge),
+        payloadTooLarge
+            ? "The Calendar Entity create arguments exceed the safe payload limit."
+            : "The Calendar Entity create input is invalid.",
+        CalendarMutationState.NotAttempted).FinalizeResult();
 
-    private static CallToolResult Error(
-        string code,
-        string category,
+    private static CalendarToolResult Error(
+        CalendarStructuredErrorFacts facts,
         string message,
-        bool retryable,
-        string phase,
-        string mutationState,
+        CalendarMutationState mutationState,
         IReadOnlyList<CalendarAuthorizedCandidateResult>? candidates = null,
         CalendarSnapshotResult? currentSnapshot = null,
         int? retryAfterMs = null,
-        CalendarEntityCreateLimits? limits = null) => new()
+        CalendarEntityCreateLimits? limits = null) => CalendarToolResult.Error(new CallToolResult
         {
             IsError = true,
             StructuredContent = JsonSerializer.SerializeToElement(new CalendarEntityCreateErrorResult(
-                code,
-                category,
+                facts.CodeName,
+                facts.CategoryName,
                 message,
-                retryable,
-                phase,
-                mutationState,
+                facts.Retryable,
+                facts.PhaseName,
+                CalendarTelemetryVocabulary.MutationStateName(mutationState),
                 candidates,
                 currentSnapshot,
                 retryAfterMs,
                 limits)),
             Content = [new TextContentBlock { Text = "Calendar Entity creation failed." }]
-        };
+        }, facts, mutationState);
 
-    private static CallToolResult EnsureBounded(
-        CallToolResult result,
-        CalendarMutationState mutationState) =>
-        CalendarQueryToolSupport.EnsureBoundedResult(result, (_, _) => Error(
-                "payload_too_large",
-                "limitsAndAdmission",
-                "The Calendar mutation result exceeds the safe payload limit.",
-                false,
-                "admissionAndPayload",
-                MutationState(mutationState)));
-
-    private static string MutationState(CalendarMutationState state)
-    {
-        CalendarTelemetry.ObserveMutationState(state);
-        return CalendarTelemetryVocabulary.MutationStateName(state);
-    }
+    private static CalendarToolResult PayloadLimitError(CalendarMutationState mutationState) => Error(
+        CalendarTelemetryFacts.FromInputGuard(payloadTooLarge: true),
+        "The Calendar mutation result exceeds the safe payload limit.",
+        mutationState);
 }
 
 public sealed record CalendarEntityCreateSuccessResult(

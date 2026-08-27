@@ -303,19 +303,21 @@ public sealed class CalendarOccurrenceMutationTools
 
     private static CallToolResult ToToolResult(CalendarEntityPatchResult result, string operation)
     {
-        CalendarTelemetry.ObserveMutationState(result.MutationState);
-        var mapped = result.Code switch
+        var terminal = result.Code switch
         {
-            CalendarEntityPatchCode.Success when result.Snapshot is not null => Success(result.Snapshot, operation),
-            CalendarEntityPatchCode.NoChange => NoChange(result.Snapshot?.Diagnostics ?? [], operation),
+            CalendarEntityPatchCode.Success when result.Snapshot is not null =>
+                CalendarToolResult.Success(Success(result.Snapshot, operation), result.MutationState),
+            CalendarEntityPatchCode.NoChange =>
+                CalendarToolResult.Success(NoChange(result.Snapshot?.Diagnostics ?? [], operation), result.MutationState),
             _ => Error(result, operation)
         };
-        return CalendarQueryToolSupport.EnsureBoundedResult(mapped, (_, _) => NamedError(
-            "payload_too_large",
-            "limitsAndAdmission",
+        return terminal.FinalizeBounded((_, _) => NamedError(new CalendarStructuredErrorFacts(
+                CalendarTelemetryErrorCode.PayloadTooLarge,
+                CalendarTelemetryErrorCategory.LimitsAndAdmission,
+                CalendarTelemetryErrorPhase.AdmissionAndPayload,
+                false),
             "The Occurrence mutation result exceeds the safe payload limit.",
-            "admissionAndPayload",
-            MutationState(result.MutationState)));
+            result.MutationState));
     }
 
     private static CallToolResult Success(CalendarResourceSnapshot snapshot, string operation) => new()
@@ -341,109 +343,52 @@ public sealed class CalendarOccurrenceMutationTools
         Content = [new TextContentBlock { Text = operation + " made no change." }]
     };
 
-    private static CallToolResult Error(CalendarEntityPatchResult result, string operation)
+    private static CalendarToolResult Error(CalendarEntityPatchResult result, string operation)
     {
-        CalendarTelemetry.ObserveStructuredError(
-            CalendarTelemetryFacts.From(result),
-            result.MutationState);
-        return new CallToolResult
+        var facts = CalendarTelemetryFacts.From(result);
+        return CalendarToolResult.Error(new CallToolResult
         {
             IsError = true,
             StructuredContent = JsonSerializer.SerializeToElement(new CalendarEntityCreateErrorResult(
-                Code(result.Code),
-                Category(result.Code),
+                facts.CodeName,
+                facts.CategoryName,
                 $"The {operation} could not be completed.",
-                result.Retryable,
-                Phase(result.Phase),
-                MutationState(result.MutationState),
+                facts.Retryable,
+                facts.PhaseName,
+                CalendarTelemetryVocabulary.MutationStateName(result.MutationState),
                 CurrentSnapshot: result.Snapshot is null ? null : CalendarSnapshotResult.FromSnapshot(result.Snapshot),
                 RetryAfterMs: result.RetryAfterMilliseconds,
                 Limits: result.LimitDimension is null
                     ? null
                     : new CalendarEntityCreateLimits(Dimension: "elapsed_time"))),
             Content = [new TextContentBlock { Text = operation + " failed." }]
-        };
+        }, facts, result.MutationState);
     }
 
-    private static string Code(CalendarEntityPatchCode code) => string.Concat(code.ToString().SelectMany(
-        (character, index) => char.IsUpper(character) && index > 0
-            ? new[] { '_', char.ToLowerInvariant(character) }
-            : [char.ToLowerInvariant(character)]));
-
-    private static string Category(CalendarEntityPatchCode code) => code switch
-    {
-        CalendarEntityPatchCode.InvalidInput or CalendarEntityPatchCode.InvalidCalendarData => "input",
-        CalendarEntityPatchCode.NotFound or CalendarEntityPatchCode.OutsideScope
-            or CalendarEntityPatchCode.EntityKindMismatch => "selection",
-        CalendarEntityPatchCode.OpaqueResource or CalendarEntityPatchCode.TemporalUnresolved
-            or CalendarEntityPatchCode.RecurrenceUnevaluable or CalendarEntityPatchCode.UnsupportedCapability =>
-            "capabilityAndProjection",
-        CalendarEntityPatchCode.Conflict or CalendarEntityPatchCode.ConcurrencyUnavailable
-            or CalendarEntityPatchCode.CompletionStateConflict => "state",
-        CalendarEntityPatchCode.PayloadTooLarge or CalendarEntityPatchCode.LimitExhausted => "limitsAndAdmission",
-        CalendarEntityPatchCode.FidelityFailure or CalendarEntityPatchCode.CommittedButUnverified
-            or CalendarEntityPatchCode.CommittedButConcurrencyUnavailable or CalendarEntityPatchCode.Indeterminate =>
-            "postWriteTruth",
-        _ => "upstream"
-    };
-
-    private static string Phase(CalendarEntityPatchPhase phase) => phase switch
-    {
-        CalendarEntityPatchPhase.SchemaLexicalDiscriminator => "schemaLexicalDiscriminator",
-        CalendarEntityPatchPhase.SelectionDiscoveryCapability => "selectionDiscoveryCapability",
-        CalendarEntityPatchPhase.OriginScopeAuthorization => "originScopeAuthorization",
-        CalendarEntityPatchPhase.TargetRevision => "targetRevision",
-        CalendarEntityPatchPhase.CompleteResourceSemantics => "completeResourceSemantics",
-        CalendarEntityPatchPhase.AdmissionAndPayload => "admissionAndPayload",
-        CalendarEntityPatchPhase.PostWriteVerificationOrReconciliation => "postWriteVerificationOrReconciliation",
-        _ => "execution"
-    };
-
-    private static string MutationState(CalendarMutationState state)
-    {
-        CalendarTelemetry.ObserveMutationState(state);
-        return CalendarTelemetryVocabulary.MutationStateName(state);
-    }
-
-    private static CallToolResult InputError(bool payloadTooLarge)
-    {
-        CalendarTelemetry.ObserveStructuredError(
-            CalendarTelemetryFacts.FromInputGuard(payloadTooLarge),
-            CalendarMutationState.NotAttempted);
-        return payloadTooLarge ? NamedError(
-            "payload_too_large",
-            "limitsAndAdmission",
-            "The Occurrence mutation arguments exceed the safe payload limit.",
-            "admissionAndPayload",
-            "not_attempted")
-        : NamedError(
-            "invalid_input",
-            "input",
-            "The Occurrence mutation input is invalid.",
-            "schemaLexicalDiscriminator",
-            "not_attempted");
-    }
+    private static CallToolResult InputError(bool payloadTooLarge) => NamedError(
+        CalendarTelemetryFacts.FromInputGuard(payloadTooLarge),
+        payloadTooLarge
+            ? "The Occurrence mutation arguments exceed the safe payload limit."
+            : "The Occurrence mutation input is invalid.",
+        CalendarMutationState.NotAttempted).FinalizeResult();
 
     internal static CallToolResult CreateInputGuardError(bool payloadTooLarge) => InputError(payloadTooLarge);
 
-    private static CallToolResult NamedError(
-        string code,
-        string category,
+    private static CalendarToolResult NamedError(
+        CalendarStructuredErrorFacts facts,
         string message,
-        string phase,
-        string mutationState,
-        bool retryable = false,
-        int? retryAfterMs = null) => new()
+        CalendarMutationState mutationState,
+        int? retryAfterMs = null) => CalendarToolResult.Error(new CallToolResult
     {
         IsError = true,
         StructuredContent = JsonSerializer.SerializeToElement(new CalendarEntityCreateErrorResult(
-            code,
-            category,
+            facts.CodeName,
+            facts.CategoryName,
             message,
-            retryable,
-            phase,
-            mutationState,
+            facts.Retryable,
+            facts.PhaseName,
+            CalendarTelemetryVocabulary.MutationStateName(mutationState),
             RetryAfterMs: retryAfterMs)),
         Content = [new TextContentBlock { Text = "Occurrence mutation failed." }]
-    };
+    }, facts, mutationState);
 }

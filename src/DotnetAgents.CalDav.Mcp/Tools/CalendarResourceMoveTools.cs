@@ -60,22 +60,21 @@ public sealed class CalendarResourceMoveTools
         try
         {
             var result = await _calendarService.MoveResourceAsync(request, linked.Token).ConfigureAwait(false);
-            CalendarTelemetry.ObserveMutationState(result.MutationState);
-            var mapped = result.Code == CalendarResourceMoveCode.Success && result.Snapshot is not null
-                ? Success(result.Snapshot)
+            var terminal = result.Code == CalendarResourceMoveCode.Success && result.Snapshot is not null
+                ? CalendarToolResult.Success(Success(result.Snapshot), result.MutationState)
                 : Error(result);
-            return EnsureBounded(mapped, result.MutationState);
+            return terminal.FinalizeBounded((_, _) => PayloadLimitError(result.MutationState));
         }
         catch (OperationCanceledException) when (deadline.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
-            return Error(
-                "limit_exhausted",
-                "limitsAndAdmission",
+            return Error(new CalendarStructuredErrorFacts(
+                CalendarTelemetryErrorCode.LimitExhausted,
+                CalendarTelemetryErrorCategory.LimitsAndAdmission,
+                CalendarTelemetryErrorPhase.Execution,
+                false),
                 "The Calendar Object Resource move exhausted its elapsed_time execution budget.",
-                false,
-                "execution",
-                "unknown",
-                limits: new CalendarEntityCreateLimits(Dimension: "elapsed_time"));
+                CalendarMutationState.Unknown,
+                limits: new CalendarEntityCreateLimits(Dimension: "elapsed_time")).FinalizeResult();
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -83,13 +82,13 @@ public sealed class CalendarResourceMoveTools
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            return Error(
-                "upstream_protocol_error",
-                "upstream",
+            return Error(new CalendarStructuredErrorFacts(
+                CalendarTelemetryErrorCode.UpstreamProtocolError,
+                CalendarTelemetryErrorCategory.Upstream,
+                CalendarTelemetryErrorPhase.PostWriteVerificationOrReconciliation,
+                false),
                 "The Calendar Object Resource move could not be completed.",
-                false,
-                "postWriteVerificationOrReconciliation",
-                "unknown");
+                CalendarMutationState.Unknown).FinalizeResult();
         }
     }
 
@@ -97,15 +96,6 @@ public sealed class CalendarResourceMoveTools
 
     private static int MeasureArguments(IDictionary<string, JsonElement>? arguments) =>
         CalendarQueryToolSupport.MeasureArguments(arguments, arguments ?? new Dictionary<string, JsonElement>());
-
-    private static CallToolResult EnsureBounded(CallToolResult result, CalendarMutationState state) =>
-        CalendarQueryToolSupport.EnsureBoundedResult(result, (_, _) => Error(
-            "payload_too_large",
-            "limitsAndAdmission",
-            "The Calendar Object Resource move result exceeds the safe payload limit.",
-            false,
-            "admissionAndPayload",
-            MutationState(state)));
 
     private static CallToolResult Success(CalendarResourceSnapshot snapshot) => new()
     {
@@ -118,19 +108,13 @@ public sealed class CalendarResourceMoveTools
         Content = [new TextContentBlock { Text = "Calendar Object Resource move completed." }]
     };
 
-    private static CallToolResult Error(CalendarResourceMoveResult result)
+    private static CalendarToolResult Error(CalendarResourceMoveResult result)
     {
-        CalendarTelemetry.ObserveStructuredError(
-            CalendarTelemetryFacts.From(result),
-            result.MutationState);
-        var description = Describe(result.Code);
+        var facts = CalendarTelemetryFacts.From(result);
         return Error(
-            description.Code,
-            description.Category,
-            description.Message,
-            result.Retryable,
-            ResolvePhase(result, description.Phase),
-            MutationState(result.MutationState),
+            facts,
+            Message(result.Code),
+            result.MutationState,
             result.AuthorizedCandidates is { Count: > 0 }
                 ? result.AuthorizedCandidates.Select(CalendarAuthorizedCandidateResult.FromDescriptor).ToArray()
                 : null,
@@ -146,77 +130,30 @@ public sealed class CalendarResourceMoveTools
                         : LimitDimension(result.LimitDimension.Value)));
     }
 
-    private static MoveErrorDescription Describe(CalendarResourceMoveCode code) => code switch
+    private static string Message(CalendarResourceMoveCode code) => code switch
     {
-        CalendarResourceMoveCode.InvalidInput =>
-            new("invalid_input", "input", "The Calendar Object Resource move input is invalid.", "schemaLexicalDiscriminator"),
-        CalendarResourceMoveCode.NotFound =>
-            new("not_found", "selection", "The source resource or destination Calendar was not found.", "selectionDiscoveryCapability"),
-        CalendarResourceMoveCode.Ambiguous =>
-            new("ambiguous", "selection", "The destination Calendar selector is ambiguous.", "selectionDiscoveryCapability"),
-        CalendarResourceMoveCode.OutsideScope =>
-            new("outside_scope", "selection", "The move target is outside the configured Calendar Scope.", "originScopeAuthorization"),
-        CalendarResourceMoveCode.EntityKindMismatch =>
-            new("entity_kind_mismatch", "state", "The source Entity Kind has changed.", "targetRevision"),
-        CalendarResourceMoveCode.UnsupportedCapability =>
-            new("unsupported_capability", "capabilityAndProjection", "The destination or server does not support this move.", "selectionDiscoveryCapability"),
-        CalendarResourceMoveCode.OpaqueResource =>
-            new("opaque_resource", "capabilityAndProjection", "A resource cannot be projected safely for semantic move.", "completeResourceSemantics"),
-        CalendarResourceMoveCode.Conflict =>
-            new("conflict", "state", "The move was rejected by current source or UID state.", "targetRevision"),
-        CalendarResourceMoveCode.DestinationConflict =>
-            new("destination_conflict", "state", "The move destination already exists.", "execution"),
-        CalendarResourceMoveCode.ConcurrencyUnavailable =>
-            new("concurrency_unavailable", "state", "The source or committed destination has no strong Entity Tag.", "targetRevision"),
-        CalendarResourceMoveCode.LimitExhausted =>
-            new("limit_exhausted", "limitsAndAdmission", "The Calendar Object Resource move exceeded its bounded work limit.", "execution"),
-        CalendarResourceMoveCode.PayloadTooLarge =>
-            new("payload_too_large", "limitsAndAdmission", "The Calendar Object Resource exceeds the safe payload limit.", "admissionAndPayload"),
-        CalendarResourceMoveCode.UpstreamUnauthorized =>
-            new("upstream_unauthorized", "upstream", "The Calendar mutation was not authorized.", "execution"),
-        CalendarResourceMoveCode.UpstreamForbidden =>
-            new("upstream_forbidden", "upstream", "The Calendar mutation was forbidden.", "execution"),
-        CalendarResourceMoveCode.UpstreamRateLimited =>
-            new("upstream_rate_limited", "upstream", "The Calendar mutation is rate limited.", "execution"),
-        CalendarResourceMoveCode.UpstreamUnavailable =>
-            new("upstream_unavailable", "upstream", "The Calendar service is temporarily unavailable.", "execution"),
-        CalendarResourceMoveCode.FidelityFailure =>
-            new("fidelity_failure", "postWriteTruth", "The committed destination differs from the reviewed source.", "postWriteVerificationOrReconciliation"),
-        CalendarResourceMoveCode.CommittedButUnverified =>
-            new("committed_but_unverified", "postWriteTruth", "The committed move could not be verified.", "postWriteVerificationOrReconciliation"),
-        CalendarResourceMoveCode.CommittedButConcurrencyUnavailable =>
-            new("committed_but_concurrency_unavailable", "postWriteTruth", "The move committed without a usable destination Entity Tag.", "postWriteVerificationOrReconciliation"),
-        CalendarResourceMoveCode.Indeterminate =>
-            new("indeterminate", "postWriteTruth", "The Calendar mutation outcome is indeterminate.", "postWriteVerificationOrReconciliation"),
-        _ => new("upstream_protocol_error", "upstream", "The Calendar mutation returned an invalid response.", "execution")
+        CalendarResourceMoveCode.InvalidInput => "The Calendar Object Resource move input is invalid.",
+        CalendarResourceMoveCode.NotFound => "The source resource or destination Calendar was not found.",
+        CalendarResourceMoveCode.Ambiguous => "The destination Calendar selector is ambiguous.",
+        CalendarResourceMoveCode.OutsideScope => "The move target is outside the configured Calendar Scope.",
+        CalendarResourceMoveCode.EntityKindMismatch => "The source Entity Kind has changed.",
+        CalendarResourceMoveCode.UnsupportedCapability => "The destination or server does not support this move.",
+        CalendarResourceMoveCode.OpaqueResource => "A resource cannot be projected safely for semantic move.",
+        CalendarResourceMoveCode.Conflict => "The move was rejected by current source or UID state.",
+        CalendarResourceMoveCode.DestinationConflict => "The move destination already exists.",
+        CalendarResourceMoveCode.ConcurrencyUnavailable => "The source or committed destination has no strong Entity Tag.",
+        CalendarResourceMoveCode.LimitExhausted => "The Calendar Object Resource move exceeded its bounded work limit.",
+        CalendarResourceMoveCode.PayloadTooLarge => "The Calendar Object Resource exceeds the safe payload limit.",
+        CalendarResourceMoveCode.UpstreamUnauthorized => "The Calendar mutation was not authorized.",
+        CalendarResourceMoveCode.UpstreamForbidden => "The Calendar mutation was forbidden.",
+        CalendarResourceMoveCode.UpstreamRateLimited => "The Calendar mutation is rate limited.",
+        CalendarResourceMoveCode.UpstreamUnavailable => "The Calendar service is temporarily unavailable.",
+        CalendarResourceMoveCode.FidelityFailure => "The committed destination differs from the reviewed source.",
+        CalendarResourceMoveCode.CommittedButUnverified => "The committed move could not be verified.",
+        CalendarResourceMoveCode.CommittedButConcurrencyUnavailable => "The move committed without a usable destination Entity Tag.",
+        CalendarResourceMoveCode.Indeterminate => "The Calendar mutation outcome is indeterminate.",
+        _ => "The Calendar mutation returned an invalid response."
     };
-
-    private static string ResolvePhase(CalendarResourceMoveResult result, string defaultPhase)
-    {
-        if (result.MutationState is CalendarMutationState.Committed or CalendarMutationState.Unknown)
-            return "postWriteVerificationOrReconciliation";
-        if (result.Phase is not null)
-            return Phase(result.Phase.Value);
-        return result.MutationState == CalendarMutationState.NotCommitted ? "execution" : defaultPhase;
-    }
-
-    private static string Phase(CalendarResourceMovePhase phase) => phase switch
-    {
-        CalendarResourceMovePhase.SchemaLexicalDiscriminator => "schemaLexicalDiscriminator",
-        CalendarResourceMovePhase.OriginScopeAuthorization => "originScopeAuthorization",
-        CalendarResourceMovePhase.SelectionDiscoveryCapability => "selectionDiscoveryCapability",
-        CalendarResourceMovePhase.TargetRevision => "targetRevision",
-        CalendarResourceMovePhase.CompleteResourceSemantics => "completeResourceSemantics",
-        CalendarResourceMovePhase.AdmissionAndPayload => "admissionAndPayload",
-        CalendarResourceMovePhase.PostWriteVerificationOrReconciliation => "postWriteVerificationOrReconciliation",
-        _ => "execution"
-    };
-
-    private static string MutationState(CalendarMutationState state)
-    {
-        CalendarTelemetry.ObserveMutationState(state);
-        return CalendarTelemetryVocabulary.MutationStateName(state);
-    }
 
     private static string LimitDimension(CalendarResourceMoveLimitDimension dimension) => dimension switch
     {
@@ -224,56 +161,48 @@ public sealed class CalendarResourceMoveTools
         _ => "unknown"
     };
 
-    private static CallToolResult InputError(bool payloadTooLarge)
-    {
-        CalendarTelemetry.ObserveStructuredError(
+    private static CallToolResult InputError(bool payloadTooLarge) => Error(
             CalendarTelemetryFacts.FromInputGuard(payloadTooLarge),
-            CalendarMutationState.NotAttempted);
-        return Error(
-            payloadTooLarge ? "payload_too_large" : "invalid_input",
-            payloadTooLarge ? "limitsAndAdmission" : "input",
             payloadTooLarge
                 ? "The Calendar Object Resource move arguments exceed the safe payload limit."
                 : "The Calendar Object Resource move input is invalid.",
-            false,
-            payloadTooLarge ? "admissionAndPayload" : "schemaLexicalDiscriminator",
-            "not_attempted");
-    }
+            CalendarMutationState.NotAttempted).FinalizeResult();
 
-    private static CallToolResult SelectionUnavailableError() => Error(
-        "upstream_unavailable",
-        "upstream",
+    private static CallToolResult SelectionUnavailableError() => Error(new CalendarStructuredErrorFacts(
+        CalendarTelemetryErrorCode.UpstreamUnavailable,
+        CalendarTelemetryErrorCategory.Upstream,
+        CalendarTelemetryErrorPhase.SelectionDiscoveryCapability,
+        true),
         "Calendar discovery is temporarily unavailable.",
-        true,
-        "selectionDiscoveryCapability",
-        "not_attempted");
+        CalendarMutationState.NotAttempted).FinalizeResult();
 
-    private static CallToolResult Error(
-        string code,
-        string category,
+    private static CalendarToolResult Error(
+        CalendarStructuredErrorFacts facts,
         string message,
-        bool retryable,
-        string phase,
-        string mutationState,
+        CalendarMutationState mutationState,
         IReadOnlyList<CalendarAuthorizedCandidateResult>? authorizedCandidates = null,
         CalendarSnapshotResult? currentSnapshot = null,
         int? retryAfterMs = null,
-        CalendarEntityCreateLimits? limits = null) => new()
+        CalendarEntityCreateLimits? limits = null) => CalendarToolResult.Error(new CallToolResult
     {
         IsError = true,
         StructuredContent = JsonSerializer.SerializeToElement(new CalendarEntityCreateErrorResult(
-            code,
-            category,
+            facts.CodeName,
+            facts.CategoryName,
             message,
-            retryable,
-            phase,
-            mutationState,
+            facts.Retryable,
+            facts.PhaseName,
+            CalendarTelemetryVocabulary.MutationStateName(mutationState),
             AuthorizedCandidates: authorizedCandidates,
             CurrentSnapshot: currentSnapshot,
             RetryAfterMs: retryAfterMs,
             Limits: limits)),
         Content = [new TextContentBlock { Text = "Calendar Object Resource move failed." }]
-    };
+    }, facts, mutationState);
 
-    private sealed record MoveErrorDescription(string Code, string Category, string Message, string Phase);
+    private static CalendarToolResult PayloadLimitError(CalendarMutationState mutationState) => Error(
+        CalendarTelemetryFacts.FromInputGuard(payloadTooLarge: true),
+        "The Calendar Object Resource move result exceeds the safe payload limit.",
+        mutationState);
+
 }
