@@ -103,15 +103,6 @@ public sealed class CalendarEntityQueryPageCodecTests
     }
 
     [Fact]
-    public void AdmitReturnsBothPageAndFailureBranches()
-    {
-        var codec = Codec();
-        codec.Admit(Snapshot(Json(1)), 0, 1, CancellationToken.None).Value.ShouldNotBeNull();
-        codec.Admit(Snapshot(Json(1)), 1, 1, CancellationToken.None).Error!.Code
-            .ShouldBe(QueryFailureCode.InvalidInput);
-    }
-
-    [Fact]
     public void HumanPresentationBudgetRejectsOversizedDiagnosticsBeforeItemAdmission()
     {
         var diagnostics = JsonSerializer.SerializeToUtf8Bytes(new[]

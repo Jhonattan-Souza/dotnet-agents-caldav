@@ -6,6 +6,7 @@ using DotnetAgents.CalDav.Core.Services;
 namespace DotnetAgents.CalDav.Core.Internal;
 
 internal sealed class CalendarOccurrenceQueryPageCodec(CalendarQueryCursorIssuer cursorIssuer)
+    : ICalendarQueryPageCodec<CalendarOccurrenceQueryItem>
 {
     internal const string ToolName = "calendar_occurrences.query";
     internal const int DefaultPageSize = 50;
@@ -14,7 +15,23 @@ internal sealed class CalendarOccurrenceQueryPageCodec(CalendarQueryCursorIssuer
     private const int MaximumHumanReadableBytes = 64 * 1024;
     private const string SuccessText = "Occurrence query completed.";
 
-    internal CalendarOccurrencePagePlanAdmission Plan(
+    string ICalendarQueryPageCodec<CalendarOccurrenceQueryItem>.ToolName => ToolName;
+
+    int ICalendarQueryPageCodec<CalendarOccurrenceQueryItem>.DefaultPageSize => DefaultPageSize;
+
+    int ICalendarQueryPageCodec<CalendarOccurrenceQueryItem>.MaximumPageSize => MaximumPageSize;
+
+    CalendarQueryPagePlanAdmission ICalendarQueryPageCodec<CalendarOccurrenceQueryItem>.Plan(
+        CalendarQuerySnapshot snapshot,
+        int position,
+        int pageSize,
+        CancellationToken cancellationToken) => Plan(snapshot, position, pageSize, cancellationToken);
+
+    QueryPage<CalendarOccurrenceQueryItem> ICalendarQueryPageCodec<CalendarOccurrenceQueryItem>.Materialize(
+        CalendarQuerySnapshot snapshot,
+        CalendarQueryPagePlan plan) => Materialize(snapshot, plan);
+
+    internal CalendarQueryPagePlanAdmission Plan(
         CalendarQuerySnapshot snapshot,
         int position,
         int pageSize,
@@ -24,31 +41,19 @@ internal sealed class CalendarOccurrenceQueryPageCodec(CalendarQueryCursorIssuer
             || position < 0
             || snapshot.Items.Length > 0 && position >= snapshot.Items.Length
             || snapshot.Items.Length == 0 && position != 0)
-            return CalendarOccurrencePagePlanAdmission.Failure(CalendarQueryFailures.InvalidInput());
+            return CalendarQueryPagePlanAdmission.Failure(CalendarQueryFailures.InvalidInput());
         var fixedBudget = MeasureFixedBudget(snapshot.DiagnosticsUtf8, snapshot.TemporalEvaluationContextUtf8);
         if (fixedBudget.HumanReadableBytes > MaximumHumanReadableBytes)
         {
-            return CalendarOccurrencePagePlanAdmission.Failure(CalendarQueryFailures.PayloadTooLarge(
+            return CalendarQueryPagePlanAdmission.Failure(CalendarQueryFailures.PayloadTooLarge(
                 "The Occurrence query human-readable result exceeds the safe payload limit."));
         }
         return BuildPlan(snapshot, position, pageSize, fixedBudget.CallToolResultBytes, cancellationToken);
     }
 
-    internal CalendarOccurrencePageAdmission Admit(
-        CalendarQuerySnapshot snapshot,
-        int position,
-        int pageSize,
-        CancellationToken cancellationToken)
-    {
-        var planned = Plan(snapshot, position, pageSize, cancellationToken);
-        return planned.Error is null
-            ? CalendarOccurrencePageAdmission.Page(Materialize(snapshot, planned.Value!))
-            : CalendarOccurrencePageAdmission.Failure(planned.Error);
-    }
-
     internal static QueryPage<CalendarOccurrenceQueryItem> Materialize(
         CalendarQuerySnapshot snapshot,
-        CalendarOccurrencePagePlan plan)
+        CalendarQueryPagePlan plan)
     {
         var buffer = new ArrayBufferWriter<byte>();
         using (var writer = new Utf8JsonWriter(buffer))
@@ -90,7 +95,7 @@ internal sealed class CalendarOccurrenceQueryPageCodec(CalendarQueryCursorIssuer
                 snapshot.TemporalEvaluationContextUtf8));
     }
 
-    private CalendarOccurrencePagePlanAdmission BuildPlan(
+    private CalendarQueryPagePlanAdmission BuildPlan(
         CalendarQuerySnapshot snapshot,
         int position,
         int pageSize,
@@ -127,14 +132,14 @@ internal sealed class CalendarOccurrenceQueryPageCodec(CalendarQueryCursorIssuer
         }
         if (admitted.Count == 0 && snapshot.Items.Length > 0)
         {
-            return CalendarOccurrencePagePlanAdmission.Failure(CalendarQueryFailures.PayloadTooLarge(
+            return CalendarQueryPagePlanAdmission.Failure(CalendarQueryFailures.PayloadTooLarge(
                 "One Occurrence cannot fit in a result page."));
         }
         var measuredBytes = checked((int)(fixedCallToolResultBytes
             + admittedBytes
             + Math.Max(0, admitted.Count - 1)
             + CursorDelta(nextCursor)));
-        return CalendarOccurrencePagePlanAdmission.Page(new CalendarOccurrencePagePlan(
+        return CalendarQueryPagePlanAdmission.Page(new CalendarQueryPagePlan(
             admitted,
             nextCursor,
             measuredBytes));
@@ -207,26 +212,4 @@ internal sealed class CalendarOccurrenceQueryPageCodec(CalendarQueryCursorIssuer
     }
 
     private static int CursorDelta(string? cursor) => cursor is null ? 0 : cursor.Length - 2;
-}
-
-internal sealed record CalendarOccurrencePageAdmission(
-    QueryPage<CalendarOccurrenceQueryItem>? Value,
-    QueryFailure? Error)
-{
-    internal static CalendarOccurrencePageAdmission Page(QueryPage<CalendarOccurrenceQueryItem> value) =>
-        new(value, null);
-
-    internal static CalendarOccurrencePageAdmission Failure(QueryFailure error) => new(null, error);
-}
-
-internal sealed record CalendarOccurrencePagePlan(
-    IReadOnlyList<StoredCalendarEntityQueryItem> Items,
-    string? NextCursor,
-    int MeasuredCallToolResultBytes);
-
-internal sealed record CalendarOccurrencePagePlanAdmission(CalendarOccurrencePagePlan? Value, QueryFailure? Error)
-{
-    internal static CalendarOccurrencePagePlanAdmission Page(CalendarOccurrencePagePlan value) => new(value, null);
-
-    internal static CalendarOccurrencePagePlanAdmission Failure(QueryFailure error) => new(null, error);
 }

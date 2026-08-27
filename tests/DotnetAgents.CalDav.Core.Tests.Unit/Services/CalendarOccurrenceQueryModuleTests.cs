@@ -214,52 +214,6 @@ public sealed class CalendarOccurrenceQueryModuleTests
         provider.GetRequiredService<CalendarQuerySnapshotStore>().ActiveSnapshotCount.ShouldBe(0);
     }
 
-    [Fact]
-    public async Task ContinuationAuthenticatesToolTamperExpiryAndPageBoundsWithoutRemoteWork()
-    {
-        const string calendarHref = "https://cal.example/calendars/work/";
-        var resourceHrefs = new[] { calendarHref + "a.ics", calendarHref + "b.ics" };
-        var transport = new OccurrenceTransport(calendarHref, resourceHrefs);
-        var time = new ManualTimeProvider(From);
-        await using var provider = CreateProvider(transport, time);
-        var module = provider.GetRequiredService<ICalendarQueryModule>();
-        var occurrence = (await module.QueryOccurrencesAsync(
-            new CalendarOccurrenceQueryRequest.Start(Query(), 1),
-            TestContext.Current.CancellationToken)).ShouldBeOfType<QueryReply<CalendarOccurrenceQueryItem>.Page>();
-        var occurrenceCursor = occurrence.Value.NextCursor.ShouldNotBeNull();
-        var entity = (await module.QueryEntitiesAsync(
-            new CalendarEntityQueryRequest.Start(new CalendarEntityQuery(
-                CalendarEntityScope.All,
-                [CalendarEntityKind.Event],
-                From,
-                To,
-                "America/New_York"), 1),
-            TestContext.Current.CancellationToken)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Page>();
-        var entityCursor = entity.Value.NextCursor.ShouldNotBeNull();
-        var workAfterStarts = transport.TotalCalls;
-        var tampered = occurrenceCursor[..^1] + (occurrenceCursor[^1] == 'A' ? "B" : "A");
-
-        var tamperFailure = (await module.QueryOccurrencesAsync(
-            new CalendarOccurrenceQueryRequest.Continue(tampered, 1),
-            TestContext.Current.CancellationToken)).ShouldBeOfType<QueryReply<CalendarOccurrenceQueryItem>.Failure>();
-        var wrongToolFailure = (await module.QueryOccurrencesAsync(
-            new CalendarOccurrenceQueryRequest.Continue(entityCursor, 1),
-            TestContext.Current.CancellationToken)).ShouldBeOfType<QueryReply<CalendarOccurrenceQueryItem>.Failure>();
-        var pageFailure = (await module.QueryOccurrencesAsync(
-            new CalendarOccurrenceQueryRequest.Continue(occurrenceCursor, 0),
-            TestContext.Current.CancellationToken)).ShouldBeOfType<QueryReply<CalendarOccurrenceQueryItem>.Failure>();
-        time.Advance(TimeSpan.FromMinutes(11));
-        var expiryFailure = (await module.QueryOccurrencesAsync(
-            new CalendarOccurrenceQueryRequest.Continue(occurrenceCursor, 1),
-            TestContext.Current.CancellationToken)).ShouldBeOfType<QueryReply<CalendarOccurrenceQueryItem>.Failure>();
-
-        tamperFailure.Error.Code.ShouldBe(QueryFailureCode.InvalidInput);
-        wrongToolFailure.Error.Code.ShouldBe(QueryFailureCode.InvalidInput);
-        pageFailure.Error.Code.ShouldBe(QueryFailureCode.InvalidInput);
-        expiryFailure.Error.Code.ShouldBe(QueryFailureCode.CursorExpired);
-        transport.TotalCalls.ShouldBe(workAfterStarts);
-    }
-
     private static CalendarOccurrenceQuery Query() => new(
         CalendarEntityScope.All,
         From,

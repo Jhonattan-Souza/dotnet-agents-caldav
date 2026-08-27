@@ -10,7 +10,7 @@ namespace DotnetAgents.CalDav.Core.Services;
 
 internal sealed class CalendarTodoQueryStartExecutor(
     CalendarQueryPolicy queryPolicy,
-    CalendarQuerySnapshotWriter snapshotWriter,
+    CalendarQuerySnapshotPublication snapshotPublication,
     CalendarTodoQueryPageCodec pageCodec,
     CalendarQueryAcquisitionExecutor acquisitionExecutor,
     CalendarTemporalContextResolver temporalContextResolver)
@@ -33,7 +33,11 @@ internal sealed class CalendarTodoQueryStartExecutor(
             execution => CompleteAsync(request, temporal.Context!, execution),
             (completed, token) => completed.Error is not null
                 ? Failure(completed.Error)
-                : PublishFirstPage(completed, request.PageSize, token)).ConfigureAwait(false);
+                : snapshotPublication.Publish(
+                    completed.ToSnapshotDraft(),
+                    request.PageSize,
+                    pageCodec,
+                    token)).ConfigureAwait(false);
     }
 
     private async Task<CompletedCalendarTodoQuery> CompleteAsync(
@@ -81,45 +85,6 @@ internal sealed class CalendarTodoQueryStartExecutor(
             : CompletedCalendarTodoQuery.Failure(retainedFailure);
     }
 
-    private QueryReply<CalendarTodoQueryPageItem> PublishFirstPage(
-        CompletedCalendarTodoQuery completed,
-        int pageSize,
-        CancellationToken cancellationToken)
-    {
-        var snapshot = new CalendarQuerySnapshot(
-            Guid.NewGuid(),
-            queryPolicy.GetSnapshotExpiry(),
-            completed.Items,
-            completed.DiagnosticsUtf8,
-            completed.RetainedBytes,
-            completed.TemporalEvaluationContextUtf8,
-            completed.AdditionalContextUtf8);
-        CalendarTodoPagePlanAdmission planned;
-        using (CalendarQueryTelemetry.StartPhase("page_admission"))
-        {
-            planned = pageCodec.Plan(snapshot, 0, pageSize, cancellationToken);
-            CalendarQueryTelemetry.Add("caldav.query.page_admission_count");
-            if (planned.Error is not null)
-                return Failure(planned.Error);
-            if (planned.Value!.NextCursor is null)
-            {
-                return new QueryReply<CalendarTodoQueryPageItem>.Page(
-                    CalendarTodoQueryPageCodec.Materialize(snapshot, planned.Value));
-            }
-        }
-        using var reservationPhase = CalendarQueryTelemetry.StartPhase("reservation");
-        var reservation = snapshotWriter.TryReserve(snapshot);
-        if (!reservation.IsAccepted)
-            return Failure(CalendarQueryFailures.Busy(reservation.RetryAfterMs!.Value));
-        using var lease = reservation.Lease!;
-        cancellationToken.ThrowIfCancellationRequested();
-        var page = CalendarTodoQueryPageCodec.Materialize(snapshot, planned.Value);
-        cancellationToken.ThrowIfCancellationRequested();
-        if (!lease.Commit())
-            return Failure(CalendarQueryFailures.UpstreamUnavailable());
-        return new QueryReply<CalendarTodoQueryPageItem>.Page(page);
-    }
-
     private static bool IsValid(CalendarTodoQueryRequest.Start request) => request.Query is not null
         && IsValidProjection(request.Projection)
         && request.PageSize is >= 1 and <= CalendarTodoQueryPageCodec.MaximumPageSize
@@ -152,49 +117,17 @@ internal sealed class CalendarTodoQueryStartExecutor(
 }
 
 internal sealed class CalendarTodoQueryContinueExecutor(
-    CalendarQueryCursorAuthenticator cursorAuthenticator,
-    CalendarQuerySnapshotReader snapshotReader,
+    CalendarQuerySnapshotReplay snapshotReplay,
     CalendarTodoQueryPageCodec pageCodec)
 {
     internal Task<QueryReply<CalendarTodoQueryPageItem>> ExecuteAsync(
         CalendarTodoQueryRequest.Continue request,
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        var pageSize = request.PageSize ?? CalendarTodoQueryPageCodec.DefaultPageSize;
-        if (string.IsNullOrEmpty(request.Cursor)
-            || pageSize is < 1 or > CalendarTodoQueryPageCodec.MaximumPageSize)
-            return Task.FromResult<QueryReply<CalendarTodoQueryPageItem>>(Failure(CalendarQueryFailures.InvalidInput()));
-        CalendarQueryCursor cursor;
-        CalendarQuerySnapshot? snapshot;
-        using (CalendarQueryTelemetry.StartPhase("snapshot_lookup"))
-        {
-            var authentication = cursorAuthenticator.Authenticate(request.Cursor, CalendarTodoQueryPageCodec.ToolName);
-            if (authentication.Code == CalendarQueryCursorAuthenticationCode.Expired)
-                return Task.FromResult<QueryReply<CalendarTodoQueryPageItem>>(Failure(CalendarQueryFailures.CursorExpired()));
-            if (authentication.Code != CalendarQueryCursorAuthenticationCode.Valid)
-                return Task.FromResult<QueryReply<CalendarTodoQueryPageItem>>(Failure(CalendarQueryFailures.InvalidCursor()));
-            cursor = authentication.Cursor!;
-            snapshot = snapshotReader.Get(cursor.SnapshotId);
-            CalendarQueryTelemetry.Add("caldav.query.snapshot_lookup_count");
-            if (!MatchesSnapshot(cursor, snapshot))
-                return Task.FromResult<QueryReply<CalendarTodoQueryPageItem>>(Failure(CalendarQueryFailures.InvalidCursor()));
-        }
-        using var pagePhase = CalendarQueryTelemetry.StartPhase("page_admission");
-        var admitted = pageCodec.Admit(snapshot!, cursor.Position, pageSize, cancellationToken);
-        CalendarQueryTelemetry.Add("caldav.query.page_admission_count");
-        return Task.FromResult(admitted.Error is null
-            ? new QueryReply<CalendarTodoQueryPageItem>.Page(admitted.Value!) as QueryReply<CalendarTodoQueryPageItem>
-            : Failure(admitted.Error));
-    }
-
-    private bool MatchesSnapshot(CalendarQueryCursor cursor, CalendarQuerySnapshot? snapshot) => snapshot is not null
-        && cursor.ExpiresAtUnixMilliseconds == snapshot.ExpiresAt.ToUnixTimeMilliseconds()
-        && cursor.Position > 0
-        && cursor.Position < snapshot.Items.Length
-        && cursorAuthenticator.MatchesTemporalContext(cursor, snapshot.TemporalEvaluationContextUtf8.Span);
-
-    private static QueryReply<CalendarTodoQueryPageItem>.Failure Failure(QueryFailure failure) => new(failure);
+        CancellationToken cancellationToken) => Task.FromResult(
+        snapshotReplay.Replay(
+            request.Cursor,
+            request.PageSize,
+            pageCodec,
+            cancellationToken));
 }
 
 internal sealed record CompletedCalendarTodoQuery(
@@ -225,4 +158,11 @@ internal sealed record CompletedCalendarTodoQuery(
         ReadOnlyMemory<byte>.Empty,
         ReadOnlyMemory<byte>.Empty,
         error);
+
+    internal CalendarQuerySnapshotDraft ToSnapshotDraft() => new(
+        Items,
+        DiagnosticsUtf8,
+        RetainedBytes,
+        TemporalEvaluationContextUtf8,
+        AdditionalContextUtf8);
 }
