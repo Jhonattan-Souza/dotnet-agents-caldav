@@ -2,7 +2,6 @@ using System.ComponentModel;
 using System.Text.Json;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Models;
-using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -10,7 +9,7 @@ namespace DotnetAgents.CalDav.Mcp.Tools;
 
 /// <summary>Applies revision-bound lossless Event and To-do patches.</summary>
 [McpServerToolType]
-public sealed class CalendarEntityPatchTools
+internal sealed class CalendarEntityPatchTools
 {
     internal const int MaximumArgumentBytes = CalendarQueryToolSupport.MaximumArgumentBytes;
     private const string EventOperation = "events.patch";
@@ -23,20 +22,12 @@ public sealed class CalendarEntityPatchTools
     private readonly CalendarMutationRequestStateProtector? _stateProtector;
     private readonly TimeProvider _timeProvider;
 
-    public CalendarEntityPatchTools(IServiceProvider services)
-        : this(
-            services.GetRequiredService<ICalendarService>(),
-            services.GetRequiredService<TimeProvider>(),
-            services.GetRequiredService<CalendarMutationRequestStateProtector>())
-    {
-    }
-
     internal CalendarEntityPatchTools(ICalendarService calendarService, TimeProvider timeProvider)
         : this(calendarService, timeProvider, null)
     {
     }
 
-    internal CalendarEntityPatchTools(
+    public CalendarEntityPatchTools(
         ICalendarService calendarService,
         TimeProvider timeProvider,
         CalendarMutationRequestStateProtector? stateProtector)

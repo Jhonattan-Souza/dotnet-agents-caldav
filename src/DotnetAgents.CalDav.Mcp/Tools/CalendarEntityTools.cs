@@ -3,7 +3,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Models;
-using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -19,12 +18,7 @@ public sealed class CalendarEntityTools
     private const int MaximumCursorCharacters = 2048;
     private readonly ICalendarQueryModule _queryModule;
 
-    public CalendarEntityTools(IServiceProvider services)
-        : this(services.GetRequiredService<ICalendarQueryModule>())
-    {
-    }
-
-    internal CalendarEntityTools(ICalendarQueryModule queryModule)
+    public CalendarEntityTools(ICalendarQueryModule queryModule)
     {
         _queryModule = queryModule;
     }

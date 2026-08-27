@@ -3,7 +3,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Models;
-using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -17,12 +16,7 @@ public sealed class CalendarOccurrenceTools
     internal const int MaximumArgumentBytes = CalendarQueryToolSupport.MaximumArgumentBytes;
     private readonly ICalendarQueryModule _queryModule;
 
-    public CalendarOccurrenceTools(IServiceProvider services)
-        : this(services.GetRequiredService<ICalendarQueryModule>())
-    {
-    }
-
-    internal CalendarOccurrenceTools(ICalendarQueryModule queryModule)
+    public CalendarOccurrenceTools(ICalendarQueryModule queryModule)
     {
         _queryModule = queryModule;
     }
