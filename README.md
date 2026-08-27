@@ -27,6 +27,21 @@ Add this MCP server to VS Code, Claude Desktop, Cursor, or any MCP client:
 }
 ```
 
+## Bundled Agent Skill
+
+The NuGet package includes the harness-neutral Agent Skill at
+`skills/caldav-calendars/SKILL.md`. It teaches an agent to choose the semantic
+or exact tool that matches the request, avoid unnecessary discovery calls,
+bind updates to fresh revisions, and continue MCP confirmation exchanges.
+
+A harness that discovers Agent Skills from installed packages can load that
+path directly. For a harness with a user-managed skill directory, extract or
+copy the complete `skills/caldav-calendars` directory into the harness's
+documented skill location. Keep the directory name and `SKILL.md` frontmatter
+unchanged. MCP server registration and credentials remain configured through
+the harness's normal MCP settings; the skill contains no credentials or
+client-specific commands.
+
 ## Environment variables
 
 | Variable | Required | Description |
