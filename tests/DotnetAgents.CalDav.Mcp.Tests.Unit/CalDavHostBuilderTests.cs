@@ -162,6 +162,16 @@ public class CalDavHostBuilderTests
         invalidTypes.ShouldBeEmpty($"Types marked [McpServerToolType] without [McpServerTool] methods: {string.Join(", ", invalidTypes)}");
     }
 
+    [Fact]
+    public void McpToolTypes_DoNotUseServiceLocatorConstructors()
+    {
+        var constructors = typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarCollectionTools)
+            .GetConstructors(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+
+        constructors.ShouldNotContain(constructor => constructor.GetParameters()
+            .Any(parameter => parameter.ParameterType == typeof(IServiceProvider)));
+    }
+
     private static List<string> GetTypesWithoutToolMethods(List<Type> toolTypes)
     {
         return toolTypes
