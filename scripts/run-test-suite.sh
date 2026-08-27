@@ -99,69 +99,32 @@ finish() {
 trap finish EXIT
 
 "$script_directory/test-test-artifacts.sh"
-bash "$script_directory/test-trx-timing-summary.sh"
 
 run_project() {
   local project=$1 trx_filename=$2 prefix=$3 filter_class=$4 environment=$5
-  local output_name=${trx_filename%.trx} started_at finished_at elapsed_ns status
   local arguments=(dotnet test --project "$repository_root/$project" -c Release --no-build --no-restore
     --results-directory "$artifacts_directory" --report-trx --report-trx-filename "$trx_filename"
     --fail-skips on --zero-tests-policy strict --no-ansi)
   [[ -z "$prefix" ]] || arguments+=(--coverlet --coverlet-file-prefix "$prefix")
   [[ -z "$filter_class" ]] || arguments+=(--filter-class "$filter_class")
-  started_at=$(date +%s%N)
   if [[ -n "$environment" ]]; then
     IFS=';' read -r -a environment_arguments <<< "$environment"
-    if env "${environment_arguments[@]}" "${arguments[@]}" </dev/null; then
-      status=0
-    else
-      status=$?
-    fi
+    env "${environment_arguments[@]}" "${arguments[@]}" </dev/null
   else
-    if "${arguments[@]}" </dev/null; then
-      status=0
-    else
-      status=$?
-    fi
+    "${arguments[@]}" </dev/null
   fi
-  finished_at=$(date +%s%N)
-  if [[ -n ${GITHUB_OUTPUT:-} ]]; then
-    output_name=${output_name//-/_}_seconds
-    elapsed_ns=$((finished_at - started_at))
-    printf '%s=%d.%03d\n' \
-      "$output_name" \
-      "$((elapsed_ns / 1000000000))" \
-      "$(((elapsed_ns % 1000000000) / 1000000))" >> "$GITHUB_OUTPUT"
-  fi
-  return "$status"
-}
-
-generate_and_verify_coverage() {
-  local cobertura_reports coverage_report_directory
-  cobertura_reports=$("$script_directory/verify-test-artifacts.sh" "$artifacts_directory" main)
-  coverage_report_directory="$artifacts_directory/coverage-report"
-  dotnet reportgenerator \
-    "-reports:$cobertura_reports" \
-    "-targetdir:$coverage_report_directory" \
-    -reporttypes:Cobertura \
-    '-assemblyfilters:+DotnetAgents.CalDav.Core;+DotnetAgents.CalDav.Mcp;-*Tests*;-xunit*;-testhost*'
-  "$script_directory/verify-coverage.sh" "$coverage_report_directory" 0.90 0.85
 }
 
 run_test_suite_manifest_phase "$manifest" main 2 run_project
-coverage_started_at=$(date +%s%N)
-if generate_and_verify_coverage; then
-  coverage_status=0
-else
-  coverage_status=$?
-fi
-if [[ -n ${GITHUB_OUTPUT:-} ]]; then
-  coverage_elapsed_ns=$(($(date +%s%N) - coverage_started_at))
-  printf 'coverage_report_seconds=%d.%03d\n' \
-    "$((coverage_elapsed_ns / 1000000000))" \
-    "$(((coverage_elapsed_ns % 1000000000) / 1000000))" >> "$GITHUB_OUTPUT"
-fi
-((coverage_status == 0)) || exit "$coverage_status"
+
+cobertura_reports=$("$script_directory/verify-test-artifacts.sh" "$artifacts_directory" main)
+coverage_report_directory="$artifacts_directory/coverage-report"
+dotnet reportgenerator \
+  "-reports:$cobertura_reports" \
+  "-targetdir:$coverage_report_directory" \
+  -reporttypes:Cobertura \
+  '-assemblyfilters:+DotnetAgents.CalDav.Core;+DotnetAgents.CalDav.Mcp;-*Tests*;-xunit*;-testhost*'
+"$script_directory/verify-coverage.sh" "$coverage_report_directory" 0.90 0.85
 
 run_test_suite_manifest_phase "$manifest" complete 2 run_project
 "$script_directory/verify-test-artifacts.sh" "$artifacts_directory" complete >/dev/null
