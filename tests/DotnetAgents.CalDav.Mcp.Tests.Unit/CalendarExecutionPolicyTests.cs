@@ -1,4 +1,5 @@
 using DotnetAgents.CalDav.Mcp.Hosting;
+using DotnetAgents.CalDav.Core.Models;
 using DotnetAgents.CalDav.Core.Services;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol;
@@ -339,7 +340,16 @@ public sealed class CalendarExecutionPolicyTests
             })
         };
 
-        var filtered = CalendarExecutionPolicy.CallTool((_, _) => ValueTask.FromResult(result));
+        var filtered = CalendarExecutionPolicy.CallTool((_, _) =>
+        {
+            CalendarTelemetry.ObserveStructuredError(new CalendarStructuredErrorFacts(
+                CalendarTelemetryErrorCode.Conflict,
+                CalendarTelemetryErrorCategory.State,
+                CalendarTelemetryErrorPhase.TargetRevision,
+                Retryable: false));
+            CalendarOperationProgress.ObserveMutationState(CalendarMutationState.NotCommitted);
+            return ValueTask.FromResult(result);
+        });
         await filtered(context, TestContext.Current.CancellationToken);
 
         var operation = stopped.Single(activity => activity.OperationName == "caldav.operation");
@@ -359,7 +369,7 @@ public sealed class CalendarExecutionPolicyTests
     }
 
     [Fact]
-    public async Task PublicToolFilter_NormalizesMalformedAndClosedOptionalResultDimensions()
+    public async Task PublicToolFilter_UsesOnlyReportedClosedOptionalFacts()
     {
         var stopped = new List<Activity>();
         using var listener = new ActivityListener
@@ -388,42 +398,72 @@ public sealed class CalendarExecutionPolicyTests
             server,
             new JsonRpcRequest { Id = new RequestId(1L), Method = "tools/call" },
             new CallToolRequestParams { Name = "todos.complete" });
-        JsonElement?[] structuredCases =
-        [
-            null,
-            JsonSerializer.SerializeToElement(Array.Empty<object>()),
-            JsonSerializer.SerializeToElement(new
-            {
-                code = 1,
-                category = true,
-                phase = Array.Empty<object>(),
-                retryable = "private",
-                mutationState = "private"
-            }),
-            JsonSerializer.SerializeToElement(new { retryable = true, mutationState = "not_attempted" }),
-            JsonSerializer.SerializeToElement(new { retryable = false, mutationState = "not_committed" }),
-            JsonSerializer.SerializeToElement(new { mutationState = "committed" }),
-            JsonSerializer.SerializeToElement(new { mutationState = "unknown" })
-        ];
-
-        foreach (var structured in structuredCases)
+        var cases = new (CalendarStructuredErrorFacts? Error, CalendarMutationState? Mutation)[]
         {
-            var result = new CallToolResult { IsError = true, StructuredContent = structured };
-            var filtered = CalendarExecutionPolicy.CallTool((_, _) => ValueTask.FromResult(result));
+            (null, null),
+            (new CalendarStructuredErrorFacts(
+                CalendarTelemetryErrorCode.Busy,
+                CalendarTelemetryErrorCategory.LimitsAndAdmission,
+                CalendarTelemetryErrorPhase.AdmissionAndPayload,
+                Retryable: true), CalendarMutationState.NotAttempted),
+            (new CalendarStructuredErrorFacts(
+                CalendarTelemetryErrorCode.Conflict,
+                CalendarTelemetryErrorCategory.State,
+                CalendarTelemetryErrorPhase.Execution,
+                Retryable: false), CalendarMutationState.NotCommitted),
+            (null, CalendarMutationState.Committed),
+            (null, CalendarMutationState.Unknown)
+        };
+
+        foreach (var @case in cases)
+        {
+            var result = new CallToolResult
+            {
+                IsError = true,
+                StructuredContent = JsonSerializer.SerializeToElement(new
+                {
+                    code = "private_untrusted_result",
+                    mutationState = "private_untrusted_state"
+                })
+            };
+            var filtered = CalendarExecutionPolicy.CallTool((_, _) =>
+            {
+                if (@case.Error is { } error)
+                    CalendarTelemetry.ObserveStructuredError(error);
+                if (@case.Mutation is { } mutation)
+                    CalendarOperationProgress.ObserveMutationState(mutation);
+                return ValueTask.FromResult(result);
+            });
             await filtered(context, CancellationToken.None);
         }
 
         var operations = stopped.Where(activity => activity.OperationName == "caldav.operation").ToArray();
-        operations.Length.ShouldBe(structuredCases.Length);
+        operations.Length.ShouldBe(cases.Length);
         operations[0].GetTagItem("caldav.error.retryable").ShouldBeNull();
-        operations[1].GetTagItem("caldav.mutation.state").ShouldBeNull();
-        operations[2].GetTagItem("caldav.error.code").ShouldBeNull();
-        operations[3].GetTagItem("caldav.error.retryable").ShouldBe(true);
-        operations[3].GetTagItem("caldav.mutation.state").ShouldBe("not_attempted");
-        operations[4].GetTagItem("caldav.error.retryable").ShouldBe(false);
-        operations[4].GetTagItem("caldav.mutation.state").ShouldBe("not_committed");
-        operations[5].GetTagItem("caldav.mutation.state").ShouldBe("committed");
-        operations[6].GetTagItem("caldav.mutation.state").ShouldBe("unknown");
+        operations[0].GetTagItem("caldav.mutation.state").ShouldBeNull();
+        operations[1].GetTagItem("caldav.error.retryable").ShouldBe(true);
+        operations[1].GetTagItem("caldav.mutation.state").ShouldBe("not_attempted");
+        operations[2].GetTagItem("caldav.error.retryable").ShouldBe(false);
+        operations[2].GetTagItem("caldav.mutation.state").ShouldBe("not_committed");
+        operations[3].GetTagItem("caldav.error.code").ShouldBeNull();
+        operations[3].GetTagItem("caldav.mutation.state").ShouldBe("committed");
+        operations[4].GetTagItem("caldav.mutation.state").ShouldBe("unknown");
+    }
+
+    [Fact]
+    public void PublicToolFilter_HasNoJsonTelemetryTruthReconstructionHelpers()
+    {
+        var helperNames = typeof(CalendarExecutionPolicy)
+            .GetMethods(BindingFlags.Static | BindingFlags.NonPublic)
+            .Select(method => method.Name)
+            .ToArray();
+
+        helperNames.ShouldNotContain("StringProperty");
+        helperNames.ShouldNotContain("SafeMutationState");
+        helperNames.ShouldNotContain("SafeBoolean");
+        typeof(TelemetryActivityAllowlistProcessor)
+            .GetMethod("ClassifyHttpObservation", BindingFlags.Static | BindingFlags.NonPublic)
+            .ShouldBeNull();
     }
 
     [Theory]

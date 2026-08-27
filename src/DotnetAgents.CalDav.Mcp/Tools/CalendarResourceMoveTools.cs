@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Text.Json;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Models;
+using DotnetAgents.CalDav.Mcp.Hosting;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -59,6 +60,7 @@ public sealed class CalendarResourceMoveTools
         try
         {
             var result = await _calendarService.MoveResourceAsync(request, linked.Token).ConfigureAwait(false);
+            CalendarTelemetry.ObserveMutationState(result.MutationState);
             var mapped = result.Code == CalendarResourceMoveCode.Success && result.Snapshot is not null
                 ? Success(result.Snapshot)
                 : Error(result);
@@ -118,6 +120,9 @@ public sealed class CalendarResourceMoveTools
 
     private static CallToolResult Error(CalendarResourceMoveResult result)
     {
+        CalendarTelemetry.ObserveStructuredError(
+            CalendarTelemetryFacts.From(result),
+            result.MutationState);
         var description = Describe(result.Code);
         return Error(
             description.Code,
@@ -207,13 +212,11 @@ public sealed class CalendarResourceMoveTools
         _ => "execution"
     };
 
-    private static string MutationState(CalendarMutationState state) => state switch
+    private static string MutationState(CalendarMutationState state)
     {
-        CalendarMutationState.NotAttempted => "not_attempted",
-        CalendarMutationState.NotCommitted => "not_committed",
-        CalendarMutationState.Committed => "committed",
-        _ => "unknown"
-    };
+        CalendarTelemetry.ObserveMutationState(state);
+        return CalendarTelemetryVocabulary.MutationStateName(state);
+    }
 
     private static string LimitDimension(CalendarResourceMoveLimitDimension dimension) => dimension switch
     {
@@ -221,15 +224,21 @@ public sealed class CalendarResourceMoveTools
         _ => "unknown"
     };
 
-    private static CallToolResult InputError(bool payloadTooLarge) => Error(
-        payloadTooLarge ? "payload_too_large" : "invalid_input",
-        payloadTooLarge ? "limitsAndAdmission" : "input",
-        payloadTooLarge
-            ? "The Calendar Object Resource move arguments exceed the safe payload limit."
-            : "The Calendar Object Resource move input is invalid.",
-        false,
-        payloadTooLarge ? "admissionAndPayload" : "schemaLexicalDiscriminator",
-        "not_attempted");
+    private static CallToolResult InputError(bool payloadTooLarge)
+    {
+        CalendarTelemetry.ObserveStructuredError(
+            CalendarTelemetryFacts.FromInputGuard(payloadTooLarge),
+            CalendarMutationState.NotAttempted);
+        return Error(
+            payloadTooLarge ? "payload_too_large" : "invalid_input",
+            payloadTooLarge ? "limitsAndAdmission" : "input",
+            payloadTooLarge
+                ? "The Calendar Object Resource move arguments exceed the safe payload limit."
+                : "The Calendar Object Resource move input is invalid.",
+            false,
+            payloadTooLarge ? "admissionAndPayload" : "schemaLexicalDiscriminator",
+            "not_attempted");
+    }
 
     private static CallToolResult SelectionUnavailableError() => Error(
         "upstream_unavailable",

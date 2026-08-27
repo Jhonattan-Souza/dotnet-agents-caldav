@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Models;
+using DotnetAgents.CalDav.Mcp.Hosting;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -738,6 +739,7 @@ internal sealed class ExactCalendarResourceWriteTools
 
     private static CallToolResult ToToolResult(CalendarExactResourceResult result)
     {
+        CalendarTelemetry.ObserveMutationState(result.MutationState);
         var mapped = result.Code switch
         {
             CalendarExactResourceCode.Success when result.Snapshot is not null => Success(result.Snapshot),
@@ -771,18 +773,25 @@ internal sealed class ExactCalendarResourceWriteTools
         Content = [new TextContentBlock { Text = "Exact Calendar Object Resource write completed." }]
     };
 
-    private static CallToolResult NonMutation(string outcome) => new()
+    private static CallToolResult NonMutation(string outcome)
     {
-        IsError = false,
-        StructuredContent = JsonSerializer.SerializeToElement(new CalendarResourceDeleteNonMutationResult(
-            outcome,
-            "not_attempted",
-            [])),
-        Content = [new TextContentBlock { Text = "Exact Calendar Object Resource write made no change." }]
-    };
+        CalendarTelemetry.ObserveMutationState(CalendarMutationState.NotAttempted);
+        return new CallToolResult
+        {
+            IsError = false,
+            StructuredContent = JsonSerializer.SerializeToElement(new CalendarResourceDeleteNonMutationResult(
+                outcome,
+                "not_attempted",
+                [])),
+            Content = [new TextContentBlock { Text = "Exact Calendar Object Resource write made no change." }]
+        };
+    }
 
     private static CallToolResult ExactError(CalendarExactResourceResult result)
     {
+        CalendarTelemetry.ObserveStructuredError(
+            CalendarTelemetryFacts.From(result),
+            result.MutationState);
         var description = Describe(result.Code);
         return Error(
             description.Code,
@@ -855,13 +864,19 @@ internal sealed class ExactCalendarResourceWriteTools
         "completeResourceSemantics",
         "not_attempted");
 
-    private static CallToolResult InputError(bool payloadTooLarge) => Error(
-        payloadTooLarge ? "payload_too_large" : "invalid_input",
-        payloadTooLarge ? "limitsAndAdmission" : "input",
-        payloadTooLarge ? "The exact write arguments are too large." : "The exact write input is invalid.",
-        false,
-        payloadTooLarge ? "admissionAndPayload" : "schemaLexicalDiscriminator",
-        "not_attempted");
+    private static CallToolResult InputError(bool payloadTooLarge)
+    {
+        CalendarTelemetry.ObserveStructuredError(
+            CalendarTelemetryFacts.FromInputGuard(payloadTooLarge),
+            CalendarMutationState.NotAttempted);
+        return Error(
+            payloadTooLarge ? "payload_too_large" : "invalid_input",
+            payloadTooLarge ? "limitsAndAdmission" : "input",
+            payloadTooLarge ? "The exact write arguments are too large." : "The exact write input is invalid.",
+            false,
+            payloadTooLarge ? "admissionAndPayload" : "schemaLexicalDiscriminator",
+            "not_attempted");
+    }
 
     private static CallToolResult Error(
         string code,
@@ -900,13 +915,11 @@ internal sealed class ExactCalendarResourceWriteTools
         _ => "execution"
     };
 
-    private static string MutationState(CalendarMutationState state) => state switch
+    private static string MutationState(CalendarMutationState state)
     {
-        CalendarMutationState.NotAttempted => "not_attempted",
-        CalendarMutationState.NotCommitted => "not_committed",
-        CalendarMutationState.Committed => "committed",
-        _ => "unknown"
-    };
+        CalendarTelemetry.ObserveMutationState(state);
+        return CalendarTelemetryVocabulary.MutationStateName(state);
+    }
 
     private static string Kind(CalendarEntityKind kind) => kind == CalendarEntityKind.Event ? "event" : "todo";
 

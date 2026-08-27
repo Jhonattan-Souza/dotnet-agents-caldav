@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Models;
+using DotnetAgents.CalDav.Mcp.Hosting;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -88,9 +89,15 @@ internal sealed class CalendarCollectionTools
         return await ExecuteDeleteAsync(request, requestState, inputResponses, mrtrSupported, cancellationToken).ConfigureAwait(false);
     }
 
-    internal static CallToolResult CreateInputGuardError(bool payloadTooLarge) => payloadTooLarge
-        ? Error("payload_too_large", "limitsAndAdmission", "The Calendar collection arguments exceed the safe payload limit.", false, "admissionAndPayload", "not_attempted")
-        : Error("invalid_input", "input", "The Calendar collection input is invalid.", false, "schemaLexicalDiscriminator", "not_attempted");
+    internal static CallToolResult CreateInputGuardError(bool payloadTooLarge)
+    {
+        CalendarTelemetry.ObserveStructuredError(
+            CalendarTelemetryFacts.FromInputGuard(payloadTooLarge),
+            CalendarMutationState.NotAttempted);
+        return payloadTooLarge
+            ? Error("payload_too_large", "limitsAndAdmission", "The Calendar collection arguments exceed the safe payload limit.", false, "admissionAndPayload", "not_attempted")
+            : Error("invalid_input", "input", "The Calendar collection input is invalid.", false, "schemaLexicalDiscriminator", "not_attempted");
+    }
 
     private async Task<CallToolResult> ExecuteCreateAsync(
         CalendarCollectionCreateRequest request,
@@ -101,6 +108,7 @@ internal sealed class CalendarCollectionTools
         try
         {
             var result = await _module.CreateAsync(request, linked.Token).ConfigureAwait(false);
+            CalendarTelemetry.ObserveMutationState(result.MutationState);
             return result.Code == CalendarCollectionCreateCode.Success && result.Calendar is not null
                 ? CreateSuccess(result.Calendar)
                 : Error(result);
@@ -189,14 +197,10 @@ internal sealed class CalendarCollectionTools
                     ? "The mutation confirmation has expired."
                     : "The mutation confirmation does not match the reviewed request.", false, "mrtr", "not_attempted");
             if (decision == ConfirmationDecision.Declined)
-                return new()
-                {
-                    IsError = false,
-                    StructuredContent = JsonSerializer.SerializeToElement(new CalendarCollectionDeleteNonMutationResult("confirmation_declined", "not_attempted", [])),
-                    Content = [new TextContentBlock { Text = "Calendar collection deletion was declined." }]
-                };
+                return DeleteDeclined();
 
             var result = await _module.ExecuteConfirmedDeleteAsync(request, review.Binding!, linked.Token).ConfigureAwait(false);
+            CalendarTelemetry.ObserveMutationState(result.MutationState);
             return result.Code == CalendarCollectionDeleteCode.Success
                 ? DeleteSuccess(result.Calendar!)
                 : Error(result);
@@ -305,6 +309,18 @@ internal sealed class CalendarCollectionTools
         Content = [new TextContentBlock { Text = "Calendar collection deletion completed." }]
     };
 
+    private static CallToolResult DeleteDeclined()
+    {
+        CalendarTelemetry.ObserveMutationState(CalendarMutationState.NotAttempted);
+        return new CallToolResult
+        {
+            IsError = false,
+            StructuredContent = JsonSerializer.SerializeToElement(
+                new CalendarCollectionDeleteNonMutationResult("confirmation_declined", "not_attempted", [])),
+            Content = [new TextContentBlock { Text = "Calendar collection deletion was declined." }]
+        };
+    }
+
     private static CallToolResult Error(CalendarCollectionCreateResult result) => Error(
         Describe(result.Code, result.MutationState),
         MutationState(result.MutationState),
@@ -395,13 +411,11 @@ internal sealed class CalendarCollectionTools
         _ => "upstream_unavailable"
     };
 
-    private static string MutationState(CalendarMutationState state) => state switch
+    private static string MutationState(CalendarMutationState state)
     {
-        CalendarMutationState.NotAttempted => "not_attempted",
-        CalendarMutationState.NotCommitted => "not_committed",
-        CalendarMutationState.Committed => "committed",
-        _ => "unknown"
-    };
+        CalendarTelemetry.ObserveMutationState(state);
+        return CalendarTelemetryVocabulary.MutationStateName(state);
+    }
 
     private static int MeasureArguments(IDictionary<string, JsonElement>? arguments) =>
         CalendarQueryToolSupport.MeasureArguments(arguments, arguments ?? new Dictionary<string, JsonElement>());

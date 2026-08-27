@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Models;
+using DotnetAgents.CalDav.Mcp.Hosting;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -299,8 +300,12 @@ internal sealed class CalendarResourceDeleteTools
         return true;
     }
 
-    internal static CallToolResult CreateInputGuardError(bool payloadTooLarge) => payloadTooLarge
-        ? Error(
+    internal static CallToolResult CreateInputGuardError(bool payloadTooLarge)
+    {
+        CalendarTelemetry.ObserveStructuredError(
+            CalendarTelemetryFacts.FromInputGuard(payloadTooLarge),
+            CalendarMutationState.NotAttempted);
+        return payloadTooLarge ? Error(
             "payload_too_large",
             "limitsAndAdmission",
             "The Calendar Object Resource delete arguments exceed the safe payload limit.",
@@ -308,6 +313,7 @@ internal sealed class CalendarResourceDeleteTools
             "admissionAndPayload",
             "not_attempted")
         : InputError();
+    }
 
     private async Task<ReviewOutcome> ReviewAsync(
         CalendarResourceRevisionReference revision,
@@ -376,6 +382,13 @@ internal sealed class CalendarResourceDeleteTools
 
     private static CallToolResult Error(CalendarResourceDeleteResult result)
     {
+        CalendarTelemetry.ObserveStructuredError(
+            new CalendarStructuredErrorFacts(
+                TelemetryCode(result.Code),
+                TelemetryCategory(result.Code),
+                TelemetryPhase(result),
+                result.Retryable),
+            result.MutationState);
         var (code, category, message, defaultPhase) = Describe(result.Code);
         return Error(
             code,
@@ -388,30 +401,38 @@ internal sealed class CalendarResourceDeleteTools
             retryAfterMs: result.RetryAfterMilliseconds);
     }
 
-    private static CallToolResult Success(CalendarResourceDeletionReceipt receipt) => new()
+    private static CallToolResult Success(CalendarResourceDeletionReceipt receipt)
     {
-        IsError = false,
-        StructuredContent = JsonSerializer.SerializeToElement(new CalendarResourceDeleteSuccessResult(
-            "success",
-            "committed",
-            new CalendarResourceDeletionReceiptResult(
-                receipt.Href,
-                receipt.EntityUid,
-                receipt.EntityKind == CalendarEntityKind.Event ? "event" : "todo",
-                receipt.ConsumedEntityTag),
-            [])),
-        Content = [new TextContentBlock { Text = "Calendar Object Resource deletion completed." }]
-    };
+        CalendarTelemetry.ObserveMutationState(CalendarMutationState.Committed);
+        return new CallToolResult
+        {
+            IsError = false,
+            StructuredContent = JsonSerializer.SerializeToElement(new CalendarResourceDeleteSuccessResult(
+                "success",
+                "committed",
+                new CalendarResourceDeletionReceiptResult(
+                    receipt.Href,
+                    receipt.EntityUid,
+                    receipt.EntityKind == CalendarEntityKind.Event ? "event" : "todo",
+                    receipt.ConsumedEntityTag),
+                [])),
+            Content = [new TextContentBlock { Text = "Calendar Object Resource deletion completed." }]
+        };
+    }
 
-    private static CallToolResult ConfirmationDeclined() => new()
+    private static CallToolResult ConfirmationDeclined()
     {
-        IsError = false,
-        StructuredContent = JsonSerializer.SerializeToElement(new CalendarResourceDeleteNonMutationResult(
-            "confirmation_declined",
-            "not_attempted",
-            [])),
-        Content = [new TextContentBlock { Text = "Calendar Object Resource deletion was declined." }]
-    };
+        CalendarTelemetry.ObserveMutationState(CalendarMutationState.NotAttempted);
+        return new CallToolResult
+        {
+            IsError = false,
+            StructuredContent = JsonSerializer.SerializeToElement(new CalendarResourceDeleteNonMutationResult(
+                "confirmation_declined",
+                "not_attempted",
+                [])),
+            Content = [new TextContentBlock { Text = "Calendar Object Resource deletion was declined." }]
+        };
+    }
 
     private static CallToolResult ConfirmationMismatch() => Error(
         "confirmation_mismatch",
@@ -482,6 +503,73 @@ internal sealed class CalendarResourceDeleteTools
         if (result.Code == CalendarResourceDeleteCode.InvalidInput)
             return "originScopeAuthorization";
         return defaultPhase;
+    }
+
+    private static CalendarTelemetryErrorCode TelemetryCode(CalendarResourceDeleteCode code) => code switch
+    {
+        CalendarResourceDeleteCode.InvalidInput => CalendarTelemetryErrorCode.InvalidInput,
+        CalendarResourceDeleteCode.NotFound => CalendarTelemetryErrorCode.NotFound,
+        CalendarResourceDeleteCode.OutsideScope => CalendarTelemetryErrorCode.OutsideScope,
+        CalendarResourceDeleteCode.EntityKindMismatch => CalendarTelemetryErrorCode.EntityKindMismatch,
+        CalendarResourceDeleteCode.OpaqueResource => CalendarTelemetryErrorCode.OpaqueResource,
+        CalendarResourceDeleteCode.Conflict => CalendarTelemetryErrorCode.Conflict,
+        CalendarResourceDeleteCode.ConcurrencyUnavailable => CalendarTelemetryErrorCode.ConcurrencyUnavailable,
+        CalendarResourceDeleteCode.UnsupportedCapability => CalendarTelemetryErrorCode.UnsupportedCapability,
+        CalendarResourceDeleteCode.PayloadTooLarge => CalendarTelemetryErrorCode.PayloadTooLarge,
+        CalendarResourceDeleteCode.UpstreamUnauthorized => CalendarTelemetryErrorCode.UpstreamUnauthorized,
+        CalendarResourceDeleteCode.UpstreamForbidden => CalendarTelemetryErrorCode.UpstreamForbidden,
+        CalendarResourceDeleteCode.UpstreamRateLimited => CalendarTelemetryErrorCode.UpstreamRateLimited,
+        CalendarResourceDeleteCode.UpstreamUnavailable => CalendarTelemetryErrorCode.UpstreamUnavailable,
+        CalendarResourceDeleteCode.UpstreamProtocolError => CalendarTelemetryErrorCode.UpstreamProtocolError,
+        CalendarResourceDeleteCode.CommittedButUnverified => CalendarTelemetryErrorCode.CommittedButUnverified,
+        CalendarResourceDeleteCode.Indeterminate => CalendarTelemetryErrorCode.Indeterminate,
+        CalendarResourceDeleteCode.Success => throw new ArgumentOutOfRangeException(nameof(code), code, null),
+        _ => throw new ArgumentOutOfRangeException(nameof(code), code, null)
+    };
+
+    private static CalendarTelemetryErrorCategory TelemetryCategory(CalendarResourceDeleteCode code) => code switch
+    {
+        CalendarResourceDeleteCode.InvalidInput => CalendarTelemetryErrorCategory.Input,
+        CalendarResourceDeleteCode.NotFound or CalendarResourceDeleteCode.OutsideScope =>
+            CalendarTelemetryErrorCategory.Selection,
+        CalendarResourceDeleteCode.EntityKindMismatch or CalendarResourceDeleteCode.Conflict
+            or CalendarResourceDeleteCode.ConcurrencyUnavailable => CalendarTelemetryErrorCategory.State,
+        CalendarResourceDeleteCode.OpaqueResource or CalendarResourceDeleteCode.UnsupportedCapability =>
+            CalendarTelemetryErrorCategory.CapabilityAndProjection,
+        CalendarResourceDeleteCode.PayloadTooLarge => CalendarTelemetryErrorCategory.LimitsAndAdmission,
+        CalendarResourceDeleteCode.CommittedButUnverified or CalendarResourceDeleteCode.Indeterminate =>
+            CalendarTelemetryErrorCategory.PostWriteTruth,
+        CalendarResourceDeleteCode.UpstreamUnauthorized or CalendarResourceDeleteCode.UpstreamForbidden
+            or CalendarResourceDeleteCode.UpstreamRateLimited or CalendarResourceDeleteCode.UpstreamUnavailable
+            or CalendarResourceDeleteCode.UpstreamProtocolError => CalendarTelemetryErrorCategory.Upstream,
+        _ => throw new ArgumentOutOfRangeException(nameof(code), code, null)
+    };
+
+    private static CalendarTelemetryErrorPhase TelemetryPhase(CalendarResourceDeleteResult result)
+    {
+        if (result.MutationState is CalendarMutationState.Committed or CalendarMutationState.Unknown)
+            return CalendarTelemetryErrorPhase.PostWriteVerificationOrReconciliation;
+        if (result.MutationState == CalendarMutationState.NotCommitted)
+        {
+            return result.Code == CalendarResourceDeleteCode.UpstreamUnavailable
+                && result.CurrentSnapshot is not null
+                    ? CalendarTelemetryErrorPhase.PostWriteVerificationOrReconciliation
+                    : CalendarTelemetryErrorPhase.Execution;
+        }
+        return result.Code switch
+        {
+            CalendarResourceDeleteCode.InvalidInput => CalendarTelemetryErrorPhase.OriginScopeAuthorization,
+            CalendarResourceDeleteCode.NotFound or CalendarResourceDeleteCode.EntityKindMismatch
+                or CalendarResourceDeleteCode.OpaqueResource or CalendarResourceDeleteCode.Conflict
+                or CalendarResourceDeleteCode.ConcurrencyUnavailable => CalendarTelemetryErrorPhase.TargetRevision,
+            CalendarResourceDeleteCode.OutsideScope => CalendarTelemetryErrorPhase.OriginScopeAuthorization,
+            CalendarResourceDeleteCode.UnsupportedCapability =>
+                CalendarTelemetryErrorPhase.SelectionDiscoveryCapability,
+            CalendarResourceDeleteCode.PayloadTooLarge => CalendarTelemetryErrorPhase.AdmissionAndPayload,
+            CalendarResourceDeleteCode.CommittedButUnverified or CalendarResourceDeleteCode.Indeterminate =>
+                CalendarTelemetryErrorPhase.PostWriteVerificationOrReconciliation,
+            _ => CalendarTelemetryErrorPhase.Execution
+        };
     }
 
     private static CallToolResult UnsupportedMrtrError() => Error(
@@ -591,13 +679,11 @@ internal sealed class CalendarResourceDeleteTools
             Content = [new TextContentBlock { Text = "Calendar Object Resource deletion failed." }]
         };
 
-    private static string MutationState(CalendarMutationState state) => state switch
+    private static string MutationState(CalendarMutationState state)
     {
-        CalendarMutationState.NotAttempted => "not_attempted",
-        CalendarMutationState.NotCommitted => "not_committed",
-        CalendarMutationState.Committed => "committed",
-        _ => "unknown"
-    };
+        CalendarTelemetry.ObserveMutationState(state);
+        return CalendarTelemetryVocabulary.MutationStateName(state);
+    }
 
     private enum ConfirmationDecision
     {
