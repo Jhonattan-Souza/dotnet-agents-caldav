@@ -749,17 +749,6 @@ internal sealed class ExactCalendarResourceWriteTools
 
     internal static int MeasureResult(CallToolResult result) => CalendarQueryToolSupport.MeasureResult(result);
 
-    internal static CallToolResult EnsureBoundedResult(
-        CallToolResult result,
-        CalendarMutationState mutationState) =>
-        CalendarQueryToolSupport.EnsureBoundedResult(result, (_, _) => Error(
-            "payload_too_large",
-            "limitsAndAdmission",
-            "The exact write result exceeds the safe payload limit.",
-            false,
-            "admissionAndPayload",
-            CalendarTelemetryVocabulary.MutationStateName(mutationState)));
-
     private static CallToolResult Success(CalendarResourceSnapshot snapshot) => new()
     {
         IsError = false,
@@ -936,18 +925,6 @@ internal sealed class ExactCalendarResourceWriteTools
             retryAfterMs,
             limits)),
         Content = [new TextContentBlock { Text = "Exact Calendar Object Resource write failed." }]
-    };
-
-    private static string Phase(CalendarExactResourcePhase phase) => phase switch
-    {
-        CalendarExactResourcePhase.SchemaLexicalDiscriminator => "schemaLexicalDiscriminator",
-        CalendarExactResourcePhase.OriginScopeAuthorization => "originScopeAuthorization",
-        CalendarExactResourcePhase.SelectionDiscoveryCapability => "selectionDiscoveryCapability",
-        CalendarExactResourcePhase.TargetRevision => "targetRevision",
-        CalendarExactResourcePhase.CompleteResourceSemantics => "completeResourceSemantics",
-        CalendarExactResourcePhase.Mrtr => "mrtr",
-        CalendarExactResourcePhase.PostWriteVerificationOrReconciliation => "postWriteVerificationOrReconciliation",
-        _ => "execution"
     };
 
     private static string Kind(CalendarEntityKind kind) => kind == CalendarEntityKind.Event ? "event" : "todo";

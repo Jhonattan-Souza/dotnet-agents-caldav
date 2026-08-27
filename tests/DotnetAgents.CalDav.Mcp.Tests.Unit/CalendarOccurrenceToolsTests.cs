@@ -8,8 +8,33 @@ using Xunit;
 
 namespace DotnetAgents.CalDav.Mcp.Tests.Unit;
 
+[Collection("TelemetryActivityCollection")]
 public sealed class CalendarOccurrenceToolsTests
 {
+    [Fact]
+    public async Task QueryRawAsync_OversizedFailurePublishesOnlyTheSelectedPayloadError()
+    {
+        var module = Substitute.For<ICalendarQueryModule>();
+        module.QueryOccurrencesAsync(Arg.Any<CalendarOccurrenceQueryRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new QueryReply<CalendarOccurrenceQueryItem>.Failure(new QueryFailure(
+                QueryFailureCode.UpstreamUnavailable,
+                QueryFailureCategory.Upstream,
+                new string('x', CalendarQueryToolSupport.MaximumStructuredResultBytes),
+                true,
+                QueryFailurePhase.Execution)));
+        var sut = new CalendarOccurrenceTools(module);
+
+        var (result, operation) = await ToolTelemetryTestScope.CaptureAsync(
+            "calendar_occurrences.query",
+            () => sut.QueryRawAsync(new Dictionary<string, JsonElement>
+            {
+                ["cursor"] = JsonSerializer.SerializeToElement("opaque")
+            }, CancellationToken.None));
+
+        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("payload_too_large");
+        operation.ShouldMatchStructuredError(result.StructuredContent.Value);
+    }
+
     [Fact]
     public async Task StartIsMechanicalAndPublishesModulePageWithoutReserialization()
     {
@@ -234,25 +259,27 @@ public sealed class CalendarOccurrenceToolsTests
     }
 
     [Theory]
-    [InlineData(0, "upstream_protocol_error", "input", "execution")]
-    [InlineData(1, "invalid_input", "upstream", "execution")]
-    [InlineData(2, "invalid_input", "input", "execution")]
-    public async Task UndefinedInternalFailureVocabularyIsNormalizedWithoutDisclosure(
-        int invalidField,
-        string expectedCode,
-        string expectedCategory,
-        string expectedPhase)
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task QueryRawAsync_RejectsUndefinedTypedFailureVocabulary(int invalidField)
     {
-        var error = await InvokeFailureAsync(new QueryFailure(
+        var failure = new QueryFailure(
             invalidField == 0 ? (QueryFailureCode)99 : QueryFailureCode.InvalidInput,
             invalidField == 1 ? (QueryFailureCategory)99 : QueryFailureCategory.Input,
             "invalid internal vocabulary",
             false,
-            invalidField == 2 ? (QueryFailurePhase)99 : QueryFailurePhase.Execution));
+            invalidField == 2 ? (QueryFailurePhase)99 : QueryFailurePhase.Execution);
+        var module = Substitute.For<ICalendarQueryModule>();
+        module.QueryOccurrencesAsync(Arg.Any<CalendarOccurrenceQueryRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new QueryReply<CalendarOccurrenceQueryItem>.Failure(failure));
 
-        error.GetProperty("code").GetString().ShouldBe(expectedCode);
-        error.GetProperty("category").GetString().ShouldBe(expectedCategory);
-        error.GetProperty("phase").GetString().ShouldBe(expectedPhase);
+        await Should.ThrowAsync<ArgumentOutOfRangeException>(() => new CalendarOccurrenceTools(module).QueryRawAsync(
+            new Dictionary<string, JsonElement>
+            {
+                ["cursor"] = JsonSerializer.SerializeToElement("opaque")
+            },
+            CancellationToken.None));
     }
 
     public static TheoryData<Dictionary<string, JsonElement>> InvalidShapes => new()

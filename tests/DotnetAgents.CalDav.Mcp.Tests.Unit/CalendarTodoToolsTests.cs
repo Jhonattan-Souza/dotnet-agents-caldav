@@ -8,8 +8,33 @@ using Xunit;
 
 namespace DotnetAgents.CalDav.Mcp.Tests.Unit;
 
+[Collection("TelemetryActivityCollection")]
 public sealed class CalendarTodoToolsTests
 {
+    [Fact]
+    public async Task QueryRawAsync_OversizedFailurePublishesOnlyTheSelectedPayloadError()
+    {
+        var module = Substitute.For<ICalendarQueryModule>();
+        module.QueryTodosAsync(Arg.Any<CalendarTodoQueryRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new QueryReply<CalendarTodoQueryPageItem>.Failure(new QueryFailure(
+                QueryFailureCode.UpstreamUnavailable,
+                QueryFailureCategory.Upstream,
+                new string('x', CalendarQueryToolSupport.MaximumStructuredResultBytes),
+                true,
+                QueryFailurePhase.Execution)));
+        var sut = new CalendarTodoTools(module);
+
+        var (result, operation) = await ToolTelemetryTestScope.CaptureAsync(
+            "todos.query",
+            () => sut.QueryRawAsync(new Dictionary<string, JsonElement>
+            {
+                ["cursor"] = JsonSerializer.SerializeToElement("opaque")
+            }, CancellationToken.None));
+
+        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("payload_too_large");
+        operation.ShouldMatchStructuredError(result.StructuredContent.Value);
+    }
+
     [Fact]
     public async Task StartPassesClosedTypedRequestAndModuleBuiltPageThroughMechanically()
     {

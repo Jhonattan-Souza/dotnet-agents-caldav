@@ -11,8 +11,27 @@ using Xunit;
 
 namespace DotnetAgents.CalDav.Mcp.Tests.Unit;
 
+[Collection("TelemetryActivityCollection")]
 public sealed class CalendarToolsTests
 {
+    [Fact]
+    public async Task ListAsync_LimitExhaustionPublishesTheStructuredTerminalError()
+    {
+        var service = Substitute.For<ICalendarService>();
+        service.GetCalendarsAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException<CalendarDiscoveryResult>(new CalendarDiscoveryLimitException(257)));
+        var sut = new CalendarTools(service);
+
+        var (result, operation) = await ToolTelemetryTestScope.CaptureAsync(
+            "calendars.list",
+            () => sut.ListAsync(CancellationToken.None));
+
+        operation.ShouldMatchStructuredError(result.StructuredContent!.Value);
+        operation.GetTagItem("caldav.error.code").ShouldBe("limit_exhausted");
+        operation.GetTagItem("caldav.error.category").ShouldBe("limitsAndAdmission");
+        operation.GetTagItem("caldav.error.phase").ShouldBe("admissionAndPayload");
+    }
+
     [Fact]
     public async Task ListAsync_MapsScopedDiscoveryToTheVersionedStructuredShape()
     {

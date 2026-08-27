@@ -14,8 +14,33 @@ using Xunit;
 
 namespace DotnetAgents.CalDav.Mcp.Tests.Unit;
 
+[Collection("TelemetryActivityCollection")]
 public sealed class CalendarResourceToolsTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetAsync_HttpFailurePublishesTheStructuredTerminalError(bool exact)
+    {
+        var service = Substitute.For<ICalendarService>();
+        service.GetResourceAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(
+            Task.FromException<CalendarResourceRead>(new HttpRequestException(
+                "unsafe upstream",
+                null,
+                System.Net.HttpStatusCode.Forbidden)));
+        var sut = new CalendarResourceTools(service);
+        var exactSut = new ExactCalendarResourceTools(service);
+
+        var (result, operation) = await ToolTelemetryTestScope.CaptureAsync(
+            exact ? "calendar_resources.exact_get" : "calendar_resources.get",
+            () => exact
+                ? exactSut.GetAsync("https://cal.example/events/a.ics", CancellationToken.None)
+                : sut.GetAsync("https://cal.example/events/a.ics", CancellationToken.None));
+
+        operation.ShouldMatchStructuredError(result.StructuredContent!.Value);
+        operation.GetTagItem("caldav.error.code").ShouldBe("upstream_forbidden");
+    }
+
     [Theory]
     [InlineData("CONFIRMED", "confirmed")]
     [InlineData("FUTURE", "other")]
@@ -367,11 +392,14 @@ public sealed class CalendarResourceToolsTests
             });
         var sut = new CalendarResourceTools(service);
 
-        var result = await sut.GetAsync("https://cal.example/events/a.ics", CancellationToken.None);
+        var (result, operation) = await ToolTelemetryTestScope.CaptureAsync(
+            "calendar_resources.get",
+            () => sut.GetAsync("https://cal.example/events/a.ics", CancellationToken.None));
 
         result.IsError.ShouldBe(true);
         result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("payload_too_large");
         result.StructuredContent.Value.GetProperty("limits").GetProperty("byteCount").GetInt32().ShouldBeGreaterThan(4 * 1024 * 1024);
+        operation.ShouldMatchStructuredError(result.StructuredContent.Value);
     }
 
     [Fact]

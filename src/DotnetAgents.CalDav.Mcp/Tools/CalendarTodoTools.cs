@@ -73,25 +73,31 @@ public sealed class CalendarTodoTools
         false,
         payloadTooLarge ? QueryFailurePhase.AdmissionAndPayload : QueryFailurePhase.SchemaLexicalDiscriminator));
 
-    private static CallToolResult Success(QueryPage<CalendarTodoQueryPageItem> page) => new()
-    {
-        IsError = false,
-        StructuredContent = page.StructuredContent,
-        Content = [new TextContentBlock { Text = page.HumanText }]
-    };
+    private static CallToolResult Success(QueryPage<CalendarTodoQueryPageItem> page) =>
+        CalendarToolResult.Success(new CallToolResult
+        {
+            IsError = false,
+            StructuredContent = page.StructuredContent,
+            Content = [new TextContentBlock { Text = page.HumanText }]
+        }).FinalizeBounded(PayloadLimitCandidate);
 
     private static CallToolResult Error(QueryFailure failure)
     {
-        CalendarTelemetry.ObserveStructuredError(CalendarTelemetryFacts.From(failure));
-        return CalendarQueryToolSupport.EnsureBoundedResult(new CallToolResult
+        var facts = CalendarTelemetryFacts.From(failure);
+        return ErrorCandidate(failure, facts).FinalizeBounded(PayloadLimitCandidate);
+    }
+
+    private static CalendarToolResult ErrorCandidate(
+        QueryFailure failure,
+        CalendarStructuredErrorFacts facts) => CalendarToolResult.Error(new CallToolResult
         {
             IsError = true,
             StructuredContent = JsonSerializer.SerializeToElement(new CalendarTodoQueryErrorResult(
-                Code(failure.Code),
-                Category(failure.Category),
+                facts.CodeName,
+                facts.CategoryName,
                 failure.Message,
-                failure.Retryable,
-                Phase(failure.Phase),
+                facts.Retryable,
+                facts.PhaseName,
                 failure.Limits is null ? null : new CalendarEntityExecutionLimits(
                     failure.Limits.ResourcesInspected,
                     failure.Limits.CalendarCount,
@@ -105,31 +111,20 @@ public sealed class CalendarTodoTools
                 failure.AuthorizedCandidates?.Select(Candidate).ToArray(),
                 failure.RetryAfterMs)),
             Content = [new TextContentBlock { Text = "Compact To-do query failed." }]
-        },
-        CreatePayloadLimitError);
-    }
+        }, facts);
 
-    private static CallToolResult CreatePayloadLimitError(int byteCount, bool humanReadable)
+    private static CalendarToolResult PayloadLimitCandidate(int byteCount, bool humanReadable)
     {
-        CalendarTelemetry.ObserveStructuredError(new CalendarStructuredErrorFacts(
-            CalendarTelemetryErrorCode.PayloadTooLarge,
-            CalendarTelemetryErrorCategory.LimitsAndAdmission,
-            CalendarTelemetryErrorPhase.AdmissionAndPayload,
-            false));
-        return new CallToolResult
-        {
-            IsError = true,
-            StructuredContent = JsonSerializer.SerializeToElement(new CalendarTodoQueryErrorResult(
-                "payload_too_large",
-                "limitsAndAdmission",
-                humanReadable
-                    ? "The To-do query human-readable result exceeds the safe payload limit."
-                    : "The To-do query result exceeds the safe payload limit.",
-                false,
-                "admissionAndPayload",
-                new CalendarEntityExecutionLimits(ByteCount: byteCount))),
-            Content = [new TextContentBlock { Text = "Compact To-do query failed." }]
-        };
+        var failure = new QueryFailure(
+            QueryFailureCode.PayloadTooLarge,
+            QueryFailureCategory.LimitsAndAdmission,
+            humanReadable
+                ? "The To-do query human-readable result exceeds the safe payload limit."
+                : "The To-do query result exceeds the safe payload limit.",
+            false,
+            QueryFailurePhase.AdmissionAndPayload,
+            new QueryExecutionLimits(ByteCount: byteCount));
+        return ErrorCandidate(failure, CalendarTelemetryFacts.From(failure));
     }
 
     private static bool TryCreateRequest(
@@ -364,51 +359,6 @@ public sealed class CalendarTodoTools
         _ => null
     };
 
-    private static string Code(QueryFailureCode code) => code switch
-    {
-        QueryFailureCode.InvalidInput => "invalid_input",
-        QueryFailureCode.CursorExpired => "cursor_expired",
-        QueryFailureCode.LimitExhausted => "limit_exhausted",
-        QueryFailureCode.Busy => "busy",
-        QueryFailureCode.PayloadTooLarge => "payload_too_large",
-        QueryFailureCode.UpstreamProtocolError => "upstream_protocol_error",
-        QueryFailureCode.UnsupportedCapability => "unsupported_capability",
-        QueryFailureCode.ConcurrencyUnavailable => "concurrency_unavailable",
-        QueryFailureCode.TemporalUnresolved => "temporal_unresolved",
-        QueryFailureCode.RecurrenceUnevaluable => "recurrence_unevaluable",
-        QueryFailureCode.UpstreamUnavailable => "upstream_unavailable",
-        QueryFailureCode.UpstreamUnauthorized => "upstream_unauthorized",
-        QueryFailureCode.UpstreamForbidden => "upstream_forbidden",
-        QueryFailureCode.UpstreamRateLimited => "upstream_rate_limited",
-        QueryFailureCode.NotFound => "not_found",
-        QueryFailureCode.Ambiguous => "ambiguous",
-        QueryFailureCode.OutsideScope => "outside_scope",
-        _ => throw new ArgumentOutOfRangeException(nameof(code), code, null)
-    };
-
-    private static string Category(QueryFailureCategory category) => category switch
-    {
-        QueryFailureCategory.Input => "input",
-        QueryFailureCategory.State => "state",
-        QueryFailureCategory.LimitsAndAdmission => "limitsAndAdmission",
-        QueryFailureCategory.Upstream => "upstream",
-        QueryFailureCategory.CapabilityAndProjection => "capabilityAndProjection",
-        QueryFailureCategory.Selection => "selection",
-        _ => throw new ArgumentOutOfRangeException(nameof(category), category, null)
-    };
-
-    private static string Phase(QueryFailurePhase phase) => phase switch
-    {
-        QueryFailurePhase.SchemaLexicalDiscriminator => "schemaLexicalDiscriminator",
-        QueryFailurePhase.Pagination => "pagination",
-        QueryFailurePhase.Execution => "execution",
-        QueryFailurePhase.AdmissionAndPayload => "admissionAndPayload",
-        QueryFailurePhase.SelectionDiscoveryCapability => "selectionDiscoveryCapability",
-        QueryFailurePhase.TargetRevision => "targetRevision",
-        QueryFailurePhase.CompleteResourceSemantics => "completeResourceSemantics",
-        QueryFailurePhase.OriginScopeAuthorization => "originScopeAuthorization",
-        _ => throw new ArgumentOutOfRangeException(nameof(phase), phase, null)
-    };
 }
 
 public sealed record CalendarTodoQuerySuccessResult(

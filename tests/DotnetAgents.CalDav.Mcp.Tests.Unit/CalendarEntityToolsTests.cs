@@ -15,8 +15,30 @@ using Xunit;
 
 namespace DotnetAgents.CalDav.Mcp.Tests.Unit;
 
+[Collection("TelemetryActivityCollection")]
 public sealed class CalendarEntityToolsTests
 {
+    [Fact]
+    public async Task QueryRawAsync_OversizedFailurePublishesOnlyTheSelectedPayloadError()
+    {
+        var module = Substitute.For<ICalendarQueryModule>();
+        module.QueryEntitiesAsync(Arg.Any<CalendarEntityQueryRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new QueryReply<CalendarEntityQueryItem>.Failure(new QueryFailure(
+                QueryFailureCode.UpstreamUnavailable,
+                QueryFailureCategory.Upstream,
+                new string('x', CalendarEntityTools.MaximumStructuredResultBytes),
+                true,
+                QueryFailurePhase.Execution)));
+        var sut = new CalendarEntityTools(module);
+
+        var (result, operation) = await ToolTelemetryTestScope.CaptureAsync(
+            "calendar_entities.query",
+            () => sut.QueryRawAsync(Arguments(("cursor", "opaque")), CancellationToken.None));
+
+        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("payload_too_large");
+        operation.ShouldMatchStructuredError(result.StructuredContent.Value);
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(1)]

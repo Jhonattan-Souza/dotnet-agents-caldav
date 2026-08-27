@@ -16,7 +16,6 @@ namespace DotnetAgents.CalDav.Mcp.Tools;
 [McpServerToolType]
 public sealed class CalendarResourceTools
 {
-    private const int MaxStructuredResultBytes = 4 * 1024 * 1024;
     private readonly ICalendarService _calendarService;
 
     public CalendarResourceTools(ICalendarService calendarService)
@@ -41,7 +40,7 @@ public sealed class CalendarResourceTools
         return await ExecuteReadAsync(
             _calendarService,
             href,
-            snapshot => CreateBoundedSuccess(CalendarResourceSuccessResult.FromSnapshot(snapshot)),
+            snapshot => CreateSuccess(CalendarResourceSuccessResult.FromSnapshot(snapshot)),
             cancellationToken);
     }
 
@@ -57,7 +56,8 @@ public sealed class CalendarResourceTools
             if (read.Code != CalendarResourceReadCode.Success || read.Snapshot is null)
                 return CreateError(read.Code, read.ObservedByteCount);
 
-            return createSuccess(read.Snapshot);
+            return CalendarToolResult.Success(createSuccess(read.Snapshot))
+                .FinalizeBounded(PayloadLimitError);
         }
         catch (HttpRequestException exception)
         {
@@ -81,12 +81,11 @@ public sealed class CalendarResourceTools
         }
         catch (CalendarDiscoveryLimitException exception)
         {
-            return Error(
-                "limit_exhausted",
-                "limitsAndAdmission",
+            return FinalizeError(
+                new(CalendarTelemetryErrorCode.LimitExhausted,
+                    CalendarTelemetryErrorCategory.LimitsAndAdmission,
+                    CalendarTelemetryErrorPhase.AdmissionAndPayload, false),
                 "Calendar discovery exceeded the safe item limit.",
-                false,
-                "admissionAndPayload",
                 calendarCount: exception.CalendarCount);
         }
     }
@@ -98,88 +97,86 @@ public sealed class CalendarResourceTools
         Content = [new TextContentBlock { Text = "Calendar Object Resource read completed." }, .. additionalContent]
     };
 
-    private static CallToolResult CreateBoundedSuccess(CalendarResourceSuccessResult content)
-    {
-        var structured = JsonSerializer.SerializeToElement(content);
-        var candidate = new CallToolResult
-        {
-            IsError = false,
-            StructuredContent = structured,
-            Content = [new TextContentBlock { Text = "Calendar Object Resource read completed." }]
-        };
-        var byteCount = JsonSerializer.SerializeToUtf8Bytes(candidate).Length;
-        return byteCount > MaxStructuredResultBytes
-            ? Error("payload_too_large", "limitsAndAdmission", "The structured Calendar snapshot exceeds the safe payload limit.", false, "admissionAndPayload", byteCount)
-            : candidate;
-    }
-
     internal static CallToolResult CreateError(CalendarResourceReadCode code, int? observedByteCount = null)
     {
-        CalendarTelemetry.ObserveStructuredError(CalendarTelemetryFacts.From(code));
-        return code switch
+        var facts = CalendarTelemetryFacts.From(code);
+        return FinalizeError(facts, code switch
         {
-            CalendarResourceReadCode.InvalidInput => Error("invalid_input", "input", "The resource href is invalid.", false, "originScopeAuthorization"),
-            CalendarResourceReadCode.OutsideScope => Error("outside_scope", "selection", "The resource is outside the configured Calendar Scope.", false, "originScopeAuthorization"),
-            CalendarResourceReadCode.NotFound => Error("not_found", "selection", "The Calendar Object Resource was not found.", false, "targetRevision"),
-            CalendarResourceReadCode.ConcurrencyUnavailable => Error("concurrency_unavailable", "state", "The server did not return a strong Entity Tag.", false, "targetRevision"),
-            CalendarResourceReadCode.PayloadTooLarge => Error("payload_too_large", "limitsAndAdmission", "The Calendar Object Resource exceeds the safe payload limit.", false, "admissionAndPayload", observedByteCount),
-            _ => Error("upstream_protocol_error", "upstream", "The Calendar Object Resource response was invalid.", false, "execution")
-        };
+            CalendarResourceReadCode.InvalidInput => "The resource href is invalid.",
+            CalendarResourceReadCode.OutsideScope => "The resource is outside the configured Calendar Scope.",
+            CalendarResourceReadCode.NotFound => "The Calendar Object Resource was not found.",
+            CalendarResourceReadCode.ConcurrencyUnavailable => "The server did not return a strong Entity Tag.",
+            CalendarResourceReadCode.PayloadTooLarge => "The Calendar Object Resource exceeds the safe payload limit.",
+            _ => "The Calendar Object Resource response was invalid."
+        }, observedByteCount);
     }
 
-    internal static CallToolResult CreateInputGuardError(bool payloadTooLarge)
-    {
-        CalendarTelemetry.ObserveStructuredError(CalendarTelemetryFacts.FromInputGuard(payloadTooLarge));
-        return Error(
-            payloadTooLarge ? "payload_too_large" : "invalid_input",
-            payloadTooLarge ? "limitsAndAdmission" : "input",
+    internal static CallToolResult CreateInputGuardError(bool payloadTooLarge) => FinalizeError(
+            CalendarTelemetryFacts.FromInputGuard(payloadTooLarge),
             payloadTooLarge ? "The resource read arguments are too large." : "The resource read input is invalid.",
-            false,
-            payloadTooLarge ? "admissionAndPayload" : "schemaLexicalDiscriminator");
-    }
+            null);
 
     private static CallToolResult CreateHttpError(HttpStatusCode? statusCode) => statusCode switch
     {
-        HttpStatusCode.Unauthorized => Error("upstream_unauthorized", "upstream", "The Calendar Object Resource read was not authorized.", false, "execution"),
-        HttpStatusCode.Forbidden => Error("upstream_forbidden", "upstream", "The Calendar Object Resource read was forbidden.", false, "execution"),
+        HttpStatusCode.Unauthorized => FinalizeError(HttpFacts(CalendarTelemetryErrorCode.UpstreamUnauthorized), "The Calendar Object Resource read was not authorized."),
+        HttpStatusCode.Forbidden => FinalizeError(HttpFacts(CalendarTelemetryErrorCode.UpstreamForbidden), "The Calendar Object Resource read was forbidden."),
         HttpStatusCode.NotFound => CreateDiscoveryProtocolError(),
         HttpStatusCode.RequestEntityTooLarge => CreateError(CalendarResourceReadCode.PayloadTooLarge),
-        HttpStatusCode.TooManyRequests => Error("upstream_rate_limited", "upstream", "The Calendar Object Resource read is rate limited.", true, "execution"),
-        HttpStatusCode.MethodNotAllowed or HttpStatusCode.NotImplemented => Error("unsupported_capability", "capabilityAndProjection", "The server does not support direct resource reads.", false, "selectionDiscoveryCapability"),
-        HttpStatusCode.InsufficientStorage => Error("upstream_unavailable", "upstream", "The Calendar Object Resource read is unavailable.", false, "execution"),
-        null => Error("upstream_unavailable", "upstream", "The Calendar Object Resource read is unavailable.", true, "execution"),
-        >= HttpStatusCode.InternalServerError => Error("upstream_unavailable", "upstream", "The Calendar Object Resource read is unavailable.", true, "execution"),
+        HttpStatusCode.TooManyRequests => FinalizeError(HttpFacts(CalendarTelemetryErrorCode.UpstreamRateLimited, true), "The Calendar Object Resource read is rate limited."),
+        HttpStatusCode.MethodNotAllowed or HttpStatusCode.NotImplemented => FinalizeError(new(
+            CalendarTelemetryErrorCode.UnsupportedCapability, CalendarTelemetryErrorCategory.CapabilityAndProjection,
+            CalendarTelemetryErrorPhase.SelectionDiscoveryCapability, false), "The server does not support direct resource reads."),
+        HttpStatusCode.InsufficientStorage => FinalizeError(HttpFacts(CalendarTelemetryErrorCode.UpstreamUnavailable), "The Calendar Object Resource read is unavailable."),
+        null or >= HttpStatusCode.InternalServerError => FinalizeError(HttpFacts(CalendarTelemetryErrorCode.UpstreamUnavailable, true), "The Calendar Object Resource read is unavailable."),
         _ => CreateError(CalendarResourceReadCode.UpstreamProtocolError)
     };
 
-    private static CallToolResult CreateDiscoveryProtocolError() => Error(
-        "upstream_protocol_error",
-        "upstream",
+    private static CallToolResult CreateDiscoveryProtocolError() => FinalizeError(new(
+        CalendarTelemetryErrorCode.UpstreamProtocolError,
+        CalendarTelemetryErrorCategory.Upstream,
+        CalendarTelemetryErrorPhase.SelectionDiscoveryCapability,
+        false),
         "Calendar discovery returned an invalid response.",
-        false,
-        "selectionDiscoveryCapability");
+        null);
 
-    private static CallToolResult Error(
-        string code,
-        string category,
+    private static CalendarStructuredErrorFacts HttpFacts(
+        CalendarTelemetryErrorCode code,
+        bool retryable = false) => new(
+            code,
+            CalendarTelemetryErrorCategory.Upstream,
+            CalendarTelemetryErrorPhase.Execution,
+            retryable);
+
+    private static CallToolResult FinalizeError(
+        CalendarStructuredErrorFacts facts,
         string message,
-        bool retryable,
-        string phase,
         int? byteCount = null,
-        int? calendarCount = null) => new()
+        int? calendarCount = null) => Error(facts, message, byteCount, calendarCount)
+            .FinalizeBounded(PayloadLimitError);
+
+    private static CalendarToolResult PayloadLimitError(int byteCount, bool _) => Error(
+        CalendarTelemetryFacts.From(CalendarResourceReadCode.PayloadTooLarge),
+        "The structured Calendar snapshot exceeds the safe payload limit.",
+        byteCount);
+
+    private static CalendarToolResult Error(
+        CalendarStructuredErrorFacts facts,
+        string message,
+        int? byteCount = null,
+        int? calendarCount = null) => CalendarToolResult.Error(new CallToolResult
         {
             IsError = true,
             StructuredContent = JsonSerializer.SerializeToElement(new CalendarResourceErrorResult(
-                code,
-                category,
+                facts.CodeName,
+                facts.CategoryName,
                 message,
-                retryable,
-                phase,
+                facts.Retryable,
+                facts.PhaseName,
                 byteCount is null && calendarCount is null
                     ? null
                     : new CalendarResourceExecutionLimits(byteCount, calendarCount))),
             Content = [new TextContentBlock { Text = "Calendar Object Resource read failed." }]
-        };
+        }, facts);
 }
 
 /// <summary>Structured success outcome for a direct resource read.</summary>

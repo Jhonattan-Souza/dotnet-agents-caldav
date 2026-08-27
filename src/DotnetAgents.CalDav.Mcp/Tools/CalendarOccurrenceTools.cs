@@ -62,16 +62,23 @@ public sealed class CalendarOccurrenceTools
         false,
         payloadTooLarge ? QueryFailurePhase.AdmissionAndPayload : QueryFailurePhase.SchemaLexicalDiscriminator));
 
-    private static CallToolResult Success(QueryPage<CalendarOccurrenceQueryItem> page) => new()
-    {
-        IsError = false,
-        StructuredContent = page.StructuredContent,
-        Content = [new TextContentBlock { Text = page.HumanText }]
-    };
+    private static CallToolResult Success(QueryPage<CalendarOccurrenceQueryItem> page) =>
+        CalendarToolResult.Success(new CallToolResult
+        {
+            IsError = false,
+            StructuredContent = page.StructuredContent,
+            Content = [new TextContentBlock { Text = page.HumanText }]
+        }).FinalizeBounded(PayloadLimitCandidate);
 
-    private static CallToolResult Error(QueryFailure failure) => CalendarQueryToolSupport.EnsureBoundedResult(
-        ErrorWithoutBounding(failure),
-        (byteCount, humanReadable) => ErrorWithoutBounding(new QueryFailure(
+    private static CallToolResult Error(QueryFailure failure)
+    {
+        var facts = CalendarTelemetryFacts.From(failure);
+        return ErrorCandidate(failure, facts).FinalizeBounded(PayloadLimitCandidate);
+    }
+
+    private static CalendarToolResult PayloadLimitCandidate(int byteCount, bool humanReadable)
+    {
+        var failure = new QueryFailure(
             QueryFailureCode.PayloadTooLarge,
             QueryFailureCategory.LimitsAndAdmission,
             humanReadable
@@ -79,20 +86,21 @@ public sealed class CalendarOccurrenceTools
                 : "The Occurrence query result exceeds the safe payload limit.",
             false,
             QueryFailurePhase.AdmissionAndPayload,
-            new QueryExecutionLimits(ByteCount: byteCount))));
+            new QueryExecutionLimits(ByteCount: byteCount));
+        return ErrorCandidate(failure, CalendarTelemetryFacts.From(failure));
+    }
 
-    private static CallToolResult ErrorWithoutBounding(QueryFailure failure)
-    {
-        CalendarTelemetry.ObserveStructuredError(CalendarTelemetryFacts.From(failure));
-        return new CallToolResult
+    private static CalendarToolResult ErrorCandidate(
+        QueryFailure failure,
+        CalendarStructuredErrorFacts facts) => CalendarToolResult.Error(new CallToolResult
         {
             IsError = true,
             StructuredContent = JsonSerializer.SerializeToElement(new CalendarOccurrenceQueryErrorResult(
-                Code(failure.Code),
-                Category(failure.Category),
+                facts.CodeName,
+                facts.CategoryName,
                 failure.Message,
-                failure.Retryable,
-                Phase(failure.Phase),
+                facts.Retryable,
+                facts.PhaseName,
                 failure.Limits is null ? null : new CalendarEntityExecutionLimits(
                     failure.Limits.ResourcesInspected,
                     failure.Limits.CalendarCount,
@@ -106,8 +114,7 @@ public sealed class CalendarOccurrenceTools
                 failure.AuthorizedCandidates?.Select(Candidate).ToArray(),
                 failure.RetryAfterMs)),
             Content = [new TextContentBlock { Text = "Occurrence query failed." }]
-        };
-    }
+        }, facts);
 
     private static bool TryCreateRequest(
         IDictionary<string, JsonElement>? arguments,
@@ -251,52 +258,6 @@ public sealed class CalendarOccurrenceTools
         new CalendarEntityKinds(
             CalendarEntityKindCapability.From(candidate.EventSupport, candidate.EventEvidence),
             CalendarEntityKindCapability.From(candidate.TodoSupport, candidate.TodoEvidence)));
-
-    private static string Code(QueryFailureCode code) => code switch
-    {
-        QueryFailureCode.InvalidInput => "invalid_input",
-        QueryFailureCode.CursorExpired => "cursor_expired",
-        QueryFailureCode.LimitExhausted => "limit_exhausted",
-        QueryFailureCode.Busy => "busy",
-        QueryFailureCode.PayloadTooLarge => "payload_too_large",
-        QueryFailureCode.UpstreamProtocolError => "upstream_protocol_error",
-        QueryFailureCode.UnsupportedCapability => "unsupported_capability",
-        QueryFailureCode.ConcurrencyUnavailable => "concurrency_unavailable",
-        QueryFailureCode.TemporalUnresolved => "temporal_unresolved",
-        QueryFailureCode.RecurrenceUnevaluable => "recurrence_unevaluable",
-        QueryFailureCode.UpstreamUnavailable => "upstream_unavailable",
-        QueryFailureCode.UpstreamUnauthorized => "upstream_unauthorized",
-        QueryFailureCode.UpstreamForbidden => "upstream_forbidden",
-        QueryFailureCode.UpstreamRateLimited => "upstream_rate_limited",
-        QueryFailureCode.NotFound => "not_found",
-        QueryFailureCode.Ambiguous => "ambiguous",
-        QueryFailureCode.OutsideScope => "outside_scope",
-        _ => "upstream_protocol_error"
-    };
-
-    private static string Category(QueryFailureCategory category) => category switch
-    {
-        QueryFailureCategory.Input => "input",
-        QueryFailureCategory.State => "state",
-        QueryFailureCategory.LimitsAndAdmission => "limitsAndAdmission",
-        QueryFailureCategory.Upstream => "upstream",
-        QueryFailureCategory.CapabilityAndProjection => "capabilityAndProjection",
-        QueryFailureCategory.Selection => "selection",
-        _ => "upstream"
-    };
-
-    private static string Phase(QueryFailurePhase phase) => phase switch
-    {
-        QueryFailurePhase.SchemaLexicalDiscriminator => "schemaLexicalDiscriminator",
-        QueryFailurePhase.Pagination => "pagination",
-        QueryFailurePhase.Execution => "execution",
-        QueryFailurePhase.AdmissionAndPayload => "admissionAndPayload",
-        QueryFailurePhase.SelectionDiscoveryCapability => "selectionDiscoveryCapability",
-        QueryFailurePhase.TargetRevision => "targetRevision",
-        QueryFailurePhase.CompleteResourceSemantics => "completeResourceSemantics",
-        QueryFailurePhase.OriginScopeAuthorization => "originScopeAuthorization",
-        _ => "execution"
-    };
 
     private static string? LimitDimension(QueryLimitDimension? dimension) => dimension switch
     {

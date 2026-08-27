@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using System.Xml;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Models;
+using DotnetAgents.CalDav.Mcp.Hosting;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -36,52 +37,93 @@ public sealed class CalendarTools
         try
         {
             var discovery = await _calendarService.GetCalendarsAsync(cancellationToken);
-            return CreateResult(new CalendarListResult(
+            return CalendarToolResult.Success(CreateResult(new CalendarListResult(
                 "success",
                 discovery.Items.Select(CalendarListItem.FromDescriptor).ToArray(),
                 discovery.Diagnostics.Select(CalendarDiagnosticResult.FromDiagnostic).ToArray(),
-                new CalendarPagination("non_snapshot", null)));
+                new CalendarPagination("non_snapshot", null)))).FinalizeResult();
         }
         catch (CalendarDiscoveryLimitException exception)
         {
-            return CreateResult(
-                new CalendarErrorResult("limit_exhausted", "Calendar discovery exceeded the safe item limit.", false, "admissionAndPayload", "limitsAndAdmission", new CalendarExecutionLimits(exception.CalendarCount)),
-                isError: true);
+            return Error(
+                new(CalendarTelemetryErrorCode.LimitExhausted, CalendarTelemetryErrorCategory.LimitsAndAdmission,
+                    CalendarTelemetryErrorPhase.AdmissionAndPayload, false),
+                "Calendar discovery exceeded the safe item limit.",
+                new CalendarExecutionLimits(exception.CalendarCount));
         }
         catch (HttpRequestException exception)
         {
-            return CreateResult(MapHttpFailure(exception), isError: true);
+            var failure = MapHttpFailure(exception);
+            return Error(failure.Facts, failure.Message);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            return CreateResult(new CalendarErrorResult("upstream_unavailable", "Calendar discovery is temporarily unavailable.", true, "selectionDiscoveryCapability"), isError: true);
+            return Error(DiscoveryUnavailable(), "Calendar discovery is temporarily unavailable.");
         }
         catch (TimeoutException)
         {
-            return CreateResult(new CalendarErrorResult("upstream_unavailable", "Calendar discovery is temporarily unavailable.", true, "selectionDiscoveryCapability"), isError: true);
+            return Error(DiscoveryUnavailable(), "Calendar discovery is temporarily unavailable.");
         }
         catch (XmlException)
         {
-            return CreateResult(new CalendarErrorResult("upstream_protocol_error", "Calendar discovery returned an invalid response.", false, "selectionDiscoveryCapability"), isError: true);
+            return Error(DiscoveryProtocolError(), "Calendar discovery returned an invalid response.");
         }
         catch (CalendarDiscoveryProtocolException)
         {
-            return CreateResult(new CalendarErrorResult("upstream_protocol_error", "Calendar discovery returned an invalid response.", false, "selectionDiscoveryCapability"), isError: true);
+            return Error(DiscoveryProtocolError(), "Calendar discovery returned an invalid response.");
         }
     }
 
-    private static CalendarErrorResult MapHttpFailure(HttpRequestException exception) => exception.StatusCode switch
+    private static CalendarDiscoveryFailure MapHttpFailure(HttpRequestException exception) => exception.StatusCode switch
     {
-        HttpStatusCode.Unauthorized => new("upstream_unauthorized", "Calendar discovery was not authorized.", false, "selectionDiscoveryCapability"),
-        HttpStatusCode.Forbidden => new("upstream_forbidden", "Calendar discovery was forbidden.", false, "selectionDiscoveryCapability"),
-        HttpStatusCode.TooManyRequests => new("upstream_rate_limited", "Calendar discovery is rate limited.", true, "selectionDiscoveryCapability"),
-        HttpStatusCode.MethodNotAllowed or HttpStatusCode.NotImplemented => new("unsupported_capability", "The upstream Calendar server does not support discovery.", false, "selectionDiscoveryCapability", "capabilityAndProjection"),
-        HttpStatusCode.RequestEntityTooLarge => new("payload_too_large", "Calendar discovery returned an oversized response.", false, "admissionAndPayload", "limitsAndAdmission"),
-        HttpStatusCode.InsufficientStorage => new("upstream_unavailable", "Calendar discovery is temporarily unavailable.", false, "selectionDiscoveryCapability"),
-        null => new("upstream_unavailable", "Calendar discovery is temporarily unavailable.", true, "selectionDiscoveryCapability"),
-        >= HttpStatusCode.InternalServerError => new("upstream_unavailable", "Calendar discovery is temporarily unavailable.", true, "selectionDiscoveryCapability"),
-        _ => new("upstream_protocol_error", "Calendar discovery returned an invalid response.", false, "selectionDiscoveryCapability")
+        HttpStatusCode.Unauthorized => new(new(CalendarTelemetryErrorCode.UpstreamUnauthorized,
+            CalendarTelemetryErrorCategory.Upstream, CalendarTelemetryErrorPhase.SelectionDiscoveryCapability,
+            false), "Calendar discovery was not authorized."),
+        HttpStatusCode.Forbidden => new(new(CalendarTelemetryErrorCode.UpstreamForbidden,
+            CalendarTelemetryErrorCategory.Upstream, CalendarTelemetryErrorPhase.SelectionDiscoveryCapability,
+            false), "Calendar discovery was forbidden."),
+        HttpStatusCode.TooManyRequests => new(new(CalendarTelemetryErrorCode.UpstreamRateLimited,
+            CalendarTelemetryErrorCategory.Upstream, CalendarTelemetryErrorPhase.SelectionDiscoveryCapability,
+            true), "Calendar discovery is rate limited."),
+        HttpStatusCode.MethodNotAllowed or HttpStatusCode.NotImplemented => new(new(
+            CalendarTelemetryErrorCode.UnsupportedCapability, CalendarTelemetryErrorCategory.CapabilityAndProjection,
+            CalendarTelemetryErrorPhase.SelectionDiscoveryCapability, false),
+            "The upstream Calendar server does not support discovery."),
+        HttpStatusCode.RequestEntityTooLarge => new(new(CalendarTelemetryErrorCode.PayloadTooLarge,
+            CalendarTelemetryErrorCategory.LimitsAndAdmission, CalendarTelemetryErrorPhase.AdmissionAndPayload,
+            false), "Calendar discovery returned an oversized response."),
+        HttpStatusCode.InsufficientStorage => new(new(CalendarTelemetryErrorCode.UpstreamUnavailable,
+            CalendarTelemetryErrorCategory.Upstream, CalendarTelemetryErrorPhase.SelectionDiscoveryCapability,
+            false), "Calendar discovery is temporarily unavailable."),
+        null or >= HttpStatusCode.InternalServerError => new(DiscoveryUnavailable(),
+            "Calendar discovery is temporarily unavailable."),
+        _ => new(DiscoveryProtocolError(), "Calendar discovery returned an invalid response.")
     };
+
+    private static CalendarStructuredErrorFacts DiscoveryUnavailable() => new(
+        CalendarTelemetryErrorCode.UpstreamUnavailable,
+        CalendarTelemetryErrorCategory.Upstream,
+        CalendarTelemetryErrorPhase.SelectionDiscoveryCapability,
+        true);
+
+    private static CalendarStructuredErrorFacts DiscoveryProtocolError() => new(
+        CalendarTelemetryErrorCode.UpstreamProtocolError,
+        CalendarTelemetryErrorCategory.Upstream,
+        CalendarTelemetryErrorPhase.SelectionDiscoveryCapability,
+        false);
+
+    private static CallToolResult Error(
+        CalendarStructuredErrorFacts facts,
+        string message,
+        CalendarExecutionLimits? limits = null) => CalendarToolResult.Error(
+            CreateResult(new CalendarErrorResult(
+                facts.CodeName,
+                message,
+                facts.Retryable,
+                facts.PhaseName,
+                facts.CategoryName,
+                limits), isError: true),
+            facts).FinalizeResult();
 
     private static CallToolResult CreateResult(object content, bool isError = false) => new()
     {
@@ -89,6 +131,10 @@ public sealed class CalendarTools
         StructuredContent = JsonSerializer.SerializeToElement(content),
         Content = [new TextContentBlock { Text = isError ? "Calendar discovery failed." : "Calendar discovery completed." }]
     };
+
+    private readonly record struct CalendarDiscoveryFailure(
+        CalendarStructuredErrorFacts Facts,
+        string Message);
 }
 
 /// <summary>Structured success outcome for <c>calendars.list</c>.</summary>

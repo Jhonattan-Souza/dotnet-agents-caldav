@@ -13,8 +13,41 @@ using Xunit;
 
 namespace DotnetAgents.CalDav.Mcp.Tests.Unit;
 
+[Collection("TelemetryActivityCollection")]
 public sealed class CalendarCollectionToolsTests
 {
+    [Theory]
+    [InlineData("create")]
+    [InlineData("delete")]
+    public async Task CollectionFailurePublishesTheStructuredTerminalErrorAndMutationState(string operationName)
+    {
+        const string href = "https://cal.example/calendars/user/tasks/";
+        var module = Substitute.For<ICalendarCollectionModule>();
+        module.CreateAsync(Arg.Any<CalendarCollectionCreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CalendarCollectionCreateResult(
+                CalendarCollectionCreateCode.Conflict,
+                CalendarMutationState.NotCommitted));
+        module.ReviewDeleteAsync(Arg.Any<CalendarCollectionDeleteRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CalendarCollectionDeleteReviewResult(
+                new CalendarCollectionDeleteResult(
+                    CalendarCollectionDeleteCode.Conflict,
+                    CalendarMutationState.NotCommitted),
+                null,
+                null));
+        var sut = CreateTool(module, new FixedTimeProvider(DateTimeOffset.Parse("2026-08-16T12:00:00Z")));
+
+        var (result, operation) = await ToolTelemetryTestScope.CaptureAsync(
+            operationName == "create" ? "calendars.create" : "calendars.delete",
+            () => operationName == "create"
+                ? sut.CreateRawAsync(CreateArguments(), CancellationToken.None)
+                : sut.DeleteRawAsync(DeleteArguments(href), null, null, true, CancellationToken.None));
+
+        operation.ShouldMatchStructuredError(result.StructuredContent!.Value);
+        operation.GetTagItem("caldav.error.code").ShouldBe("conflict");
+        operation.GetTagItem("caldav.mutation.state").ShouldBe(
+            result.StructuredContent.Value.GetProperty("mutationState").GetString());
+    }
+
     [Fact]
     public async Task CreateRawAsync_ValidInputReturnsCreatedCalendar()
     {

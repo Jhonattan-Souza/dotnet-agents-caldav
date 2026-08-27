@@ -69,9 +69,9 @@ internal sealed class CalendarCollectionTools
         CancellationToken cancellationToken)
     {
         if (MeasureArguments(arguments) > MaximumArgumentBytes)
-            return Error("payload_too_large", "limitsAndAdmission", "The Calendar collection create arguments exceed the safe payload limit.", false, "admissionAndPayload", "not_attempted");
+            return InputError(true, "The Calendar collection create arguments exceed the safe payload limit.");
         return !CalendarCollectionArgumentParser.TryParseCreate(arguments, out var request)
-            ? Error("invalid_input", "input", "The Calendar collection create input is invalid.", false, "schemaLexicalDiscriminator", "not_attempted")
+            ? InputError(false, "The Calendar collection create input is invalid.")
             : await ExecuteCreateAsync(request, cancellationToken).ConfigureAwait(false);
     }
 
@@ -83,21 +83,17 @@ internal sealed class CalendarCollectionTools
         CancellationToken cancellationToken)
     {
         if (MeasureArguments(arguments) > MaximumArgumentBytes)
-            return Error("payload_too_large", "limitsAndAdmission", "The Calendar collection delete arguments exceed the safe payload limit.", false, "admissionAndPayload", "not_attempted");
+            return InputError(true, "The Calendar collection delete arguments exceed the safe payload limit.");
         if (!CalendarCollectionArgumentParser.TryParseDelete(arguments, out var request))
-            return Error("invalid_input", "input", "The Calendar collection delete input is invalid.", false, "schemaLexicalDiscriminator", "not_attempted");
+            return InputError(false, "The Calendar collection delete input is invalid.");
         return await ExecuteDeleteAsync(request, requestState, inputResponses, mrtrSupported, cancellationToken).ConfigureAwait(false);
     }
 
-    internal static CallToolResult CreateInputGuardError(bool payloadTooLarge)
-    {
-        CalendarTelemetry.ObserveStructuredError(
-            CalendarTelemetryFacts.FromInputGuard(payloadTooLarge),
-            CalendarMutationState.NotAttempted);
-        return payloadTooLarge
-            ? Error("payload_too_large", "limitsAndAdmission", "The Calendar collection arguments exceed the safe payload limit.", false, "admissionAndPayload", "not_attempted")
-            : Error("invalid_input", "input", "The Calendar collection input is invalid.", false, "schemaLexicalDiscriminator", "not_attempted");
-    }
+    internal static CallToolResult CreateInputGuardError(bool payloadTooLarge) => InputError(
+        payloadTooLarge,
+        payloadTooLarge
+            ? "The Calendar collection arguments exceed the safe payload limit."
+            : "The Calendar collection input is invalid.");
 
     private async Task<CallToolResult> ExecuteCreateAsync(
         CalendarCollectionCreateRequest request,
@@ -108,38 +104,50 @@ internal sealed class CalendarCollectionTools
         try
         {
             var result = await _module.CreateAsync(request, linked.Token).ConfigureAwait(false);
-            CalendarTelemetry.ObserveMutationState(result.MutationState);
             return result.Code == CalendarCollectionCreateCode.Success && result.Calendar is not null
-                ? CreateSuccess(result.Calendar)
+                ? CalendarToolResult.Success(CreateSuccess(result.Calendar), result.MutationState).FinalizeResult()
                 : Error(result);
         }
         catch (OperationCanceledException) when (deadline.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
-            return Error("limit_exhausted", "limitsAndAdmission", "The Calendar mutation exhausted its elapsed_time execution budget.", false, "execution", "unknown");
+            return Error(new(CalendarTelemetryErrorCode.LimitExhausted,
+                CalendarTelemetryErrorCategory.LimitsAndAdmission, CalendarTelemetryErrorPhase.Execution, false),
+                "The Calendar mutation exhausted its elapsed_time execution budget.", CalendarMutationState.Unknown);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            return Error("upstream_unavailable", "upstream", "Calendar discovery is temporarily unavailable.", true, "selectionDiscoveryCapability", "not_attempted");
+            return Error(DiscoveryUnavailable(), "Calendar discovery is temporarily unavailable.",
+                CalendarMutationState.NotAttempted);
         }
         catch (CalendarDiscoveryLimitException exception)
         {
-            return Error("limit_exhausted", "limitsAndAdmission", "The Calendar mutation exceeded its Calendar discovery limit.", false, "selectionDiscoveryCapability", "not_attempted", limits: new CalendarCollectionLimits(exception.CalendarCount));
+            return Error(new(CalendarTelemetryErrorCode.LimitExhausted,
+                    CalendarTelemetryErrorCategory.LimitsAndAdmission,
+                    CalendarTelemetryErrorPhase.SelectionDiscoveryCapability, false),
+                "The Calendar mutation exceeded its Calendar discovery limit.", CalendarMutationState.NotAttempted,
+                limits: new CalendarCollectionLimits(exception.CalendarCount));
         }
         catch (CalendarDiscoveryUnsupportedCapabilityException)
         {
-            return Error("unsupported_capability", "capabilityAndProjection", "The server does not support the required Calendar discovery capability.", false, "selectionDiscoveryCapability", "not_attempted");
+            return Error(DiscoveryUnsupported(),
+                "The server does not support the required Calendar discovery capability.",
+                CalendarMutationState.NotAttempted);
         }
         catch (Exception exception) when (exception is System.Xml.XmlException or CalendarDiscoveryProtocolException)
         {
-            return Error("upstream_protocol_error", "upstream", "Calendar discovery returned an invalid response.", false, "selectionDiscoveryCapability", "not_attempted");
+            return Error(DiscoveryProtocolError(), "Calendar discovery returned an invalid response.",
+                CalendarMutationState.NotAttempted);
         }
         catch (Exception exception) when (exception is IOException or TimeoutException)
         {
-            return Error("upstream_unavailable", "upstream", "Calendar discovery is temporarily unavailable.", true, "selectionDiscoveryCapability", "not_attempted");
+            return Error(DiscoveryUnavailable(), "Calendar discovery is temporarily unavailable.",
+                CalendarMutationState.NotAttempted);
         }
         catch (HttpRequestException exception)
         {
-            return Error(MapHttpCode(exception.StatusCode), "upstream", "The Calendar collection operation was rejected by the server.", false, "execution", "not_attempted");
+            return Error(MapHttpFacts(exception.StatusCode),
+                "The Calendar collection operation was rejected by the server.",
+                CalendarMutationState.NotAttempted);
         }
     }
 
@@ -152,7 +160,8 @@ internal sealed class CalendarCollectionTools
     {
         var continuation = requestState is not null || inputResponses is not null;
         if (continuation && !mrtrSupported)
-            return Error("unsupported_capability", "capabilityAndProjection", "Calendar collection deletion requires MRTR confirmation support.", false, "mrtr", "not_attempted");
+            return Error(MrtrUnsupported(), "Calendar collection deletion requires MRTR confirmation support.",
+                CalendarMutationState.NotAttempted);
 
         using var deadline = new CancellationTokenSource(BeforeDispatchDeadline, _timeProvider);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
@@ -164,7 +173,9 @@ internal sealed class CalendarCollectionTools
             if (!continuation)
             {
                 if (!mrtrSupported)
-                    return Error("unsupported_capability", "capabilityAndProjection", "Calendar collection deletion requires MRTR confirmation support.", false, "mrtr", "not_attempted");
+                    return Error(MrtrUnsupported(),
+                        "Calendar collection deletion requires MRTR confirmation support.",
+                        CalendarMutationState.NotAttempted);
                 var binding = review.Binding!;
                 var state = _stateProtector.ProtectCalendarCollectionDelete(binding);
                 throw new InputRequiredException(
@@ -193,16 +204,23 @@ internal sealed class CalendarCollectionTools
             }
 
             if (!TryReadContinuation(requestState, inputResponses, review.Binding!, out var decision, out var expired))
-                return Error(expired ? "confirmation_expired" : "confirmation_mismatch", "confirmation", expired
-                    ? "The mutation confirmation has expired."
-                    : "The mutation confirmation does not match the reviewed request.", false, "mrtr", "not_attempted");
+                return Error(new(
+                        expired
+                            ? CalendarTelemetryErrorCode.ConfirmationExpired
+                            : CalendarTelemetryErrorCode.ConfirmationMismatch,
+                        CalendarTelemetryErrorCategory.Confirmation,
+                        CalendarTelemetryErrorPhase.Mrtr,
+                        false),
+                    expired
+                        ? "The mutation confirmation has expired."
+                        : "The mutation confirmation does not match the reviewed request.",
+                    CalendarMutationState.NotAttempted);
             if (decision == ConfirmationDecision.Declined)
                 return DeleteDeclined();
 
             var result = await _module.ExecuteConfirmedDeleteAsync(request, review.Binding!, linked.Token).ConfigureAwait(false);
-            CalendarTelemetry.ObserveMutationState(result.MutationState);
-            return result.Code == CalendarCollectionDeleteCode.Success
-                ? DeleteSuccess(result.Calendar!)
+            return result.Code == CalendarCollectionDeleteCode.Success && result.Calendar is not null
+                ? CalendarToolResult.Success(DeleteSuccess(result.Calendar!), result.MutationState).FinalizeResult()
                 : Error(result);
         }
         catch (InputRequiredException)
@@ -211,31 +229,44 @@ internal sealed class CalendarCollectionTools
         }
         catch (OperationCanceledException) when (deadline.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
-            return Error("limit_exhausted", "limitsAndAdmission", "The Calendar mutation exhausted its elapsed_time execution budget.", false, "execution", "unknown");
+            return Error(new(CalendarTelemetryErrorCode.LimitExhausted,
+                CalendarTelemetryErrorCategory.LimitsAndAdmission, CalendarTelemetryErrorPhase.Execution, false),
+                "The Calendar mutation exhausted its elapsed_time execution budget.", CalendarMutationState.Unknown);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            return Error("upstream_unavailable", "upstream", "The Calendar collection is temporarily unavailable.", true, "selectionDiscoveryCapability", "not_attempted");
+            return Error(DiscoveryUnavailable(), "The Calendar collection is temporarily unavailable.",
+                CalendarMutationState.NotAttempted);
         }
         catch (CalendarDiscoveryLimitException exception)
         {
-            return Error("limit_exhausted", "limitsAndAdmission", "The Calendar mutation exceeded its Calendar discovery limit.", false, "selectionDiscoveryCapability", "not_attempted", limits: new CalendarCollectionLimits(exception.CalendarCount));
+            return Error(new(CalendarTelemetryErrorCode.LimitExhausted,
+                    CalendarTelemetryErrorCategory.LimitsAndAdmission,
+                    CalendarTelemetryErrorPhase.SelectionDiscoveryCapability, false),
+                "The Calendar mutation exceeded its Calendar discovery limit.", CalendarMutationState.NotAttempted,
+                limits: new CalendarCollectionLimits(exception.CalendarCount));
         }
         catch (CalendarDiscoveryUnsupportedCapabilityException)
         {
-            return Error("unsupported_capability", "capabilityAndProjection", "The server does not support the required Calendar discovery capability.", false, "selectionDiscoveryCapability", "not_attempted");
+            return Error(DiscoveryUnsupported(),
+                "The server does not support the required Calendar discovery capability.",
+                CalendarMutationState.NotAttempted);
         }
         catch (Exception exception) when (exception is System.Xml.XmlException or CalendarDiscoveryProtocolException)
         {
-            return Error("upstream_protocol_error", "upstream", "Calendar discovery returned an invalid response.", false, "selectionDiscoveryCapability", "not_attempted");
+            return Error(DiscoveryProtocolError(), "Calendar discovery returned an invalid response.",
+                CalendarMutationState.NotAttempted);
         }
         catch (Exception exception) when (exception is IOException or TimeoutException)
         {
-            return Error("upstream_unavailable", "upstream", "Calendar discovery is temporarily unavailable.", true, "selectionDiscoveryCapability", "not_attempted");
+            return Error(DiscoveryUnavailable(), "Calendar discovery is temporarily unavailable.",
+                CalendarMutationState.NotAttempted);
         }
         catch (HttpRequestException exception)
         {
-            return Error(MapHttpCode(exception.StatusCode), "upstream", "The Calendar collection operation was rejected by the server.", false, "execution", "not_attempted");
+            return Error(MapHttpFacts(exception.StatusCode),
+                "The Calendar collection operation was rejected by the server.",
+                CalendarMutationState.NotAttempted);
         }
     }
 
@@ -309,113 +340,123 @@ internal sealed class CalendarCollectionTools
         Content = [new TextContentBlock { Text = "Calendar collection deletion completed." }]
     };
 
-    private static CallToolResult DeleteDeclined()
-    {
-        CalendarTelemetry.ObserveMutationState(CalendarMutationState.NotAttempted);
-        return new CallToolResult
+    private static CallToolResult DeleteDeclined() => CalendarToolResult.Success(
+        new CallToolResult
         {
             IsError = false,
             StructuredContent = JsonSerializer.SerializeToElement(
                 new CalendarCollectionDeleteNonMutationResult("confirmation_declined", "not_attempted", [])),
             Content = [new TextContentBlock { Text = "Calendar collection deletion was declined." }]
-        };
-    }
+        }, CalendarMutationState.NotAttempted).FinalizeResult();
 
     private static CallToolResult Error(CalendarCollectionCreateResult result) => Error(
-        Describe(result.Code, result.MutationState),
-        MutationState(result.MutationState),
-        result.Retryable,
+        CalendarTelemetryFacts.From(result),
+        Message(result.Code),
+        result.MutationState,
         result.RetryAfterMilliseconds);
 
     private static CallToolResult Error(CalendarCollectionDeleteResult result) => Error(
-        Describe(result.Code, result.MutationState),
-        MutationState(result.MutationState),
-        result.Retryable,
+        CalendarTelemetryFacts.From(result),
+        Message(result.Code),
+        result.MutationState,
         result.RetryAfterMilliseconds);
 
     private static CallToolResult Error(
-        (string Code, string Category, string Message, string Phase) description,
-        string mutationState,
-        bool retryable,
-        int? retryAfterMs = null,
-        CalendarCollectionLimits? limits = null) => new()
-    {
-        IsError = true,
-        StructuredContent = JsonSerializer.SerializeToElement(new CalendarCollectionErrorResult(
-            description.Code,
-            description.Category,
-            description.Message,
-            retryable,
-            description.Phase,
-            mutationState,
-            retryAfterMs,
-            limits)),
-        Content = [new TextContentBlock { Text = "Calendar collection operation failed." }]
-    };
-
-    private static CallToolResult Error(
-        string code,
-        string category,
+        CalendarStructuredErrorFacts facts,
         string message,
-        bool retryable,
-        string phase,
-        string mutationState,
-        CalendarCollectionLimits? limits = null) => Error((code, category, message, phase), mutationState, retryable, limits: limits);
+        CalendarMutationState mutationState,
+        int? retryAfterMs = null,
+        CalendarCollectionLimits? limits = null) => CalendarToolResult.Error(
+            new CallToolResult
+            {
+                IsError = true,
+                StructuredContent = JsonSerializer.SerializeToElement(new CalendarCollectionErrorResult(
+                    facts.CodeName,
+                    facts.CategoryName,
+                    message,
+                    facts.Retryable,
+                    facts.PhaseName,
+                    CalendarTelemetryVocabulary.MutationStateName(mutationState),
+                    retryAfterMs,
+                    limits)),
+                Content = [new TextContentBlock { Text = "Calendar collection operation failed." }]
+            },
+            facts,
+            mutationState).FinalizeResult();
 
-    private static (string Code, string Category, string Message, string Phase) Describe(
-        CalendarCollectionCreateCode code,
-        CalendarMutationState state) => code switch
+    private static CallToolResult InputError(bool payloadTooLarge, string message) => Error(
+        CalendarTelemetryFacts.FromInputGuard(payloadTooLarge),
+        message,
+        CalendarMutationState.NotAttempted);
+
+    private static string Message(CalendarCollectionCreateCode code) => code switch
     {
-        CalendarCollectionCreateCode.InvalidInput => ("invalid_input", "input", "The Calendar collection create input is invalid.", "schemaLexicalDiscriminator"),
-        CalendarCollectionCreateCode.OutsideScope => ("outside_scope", "selection", "The Calendar collection target is outside the configured Calendar Scope.", "originScopeAuthorization"),
-        CalendarCollectionCreateCode.Conflict => ("conflict", "state", "A Calendar with the requested display name already exists.", "selectionDiscoveryCapability"),
-        CalendarCollectionCreateCode.DestinationConflict => ("destination_conflict", "state", "The Calendar collection destination already exists.", "execution"),
-        CalendarCollectionCreateCode.UnsupportedCapability => ("unsupported_capability", "capabilityAndProjection", "The CalDAV server does not support Calendar collection creation.", "execution"),
-        CalendarCollectionCreateCode.PayloadTooLarge => ("payload_too_large", "limitsAndAdmission", "The Calendar collection request exceeds the safe payload limit.", "admissionAndPayload"),
-        CalendarCollectionCreateCode.UpstreamUnauthorized => ("upstream_unauthorized", "upstream", "The Calendar collection operation was not authorized.", "execution"),
-        CalendarCollectionCreateCode.UpstreamForbidden => ("upstream_forbidden", "upstream", "The Calendar collection operation was forbidden.", "execution"),
-        CalendarCollectionCreateCode.UpstreamRateLimited => ("upstream_rate_limited", "upstream", "The Calendar collection operation is rate limited.", "execution"),
-        CalendarCollectionCreateCode.UpstreamUnavailable => ("upstream_unavailable", "upstream", "The Calendar collection is temporarily unavailable.", "execution"),
-        CalendarCollectionCreateCode.UpstreamProtocolError => ("upstream_protocol_error", "upstream", "The CalDAV server returned an invalid or unsupported collection response.", "execution"),
-        CalendarCollectionCreateCode.CommittedButUnverified => ("committed_but_unverified", "postWriteTruth", "The Calendar collection was created but its descriptor could not be verified.", "postWriteVerificationOrReconciliation"),
-        _ => ("indeterminate", "postWriteTruth", "The Calendar collection operation outcome is indeterminate.", "postWriteVerificationOrReconciliation")
+        CalendarCollectionCreateCode.InvalidInput => "The Calendar collection create input is invalid.",
+        CalendarCollectionCreateCode.OutsideScope => "The Calendar collection target is outside the configured Calendar Scope.",
+        CalendarCollectionCreateCode.Conflict => "A Calendar with the requested display name already exists.",
+        CalendarCollectionCreateCode.DestinationConflict => "The Calendar collection destination already exists.",
+        CalendarCollectionCreateCode.UnsupportedCapability => "The CalDAV server does not support Calendar collection creation.",
+        CalendarCollectionCreateCode.PayloadTooLarge => "The Calendar collection request exceeds the safe payload limit.",
+        CalendarCollectionCreateCode.UpstreamUnauthorized => "The Calendar collection operation was not authorized.",
+        CalendarCollectionCreateCode.UpstreamForbidden => "The Calendar collection operation was forbidden.",
+        CalendarCollectionCreateCode.UpstreamRateLimited => "The Calendar collection operation is rate limited.",
+        CalendarCollectionCreateCode.UpstreamUnavailable => "The Calendar collection is temporarily unavailable.",
+        CalendarCollectionCreateCode.UpstreamProtocolError => "The CalDAV server returned an invalid or unsupported collection response.",
+        CalendarCollectionCreateCode.CommittedButUnverified => "The Calendar collection was created but its descriptor could not be verified.",
+        _ => "The Calendar collection operation outcome is indeterminate."
     };
 
-    private static (string Code, string Category, string Message, string Phase) Describe(
-        CalendarCollectionDeleteCode code,
-        CalendarMutationState state) => code switch
+    private static string Message(CalendarCollectionDeleteCode code) => code switch
     {
-        CalendarCollectionDeleteCode.InvalidInput => ("invalid_input", "input", "The Calendar collection delete input is invalid.", "schemaLexicalDiscriminator"),
-        CalendarCollectionDeleteCode.NotFound => ("not_found", "selection", "The Calendar collection was not found.", "selectionDiscoveryCapability"),
-        CalendarCollectionDeleteCode.OutsideScope => ("outside_scope", "selection", "The Calendar collection is outside the configured Calendar Scope.", "originScopeAuthorization"),
-        CalendarCollectionDeleteCode.Conflict => ("conflict", "state", "The Calendar collection changed before confirmation.", "targetRevision"),
-        CalendarCollectionDeleteCode.ConfirmationMismatch => ("confirmation_mismatch", "confirmation", "The mutation confirmation does not match the reviewed collection.", "mrtr"),
-        CalendarCollectionDeleteCode.UnsupportedCapability => ("unsupported_capability", "capabilityAndProjection", "The CalDAV server does not support Calendar collection deletion.", "execution"),
-        CalendarCollectionDeleteCode.PayloadTooLarge => ("payload_too_large", "limitsAndAdmission", "The Calendar collection response exceeds the safe payload limit.", "admissionAndPayload"),
-        CalendarCollectionDeleteCode.UpstreamUnauthorized => ("upstream_unauthorized", "upstream", "The Calendar collection operation was not authorized.", "execution"),
-        CalendarCollectionDeleteCode.UpstreamForbidden => ("upstream_forbidden", "upstream", "The Calendar collection operation was forbidden.", "execution"),
-        CalendarCollectionDeleteCode.UpstreamRateLimited => ("upstream_rate_limited", "upstream", "The Calendar collection operation is rate limited.", "execution"),
-        CalendarCollectionDeleteCode.UpstreamUnavailable => ("upstream_unavailable", "upstream", "The Calendar collection is temporarily unavailable.", "execution"),
-        CalendarCollectionDeleteCode.UpstreamProtocolError => ("upstream_protocol_error", "upstream", "The CalDAV server returned an invalid or unsupported collection response.", "execution"),
-        CalendarCollectionDeleteCode.CommittedButUnverified => ("committed_but_unverified", "postWriteTruth", "The Calendar collection delete could not be verified.", "postWriteVerificationOrReconciliation"),
-        _ => ("indeterminate", "postWriteTruth", "The Calendar collection deletion outcome is indeterminate.", "postWriteVerificationOrReconciliation")
+        CalendarCollectionDeleteCode.InvalidInput => "The Calendar collection delete input is invalid.",
+        CalendarCollectionDeleteCode.NotFound => "The Calendar collection was not found.",
+        CalendarCollectionDeleteCode.OutsideScope => "The Calendar collection is outside the configured Calendar Scope.",
+        CalendarCollectionDeleteCode.Conflict => "The Calendar collection changed before confirmation.",
+        CalendarCollectionDeleteCode.ConfirmationMismatch => "The mutation confirmation does not match the reviewed collection.",
+        CalendarCollectionDeleteCode.UnsupportedCapability => "The CalDAV server does not support Calendar collection deletion.",
+        CalendarCollectionDeleteCode.PayloadTooLarge => "The Calendar collection response exceeds the safe payload limit.",
+        CalendarCollectionDeleteCode.UpstreamUnauthorized => "The Calendar collection operation was not authorized.",
+        CalendarCollectionDeleteCode.UpstreamForbidden => "The Calendar collection operation was forbidden.",
+        CalendarCollectionDeleteCode.UpstreamRateLimited => "The Calendar collection operation is rate limited.",
+        CalendarCollectionDeleteCode.UpstreamUnavailable => "The Calendar collection is temporarily unavailable.",
+        CalendarCollectionDeleteCode.UpstreamProtocolError => "The CalDAV server returned an invalid or unsupported collection response.",
+        CalendarCollectionDeleteCode.CommittedButUnverified => "The Calendar collection delete could not be verified.",
+        _ => "The Calendar collection deletion outcome is indeterminate."
     };
 
-    private static string MapHttpCode(System.Net.HttpStatusCode? statusCode) => statusCode switch
+    private static CalendarStructuredErrorFacts MapHttpFacts(System.Net.HttpStatusCode? statusCode) => statusCode switch
     {
-        System.Net.HttpStatusCode.Unauthorized => "upstream_unauthorized",
-        System.Net.HttpStatusCode.Forbidden => "upstream_forbidden",
-        System.Net.HttpStatusCode.MethodNotAllowed or System.Net.HttpStatusCode.NotImplemented => "unsupported_capability",
-        System.Net.HttpStatusCode.Conflict or System.Net.HttpStatusCode.PreconditionFailed => "conflict",
-        System.Net.HttpStatusCode.TooManyRequests => "upstream_rate_limited",
-        _ => "upstream_unavailable"
+        System.Net.HttpStatusCode.Unauthorized => new(CalendarTelemetryErrorCode.UpstreamUnauthorized,
+            CalendarTelemetryErrorCategory.Upstream, CalendarTelemetryErrorPhase.Execution, false),
+        System.Net.HttpStatusCode.Forbidden => new(CalendarTelemetryErrorCode.UpstreamForbidden,
+            CalendarTelemetryErrorCategory.Upstream, CalendarTelemetryErrorPhase.Execution, false),
+        System.Net.HttpStatusCode.MethodNotAllowed or System.Net.HttpStatusCode.NotImplemented => new(
+            CalendarTelemetryErrorCode.UnsupportedCapability, CalendarTelemetryErrorCategory.CapabilityAndProjection,
+            CalendarTelemetryErrorPhase.Execution, false),
+        System.Net.HttpStatusCode.Conflict or System.Net.HttpStatusCode.PreconditionFailed => new(
+            CalendarTelemetryErrorCode.Conflict, CalendarTelemetryErrorCategory.State,
+            CalendarTelemetryErrorPhase.Execution, false),
+        System.Net.HttpStatusCode.TooManyRequests => new(CalendarTelemetryErrorCode.UpstreamRateLimited,
+            CalendarTelemetryErrorCategory.Upstream, CalendarTelemetryErrorPhase.Execution, false),
+        _ => new(CalendarTelemetryErrorCode.UpstreamUnavailable, CalendarTelemetryErrorCategory.Upstream,
+            CalendarTelemetryErrorPhase.Execution, false)
     };
 
-    private static string MutationState(CalendarMutationState state)
-    {
-        CalendarTelemetry.ObserveMutationState(state);
-        return CalendarTelemetryVocabulary.MutationStateName(state);
-    }
+    private static CalendarStructuredErrorFacts DiscoveryUnavailable() => new(
+        CalendarTelemetryErrorCode.UpstreamUnavailable, CalendarTelemetryErrorCategory.Upstream,
+        CalendarTelemetryErrorPhase.SelectionDiscoveryCapability, true);
+
+    private static CalendarStructuredErrorFacts DiscoveryUnsupported() => new(
+        CalendarTelemetryErrorCode.UnsupportedCapability, CalendarTelemetryErrorCategory.CapabilityAndProjection,
+        CalendarTelemetryErrorPhase.SelectionDiscoveryCapability, false);
+
+    private static CalendarStructuredErrorFacts DiscoveryProtocolError() => new(
+        CalendarTelemetryErrorCode.UpstreamProtocolError, CalendarTelemetryErrorCategory.Upstream,
+        CalendarTelemetryErrorPhase.SelectionDiscoveryCapability, false);
+
+    private static CalendarStructuredErrorFacts MrtrUnsupported() => new(
+        CalendarTelemetryErrorCode.UnsupportedCapability, CalendarTelemetryErrorCategory.CapabilityAndProjection,
+        CalendarTelemetryErrorPhase.Mrtr, false);
 
     private static int MeasureArguments(IDictionary<string, JsonElement>? arguments) =>
         CalendarQueryToolSupport.MeasureArguments(arguments, arguments ?? new Dictionary<string, JsonElement>());
