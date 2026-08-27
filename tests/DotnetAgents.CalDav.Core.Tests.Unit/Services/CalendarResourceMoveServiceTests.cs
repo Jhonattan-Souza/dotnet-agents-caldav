@@ -368,7 +368,15 @@ public sealed class CalendarResourceMoveServiceTests
 
         result.Code.ShouldBe(CalendarResourceMoveCode.UnsupportedCapability);
         result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
-        result.AuthorizedCandidates.ShouldBe([destination]);
+        var candidate = result.AuthorizedCandidates.ShouldHaveSingleItem();
+        candidate.Href.ShouldBe(destination.Href);
+        candidate.DisplayName.ShouldBe(destination.DisplayName);
+        candidate.DisplayNameProvenance.ShouldBe(destination.DisplayNameProvenance);
+        candidate.EventSupport.ShouldBe(destination.EventSupport);
+        candidate.TodoSupport.ShouldBe(destination.TodoSupport);
+        candidate.EventEvidence.ShouldBe(destination.EventEvidence);
+        candidate.TodoEvidence.ShouldBe(destination.TodoEvidence);
+        candidate.UnavailableProperties.ShouldBe(destination.UnavailableProperties);
         await client.DidNotReceive().MoveCalendarResourceAsync(
             Arg.Any<CalendarResourceMoveDispatchRequest>(),
             Arg.Any<CancellationToken>());
