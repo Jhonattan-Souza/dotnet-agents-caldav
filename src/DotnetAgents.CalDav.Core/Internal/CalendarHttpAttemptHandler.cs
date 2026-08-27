@@ -23,10 +23,11 @@ internal sealed class CalendarHttpAttemptHandler : DelegatingHandler
         request.Options.TryGetValue(CalendarHttpTelemetry.DirectGetMeterKey, out var directGetMeter);
         if (directGetMeter is not null && !directGetMeter.TryBeginAttempt())
             throw new CalendarDirectGetAttemptLimitException();
-        using var activity = StartAttempt(request, resendCount);
+        using var attempt = StartAttempt(request, resendCount);
         try
         {
             var response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            attempt.ObserveResponse(response.StatusCode);
             try
             {
                 if (request.Options.TryGetValue(CalendarHttpTelemetry.DirectGetMeterKey, out var meter))
@@ -37,12 +38,12 @@ internal sealed class CalendarHttpAttemptHandler : DelegatingHandler
                 response.Dispose();
                 throw;
             }
-            RecordResponse(activity, response.StatusCode, request);
+            attempt.CompleteResponse();
             return response;
         }
         catch (Exception exception)
         {
-            RecordFailure(activity, exception, cancellationToken);
+            attempt.CompleteFailure(exception, cancellationToken);
             throw;
         }
     }
@@ -98,57 +99,198 @@ internal sealed class CalendarHttpAttemptHandler : DelegatingHandler
         return replacement;
     }
 
-    private static Activity? StartAttempt(HttpRequestMessage request, int resendCount)
+    private static AttemptActivity StartAttempt(HttpRequestMessage request, int resendCount)
     {
         var method = request.Method.Method.ToUpperInvariant();
         var activity = CalendarHttpTelemetry.ActivitySource.StartActivity(method, ActivityKind.Client);
-        activity?.SetTag("http.request.method", method);
-        activity?.SetTag("http.request.resend_count", resendCount);
-        if (request.Options.TryGetValue(CalendarHttpTelemetry.RequestPurposeKey, out var purpose)
-            && purpose is CalendarHttpTelemetry.AbsenceProbe or CalendarHttpTelemetry.QueryResourceRead)
-        {
-            activity?.SetTag("caldav.http.request_purpose", purpose);
-        }
-        return activity;
+        return new AttemptActivity(activity, method, resendCount, RequestPurpose(request));
     }
 
-    private static void RecordResponse(
-        Activity? activity,
-        HttpStatusCode statusCode,
-        HttpRequestMessage request)
+    private static CalendarHttpRequestPurpose? RequestPurpose(HttpRequestMessage request)
     {
-        var numericStatus = (int)statusCode;
-        activity?.SetTag("http.response.status_code", numericStatus);
-        if (statusCode == HttpStatusCode.NotFound
-            && request.Options.TryGetValue(CalendarHttpTelemetry.RequestPurposeKey, out var purpose)
-            && purpose == CalendarHttpTelemetry.QueryResourceRead)
-        {
-            activity?.SetTag("caldav.http.observation", "resource_disappeared");
-            activity?.SetStatus(ActivityStatusCode.Ok);
-            return;
-        }
-        if (numericStatus < 400)
-            return;
-        activity?.SetTag("error.type", numericStatus.ToString(CultureInfo.InvariantCulture));
-        activity?.SetStatus(ActivityStatusCode.Error);
+        if (!request.Options.TryGetValue(CalendarHttpTelemetry.RequestPurposeKey, out var purpose))
+            return null;
+        return purpose is CalendarHttpRequestPurpose.AbsenceProbe
+            or CalendarHttpRequestPurpose.QueryResourceRead
+            ? purpose
+            : null;
     }
 
-    private static void RecordFailure(
+    private sealed class AttemptActivity(
         Activity? activity,
+        string method,
+        int resendCount,
+        CalendarHttpRequestPurpose? purpose) : IDisposable
+    {
+        private HttpStatusCode? _statusCode;
+        private bool _completed;
+
+        internal void ObserveResponse(HttpStatusCode statusCode) => _statusCode = statusCode;
+
+        internal void CompleteResponse()
+        {
+            if (_completed)
+                return;
+            _completed = true;
+            var statusCode = _statusCode
+                ?? throw new InvalidOperationException("An HTTP response must be observed before completion.");
+            ApplyFacts(new CalendarHttpAttemptFacts(
+                method,
+                resendCount,
+                purpose,
+                new CalendarHttpAttemptResult.Response(
+                    statusCode,
+                    ResponseClassification(purpose, statusCode))));
+        }
+
+        internal void CompleteFailure(Exception exception, CancellationToken cancellationToken)
+        {
+            if (_completed)
+                return;
+            _completed = true;
+            ApplyFacts(new CalendarHttpAttemptFacts(
+                method,
+                resendCount,
+                purpose,
+                new CalendarHttpAttemptResult.Failure(
+                    _statusCode,
+                    ControlledFailure(exception, cancellationToken))));
+        }
+
+        private void ApplyFacts(CalendarHttpAttemptFacts facts)
+        {
+            if (activity is null)
+                return;
+            activity.SetTag("http.request.method", facts.Method);
+            activity.SetTag("http.request.resend_count", facts.ResendCount);
+            activity.SetTag("caldav.http.request_purpose", PurposeName(facts.Purpose));
+            switch (facts.Result)
+            {
+                case CalendarHttpAttemptResult.Response response:
+                    ApplyResponse(activity, response);
+                    break;
+                case CalendarHttpAttemptResult.Failure failure:
+                    activity.SetTag(
+                        "http.response.status_code",
+                        failure.StatusCode is { } status ? (int)status : null);
+                    activity.SetTag("caldav.http.observation", null);
+                    activity.SetTag("error.type", FailureName(failure.Classification));
+                    activity.SetStatus(ActivityStatusCode.Error);
+                    break;
+            }
+        }
+
+        public void Dispose() => activity?.Dispose();
+    }
+
+    private static CalendarHttpResponseClassification ResponseClassification(
+        CalendarHttpRequestPurpose? purpose,
+        HttpStatusCode statusCode) => (purpose, statusCode) switch
+        {
+            (CalendarHttpRequestPurpose.AbsenceProbe, HttpStatusCode.NotFound) =>
+                CalendarHttpResponseClassification.ExpectedAbsence,
+            (CalendarHttpRequestPurpose.QueryResourceRead, HttpStatusCode.NotFound) =>
+                CalendarHttpResponseClassification.ResourceDisappeared,
+            _ when (int)statusCode >= 400 => CalendarHttpResponseClassification.HttpError,
+            _ => CalendarHttpResponseClassification.Success
+        };
+
+    private static void ApplyResponse(Activity activity, CalendarHttpAttemptResult.Response response)
+    {
+        activity.SetTag("http.response.status_code", (int)response.StatusCode);
+        activity.SetTag("caldav.http.observation", response.Classification switch
+        {
+            CalendarHttpResponseClassification.ExpectedAbsence =>
+                ObservationName(CalendarHttpObservation.ExpectedAbsence),
+            CalendarHttpResponseClassification.ResourceDisappeared =>
+                ObservationName(CalendarHttpObservation.ResourceDisappeared),
+            _ => null
+        });
+        activity.SetTag(
+            "error.type",
+            response.Classification == CalendarHttpResponseClassification.HttpError
+                ? ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture)
+                : null);
+        activity.SetStatus(response.Classification switch
+        {
+            CalendarHttpResponseClassification.ExpectedAbsence
+                or CalendarHttpResponseClassification.ResourceDisappeared => ActivityStatusCode.Ok,
+            CalendarHttpResponseClassification.HttpError => ActivityStatusCode.Error,
+            _ => ActivityStatusCode.Unset
+        });
+    }
+
+    private static string? PurposeName(CalendarHttpRequestPurpose? purpose) => purpose switch
+    {
+        CalendarHttpRequestPurpose.AbsenceProbe => "absence_probe",
+        CalendarHttpRequestPurpose.QueryResourceRead => "query_resource_read",
+        _ => null
+    };
+
+    private static string? ObservationName(CalendarHttpObservation? observation) => observation switch
+    {
+        CalendarHttpObservation.ExpectedAbsence => "expected_absence",
+        CalendarHttpObservation.ResourceDisappeared => "resource_disappeared",
+        _ => null
+    };
+
+    private readonly record struct CalendarHttpAttemptFacts(
+        string Method,
+        int ResendCount,
+        CalendarHttpRequestPurpose? Purpose,
+        CalendarHttpAttemptResult Result);
+
+    private abstract record CalendarHttpAttemptResult
+    {
+        private CalendarHttpAttemptResult() { }
+
+        internal sealed record Response(
+            HttpStatusCode StatusCode,
+            CalendarHttpResponseClassification Classification) : CalendarHttpAttemptResult;
+
+        internal sealed record Failure(
+            HttpStatusCode? StatusCode,
+            CalendarHttpFailureClassification Classification) : CalendarHttpAttemptResult;
+    }
+
+    private enum CalendarHttpResponseClassification
+    {
+        Success,
+        HttpError,
+        ExpectedAbsence,
+        ResourceDisappeared
+    }
+
+    private enum CalendarHttpFailureClassification
+    {
+        CallerCancellation,
+        Timeout,
+        ResponseEnded,
+        ConnectionError,
+        InternalError
+    }
+
+    private static CalendarHttpFailureClassification ControlledFailure(
         Exception exception,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken) => exception switch
     {
-        activity?.SetTag("error.type", ControlledFailure(exception, cancellationToken));
-        activity?.SetStatus(ActivityStatusCode.Error);
-    }
+        OperationCanceledException when cancellationToken.IsCancellationRequested =>
+            CalendarHttpFailureClassification.CallerCancellation,
+        OperationCanceledException or TimeoutException => CalendarHttpFailureClassification.Timeout,
+        HttpRequestException { HttpRequestError: HttpRequestError.ResponseEnded } =>
+            CalendarHttpFailureClassification.ResponseEnded,
+        HttpRequestException => CalendarHttpFailureClassification.ConnectionError,
+        IOException => CalendarHttpFailureClassification.ResponseEnded,
+        _ => CalendarHttpFailureClassification.InternalError
+    };
 
-    private static string? ControlledFailure(Exception exception, CancellationToken cancellationToken) => exception switch
+    private static string? FailureName(CalendarHttpFailureClassification failure) => failure switch
     {
-        OperationCanceledException when cancellationToken.IsCancellationRequested => null,
-        OperationCanceledException or TimeoutException => "timeout",
-        HttpRequestException { HttpRequestError: HttpRequestError.ResponseEnded } => "response_ended",
-        HttpRequestException => "connection_error",
-        IOException => "response_ended",
-        _ => "internal_error"
+        CalendarHttpFailureClassification.CallerCancellation => null,
+        CalendarHttpFailureClassification.Timeout => "timeout",
+        CalendarHttpFailureClassification.ResponseEnded => "response_ended",
+        CalendarHttpFailureClassification.ConnectionError => "connection_error",
+        CalendarHttpFailureClassification.InternalError => "internal_error",
+        _ => throw new ArgumentOutOfRangeException(nameof(failure), failure, null)
     };
 }

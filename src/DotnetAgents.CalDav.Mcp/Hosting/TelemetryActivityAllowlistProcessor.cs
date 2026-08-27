@@ -110,7 +110,6 @@ internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activi
             SanitizeMcpActivity(data);
         else if (data.Source.Name == OpenTelemetryHostConfiguration.HttpInstrumentationName)
         {
-            ClassifyHttpObservation(data);
             ObserveRetry(data);
             SanitizeHttpActivity(data);
         }
@@ -151,34 +150,11 @@ internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activi
             activity.GetTagItem("http.request.method_original") as string
             ?? activity.GetTagItem("http.request.method") as string);
         activity.SetTag("http.request.method", method);
+        activity.SetTag("caldav.http.request_purpose", ClosedHttpRequestPurpose(
+            activity.GetTagItem("caldav.http.request_purpose")));
+        activity.SetTag("caldav.http.observation", ClosedHttpObservation(
+            activity.GetTagItem("caldav.http.observation")));
         activity.DisplayName = method;
-    }
-
-    private static void ClassifyHttpObservation(Activity activity)
-    {
-        var purpose = activity.GetTagItem("caldav.http.request_purpose") as string;
-        if (purpose == "absence_probe" && HasStatusCode(activity, 404))
-        {
-            activity.SetTag("caldav.http.observation", "expected_absence");
-            activity.SetTag("error.type", null);
-            activity.SetStatus(ActivityStatusCode.Ok);
-            return;
-        }
-        if (purpose == "query_resource_read" && HasStatusCode(activity, 404))
-        {
-            activity.SetTag("caldav.http.observation", "resource_disappeared");
-            activity.SetTag("error.type", null);
-            activity.SetStatus(ActivityStatusCode.Ok);
-            return;
-        }
-        if (purpose == "query_resource_read")
-        {
-            activity.SetTag("caldav.http.observation", null);
-            return;
-        }
-
-        activity.SetTag("caldav.http.request_purpose", null);
-        activity.SetTag("caldav.http.observation", null);
     }
 
     private static void ObserveRetry(Activity activity)
@@ -286,9 +262,6 @@ internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activi
             ? version
             : null;
 
-    private static bool HasStatusCode(Activity activity, long expected) =>
-        NumericTag(activity.GetTagItem("http.response.status_code")) == expected;
-
     private static long? NumericTag(object? value) => value switch
     {
         byte number => number,
@@ -310,6 +283,20 @@ internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activi
     {
         "start" => "start",
         "continue" => "continue",
+        _ => null
+    };
+
+    private static string? ClosedHttpRequestPurpose(object? value) => (value as string) switch
+    {
+        "absence_probe" => "absence_probe",
+        "query_resource_read" => "query_resource_read",
+        _ => null
+    };
+
+    private static string? ClosedHttpObservation(object? value) => (value as string) switch
+    {
+        "expected_absence" => "expected_absence",
+        "resource_disappeared" => "resource_disappeared",
         _ => null
     };
 

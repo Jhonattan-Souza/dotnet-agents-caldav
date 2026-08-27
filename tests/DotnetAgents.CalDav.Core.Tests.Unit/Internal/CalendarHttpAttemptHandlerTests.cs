@@ -30,8 +30,9 @@ public sealed class CalendarHttpAttemptHandlerTests
         attempt.GetTagItem("http.request.resend_count").ShouldBe(0);
         attempt.GetTagItem("http.response.status_code").ShouldBe(404);
         attempt.GetTagItem("caldav.http.request_purpose").ShouldBe("absence_probe");
-        attempt.GetTagItem("error.type").ShouldBe("404");
-        attempt.Status.ShouldBe(ActivityStatusCode.Error);
+        attempt.GetTagItem("caldav.http.observation").ShouldBe("expected_absence");
+        attempt.GetTagItem("error.type").ShouldBeNull();
+        attempt.Status.ShouldBe(ActivityStatusCode.Ok);
         attempt.Events.ShouldBeEmpty();
         attempt.TagObjects.Any(tag =>
             tag.Value?.ToString()?.Contains("private", StringComparison.Ordinal) == true).ShouldBeFalse();
@@ -69,7 +70,9 @@ public sealed class CalendarHttpAttemptHandlerTests
         using var listener = Listen(stopped);
         using var parent = new Activity("test-parent").Start();
         using var request = new HttpRequestMessage(HttpMethod.Get, "https://private.example/secret.ics");
-        request.Options.Set(CalendarHttpTelemetry.RequestPurposeKey, "unknown");
+        request.Options.Set(
+            CalendarHttpTelemetry.RequestPurposeKey,
+            (CalendarHttpRequestPurpose)int.MaxValue);
         using var invoker = CreateInvoker(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound)));
 
         using var response = await invoker.SendAsync(request, CancellationToken.None);
@@ -79,6 +82,50 @@ public sealed class CalendarHttpAttemptHandlerTests
         attempt.GetTagItem("caldav.http.observation").ShouldBeNull();
         attempt.GetTagItem("error.type").ShouldBe("404");
         attempt.Status.ShouldBe(ActivityStatusCode.Error);
+    }
+
+    [Fact]
+    public async Task ConcurrentAttemptsKeepTheirOwnClosedPurposeAndObservation()
+    {
+        var stopped = new List<Activity>();
+        using var listener = Listen(stopped);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var started = 0;
+        using var invoker = CreateInvoker(async _ =>
+        {
+            if (Interlocked.Increment(ref started) == 2)
+                release.SetResult();
+            await release.Task;
+            return new HttpResponseMessage(HttpStatusCode.NotFound)
+            {
+                Content = new ByteArrayContent([])
+            };
+        });
+        using var absenceProbe = new HttpRequestMessage(
+            HttpMethod.Get,
+            "https://private.example/absence.ics");
+        CalendarHttpTelemetry.MarkAbsenceProbe(absenceProbe);
+        var meter = new CalendarDirectGetBudget().StartResource();
+        using var queryRead = QueryReadRequest(meter);
+
+        var absenceSend = invoker.SendAsync(
+            absenceProbe,
+            TestContext.Current.CancellationToken);
+        var querySend = invoker.SendAsync(
+            queryRead,
+            TestContext.Current.CancellationToken);
+        using var absenceResponse = await absenceSend;
+        using var queryResponse = await querySend;
+
+        var attempts = stopped.Where(activity =>
+            activity.Source.Name == CalendarHttpTelemetry.InstrumentationName).ToArray();
+        attempts.Length.ShouldBe(2);
+        attempts.Single(activity =>
+                Equals(activity.GetTagItem("caldav.http.request_purpose"), "absence_probe"))
+            .GetTagItem("caldav.http.observation").ShouldBe("expected_absence");
+        attempts.Single(activity =>
+                Equals(activity.GetTagItem("caldav.http.request_purpose"), "query_resource_read"))
+            .GetTagItem("caldav.http.observation").ShouldBe("resource_disappeared");
     }
 
     [Theory]
@@ -102,7 +149,7 @@ public sealed class CalendarHttpAttemptHandlerTests
         using var response = await invoker.SendAsync(request, CancellationToken.None);
 
         var attempt = stopped.Single(activity => activity.ParentId == parent.Id);
-        attempt.GetTagItem("caldav.http.request_purpose").ShouldBe(CalendarHttpTelemetry.QueryResourceRead);
+        attempt.GetTagItem("caldav.http.request_purpose").ShouldBe("query_resource_read");
         attempt.GetTagItem("caldav.http.observation").ShouldBeNull();
         attempt.GetTagItem("error.type").ShouldBe(expectedErrorType);
         attempt.Status.ShouldBe(expectedStatus);
