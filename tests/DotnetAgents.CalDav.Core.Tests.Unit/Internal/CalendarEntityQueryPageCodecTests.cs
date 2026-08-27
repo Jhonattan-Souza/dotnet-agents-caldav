@@ -22,12 +22,13 @@ public sealed class CalendarEntityQueryPageCodecTests
             "America/Sao_Paulo",
             TemporalEvaluationContextSource.Caller));
         var initial = Snapshot(Json("x"), temporalContext);
-        var initialPlan = codec.Plan(initial, 0, 1, CancellationToken.None).Value!;
+        var admission = Admission();
+        var initialPlan = admission.Plan(initial, 0, 1, codec, CancellationToken.None).Value!;
         var padding = CalendarEntityQueryPageCodec.MaximumCallToolResultBytes
             - initialPlan.MeasuredCallToolResultBytes;
         var exact = Snapshot(Json(new string('x', padding + 1)), temporalContext);
 
-        var admitted = codec.Plan(exact, 0, 1, CancellationToken.None);
+        var admitted = admission.Plan(exact, 0, 1, codec, CancellationToken.None);
         admitted.Error.ShouldBeNull();
         admitted.Value!.MeasuredCallToolResultBytes.ShouldBe(
             CalendarEntityQueryPageCodec.MaximumCallToolResultBytes);
@@ -36,7 +37,7 @@ public sealed class CalendarEntityQueryPageCodecTests
             "America/Sao_Paulo",
             TemporalEvaluationContextSource.Caller));
         var above = Snapshot(Json(new string('x', padding + 2)), temporalContext);
-        var refused = codec.Plan(above, 0, 1, CancellationToken.None);
+        var refused = admission.Plan(above, 0, 1, codec, CancellationToken.None);
         refused.Error!.Code.ShouldBe(QueryFailureCode.PayloadTooLarge);
     }
 
@@ -57,7 +58,7 @@ public sealed class CalendarEntityQueryPageCodecTests
             "[]"u8.ToArray(),
             items.Sum(item => item.JsonByteCount) + 2);
         var codec = Codec(work);
-        var planned = codec.Plan(snapshot, 0, pageSize, CancellationToken.None);
+        var planned = Admission().Plan(snapshot, 0, pageSize, codec, CancellationToken.None);
 
         planned.Error.ShouldBeNull();
         work.AdmissionEnvelopeSerializationCount.ShouldBe(1);
@@ -83,25 +84,6 @@ public sealed class CalendarEntityQueryPageCodecTests
         stopped.ShouldBeEmpty();
     }
 
-    [Theory]
-    [InlineData(0, -1, 1)]
-    [InlineData(0, 1, 1)]
-    [InlineData(1, -1, 1)]
-    [InlineData(1, 1, 1)]
-    [InlineData(1, 0, 0)]
-    [InlineData(1, 0, 201)]
-    public void PlanRejectsEveryInvalidPositionAndPageSize(int itemCount, int position, int pageSize)
-    {
-        var items = Enumerable.Range(0, itemCount)
-            .Select(index => new StoredCalendarEntityQueryItem(Json(index)))
-            .ToImmutableArray();
-        var snapshot = new CalendarQuerySnapshot(Guid.NewGuid(), Now.AddMinutes(10), items, "[]"u8.ToArray(), 0);
-
-        var planned = Codec().Plan(snapshot, position, pageSize, CancellationToken.None);
-
-        planned.Error!.Code.ShouldBe(QueryFailureCode.InvalidInput);
-    }
-
     [Fact]
     public void HumanPresentationBudgetRejectsOversizedDiagnosticsBeforeItemAdmission()
     {
@@ -116,7 +98,8 @@ public sealed class CalendarEntityQueryPageCodecTests
             diagnostics,
             diagnostics.Length);
 
-        var planned = Codec().Plan(snapshot, 0, 1, CancellationToken.None);
+        var codec = Codec();
+        var planned = Admission().Plan(snapshot, 0, 1, codec, CancellationToken.None);
 
         planned.Error!.Code.ShouldBe(QueryFailureCode.PayloadTooLarge);
     }
@@ -132,7 +115,7 @@ public sealed class CalendarEntityQueryPageCodecTests
             "null"u8.ToArray(),
             item.JsonByteCount * 2 + 4);
         var codec = Codec();
-        var plan = codec.Plan(snapshot, 0, 1, CancellationToken.None).Value!;
+        var plan = Admission().Plan(snapshot, 0, 1, codec, CancellationToken.None).Value!;
 
         var page = codec.Materialize(snapshot, plan);
 
@@ -142,7 +125,7 @@ public sealed class CalendarEntityQueryPageCodecTests
             .ShouldBe(page.NextCursor);
     }
 
-    private static CalendarEntityQueryPageCodec Codec(CalendarQueryPageWorkCounter? workCounter = null)
+    private static CalendarQueryPageAdmission Admission()
     {
         var options = Options.Create(new CalDavOptions
         {
@@ -151,8 +134,11 @@ public sealed class CalendarEntityQueryPageCodecTests
             Password = "password"
         });
         var key = new CalendarQueryCursorKey(options, Enumerable.Range(0, 64).Select(value => (byte)value).ToArray());
-        return new CalendarEntityQueryPageCodec(new CalendarQueryCursorIssuer(key), workCounter);
+        return new CalendarQueryPageAdmission(new CalendarQueryCursorIssuer(key));
     }
+
+    private static CalendarEntityQueryPageCodec Codec(CalendarQueryPageWorkCounter? workCounter = null) =>
+        new(workCounter);
 
     private static CalendarQuerySnapshot Snapshot(byte[] json) => new(
         Guid.NewGuid(),

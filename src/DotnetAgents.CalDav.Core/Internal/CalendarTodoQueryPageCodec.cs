@@ -5,8 +5,7 @@ using DotnetAgents.CalDav.Core.Services;
 
 namespace DotnetAgents.CalDav.Core.Internal;
 
-internal sealed class CalendarTodoQueryPageCodec(CalendarQueryCursorIssuer cursorIssuer)
-    : ICalendarQueryPageCodec<CalendarTodoQueryPageItem>
+internal sealed class CalendarTodoQueryPageCodec : ICalendarQueryPageCodec<CalendarTodoQueryPageItem>
 {
     internal const string ToolName = "todos.query";
     internal const int DefaultPageSize = 50;
@@ -14,40 +13,24 @@ internal sealed class CalendarTodoQueryPageCodec(CalendarQueryCursorIssuer curso
     internal const int MaximumCallToolResultBytes = 4 * 1024 * 1024;
     internal const int MaximumHumanReadableBytes = 64 * 1024;
     internal const string SuccessText = "Compact To-do query completed.";
+    private static readonly CalendarQueryPageConstraints PageConstraints = new(
+        DefaultPageSize,
+        MaximumPageSize,
+        MaximumCallToolResultBytes,
+        MaximumHumanReadableBytes,
+        "The To-do query human-readable result exceeds the safe payload limit.",
+        "One To-do cannot fit in a result page.");
 
     string ICalendarQueryPageCodec<CalendarTodoQueryPageItem>.ToolName => ToolName;
 
-    int ICalendarQueryPageCodec<CalendarTodoQueryPageItem>.DefaultPageSize => DefaultPageSize;
+    CalendarQueryPageConstraints ICalendarQueryPageCodec<CalendarTodoQueryPageItem>.Constraints => PageConstraints;
 
-    int ICalendarQueryPageCodec<CalendarTodoQueryPageItem>.MaximumPageSize => MaximumPageSize;
-
-    CalendarQueryPagePlanAdmission ICalendarQueryPageCodec<CalendarTodoQueryPageItem>.Plan(
-        CalendarQuerySnapshot snapshot,
-        int position,
-        int pageSize,
-        CancellationToken cancellationToken) => Plan(snapshot, position, pageSize, cancellationToken);
+    CalendarQueryFixedBudget ICalendarQueryPageCodec<CalendarTodoQueryPageItem>.MeasureFixedBudget(
+        CalendarQuerySnapshot snapshot) => MeasureFixedBudget(snapshot);
 
     QueryPage<CalendarTodoQueryPageItem> ICalendarQueryPageCodec<CalendarTodoQueryPageItem>.Materialize(
         CalendarQuerySnapshot snapshot,
         CalendarQueryPagePlan plan) => Materialize(snapshot, plan);
-
-    internal CalendarQueryPagePlanAdmission Plan(
-        CalendarQuerySnapshot snapshot,
-        int position,
-        int pageSize,
-        CancellationToken cancellationToken)
-    {
-        if (IsInvalidRequest(snapshot.Items.Length, position, pageSize))
-            return CalendarQueryPagePlanAdmission.Failure(CalendarQueryFailures.InvalidInput());
-        var fixedBudget = MeasureFixedBudget(snapshot);
-        if (fixedBudget.HumanReadableBytes > MaximumHumanReadableBytes)
-        {
-            return CalendarQueryPagePlanAdmission.Failure(CalendarQueryFailures.PayloadTooLarge(
-                "The To-do query human-readable result exceeds the safe payload limit."));
-        }
-
-        return BuildPlan(snapshot, position, pageSize, fixedBudget.CallToolResultBytes, cancellationToken);
-    }
 
     internal static QueryPage<CalendarTodoQueryPageItem> Materialize(
         CalendarQuerySnapshot snapshot,
@@ -71,58 +54,6 @@ internal sealed class CalendarTodoQueryPageCodec(CalendarQueryCursorIssuer curso
             plan.MeasuredCallToolResultBytes,
             TemporalEvaluationContext: CalendarTemporalEvaluationContextCodec.Decode(
                 snapshot.TemporalEvaluationContextUtf8));
-    }
-
-    private CalendarQueryPagePlanAdmission BuildPlan(
-        CalendarQuerySnapshot snapshot,
-        int position,
-        int pageSize,
-        int fixedCallToolResultBytes,
-        CancellationToken cancellationToken)
-    {
-        var admitted = new List<StoredCalendarEntityQueryItem>(Math.Min(pageSize, snapshot.Items.Length - position));
-        long admittedBytes = 0;
-        string? nextCursor = null;
-        while (admitted.Count < pageSize && position + admitted.Count < snapshot.Items.Length)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var stored = snapshot.Items[position + admitted.Count];
-            var candidateCount = admitted.Count + 1;
-            var candidatePosition = position + candidateCount;
-            var candidateCursor = candidatePosition < snapshot.Items.Length
-                ? cursorIssuer.Issue(
-                    ToolName,
-                    snapshot.Id,
-                    candidatePosition,
-                    snapshot.ExpiresAt,
-                    snapshot.TemporalEvaluationContextUtf8)
-                : null;
-            var candidateBytes = admittedBytes + stored.JsonByteCount;
-            var measured = fixedCallToolResultBytes
-                + candidateBytes
-                + Math.Max(0, candidateCount - 1)
-                + CursorDelta(candidateCursor);
-            if (measured > MaximumCallToolResultBytes)
-                break;
-            admitted.Add(stored);
-            admittedBytes = candidateBytes;
-            nextCursor = candidateCursor;
-        }
-
-        if (admitted.Count == 0 && snapshot.Items.Length > 0)
-        {
-            return CalendarQueryPagePlanAdmission.Failure(CalendarQueryFailures.PayloadTooLarge(
-                "One To-do cannot fit in a result page."));
-        }
-
-        var measuredBytes = checked((int)(fixedCallToolResultBytes
-            + admittedBytes
-            + Math.Max(0, admitted.Count - 1)
-            + CursorDelta(nextCursor)));
-        return CalendarQueryPagePlanAdmission.Page(new CalendarQueryPagePlan(
-            admitted,
-            nextCursor,
-            measuredBytes));
     }
 
     private static CalendarQueryFixedBudget MeasureFixedBudget(CalendarQuerySnapshot snapshot)
@@ -196,11 +127,4 @@ internal sealed class CalendarTodoQueryPageCodec(CalendarQueryCursorIssuer curso
         writer.WriteEndObject();
     }
 
-    private static bool IsInvalidRequest(int itemCount, int position, int pageSize) =>
-        pageSize is < 1 or > MaximumPageSize
-        || position < 0
-        || itemCount > 0 && position >= itemCount
-        || itemCount == 0 && position != 0;
-
-    private static int CursorDelta(string? cursor) => cursor is null ? 0 : cursor.Length - 2;
 }

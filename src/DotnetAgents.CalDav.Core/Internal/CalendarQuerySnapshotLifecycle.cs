@@ -4,9 +4,89 @@ using DotnetAgents.CalDav.Core.Services;
 
 namespace DotnetAgents.CalDav.Core.Internal;
 
+internal sealed class CalendarQueryPageAdmission(CalendarQueryCursorIssuer cursorIssuer)
+{
+    internal static bool IsValidPageSize<TItem>(
+        int pageSize,
+        ICalendarQueryPageCodec<TItem> pageCodec) => pageSize is >= 1
+        && pageSize <= pageCodec.Constraints.MaximumPageSize;
+
+    internal CalendarQueryPagePlanAdmission Plan<TItem>(
+        CalendarQuerySnapshot snapshot,
+        int position,
+        int pageSize,
+        ICalendarQueryPageCodec<TItem> pageCodec,
+        CancellationToken cancellationToken)
+    {
+        var constraints = pageCodec.Constraints;
+        if (!IsValidPageSize(pageSize, pageCodec)
+            || position < 0
+            || snapshot.Items.Length > 0 && position >= snapshot.Items.Length
+            || snapshot.Items.Length == 0 && position != 0)
+        {
+            return CalendarQueryPagePlanAdmission.Failure(CalendarQueryFailures.InvalidInput());
+        }
+
+        var fixedBudget = pageCodec.MeasureFixedBudget(snapshot);
+        if (fixedBudget.HumanReadableBytes > constraints.MaximumHumanReadableBytes)
+        {
+            return CalendarQueryPagePlanAdmission.Failure(CalendarQueryFailures.PayloadTooLarge(
+                constraints.HumanReadablePayloadTooLargeMessage));
+        }
+
+        var admitted = new List<StoredCalendarEntityQueryItem>(
+            Math.Min(pageSize, snapshot.Items.Length - position));
+        var admittedBytes = 0L;
+        string? nextCursor = null;
+        while (admitted.Count < pageSize && position + admitted.Count < snapshot.Items.Length)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var stored = snapshot.Items[position + admitted.Count];
+            var candidateCount = admitted.Count + 1;
+            var candidatePosition = position + candidateCount;
+            var candidateCursor = candidatePosition < snapshot.Items.Length
+                ? cursorIssuer.Issue(
+                    pageCodec.ToolName,
+                    snapshot.Id,
+                    candidatePosition,
+                    snapshot.ExpiresAt,
+                    snapshot.TemporalEvaluationContextUtf8)
+                : null;
+            var candidateBytes = admittedBytes + stored.JsonByteCount;
+            var measured = fixedBudget.CallToolResultBytes
+                + candidateBytes
+                + Math.Max(0, candidateCount - 1)
+                + CursorDelta(candidateCursor);
+            if (measured > constraints.MaximumCallToolResultBytes)
+                break;
+            admitted.Add(stored);
+            admittedBytes = candidateBytes;
+            nextCursor = candidateCursor;
+        }
+
+        if (admitted.Count == 0 && snapshot.Items.Length > 0)
+        {
+            return CalendarQueryPagePlanAdmission.Failure(CalendarQueryFailures.PayloadTooLarge(
+                constraints.ItemPayloadTooLargeMessage));
+        }
+
+        var measuredBytes = checked((int)(fixedBudget.CallToolResultBytes
+            + admittedBytes
+            + Math.Max(0, admitted.Count - 1)
+            + CursorDelta(nextCursor)));
+        return CalendarQueryPagePlanAdmission.Page(new CalendarQueryPagePlan(
+            admitted,
+            nextCursor,
+            measuredBytes));
+    }
+
+    private static int CursorDelta(string? cursor) => cursor is null ? 0 : cursor.Length - 2;
+}
+
 internal sealed class CalendarQuerySnapshotPublication(
     CalendarQueryPolicy queryPolicy,
-    CalendarQuerySnapshotWriter snapshotWriter)
+    CalendarQuerySnapshotWriter snapshotWriter,
+    CalendarQueryPageAdmission pageAdmission)
 {
     internal QueryReply<TItem> Publish<TItem>(
         CalendarQuerySnapshotDraft draft,
@@ -18,7 +98,7 @@ internal sealed class CalendarQuerySnapshotPublication(
         CalendarQueryPagePlanAdmission planned;
         using (CalendarQueryTelemetry.StartPhase("page_admission"))
         {
-            planned = pageCodec.Plan(snapshot, 0, pageSize, cancellationToken);
+            planned = pageAdmission.Plan(snapshot, 0, pageSize, pageCodec, cancellationToken);
             CalendarQueryTelemetry.Add("caldav.query.page_admission_count");
             if (planned.Error is not null)
                 return Failure<TItem>(planned.Error);
@@ -45,7 +125,8 @@ internal sealed class CalendarQuerySnapshotPublication(
 
 internal sealed class CalendarQuerySnapshotReplay(
     CalendarQueryCursorAuthenticator cursorAuthenticator,
-    CalendarQuerySnapshotReader snapshotReader)
+    CalendarQuerySnapshotReader snapshotReader,
+    CalendarQueryPageAdmission pageAdmission)
 {
     internal QueryReply<TItem> Replay<TItem>(
         string cursorValue,
@@ -54,10 +135,9 @@ internal sealed class CalendarQuerySnapshotReplay(
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var pageSize = requestedPageSize ?? pageCodec.DefaultPageSize;
+        var pageSize = requestedPageSize ?? pageCodec.Constraints.DefaultPageSize;
         if (string.IsNullOrEmpty(cursorValue)
-            || pageSize is < 1
-            || pageSize > pageCodec.MaximumPageSize)
+            || !CalendarQueryPageAdmission.IsValidPageSize(pageSize, pageCodec))
         {
             return Failure<TItem>(CalendarQueryFailures.InvalidInput());
         }
@@ -79,7 +159,7 @@ internal sealed class CalendarQuerySnapshotReplay(
         }
 
         using var pagePhase = CalendarQueryTelemetry.StartPhase("page_admission");
-        var admitted = pageCodec.Plan(snapshot!, cursor.Position, pageSize, cancellationToken);
+        var admitted = pageAdmission.Plan(snapshot!, cursor.Position, pageSize, pageCodec, cancellationToken);
         CalendarQueryTelemetry.Add("caldav.query.page_admission_count");
         return admitted.Error is null
             ? new QueryReply<TItem>.Page(pageCodec.Materialize(snapshot!, admitted.Value!))
