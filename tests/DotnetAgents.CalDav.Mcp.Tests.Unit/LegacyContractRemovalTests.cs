@@ -113,17 +113,17 @@ public sealed class LegacyContractRemovalTests
     }
 
     [Fact]
-    public void ContinueExecutors_HaveOnlyCursorSnapshotAndPageDependencies()
+    public void ContinueExecutors_HaveOnlyReplayAndTypedPageDependencies()
     {
         var core = typeof(ICalendarQueryModule).Assembly;
         var executors = new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
             ["CalendarEntityQueryContinueExecutor"] =
-                ["CalendarQueryCursorAuthenticator", "CalendarQuerySnapshotReader", "CalendarEntityQueryPageCodec"],
+                ["CalendarQuerySnapshotReplay", "CalendarEntityQueryPageCodec"],
             ["CalendarOccurrenceQueryContinueExecutor"] =
-                ["CalendarQueryCursorAuthenticator", "CalendarQuerySnapshotReader", "CalendarOccurrenceQueryPageCodec"],
+                ["CalendarQuerySnapshotReplay", "CalendarOccurrenceQueryPageCodec"],
             ["CalendarTodoQueryContinueExecutor"] =
-                ["CalendarQueryCursorAuthenticator", "CalendarQuerySnapshotReader", "CalendarTodoQueryPageCodec"]
+                ["CalendarQuerySnapshotReplay", "CalendarTodoQueryPageCodec"]
         };
 
         foreach (var executor in executors)
