@@ -78,10 +78,71 @@ early_finish() {
 trap early_finish EXIT
 echo "Test artifacts: $artifacts_directory" >&2
 python3 "$script_directory/verify-worktree-state.py" capture "$repository_root" "$before_state"
+phase_timings="$artifacts_directory/phase-timings.tsv"
+manifest_timing_directory="$artifacts_directory/.manifest-timings"
+mkdir -p -- "$manifest_timing_directory"
+touch "$phase_timings"
+suite_started_at=$(date +%s%N)
+
+append_phase_timing() {
+  local phase_name=$1 started_at=$2 finished_at=$3
+  local elapsed_ns=$((finished_at - started_at))
+  printf '%s\t%d.%03d\n' \
+    "$phase_name" \
+    "$((elapsed_ns / 1000000000))" \
+    "$(((elapsed_ns % 1000000000) / 1000000))" >> "$phase_timings"
+}
+
+run_timed_phase() {
+  local phase_name=$1
+  shift
+  local started_at finished_at status
+  started_at=$(date +%s%N)
+  if "$@"; then
+    status=0
+  else
+    status=$?
+  fi
+  finished_at=$(date +%s%N)
+  append_phase_timing "$phase_name" "$started_at" "$finished_at"
+  return "$status"
+}
+
+collect_manifest_timings() {
+  local phase=$1 row _project trx _prefix _filter _environment timing_path
+  while IFS= read -r row; do
+    IFS=$'\x1f' read -r _project trx _prefix _filter _environment <<< "$row"
+    timing_path="$manifest_timing_directory/$trx.tsv"
+    [[ -f "$timing_path" ]] || {
+      echo "Missing phase timing for test manifest entry: $trx" >&2
+      return 66
+    }
+    cat -- "$timing_path" >> "$phase_timings"
+    rm -- "$timing_path"
+  done < <(emit_test_suite_manifest_rows "$manifest" "$phase")
+}
+
+collect_available_manifest_timings() {
+  local phase row _project trx _prefix _filter _environment timing_path
+  for phase in main complete; do
+    while IFS= read -r row; do
+      IFS=$'\x1f' read -r _project trx _prefix _filter _environment <<< "$row"
+      timing_path="$manifest_timing_directory/$trx.tsv"
+      if [[ -f "$timing_path" ]]; then
+        cat -- "$timing_path" >> "$phase_timings"
+        rm -- "$timing_path"
+      fi
+    done < <(emit_test_suite_manifest_rows "$manifest" "$phase")
+  done
+}
 
 finish() {
   local status=$?
   trap - EXIT
+  if ! collect_available_manifest_timings; then
+    status=70
+  fi
+  append_phase_timing isolated-suite "$suite_started_at" "$(date +%s%N)"
   if ! python3 "$script_directory/verify-worktree-state.py" compare \
     "$repository_root" "$before_state" "$after_state"; then
     status=70
@@ -99,34 +160,58 @@ finish() {
 trap finish EXIT
 
 "$script_directory/test-test-artifacts.sh"
+bash "$script_directory/test-trx-timing-summary.sh"
 
 run_project() {
   local project=$1 trx_filename=$2 prefix=$3 filter_class=$4 environment=$5
+  local phase_name=${trx_filename%.trx} started_at finished_at elapsed_ns status
   local arguments=(dotnet test --project "$repository_root/$project" -c Release --no-build --no-restore
     --results-directory "$artifacts_directory" --report-trx --report-trx-filename "$trx_filename"
     --fail-skips on --zero-tests-policy strict --no-ansi)
   [[ -z "$prefix" ]] || arguments+=(--coverlet --coverlet-file-prefix "$prefix")
   [[ -z "$filter_class" ]] || arguments+=(--filter-class "$filter_class")
+  started_at=$(date +%s%N)
   if [[ -n "$environment" ]]; then
     IFS=';' read -r -a environment_arguments <<< "$environment"
-    env "${environment_arguments[@]}" "${arguments[@]}" </dev/null
+    if env "${environment_arguments[@]}" "${arguments[@]}" </dev/null; then
+      status=0
+    else
+      status=$?
+    fi
   else
-    "${arguments[@]}" </dev/null
+    if "${arguments[@]}" </dev/null; then
+      status=0
+    else
+      status=$?
+    fi
   fi
+  finished_at=$(date +%s%N)
+  elapsed_ns=$((finished_at - started_at))
+  printf '%s\t%d.%03d\n' \
+    "$phase_name" \
+    "$((elapsed_ns / 1000000000))" \
+    "$(((elapsed_ns % 1000000000) / 1000000))" > "$manifest_timing_directory/$trx_filename.tsv"
+  return "$status"
 }
 
-run_test_suite_manifest_phase "$manifest" main run_project
+generate_and_verify_coverage() {
+  local cobertura_reports coverage_report_directory
+  cobertura_reports=$("$script_directory/verify-test-artifacts.sh" "$artifacts_directory" main)
+  coverage_report_directory="$artifacts_directory/coverage-report"
+  dotnet reportgenerator \
+    "-reports:$cobertura_reports" \
+    "-targetdir:$coverage_report_directory" \
+    -reporttypes:Cobertura \
+    '-assemblyfilters:+DotnetAgents.CalDav.Core;+DotnetAgents.CalDav.Mcp;-*Tests*;-xunit*;-testhost*'
+  "$script_directory/verify-coverage.sh" "$coverage_report_directory" 0.90 0.85
+}
 
-cobertura_reports=$("$script_directory/verify-test-artifacts.sh" "$artifacts_directory" main)
-coverage_report_directory="$artifacts_directory/coverage-report"
-dotnet reportgenerator \
-  "-reports:$cobertura_reports" \
-  "-targetdir:$coverage_report_directory" \
-  -reporttypes:Cobertura \
-  '-assemblyfilters:+DotnetAgents.CalDav.Core;+DotnetAgents.CalDav.Mcp;-*Tests*;-xunit*;-testhost*'
-"$script_directory/verify-coverage.sh" "$coverage_report_directory" 0.90 0.85
+run_test_suite_manifest_phase "$manifest" main 2 run_project
+collect_manifest_timings main
+run_timed_phase coverage-report generate_and_verify_coverage
 
-run_test_suite_manifest_phase "$manifest" complete run_project
+run_test_suite_manifest_phase "$manifest" complete 2 run_project
+collect_manifest_timings complete
 "$script_directory/verify-test-artifacts.sh" "$artifacts_directory" complete >/dev/null
 
 echo "Verified isolated test evidence: $artifacts_directory" >&2

@@ -222,6 +222,63 @@ run_test_suite_manifest_phase "$manifest" main consume_stdin_and_record_trx
 }
 echo "PASS materialized manifest rows survive child stdin consumption"
 
+concurrency_root="$fixture_root/concurrency"
+mkdir -p -- "$concurrency_root"
+bounded_concurrency_callback() {
+  local _project=$1 row_trx=$2 _prefix=$3 _filter=$4 _environment=$5
+  touch "$concurrency_root/$row_trx.started"
+  if [[ "$row_trx" == main-core.trx ]]; then
+    local deadline=$((SECONDS + 2))
+    while [[ ! -f "$concurrency_root/main-mcp.trx.started" ]]; do
+      if (( SECONDS >= deadline )); then
+        echo "Second manifest entry did not start concurrently." >&2
+        return 90
+      fi
+    done
+  fi
+  touch "$concurrency_root/$row_trx.completed"
+}
+run_test_suite_manifest_phase "$manifest" main 2 bounded_concurrency_callback
+for row_trx in main-core.trx main-mcp.trx main-integration.trx; do
+  [[ -f "$concurrency_root/$row_trx.completed" ]] || {
+    echo "Concurrent runner did not complete $row_trx." >&2
+    exit 1
+  }
+done
+echo "PASS manifest runner uses bounded concurrency"
+
+failure_root="$fixture_root/concurrent-failure"
+mkdir -p -- "$failure_root"
+awaited_failure_callback() {
+  local _project=$1 row_trx=$2 _prefix=$3 _filter=$4 _environment=$5
+  touch "$failure_root/$row_trx.started"
+  if [[ "$row_trx" == main-core.trx ]]; then
+    return 42
+  fi
+  if [[ "$row_trx" == main-mcp.trx ]]; then
+    local deadline=$((SECONDS + 2))
+    while [[ ! -f "$failure_root/main-core.trx.started" ]]; do
+      if (( SECONDS >= deadline )); then
+        return 91
+      fi
+    done
+    touch "$failure_root/$row_trx.completed"
+  fi
+}
+if run_test_suite_manifest_phase "$manifest" main 2 awaited_failure_callback; then
+  echo "Expected concurrent manifest failure to propagate." >&2
+  exit 1
+fi
+[[ -f "$failure_root/main-mcp.trx.completed" ]] || {
+  echo "Concurrent runner returned before its started sibling completed." >&2
+  exit 1
+}
+[[ ! -f "$failure_root/main-integration.trx.started" ]] || {
+  echo "Concurrent runner started new work after observing a failure." >&2
+  exit 1
+}
+echo "PASS concurrent failure awaits started siblings and stops new work"
+
 early_exit_tmp="$fixture_root/early-exit-tmp"
 mkdir -p -- "$early_exit_tmp"
 if TMPDIR="$early_exit_tmp" "$script_directory/run-test-suite.sh" invalid >/dev/null 2>&1; then

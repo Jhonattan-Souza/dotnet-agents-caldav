@@ -11,6 +11,10 @@ permissions:
   contents: read
   pull-requests: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-test:
     runs-on: ubuntu-latest
@@ -33,22 +37,55 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           global-json-file: global.json
-          cache: false
+
+      - name: Restore dependency cache
+        id: dependency-cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.nuget/packages
+            ~/.dotnet/toolResolverCache
+          key: ${{ runner.os }}-dotnet-${{ hashFiles('global.json', 'Directory.Packages.props', '.config/dotnet-tools.json', '**/*.csproj', '**/packages.lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-dotnet-
+
+      - name: Record dependency cache status
+        shell: bash
+        run: |
+          if [[ "${{ steps.dependency-cache.outputs.cache-hit }}" == "true" ]]; then
+            echo "DEPENDENCY_CACHE_STATUS=hit" >> "$GITHUB_ENV"
+          else
+            echo "DEPENDENCY_CACHE_STATUS=miss" >> "$GITHUB_ENV"
+          fi
 
       - name: Restore local tools
-        run: dotnet tool restore
+        run: bash scripts/record-phase-timing.sh "$TEST_ARTIFACTS_DIR/phase-timings.tsv" restore-local-tools dotnet tool restore
 
       - name: Restore packages
-        run: dotnet restore
+        run: bash scripts/record-phase-timing.sh "$TEST_ARTIFACTS_DIR/phase-timings.tsv" restore-nuget-packages dotnet restore --locked-mode
 
       - name: Build Release
-        run: dotnet build -c Release --no-restore
+        run: bash scripts/record-phase-timing.sh "$TEST_ARTIFACTS_DIR/phase-timings.tsv" release-build dotnet build -c Release --no-restore
 
       - name: Run isolated test suite
         run: bash scripts/run-test-suite.sh --artifacts-dir "$TEST_ARTIFACTS_DIR"
 
       - name: Run Slopwatch
-        run: dotnet tool run slopwatch analyze --config .slopwatch/slopwatch.json --fail-on warning
+        run: bash scripts/record-phase-timing.sh "$TEST_ARTIFACTS_DIR/phase-timings.tsv" slopwatch dotnet tool run slopwatch analyze --config .slopwatch/slopwatch.json --fail-on warning
+
+      - name: Post timing summary
+        if: ${{ always() && steps.test-artifacts.outputs.path != '' }}
+        shell: bash
+        run: |
+          if compgen -G "$TEST_ARTIFACTS_DIR/*.trx" > /dev/null; then
+            python3 scripts/trx-timing-summary.py \
+              --artifacts-dir "$TEST_ARTIFACTS_DIR" \
+              --phase-timings "$TEST_ARTIFACTS_DIR/phase-timings.tsv" \
+              --cache-status "${DEPENDENCY_CACHE_STATUS:-not-reported}" \
+              --baseline-isolated-suite-seconds 426 \
+              --baseline-integration-seconds 322.2 > "$TEST_ARTIFACTS_DIR/timing-summary.md"
+            cat "$TEST_ARTIFACTS_DIR/timing-summary.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload test evidence
         if: ${{ always() && steps.test-artifacts.outputs.path != '' }}
