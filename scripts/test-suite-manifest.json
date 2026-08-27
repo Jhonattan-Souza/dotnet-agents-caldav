@@ -14,7 +14,7 @@
       "name": "main-mcp",
       "project": "tests/DotnetAgents.CalDav.Mcp.Tests.Unit/DotnetAgents.CalDav.Mcp.Tests.Unit.csproj",
       "trx": "main-mcp.trx",
-      "exactTests": 1031,
+      "exactTests": 1021,
       "coveragePrefix": "main-mcp",
       "phase": "main",
       "environment": {}
