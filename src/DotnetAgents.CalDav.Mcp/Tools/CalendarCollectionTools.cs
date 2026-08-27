@@ -3,7 +3,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Models;
-using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -11,7 +10,7 @@ namespace DotnetAgents.CalDav.Mcp.Tools;
 
 /// <summary>Creates Calendar collections and deletes them through MRTR confirmation.</summary>
 [McpServerToolType]
-public sealed class CalendarCollectionTools
+internal sealed class CalendarCollectionTools
 {
     internal const int MaximumArgumentBytes = CalendarQueryToolSupport.MaximumArgumentBytes;
     private const string ConfirmationKey = "confirm_delete";
@@ -20,15 +19,7 @@ public sealed class CalendarCollectionTools
     private readonly CalendarMutationRequestStateProtector _stateProtector;
     private readonly TimeProvider _timeProvider;
 
-    public CalendarCollectionTools(IServiceProvider services)
-        : this(
-            services.GetRequiredService<ICalendarCollectionModule>(),
-            services.GetRequiredService<CalendarMutationRequestStateProtector>(),
-            services.GetRequiredService<TimeProvider>())
-    {
-    }
-
-    internal CalendarCollectionTools(
+    public CalendarCollectionTools(
         ICalendarCollectionModule module,
         CalendarMutationRequestStateProtector stateProtector,
         TimeProvider timeProvider)
