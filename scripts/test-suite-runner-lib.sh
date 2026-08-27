@@ -33,12 +33,13 @@ run_test_suite_manifest_phase() {
   fi
   local worker_limit=$3 callback=$4
   local row project trx prefix filter environment
-  local next=0 first_failure=0 finished_pid child_status index
-  local -a rows pids
+  local next=0 failure_observed=0 finished_pid child_status index failure_index=-1
+  local -a rows pids trx_by_index
+  local -A index_by_pid status_by_index
   mapfile -t rows < <(emit_test_suite_manifest_rows "$manifest" "$phase")
   pids=()
   while (( next < ${#rows[@]} || ${#pids[@]} > 0 )); do
-    while (( first_failure == 0 && next < ${#rows[@]} && ${#pids[@]} < worker_limit )); do
+    while (( failure_observed == 0 && next < ${#rows[@]} && ${#pids[@]} < worker_limit )); do
       row=${rows[$next]}
       IFS=$'\x1f' read -r project trx prefix filter environment <<< "$row"
       (
@@ -52,6 +53,8 @@ run_test_suite_manifest_phase() {
         fi
       ) &
       pids+=("$!")
+      index_by_pid["$!"]=$next
+      trx_by_index[$next]=$trx
       ((next += 1))
     done
 
@@ -62,10 +65,10 @@ run_test_suite_manifest_phase() {
       child_status=0
     else
       child_status=$?
-      if (( first_failure == 0 )); then
-        first_failure=$child_status
-      fi
+      failure_observed=1
     fi
+    index=${index_by_pid[$finished_pid]}
+    status_by_index[$index]=$child_status
     for index in "${!pids[@]}"; do
       if [[ "${pids[$index]}" == "$finished_pid" ]]; then
         unset 'pids[index]'
@@ -74,5 +77,16 @@ run_test_suite_manifest_phase() {
     done
     pids=("${pids[@]}")
   done
-  return "$first_failure"
+  for ((index = 0; index < next; index += 1)); do
+    if (( ${status_by_index[$index]:-0} != 0 )); then
+      failure_index=$index
+      break
+    fi
+  done
+  if (( failure_index >= 0 )); then
+    child_status=${status_by_index[$failure_index]}
+    echo "FAIL test manifest phase [$phase]: first manifest failure [${trx_by_index[$failure_index]}] (exit $child_status)" >&2
+    return "$child_status"
+  fi
+  return 0
 }
