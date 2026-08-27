@@ -109,18 +109,6 @@ Exported spans show the MCP request, `caldav.operation`, the applicable `discove
 
 The verified interoperability profile is the official Radicale 3.7.8 image pinned in the [Radicale 3.7.8 profile](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/v0.2.3/contracts/0.2.3/radicale-3.7.8-profile.json). Set `CALDAV_INTEROPERABILITY_PROFILE=radicale-3.7.8` only for that runtime. Server-authoritative Semantic and Exact Move fail closed with `unsupported_capability` when the profile is omitted because atomic `If-Match`, `Overwrite: F`, and `CALDAV:no-uid-conflict` enforcement cannot be inferred from stored resources or generic DAV discovery. No collection-scan compatibility fallback is provided. Other CalDAV servers remain unverified profiles even when capability negotiation allows other operations.
 
-## Migrating from 0.2.2
-
-Version 0.2.3 replaces query replay with immutable Query Result Snapshots,
-requires an explicit Temporal Evaluation Context for bounded query Starts, and
-makes Move server-authoritative under the verified profile. Read
-[Migrating from 0.2.2 to 0.2.3](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/v0.2.3/docs/migrating-0.2.2-to-0.2.3.md)
-before upgrading.
-
-## Migrating from 0.1.x
-
-Version 0.2.0 deliberately replaces the task-specific 0.1.x contract. Read [Migrating from 0.1.x to 0.2.0](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/main/docs/migrating-0.1.x-to-0.2.0.md) for the complete tool and environment mapping, revision-bound write recipes, MRTR deployment checks, and rollback to pinned version 0.1.4. Upgrade and rollback do not migrate or rewrite CalDAV data.
-
 ## Architecture
 
 Layered design:
@@ -162,5 +150,4 @@ dotnet tool run slopwatch analyze --config .slopwatch/slopwatch.json --fail-on w
 ```
 
 The behavior gates, final-package smoke test, and package-content policy are documented in [Release validation](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/main/docs/release-process.md). Current specification evidence is linked from the [requirement-to-evidence catalog](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/main/docs/requirement-to-evidence.md).
-
-The 0.2.0 contract is deliberately incompatible with the removed 0.1.x task-specific tools and environment names.
+Published release history and notes are maintained in [GitHub Releases](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/releases).

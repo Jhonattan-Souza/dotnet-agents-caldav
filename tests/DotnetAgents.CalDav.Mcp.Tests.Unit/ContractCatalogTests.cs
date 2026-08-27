@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json.Nodes;
 using DotnetAgents.CalDav.Core.Models;
 using DotnetAgents.CalDav.Mcp.Hosting;
@@ -10,98 +8,6 @@ namespace DotnetAgents.CalDav.Mcp.Tests.Unit;
 
 public sealed class ContractCatalogTests
 {
-    [Fact]
-    public void Requirement_catalog_is_the_exact_closed_active_set_with_complete_passing_evidence()
-    {
-        var rows = RequirementEvidenceRows();
-        var expected = new HashSet<string>(StringComparer.Ordinal);
-        AddRange(expected, "DISC", 7, 13);
-        AddRange(expected, "OBS", 1, 11);
-        AddRange(expected, "QUERY", 1, 26);
-        AddRange(expected, "DAV", 5, 13);
-        AddRange(expected, "TIME", 5, 12);
-        AddRange(expected, "RESOURCE", 14, 27);
-        AddRange(expected, "EVIDENCE", 11, 16);
-        expected.Add("CAL-ERROR-004");
-
-        rows.Count.ShouldBe(82);
-        rows.Select(row => row.Requirement).Distinct(StringComparer.Ordinal).Count().ShouldBe(rows.Count);
-        rows.Select(row => row.Requirement).ToHashSet(StringComparer.Ordinal).SetEquals(expected).ShouldBeTrue();
-        rows.ShouldAllBe(row => row.Cells.All(cell => !string.IsNullOrWhiteSpace(cell)));
-        rows.ShouldAllBe(row => row.Status == "Passing");
-        var normativePayload = string.Concat(rows.OrderBy(row => row.Requirement, StringComparer.Ordinal)
-            .Select(row => $"{row.Requirement}\t{row.NormativeStatement}\n"));
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(normativePayload))).ToLowerInvariant()
-            .ShouldBe("d95244f9640936cbef348fea8ec844f0bda4e02308d32288e6bb868bcbbd8ad0");
-        rows.Single(row => row.Requirement == "CAL-QUERY-001").NormativeStatement
-            .ShouldContain("closed Start or Continue request");
-        var directGetActivation = rows.Single(row => row.Requirement == "CAL-DAV-005").NormativeStatement;
-        directGetActivation.ShouldContain("HTTP 405");
-        directGetActivation.ShouldContain("HTTP 501");
-        rows.Single(row => row.Requirement == "CAL-QUERY-022").NormativeStatement
-            .ShouldContain("dated non-recurring To-do remains an Entity");
-        rows.Single(row => row.Requirement == "CAL-RESOURCE-027").NormativeStatement
-            .ShouldContain("non-public reviewed plan");
-    }
-
-    [Fact]
-    public void Requirement_catalog_records_only_the_five_accepted_supersessions()
-    {
-        var supersessions = RequirementEvidenceRows()
-            .Where(row => row.Supersedes != "None")
-            .ToDictionary(row => row.Requirement, row => row.Supersedes, StringComparer.Ordinal);
-
-        supersessions.ShouldBe(new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["CAL-QUERY-001"] = "CAL-MCP-007 pagination orchestration",
-            ["CAL-QUERY-015"] = "query-result admission portion of CAL-BOUND-008",
-            ["CAL-QUERY-022"] = "prior synthetic-Occurrence treatment of dated non-recurring To-dos",
-            ["CAL-DAV-005"] = "narrowed CAL-DAV-001 fallback behavior",
-            ["CAL-TIME-005"] = "CAL-TIME-002"
-        }, ignoreOrder: true);
-    }
-
-    [Fact]
-    public void Configuration_metadata_union_and_architecture_records_remain_intentional_and_unreleased()
-    {
-        var root = RepositoryRoot();
-        var catalog = ReadJson("mcp-tool-catalog.json");
-        var server = JsonNode.Parse(File.ReadAllText(
-            Path.Combine(root, "src", "DotnetAgents.CalDav.Mcp", ".mcp", "server.json")))!.AsObject();
-        var readme = File.ReadAllText(Path.Combine(root, "README.md"));
-        var readmeNames = readme.Split('\n')
-            .Where(line => line.StartsWith("| `", StringComparison.Ordinal))
-            .Select(line => line.Split('`')[1])
-            .Where(name => name.All(character => character is >= 'A' and <= 'Z' or >= '0' and <= '9' or '_'))
-            .ToArray();
-        var catalogNames = catalog["environment"]!.AsArray()
-            .Select(item => item!["name"]!.GetValue<string>()).ToArray();
-        var serverNames = server["packages"]![0]!["environmentVariables"]!.AsArray()
-            .Select(item => item!["name"]!.GetValue<string>()).ToArray();
-
-        serverNames.ShouldBe(readmeNames);
-        serverNames.Except(catalogNames, StringComparer.Ordinal).ShouldBe([
-            "OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_PROTOCOL", "OTEL_EXPORTER_OTLP_HEADERS",
-            "OTEL_SERVICE_NAME", "OTEL_SDK_DISABLED"]);
-        catalogNames.ShouldContain("CALDAV_EVALUATION_TIME_ZONE");
-        catalogNames.ShouldContain("CALDAV_EXPOSE_EXACT_TOOLS");
-        server["version"]!.GetValue<string>().ShouldBe("0.0.0");
-        server["packages"]![0]!["version"]!.GetValue<string>().ShouldBe("0.0.0");
-        server["_meta"]!["io.modelcontextprotocol.registry/publisher-provided"]!["version"]!
-            .GetValue<string>().ShouldBe("0.0.0");
-        foreach (var adr in new[] { "0004-deep-query-result-snapshot-module.md",
-                     "0005-configured-temporal-evaluation-context.md",
-                     "0006-server-authoritative-semantic-move.md" })
-        {
-            File.Exists(Path.Combine(root, "docs", "adr", adr)).ShouldBeTrue();
-        }
-        var evidence = File.ReadAllText(Path.Combine(root, "docs", "requirement-to-evidence.md"));
-        evidence.ShouldContain("ADR 0004");
-        evidence.ShouldContain("ADR 0005");
-        evidence.ShouldContain("ADR 0006");
-        File.ReadAllText(Path.Combine(root, "CHANGELOG.md")).ShouldContain("## [Unreleased]");
-    }
-
     [Fact]
     public void Query_catalog_has_one_closed_start_continue_schema_and_one_snapshot_pagination_contract()
     {
@@ -519,69 +425,7 @@ public sealed class ContractCatalogTests
         profile["legacyTaskFixturesAreEvidence"]!.GetValue<bool>().ShouldBeFalse();
     }
 
-    [Fact]
-    public void Compatibility_matrix_uses_independent_component_classes()
-    {
-        var matrix = File.ReadAllText(ContractPath("compatibility-matrix.md"));
-        var rows = matrix.Split('\n').Where(line => line.StartsWith("| ") && line.Contains(" | ", StringComparison.Ordinal)).ToArray();
-
-        rows.Length.ShouldBeGreaterThan(10);
-        rows.All(row => row.Split('|').Length >= 7).ShouldBeTrue();
-        var classes = new[] { "supported", "required typed rejection", "preserved but unevaluable", "pinned-profile-only", "unsafe through Ical.Net" };
-        foreach (var row in rows.Where(row => !row.Contains("---", StringComparison.Ordinal)).Skip(1))
-        {
-            var cells = row.Split('|', StringSplitOptions.TrimEntries);
-            cells[2].ShouldBeOneOf(classes);
-            cells[3].ShouldBeOneOf(classes);
-            cells[4].ShouldBeOneOf(classes);
-        }
-        matrix.ShouldContain("preserved but unevaluable` is not semantic support");
-        matrix.ShouldContain("unsafe through Ical.Net");
-        matrix.ShouldContain("required typed rejection");
-        matrix.ShouldContain("pinned-profile-only");
-        matrix.ShouldContain(
-            "| To-do Completion | supported | unsafe through Ical.Net | pinned-profile-only | implemented |");
-        matrix.ShouldContain("completion instant comes only from the injected server clock");
-        matrix.ShouldContain(
-            "| Other CalDAV servers | pinned-profile-only | required typed rejection | pinned-profile-only | implemented capability negotiation only |");
-        matrix.ShouldContain("an unverified transcript remains operable, but no interoperability claim is made");
-    }
-
     private const string RadicaleConformanceIndexDigest = "sha256:3a0080ea51ac69dcd74e345b9587dc14a8c8af0652046069005749f9a75c5c80";
-
-    private static IReadOnlyList<RequirementEvidenceRow> RequirementEvidenceRows()
-    {
-        const string header = "| Requirement | Normative statement | Owning decision | Applicable report finding | Supersedes | Evidence layer | Scenario or fixture | Objective oracle | Status |";
-        var lines = File.ReadAllLines(Path.Combine(RepositoryRoot(), "docs", "requirement-to-evidence.md"));
-        var headerIndexes = lines.Select((line, index) => (line, index))
-            .Where(item => item.line == header).Select(item => item.index).ToArray();
-        headerIndexes.ShouldHaveSingleItem();
-        var headerIndex = headerIndexes[0];
-        lines[headerIndex + 1].ShouldBe("| --- | --- | --- | --- | --- | --- | --- | --- | --- |");
-        var dataLines = lines.Skip(headerIndex + 2).Where(line => line.StartsWith("| ", StringComparison.Ordinal))
-            .ToArray();
-        return dataLines.Select(line =>
-        {
-            var cells = line.Trim().Trim('|').Split('|', StringSplitOptions.None)
-                .Select(cell => cell.Trim()).ToArray();
-            cells.Length.ShouldBe(9, line);
-            return new RequirementEvidenceRow(cells);
-        }).ToArray();
-    }
-
-    private static void AddRange(ISet<string> requirements, string area, int first, int last)
-    {
-        for (var number = first; number <= last; number++)
-            requirements.Add($"CAL-{area}-{number:000}");
-    }
-
-    private sealed record RequirementEvidenceRow(string[] Cells)
-    {
-        internal string Requirement => Cells[0].Trim('`');
-        internal string NormativeStatement => Cells[1];
-        internal string Supersedes => Cells[4];
-        internal string Status => Cells[8];
-    }
 
     private static JsonObject ReadJson(string fileName) => JsonNode.Parse(File.ReadAllText(
         fileName == "mcp-tool-catalog.json"

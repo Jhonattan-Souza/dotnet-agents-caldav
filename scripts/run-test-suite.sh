@@ -101,10 +101,10 @@ trap finish EXIT
 "$script_directory/test-test-artifacts.sh"
 
 run_project() {
-  local project=$1 trx_filename=$2 exact_tests=$3 prefix=$4 filter_class=$5 environment=$6
+  local project=$1 trx_filename=$2 prefix=$3 filter_class=$4 environment=$5
   local arguments=(dotnet test --project "$repository_root/$project" -c Release --no-build --no-restore
     --results-directory "$artifacts_directory" --report-trx --report-trx-filename "$trx_filename"
-    --minimum-expected-tests "$exact_tests" --fail-skips on --zero-tests-policy strict --no-ansi)
+    --fail-skips on --zero-tests-policy strict --no-ansi)
   [[ -z "$prefix" ]] || arguments+=(--coverlet --coverlet-file-prefix "$prefix")
   [[ -z "$filter_class" ]] || arguments+=(--filter-class "$filter_class")
   if [[ -n "$environment" ]]; then

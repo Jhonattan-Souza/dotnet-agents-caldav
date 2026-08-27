@@ -41,5 +41,5 @@ dotnet tool run slopwatch analyze --config .slopwatch/slopwatch.json --fail-on w
 ## Packaging
 
 - `src/DotnetAgents.CalDav.Mcp/.mcp/server.json` is packed metadata. Keep its source versions at `0.0.0`; the `v*` release workflow replaces both versions from the tag.
-- Feature pull requests update the live catalog under `src/DotnetAgents.CalDav.Mcp/Contracts` and the `Unreleased` changelog. Create versioned contract snapshots, migration guides, and release notes only during an explicitly scoped release preparation after the selected features have merged.
+- Feature pull requests keep the live catalog under `src/DotnetAgents.CalDav.Mcp/Contracts` synchronized with runtime behavior and packaged metadata.
 - When environment variables or packaged MCP metadata change, update the runtime mapping, README table, live catalog, `.mcp/server.json`, and `McpMetadataTests` together. The NuGet package is produced only from `src/DotnetAgents.CalDav.Mcp/DotnetAgents.CalDav.Mcp.csproj`.

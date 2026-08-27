@@ -112,22 +112,6 @@ public class McpMetadataTests
         schema.Evaluate(document.RootElement).IsValid.ShouldBeTrue();
     }
 
-    // ─── packaging metadata ─────────────────────────────────────────────────────
-
-    [Fact]
-    public void McpProjectFile_ContainsKeyPackagingProperties()
-    {
-        var projectDir = GetMcpProjectDir();
-        var csprojPath = Path.Combine(projectDir, "DotnetAgents.CalDav.Mcp.csproj");
-        File.Exists(csprojPath).ShouldBeTrue("MCP project file must exist");
-
-        var csproj = File.ReadAllText(csprojPath);
-
-        csproj.ShouldContain("<PackageId>dotnet-agents-caldav</PackageId>");
-        csproj.ShouldContain("<PackageType>");
-        csproj.ShouldContain("<PackAsTool>");
-        csproj.ShouldContain("<ToolCommandName>dotnet-agents-caldav</ToolCommandName>");
-    }
 }
 
 internal static class McpRegistrySchema

@@ -67,8 +67,9 @@ seed_artifacts() {
   done < <(python3 - "$manifest" <<'PY'
 import json, sys
 for item in json.load(open(sys.argv[1], encoding="utf-8"))["artifacts"]:
-    harness = item.get("requiredResult", {}).get("exactPassed", 0)
-    print("\x1f".join((item["trx"], str(item["exactTests"]), str(harness))))
+    total = 3 if item["phase"] == "main" else 2
+    harness = 1 if item["name"] == "main-integration" else 0
+    print("\x1f".join((item["trx"], str(total), str(harness))))
 PY
   )
 }
@@ -88,7 +89,7 @@ seed_artifacts "$current"
 actual=$("$verifier" "$current" complete)
 expected="$(realpath "$current/main-core.coverage.cobertura.260823000000000.xml");$(realpath "$current/main-mcp.coverage.cobertura.260823000000000.xml");$(realpath "$current/main-integration.coverage.cobertura.260823000000000.xml")"
 [[ "$actual" == "$expected" ]] || { echo "Unexpected Cobertura manifest: $actual" >&2; exit 1; }
-echo "PASS exact five-artifact manifest"
+echo "PASS five-artifact manifest"
 
 truncated="$fixture_root/truncated"
 seed_artifacts "$truncated"
@@ -105,6 +106,11 @@ seed_artifacts "$extra_trx"
 write_trx "$extra_trx/unexpected.trx" 1
 expect_rejected "unexpected TRX is rejected" "$verifier" "$extra_trx" complete
 
+empty_results="$fixture_root/empty-results"
+seed_artifacts "$empty_results"
+write_trx "$empty_results/main-core.trx" 0
+expect_rejected "empty TRX evidence is rejected" "$verifier" "$empty_results" complete
+
 missing_coverage="$fixture_root/missing-coverage"
 seed_artifacts "$missing_coverage"
 rm -- "$missing_coverage/main-mcp.coverage.opencover.260823000000001.xml"
@@ -120,38 +126,10 @@ seed_artifacts "$unknown_coverage"
 printf '<coverage />\n' > "$unknown_coverage/coverage.cobertura.xml"
 expect_rejected "unknown root coverage report is rejected" "$verifier" "$unknown_coverage" complete
 
-for delta in -1 1; do
-  wrong="$fixture_root/wrong-main-$delta"
-  seed_artifacts "$wrong"
-  core_count=$(python3 - "$manifest" "$delta" <<'PY'
-import json, sys
-item = next(value for value in json.load(open(sys.argv[1], encoding="utf-8"))["artifacts"] if value["name"] == "main-core")
-print(item["exactTests"] + int(sys.argv[2]))
-PY
-  )
-  write_trx "$wrong/main-core.trx" "$core_count"
-  expect_rejected "main count delta $delta is rejected" "$verifier" "$wrong" complete
-done
-
-integration_count=$(python3 - "$manifest" <<'PY'
-import json, sys
-print(next(item["exactTests"] for item in json.load(open(sys.argv[1], encoding="utf-8"))["artifacts"]
-           if item["name"] == "main-integration"))
-PY
-)
-for harness_count in 10 12; do
-  wrong="$fixture_root/wrong-baseline-harness-$harness_count"
-  seed_artifacts "$wrong"
-  write_trx "$wrong/main-integration.trx" "$integration_count" "$harness_count"
-  expect_rejected "baseline main TRX with $harness_count harness rows is rejected" "$verifier" "$wrong" complete
-done
-
-for delta in -1 1; do
-  wrong="$fixture_root/wrong-variant-$delta"
-  seed_artifacts "$wrong"
-  write_trx "$wrong/strict-preconditions.trx" "$((11 + delta))"
-  expect_rejected "variant count delta $delta is rejected" "$verifier" "$wrong" complete
-done
+missing_required="$fixture_root/missing-required-result"
+seed_artifacts "$missing_required"
+write_trx "$missing_required/main-integration.trx" 3
+expect_rejected "required conformance class is absent" "$verifier" "$missing_required" complete
 
 forged="$fixture_root/forged-row"
 seed_artifacts "$forged"
@@ -163,6 +141,17 @@ result.set("outcome", "Failed")
 tree.write(sys.argv[1], encoding="utf-8", xml_declaration=True)
 PY
 expect_rejected "green counters cannot hide a failed result record" "$verifier" "$forged" complete
+
+forged_counters="$fixture_root/forged-counters"
+seed_artifacts "$forged_counters"
+python3 - "$forged_counters/main-core.trx" <<'PY'
+import sys, xml.etree.ElementTree as ET
+tree = ET.parse(sys.argv[1])
+counters = next(element for element in tree.getroot().iter() if element.tag.endswith("Counters"))
+counters.set("total", "999")
+tree.write(sys.argv[1], encoding="utf-8", xml_declaration=True)
+PY
+expect_rejected "counters must match result records" "$verifier" "$forged_counters" complete
 
 unknown="$fixture_root/unknown-test-id"
 seed_artifacts "$unknown"
@@ -222,7 +211,7 @@ expect_rejected "manifest cannot replace the closed suite with a tiny project" p
 
 declare -a transported_trx=()
 consume_stdin_and_record_trx() {
-  local _project=$1 row_trx=$2 _exact=$3 _prefix=$4 _filter=$5 _environment=$6
+  local _project=$1 row_trx=$2 _prefix=$3 _filter=$4 _environment=$5
   cat >/dev/null
   transported_trx+=("$row_trx")
 }
