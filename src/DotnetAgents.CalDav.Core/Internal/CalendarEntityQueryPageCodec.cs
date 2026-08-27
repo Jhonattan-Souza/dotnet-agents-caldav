@@ -7,14 +7,10 @@ namespace DotnetAgents.CalDav.Core.Internal;
 
 internal sealed class CalendarEntityQueryPageCodec : ICalendarQueryPageCodec<CalendarEntityQueryItem>
 {
-    private readonly CalendarQueryCursorIssuer _cursorIssuer;
     private readonly CalendarQueryPageWorkCounter? _workCounter;
 
-    internal CalendarEntityQueryPageCodec(
-        CalendarQueryCursorIssuer cursorIssuer,
-        CalendarQueryPageWorkCounter? workCounter = null)
+    internal CalendarEntityQueryPageCodec(CalendarQueryPageWorkCounter? workCounter = null)
     {
-        _cursorIssuer = cursorIssuer;
         _workCounter = workCounter;
     }
 
@@ -24,92 +20,29 @@ internal sealed class CalendarEntityQueryPageCodec : ICalendarQueryPageCodec<Cal
     internal const int MaximumCallToolResultBytes = 4 * 1024 * 1024;
     internal const int MaximumHumanReadableBytes = 64 * 1024;
     internal const string SuccessText = "Calendar Entity query completed.";
+    private static readonly CalendarQueryPageConstraints PageConstraints = new(
+        DefaultPageSize,
+        MaximumPageSize,
+        MaximumCallToolResultBytes,
+        MaximumHumanReadableBytes,
+        "The Calendar Entity query human-readable result exceeds the safe payload limit.",
+        "One Calendar Entity cannot fit in a result page.");
 
     string ICalendarQueryPageCodec<CalendarEntityQueryItem>.ToolName => ToolName;
 
-    int ICalendarQueryPageCodec<CalendarEntityQueryItem>.DefaultPageSize => DefaultPageSize;
+    CalendarQueryPageConstraints ICalendarQueryPageCodec<CalendarEntityQueryItem>.Constraints => PageConstraints;
 
-    int ICalendarQueryPageCodec<CalendarEntityQueryItem>.MaximumPageSize => MaximumPageSize;
-
-    CalendarQueryPagePlanAdmission ICalendarQueryPageCodec<CalendarEntityQueryItem>.Plan(
-        CalendarQuerySnapshot snapshot,
-        int position,
-        int pageSize,
-        CancellationToken cancellationToken) => Plan(snapshot, position, pageSize, cancellationToken);
+    CalendarQueryFixedBudget ICalendarQueryPageCodec<CalendarEntityQueryItem>.MeasureFixedBudget(
+        CalendarQuerySnapshot snapshot)
+    {
+        var budget = MeasureFixedBudget(snapshot.DiagnosticsUtf8, snapshot.TemporalEvaluationContextUtf8);
+        _workCounter?.RecordAdmissionEnvelopeSerialization();
+        return budget;
+    }
 
     QueryPage<CalendarEntityQueryItem> ICalendarQueryPageCodec<CalendarEntityQueryItem>.Materialize(
         CalendarQuerySnapshot snapshot,
         CalendarQueryPagePlan plan) => Materialize(snapshot, plan);
-
-    internal CalendarQueryPagePlanAdmission Plan(
-        CalendarQuerySnapshot snapshot,
-        int position,
-        int pageSize,
-        CancellationToken cancellationToken)
-    {
-        if (IsInvalidRequest(snapshot.Items.Length, position, pageSize))
-            return CalendarQueryPagePlanAdmission.Failure(CalendarQueryFailures.InvalidInput());
-        var fixedBudget = MeasureFixedBudget(snapshot.DiagnosticsUtf8, snapshot.TemporalEvaluationContextUtf8);
-        _workCounter?.RecordAdmissionEnvelopeSerialization();
-        if (fixedBudget.HumanReadableBytes > MaximumHumanReadableBytes)
-            return CalendarQueryPagePlanAdmission.Failure(CalendarQueryFailures.PayloadTooLarge(
-                "The Calendar Entity query human-readable result exceeds the safe payload limit."));
-
-        return BuildPlan(snapshot, position, pageSize, fixedBudget.CallToolResultBytes, cancellationToken);
-    }
-
-    private CalendarQueryPagePlanAdmission BuildPlan(
-        CalendarQuerySnapshot snapshot,
-        int position,
-        int pageSize,
-        int fixedCallToolResultBytes,
-        CancellationToken cancellationToken)
-    {
-        var admitted = new List<StoredCalendarEntityQueryItem>(Math.Min(pageSize, snapshot.Items.Length - position));
-        var admittedBytes = 0L;
-        string? nextCursor = null;
-        while (admitted.Count < pageSize && position + admitted.Count < snapshot.Items.Length)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var stored = snapshot.Items[position + admitted.Count];
-            var candidateCount = admitted.Count + 1;
-            var candidatePosition = position + candidateCount;
-            var hasMore = candidatePosition < snapshot.Items.Length;
-            var candidateCursor = hasMore
-                ? _cursorIssuer.Issue(
-                    ToolName,
-                    snapshot.Id,
-                    candidatePosition,
-                    snapshot.ExpiresAt,
-                    snapshot.TemporalEvaluationContextUtf8)
-                : null;
-            var candidateBytes = admittedBytes + stored.JsonByteCount;
-            var measured = fixedCallToolResultBytes
-                + candidateBytes
-                + Math.Max(0, candidateCount - 1)
-                + CursorDelta(candidateCursor);
-            if (measured > MaximumCallToolResultBytes)
-                break;
-            admitted.Add(stored);
-            admittedBytes = candidateBytes;
-            nextCursor = candidateCursor;
-        }
-
-        if (admitted.Count == 0 && snapshot.Items.Length > 0)
-            return CalendarQueryPagePlanAdmission.Failure(CalendarQueryFailures.PayloadTooLarge(
-                "One Calendar Entity cannot fit in a result page."));
-        var measuredBytes = checked((int)(fixedCallToolResultBytes
-            + admittedBytes
-            + Math.Max(0, admitted.Count - 1)
-            + CursorDelta(nextCursor)));
-        return CalendarQueryPagePlanAdmission.Page(new CalendarQueryPagePlan(admitted, nextCursor, measuredBytes));
-    }
-
-    private static bool IsInvalidRequest(int itemCount, int position, int pageSize) =>
-        pageSize is < 1 or > MaximumPageSize
-        || position < 0
-        || itemCount > 0 && position >= itemCount
-        || itemCount == 0 && position != 0;
 
     internal QueryPage<CalendarEntityQueryItem> Materialize(
         CalendarQuerySnapshot snapshot,
@@ -224,7 +157,6 @@ internal sealed class CalendarEntityQueryPageCodec : ICalendarQueryPageCodec<Cal
         writer.WriteRawValue(temporalEvaluationContextUtf8.Span, skipInputValidation: true);
     }
 
-    private static int CursorDelta(string? cursor) => cursor is null ? 0 : cursor.Length - 2;
 }
 
 internal sealed class CalendarQueryPageWorkCounter(Action? onFinalMaterialization = null)

@@ -6,18 +6,20 @@ internal interface ICalendarQueryPageCodec<TItem>
 {
     string ToolName { get; }
 
-    int DefaultPageSize { get; }
+    CalendarQueryPageConstraints Constraints { get; }
 
-    int MaximumPageSize { get; }
-
-    CalendarQueryPagePlanAdmission Plan(
-        CalendarQuerySnapshot snapshot,
-        int position,
-        int pageSize,
-        CancellationToken cancellationToken);
+    CalendarQueryFixedBudget MeasureFixedBudget(CalendarQuerySnapshot snapshot);
 
     QueryPage<TItem> Materialize(CalendarQuerySnapshot snapshot, CalendarQueryPagePlan plan);
 }
+
+internal sealed record CalendarQueryPageConstraints(
+    int DefaultPageSize,
+    int MaximumPageSize,
+    int MaximumCallToolResultBytes,
+    int MaximumHumanReadableBytes,
+    string HumanReadablePayloadTooLargeMessage,
+    string ItemPayloadTooLargeMessage);
 
 internal sealed record CalendarQueryPagePlan(
     IReadOnlyList<StoredCalendarEntityQueryItem> Items,

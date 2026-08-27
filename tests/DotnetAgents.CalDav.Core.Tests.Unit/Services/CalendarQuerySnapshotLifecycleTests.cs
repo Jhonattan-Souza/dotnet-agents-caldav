@@ -28,6 +28,11 @@ public sealed class CalendarQuerySnapshotLifecycleTests
     [Fact]
     public void StartPublicationAndContinueReplayHaveSeparatedDependencyGraphs()
     {
+        var pageAdmission = typeof(CalendarQuerySnapshotStore).Assembly.GetTypes()
+            .Single(type => type.Name == "CalendarQueryPageAdmission");
+        ConstructorTypes(typeof(CalendarQuerySnapshotPublication)).ShouldContain(pageAdmission);
+        ConstructorTypes(typeof(CalendarQuerySnapshotReplay)).ShouldContain(pageAdmission);
+
         ConstructorTypes(typeof(CalendarEntityQueryStartExecutor)).ShouldContain(typeof(CalendarQuerySnapshotPublication));
         ConstructorTypes(typeof(CalendarOccurrenceQueryStartExecutor)).ShouldContain(typeof(CalendarQuerySnapshotPublication));
         ConstructorTypes(typeof(CalendarTodoQueryStartExecutor)).ShouldContain(typeof(CalendarQuerySnapshotPublication));
@@ -68,6 +73,11 @@ public sealed class CalendarQuerySnapshotLifecycleTests
             typeof(CalendarOccurrenceQueryPageCodec),
             typeof(CalendarTodoQueryPageCodec)
         ]);
+        foreach (var pageCodec in pageCodecAdapters)
+            ConstructorTypes(pageCodec).ShouldNotContain(typeof(CalendarQueryCursorIssuer));
+        typeof(ICalendarQueryPageCodec<>).GetMethods()
+            .Select(method => method.Name)
+            .ShouldNotContain("Plan");
     }
 
     [Fact]
@@ -100,6 +110,75 @@ public sealed class CalendarQuerySnapshotLifecycleTests
         context.Store.ActiveSnapshotCount.ShouldBe(1);
         context.Store.ActiveReservationCount.ShouldBe(0);
         context.Store.RetainedBytes.ShouldBe(retainedDraft.RetainedBytes);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(50)]
+    [InlineData(200)]
+    public void SharedPageAdmissionOwnsRepresentativeAndFinalPagePlanning(int pageSize)
+    {
+        using var context = LifecycleContext.Create();
+        var snapshot = Draft(pageSize + 1).CreateSnapshot(Now.AddMinutes(10));
+
+        var first = context.PageAdmission.Plan(
+            snapshot,
+            0,
+            pageSize,
+            context.PageCodec,
+            CancellationToken.None).Value!;
+        var final = context.PageAdmission.Plan(
+            snapshot,
+            pageSize,
+            pageSize,
+            context.PageCodec,
+            CancellationToken.None).Value!;
+
+        first.Items.Count.ShouldBe(pageSize);
+        first.NextCursor.ShouldNotBeNull();
+        final.Items.Count.ShouldBe(1);
+        final.NextCursor.ShouldBeNull();
+    }
+
+    [Theory]
+    [InlineData(0, -1, 1)]
+    [InlineData(0, 1, 1)]
+    [InlineData(1, -1, 1)]
+    [InlineData(1, 1, 1)]
+    [InlineData(1, 0, 0)]
+    [InlineData(1, 0, 201)]
+    public void SharedPageAdmissionRejectsEveryInvalidPositionAndPageSize(
+        int itemCount,
+        int position,
+        int pageSize)
+    {
+        using var context = LifecycleContext.Create();
+        var snapshot = Draft(itemCount).CreateSnapshot(Now.AddMinutes(10));
+
+        var planned = context.PageAdmission.Plan(
+            snapshot,
+            position,
+            pageSize,
+            context.PageCodec,
+            CancellationToken.None);
+
+        planned.Error!.Code.ShouldBe(QueryFailureCode.InvalidInput);
+    }
+
+    [Fact]
+    public void SharedPageAdmissionObservesCancellationDuringItemPlanning()
+    {
+        using var context = LifecycleContext.Create();
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        var snapshot = Draft(1).CreateSnapshot(Now.AddMinutes(10));
+
+        Should.Throw<OperationCanceledException>(() => context.PageAdmission.Plan(
+            snapshot,
+            0,
+            1,
+            context.PageCodec,
+            cancellation.Token));
     }
 
     [Fact]
@@ -299,6 +378,7 @@ public sealed class CalendarQuerySnapshotLifecycleTests
             CalendarQuerySnapshotReader reader,
             CalendarQueryCursorIssuer issuer,
             CalendarQueryCursorAuthenticator authenticator,
+            CalendarQueryPageAdmission pageAdmission,
             CalendarQuerySnapshotPublication publication,
             CalendarQuerySnapshotReplay replay,
             CalendarEntityQueryPageCodec pageCodec)
@@ -307,6 +387,7 @@ public sealed class CalendarQuerySnapshotLifecycleTests
             Reader = reader;
             Issuer = issuer;
             _authenticator = authenticator;
+            PageAdmission = pageAdmission;
             Publication = publication;
             Replay = replay;
             PageCodec = pageCodec;
@@ -317,6 +398,8 @@ public sealed class CalendarQuerySnapshotLifecycleTests
         internal CalendarQuerySnapshotReader Reader { get; }
 
         internal CalendarQueryCursorIssuer Issuer { get; }
+
+        internal CalendarQueryPageAdmission PageAdmission { get; }
 
         internal CalendarQuerySnapshotPublication Publication { get; }
 
@@ -343,14 +426,16 @@ public sealed class CalendarQuerySnapshotLifecycleTests
             var store = new CalendarQuerySnapshotStore(time);
             var reader = new CalendarQuerySnapshotReader(store);
             var writer = new CalendarQuerySnapshotWriter(store);
+            var pageAdmission = new CalendarQueryPageAdmission(issuer);
             return new LifecycleContext(
                 store,
                 reader,
                 issuer,
                 authenticator,
-                new CalendarQuerySnapshotPublication(new CalendarQueryPolicy(time), writer),
-                new CalendarQuerySnapshotReplay(authenticator, reader),
-                new CalendarEntityQueryPageCodec(issuer, workCounter));
+                pageAdmission,
+                new CalendarQuerySnapshotPublication(new CalendarQueryPolicy(time), writer, pageAdmission),
+                new CalendarQuerySnapshotReplay(authenticator, reader, pageAdmission),
+                new CalendarEntityQueryPageCodec(workCounter));
         }
 
         internal Guid SnapshotId(string cursor) => _authenticator
