@@ -13,9 +13,11 @@ Before calling a tool, determine the Entity Kind, Calendar Scope, time window, a
 
 - Resolve relative dates from the current date and the user's known time zone. For every To-do query Start and every bounded Entity or Occurrence query Start, pass the known user or harness IANA zone explicitly, or rely on a validated configured IANA zone. Omit `evaluationTimeZone` from an unbounded Entity query, where it is unused. Ask for a zone only when it is genuinely unknown or the server returns `temporal_unresolved`.
 - Never send a one-sided time filter. For example, “due this week” maps to `dueFrom` at the requested week's start and `dueTo` at its exclusive end. “Due through Friday” also needs a lower bound; use the current evaluation instant when that matches the intent, or clarify whether older overdue items belong in the result.
-- Use the live schema's `default` scope or destination directly when the user has not selected another Calendar. A simple request such as an Event tomorrow at 18:00 can be one `events.create` call; omit an unspecified end or duration rather than inventing one.
+- Establish an **authorized destination selection** before creating or moving an Event or To-do. It exists only when the user explicitly supplies a Calendar Name or canonical href, a prior trusted result provides the canonical href, or the existence and Entity Kind binding of a configured default are already established in context. A Calendar Name is a selector, not identity, and need not be unique; if selection returns `ambiguous`, ask the user to choose from its authorized candidates. Generic phrases such as “my calendar”, “my task list”, “agenda”, “calendário”, “lista”, or “lista de tarefas” express purpose, not a destination selection.
+- For a create with no authorized destination selection, call `calendars.list` once and keep only Calendars compatible with the Entity Kind. Select the sole compatible Calendar by its returned canonical href. If more than one compatible Calendar remains, ask the user to choose before the first write. If none remains, report that no compatible Calendar is available and ask whether the user wants to create one. Use `default` only when its configuration is already established; the schema permitting `default` does not establish one. Resolve an unknown destination with read-only discovery before calling a mutation.
+- A simple request such as an Event tomorrow at 18:00 can be one `events.create` call once it has an authorized destination selection; omit an unspecified end or duration rather than inventing one.
 - Ask one concise clarification when different answers would materially change stored data: which of several matching resources, one recurring Occurrence versus the series, or what “organize next week” should change. Gather related missing choices together. For an open-ended organization request, read the relevant week once, propose a concrete plan, then mutate only the plan the user accepts.
-- Before `calendars.create`, resolve a user-authorized display name and component set: Events, To-dos, or both. Generic nouns such as “agenda”, “calendário”, “lista”, or “lista de tarefas” express purpose, not an authorized display name; ask for the name before any tool call and never invent one. Infer the component set only from explicit intent, and ask once for any missing field before the first write. When both are known, create the Calendar and use its returned canonical href for the requested resource without intervening discovery.
+- Before `calendars.create`, resolve a user-authorized display name and component set: Events, To-dos, or both. Ask for the name before any tool call when the request supplies only a generic purpose, and never invent one. Infer the component set only from explicit intent, and ask once for any missing field before the first write. When both are known, create the Calendar and use its returned canonical href for the requested resource without intervening discovery.
 - Before a broad or destructive request, resolve Calendar scope, Entity Kinds, temporal cutoff, and selection criteria. Query one bounded set, present its finite targets, and proceed only through their individual confirmation flows. Do not turn an open-ended result or pagination stream into an automatic deletion loop.
 - Before any exact write, require the user's message to supply the complete caller-authored Calendar Object Resource body. If it does not, ask for that body before every tool call. Do not read the existing resource and turn it into supposedly caller-authored replacement content.
 
@@ -28,8 +30,8 @@ Call `calendars.list` once for a stable selection intent, and only when the Cale
 Skip discovery when:
 
 - the request uses `all` scope;
-- the live schema offers a configured default scope or destination;
-- a selected Calendar name or absolute href is already known;
+- a configured default's existence and Entity Kind binding are already established;
+- an authorized explicit Calendar Name selector or canonical href is already known;
 - an absolute resource href can go directly to `calendar_resources.get`; or
 - a preceding result already returned the Calendar identity.
 
@@ -37,7 +39,7 @@ Use a known Calendar name directly where the live schema accepts selection by na
 
 Use `calendars.create` only for a new Calendar collection. Use `calendars.delete` only when the user intends to remove the whole collection and every resource in it; resolve its exact href first and continue the tool's own finite confirmation review. Unless the user asks for a separate preview, do not enumerate every contained resource before that review or list again after an uncommitted attempt. Event or To-do deletion is `calendar_resources.delete`.
 
-Discovery is complete when the next operation has a schema-valid scope or destination without a speculative preflight.
+Discovery is complete when the next operation has a schema-valid authorized scope or destination selection without a speculative write.
 
 ## Choose the narrow read
 
@@ -56,7 +58,7 @@ A read is complete when the requested range is covered, the returned Temporal Ev
 
 ## Bind every existing-resource write
 
-Create new resources directly with `events.create` or `todos.create`; creation needs no preliminary read. To modify, complete, move, or delete an existing resource, first obtain its fresh strong revision through the narrowest query or `calendar_resources.get`, then pass the returned reference exactly as the live schema names it:
+Once a create has an authorized destination selection, call `events.create` or `todos.create` directly; it needs no preliminary Event, To-do, or resource read. To modify, complete, move, or delete an existing resource, first obtain its fresh strong revision through the narrowest query or `calendar_resources.get`, then pass the returned reference exactly as the live schema names it:
 
 - `events.patch` or `todos.patch` for field changes and rescheduling;
 - `todos.complete` for completion;
@@ -93,6 +95,7 @@ Semantic tools are the normal path. Use `calendar_resources.exact_get`, `calenda
 Finish only when:
 
 - every requested read range or mutation is accounted for;
+- every mutation had an authorized destination selection before the first write and unique resolution before commit;
 - discovery and query calls were not repeated without new information;
 - each existing-resource write used the latest returned revision and exact recurrence identity when applicable;
 - every MRTR exchange reached a confirmed terminal outcome or a clearly reported harness limitation; and
