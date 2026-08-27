@@ -211,8 +211,8 @@ internal sealed class CalendarService : ICalendarService
     public async Task<CalendarResourceMoveResult> MoveResourceAsync(
         CalendarResourceMoveRequest request,
         CancellationToken cancellationToken) => await new CalendarMoveModule(
-            new CalendarClientMoveTransport(_operationDiscovery, _calendarClient),
-            _options.Value,
+            new CalendarClientMoveTransport(_calendarClient),
+            new CalendarMoveAuthorization(_operationDiscovery, _options.Value),
             _timeProvider).MoveAsync(request, cancellationToken);
 
     /// <inheritdoc />
@@ -262,14 +262,14 @@ internal sealed class CalendarService : ICalendarService
         ApplyScope);
 
     private CalendarExactMoveModule ExactMoveModule() => new(
-        new CalendarClientMoveTransport(
+        new CalendarClientMoveTransport(_calendarClient),
+        new CalendarMoveAuthorization(
             new CalendarOperationDiscovery(
                 new CalendarClientDiscoveryTransport(_calendarClient),
                 _options,
                 _discoveryPolicy.ApplyScope,
                 _discoveryPolicy.ResolveDefault),
-            _calendarClient),
-        _options.Value,
+            _options.Value),
         _timeProvider);
 
     private async Task<CalendarResourceRead> CreateSnapshotAsync(

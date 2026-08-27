@@ -552,17 +552,26 @@ public sealed class CalendarMoveModuleTests
     private static CalendarMoveModule Module(
         ScriptedMoveTransport transport,
         string? interoperabilityProfile = CalDavInteroperabilityProfiles.Radicale_3_7_8,
-        string? calendarHrefs = "https://cal.example/tasks/,https://cal.example/archive/") => new(
-        transport,
-        new CalDavOptions
+        string? calendarHrefs = "https://cal.example/tasks/,https://cal.example/archive/")
+    {
+        var options = new CalDavOptions
         {
             BaseUrl = "https://cal.example",
             Username = "user",
             Password = "secret",
             CalendarHrefs = calendarHrefs,
             InteroperabilityProfile = interoperabilityProfile
-        },
-        TimeProvider.System);
+        };
+        var operationDiscovery = new CalendarOperationDiscovery(
+            new ScriptedDiscoveryTransport(transport),
+            Microsoft.Extensions.Options.Options.Create(options),
+            _ => transport.Discovery.Discovery,
+            (kind, _, _) => transport.Discovery.Default(kind));
+        return new CalendarMoveModule(
+            transport,
+            new CalendarMoveAuthorization(operationDiscovery, options),
+            TimeProvider.System);
+    }
 
     private static ScriptedMoveTransport ScriptedTransport(CalendarResourceRead source) => new()
     {
@@ -696,12 +705,6 @@ public sealed class CalendarMoveModuleTests
 
         internal ConcurrentQueue<string> Trace { get; } = new();
 
-        public Task<CalendarOperationDiscoveryResult> DiscoverAsync(CancellationToken cancellationToken)
-        {
-            Trace.Enqueue("discover");
-            return Task.FromResult(Discovery);
-        }
-
         public Task<CalendarResourceRead> ReadSourceAsync(
             string sourceCalendarHref,
             string href,
@@ -752,6 +755,16 @@ public sealed class CalendarMoveModuleTests
             Trace.Enqueue("dispatch");
             AfterDispatch?.Invoke();
             return Task.FromResult(Dispatch);
+        }
+    }
+
+    private sealed class ScriptedDiscoveryTransport(ScriptedMoveTransport transport)
+        : ICalendarDiscoveryTransport
+    {
+        public Task<IReadOnlyList<CalendarDescriptor>> DiscoverAsync(CancellationToken cancellationToken)
+        {
+            transport.Trace.Enqueue("discover");
+            return Task.FromResult(transport.Discovery.Discovery.Items);
         }
     }
 }
