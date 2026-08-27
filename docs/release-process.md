@@ -42,9 +42,8 @@ The NuGet package contains only files with a package-consumer purpose:
 - PDBs and the symbol package for SourceLink and debugging.
 
 Versioned contracts, schemas, interoperability profiles, compatibility
-matrices, migration guides, the changelog, release notes, ADRs, and the agent
-skill remain in the repository. GitHub Releases are the distribution surface
-for release history.
+matrices, ADRs, and the agent skill remain in the repository. Published release
+history is maintained through GitHub Releases.
 
 ## Retired audit gate
 

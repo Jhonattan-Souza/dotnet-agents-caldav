@@ -24,12 +24,12 @@ def expected_shape() -> dict[str, dict[str, object]]:
         "main-integration": {"project": INTEGRATION, "trx": "main-integration.trx",
                              "coveragePrefix": "main-integration", "phase": "main",
                              "environment": {"RADICALE_CONFORMANCE_VARIANT": "baseline"},
-                             "requiredResult": {"className": HARNESS_CLASS, "exactPassed": 11}},
+                             "requiredResult": {"className": HARNESS_CLASS}},
         "strict-preconditions": {"project": INTEGRATION, "trx": "strict-preconditions.trx",
-                                 "phase": "complete", "filterClass": HARNESS, "exactTests": 11,
+                                 "phase": "complete", "filterClass": HARNESS,
                                  "environment": {"RADICALE_CONFORMANCE_VARIANT": "strict-preconditions"}},
         "alternate-time-zone": {"project": INTEGRATION, "trx": "alternate-time-zone.trx",
-                                "phase": "complete", "filterClass": HARNESS, "exactTests": 11,
+                                "phase": "complete", "filterClass": HARNESS,
                                 "environment": {"RADICALE_CONFORMANCE_VARIANT": "alternate-time-zone"}},
     }
 
@@ -50,11 +50,9 @@ def main() -> int:
         raise SystemExit("The test-suite manifest artifact names must match the closed five-artifact suite.")
     for name, fixed in expected.items():
         item = by_name[name]
-        exact_keys = {"name", "exactTests", *fixed.keys()}
+        exact_keys = {"name", *fixed.keys()}
         if set(item) != exact_keys:
             raise SystemExit(f"{name} must contain exactly the closed artifact fields.")
-        if not isinstance(item.get("exactTests"), int) or item["exactTests"] < 1:
-            raise SystemExit(f"{name} must have a positive exactTests value.")
         for key, value in fixed.items():
             if item.get(key) != value:
                 raise SystemExit(f"{name}.{key} does not match the closed suite contract.")

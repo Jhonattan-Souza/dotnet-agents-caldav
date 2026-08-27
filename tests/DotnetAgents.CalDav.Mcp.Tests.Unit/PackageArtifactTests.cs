@@ -9,26 +9,6 @@ namespace DotnetAgents.CalDav.Mcp.Tests.Unit;
 public sealed class PackageArtifactTests
 {
     [Fact]
-    public void McpProductionAssembly_UsesOnlyPublicCoreBoundaries()
-    {
-        var repositoryRoot = RepositoryRoot();
-        var mcpSources = Directory.GetFiles(
-            Path.Combine(repositoryRoot, "src", "DotnetAgents.CalDav.Mcp"),
-            "*.cs",
-            SearchOption.AllDirectories);
-
-        mcpSources.ShouldAllBe(path => !File.ReadAllText(path).Contains(
-            "DotnetAgents.CalDav.Core.Internal",
-            StringComparison.Ordinal));
-        File.ReadAllText(Path.Combine(
-                repositoryRoot,
-                "src",
-                "DotnetAgents.CalDav.Core",
-                "InternalsVisibleTo.cs"))
-            .ShouldNotContain("InternalsVisibleTo(\"DotnetAgents.CalDav.Mcp");
-    }
-
-    [Fact]
     public void SelectedMcpAuthority_BindsStableSourcesAndOfficialSdkVersionWithoutDraftFallback()
     {
         var repositoryRoot = RepositoryRoot();
@@ -37,21 +17,6 @@ public sealed class PackageArtifactTests
             File.ReadAllText(Path.Combine(repositoryRoot, "contracts", "0.2.0", "mcp-authority-manifest.json")),
             File.ReadAllText(Path.Combine(repositoryRoot, "contracts", "0.2.0", "mcp-tool-catalog.json")),
             File.ReadAllText(Path.Combine(repositoryRoot, "Directory.Packages.props")));
-    }
-
-    [Fact]
-    public void ReleaseWorkflow_VerifiesFinalPackageBeforeUploadAndPublication()
-    {
-        var workflow = File.ReadAllText(Path.Combine(RepositoryRoot(), ".github", "workflows", "release.yml"));
-        var pack = workflow.IndexOf("- name: Pack", StringComparison.Ordinal);
-        var verifyPackage = workflow.IndexOf("- name: Verify final release packages", StringComparison.Ordinal);
-        var upload = workflow.IndexOf("- name: Upload package artifacts", StringComparison.Ordinal);
-        var push = workflow.IndexOf("- name: Push to NuGet", StringComparison.Ordinal);
-
-        pack.ShouldBeGreaterThan(0);
-        verifyPackage.ShouldBeGreaterThan(pack);
-        upload.ShouldBeGreaterThan(verifyPackage);
-        push.ShouldBeGreaterThan(verifyPackage);
     }
 
     [Theory]

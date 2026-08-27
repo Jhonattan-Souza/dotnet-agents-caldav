@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+This file preserves historical project changes; published release notes are maintained in [GitHub Releases](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/releases).
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -73,7 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - Retired executable requirement-to-TRX maps, catalogs, and gates; Git history preserves the former audit snapshots.
-- Removed contracts, migration guides, changelog, release notes, and the bundled skill from the NuGet payload; these remain available in the repository or GitHub Releases.
+- Removed repository-only contracts, documentation, and the bundled skill from the NuGet payload.
 
 ## [0.2.1] - 2026-08-19
 
@@ -95,7 +95,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Opt-in exact Calendar Object Resource reads and writes, protected independently from the semantic catalog.
 - Strict structured results, typed failures, strong-ETag revision references, post-write verification, and MCP MRTR confirmation for high-impact writes.
 - Digest-pinned Radicale 3.7.8 interoperability profile and permanent requirement-to-evidence catalog.
-- [0.1.x to 0.2.0 migration and rollback guide](docs/migrating-0.1.x-to-0.2.0.md).
 
 ### Changed
 

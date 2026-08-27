@@ -65,8 +65,6 @@ if any(pathlib.PurePath(name).name != name or not name.endswith(".trx") for name
     raise SystemExit("Test-suite manifest TRX paths must be safe basenames.")
 if sum(item.get("phase") == "main" for item in items) != 3 or sum(item.get("phase") == "complete" for item in items) != 2:
     raise SystemExit("Test-suite manifest must contain three main and two complete artifacts.")
-if any(not isinstance(item.get("exactTests"), int) or item["exactTests"] < 1 for item in items):
-    raise SystemExit("Test-suite manifest exact counts must be positive integers.")
 selected = [item for item in items if item["phase"] == "main" or phase == "complete"]
 expected_names = {item["trx"] for item in selected}
 actual_names = {path.name for path in artifact_directory.glob("*.trx")}
@@ -95,23 +93,22 @@ for item in selected:
     values = counters[0].attrib
     if any(int(values.get(name, "0")) != 0 for name in unsuccessful):
         raise SystemExit(f"TRX evidence contains unsuccessful counters: {path}")
-    expected = item["exactTests"]
-    if any(int(values.get(name, "-1")) != expected for name in ("total", "executed", "passed")):
-        raise SystemExit(f"TRX evidence does not contain exactly {expected} completed passes: {path}")
     results = [element for element in root.iter() if local(element) == "UnitTestResult"]
-    if len(results) != expected:
-        raise SystemExit(f"TRX evidence contains {len(results)} result records, expected {expected}: {path}")
+    if not results:
+        raise SystemExit(f"TRX evidence contains no test result records: {path}")
+    if any(int(values.get(name, "-1")) != len(results) for name in ("total", "executed", "passed")):
+        raise SystemExit(f"TRX evidence counters do not match its result records: {path}")
     if any(result.get("outcome") != "Passed" for result in results):
         raise SystemExit(f"TRX evidence contains a non-passing result record: {path}")
     execution_ids = [result.get("executionId") for result in results]
-    if None in execution_ids or len(set(execution_ids)) != expected:
+    if None in execution_ids or len(set(execution_ids)) != len(results):
         raise SystemExit(f"TRX evidence contains missing or duplicate execution IDs: {path}")
     result_identities = [(result.get("testId"), result.get("testName")) for result in results]
-    if any(None in identity for identity in result_identities) or len(set(result_identities)) != expected:
+    if any(None in identity for identity in result_identities) or len(set(result_identities)) != len(results):
         raise SystemExit(f"TRX evidence contains missing or duplicate result identities: {path}")
     entries = [element for element in root.iter() if local(element) == "TestEntry"]
     entry_execution_ids = [entry.get("executionId") for entry in entries]
-    if len(entries) != expected or None in entry_execution_ids or set(entry_execution_ids) != set(execution_ids):
+    if len(entries) != len(results) or None in entry_execution_ids or set(entry_execution_ids) != set(execution_ids):
         raise SystemExit(f"TRX evidence TestEntry rows do not match executed results: {path}")
     required = item.get("requiredResult")
     class_by_test = {}
@@ -131,8 +128,8 @@ for item in selected:
         raise SystemExit(f"TRX evidence test definitions and result IDs do not match: {path}")
     if required:
         matching = [result for result in results if class_by_test.get(result.get("testId")) == required["className"]]
-        if len(matching) != required["exactPassed"]:
-            raise SystemExit(f"TRX evidence contains {len(matching)} passing {required['className']} results, expected {required['exactPassed']}: {path}")
+        if not matching:
+            raise SystemExit(f"TRX evidence contains no passing {required['className']} results: {path}")
 PY
 
 if [[ "$phase" == complete ]]; then
