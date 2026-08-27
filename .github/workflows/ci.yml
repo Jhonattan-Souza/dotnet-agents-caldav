@@ -39,103 +39,29 @@ jobs:
           global-json-file: global.json
 
       - name: Restore dependency cache
-        id: dependency-cache
         uses: actions/cache@v6
         with:
           path: |
             ~/.nuget/packages
             ~/.dotnet/toolResolverCache
-          key: ${{ runner.os }}-dotnet-${{ hashFiles('global.json', 'Directory.Packages.props', 'NuGet.Config', '.config/dotnet-tools.json', '**/Directory.Build.*', '**/*.sln', '**/*.slnx', '**/*.csproj', '**/packages.lock.json') }}
+          key: ${{ runner.os }}-dotnet-${{ hashFiles('global.json', 'Directory.Packages.props', 'NuGet.Config', '.config/dotnet-tools.json', '**/Directory.Build.*', '**/*.sln', '**/*.slnx', '**/*.csproj') }}
           restore-keys: |
             ${{ runner.os }}-dotnet-
 
       - name: Restore local tools
-        id: restore-tools
-        shell: bash
-        run: |
-          started_at=$(date +%s%N)
-          status=0
-          dotnet tool restore || status=$?
-          elapsed_ns=$(($(date +%s%N) - started_at))
-          printf 'seconds=%d.%03d\n' "$((elapsed_ns / 1000000000))" "$(((elapsed_ns % 1000000000) / 1000000))" >> "$GITHUB_OUTPUT"
-          exit "$status"
+        run: dotnet tool restore
 
       - name: Restore packages
-        id: restore-packages
-        shell: bash
-        run: |
-          started_at=$(date +%s%N)
-          status=0
-          dotnet restore --locked-mode || status=$?
-          elapsed_ns=$(($(date +%s%N) - started_at))
-          printf 'seconds=%d.%03d\n' "$((elapsed_ns / 1000000000))" "$(((elapsed_ns % 1000000000) / 1000000))" >> "$GITHUB_OUTPUT"
-          exit "$status"
+        run: dotnet restore
 
       - name: Build Release
-        id: build
-        shell: bash
-        run: |
-          started_at=$(date +%s%N)
-          status=0
-          dotnet build -c Release --no-restore || status=$?
-          elapsed_ns=$(($(date +%s%N) - started_at))
-          printf 'seconds=%d.%03d\n' "$((elapsed_ns / 1000000000))" "$(((elapsed_ns % 1000000000) / 1000000))" >> "$GITHUB_OUTPUT"
-          exit "$status"
+        run: dotnet build -c Release --no-restore
 
       - name: Run isolated test suite
-        id: test-suite
-        shell: bash
-        run: |
-          started_at=$(date +%s%N)
-          status=0
-          bash scripts/run-test-suite.sh --artifacts-dir "$TEST_ARTIFACTS_DIR" || status=$?
-          elapsed_ns=$(($(date +%s%N) - started_at))
-          printf 'seconds=%d.%03d\n' "$((elapsed_ns / 1000000000))" "$(((elapsed_ns % 1000000000) / 1000000))" >> "$GITHUB_OUTPUT"
-          exit "$status"
+        run: bash scripts/run-test-suite.sh --artifacts-dir "$TEST_ARTIFACTS_DIR"
 
       - name: Run Slopwatch
-        id: slopwatch
-        shell: bash
-        run: |
-          started_at=$(date +%s%N)
-          status=0
-          dotnet tool run slopwatch analyze --config .slopwatch/slopwatch.json --fail-on warning || status=$?
-          elapsed_ns=$(($(date +%s%N) - started_at))
-          printf 'seconds=%d.%03d\n' "$((elapsed_ns / 1000000000))" "$(((elapsed_ns % 1000000000) / 1000000))" >> "$GITHUB_OUTPUT"
-          exit "$status"
-
-      - name: Post timing summary
-        if: ${{ always() && steps.test-artifacts.outputs.path != '' }}
-        shell: bash
-        run: |
-          if compgen -G "$TEST_ARTIFACTS_DIR/*.trx" > /dev/null; then
-            python3 scripts/trx-timing-summary.py \
-              --artifacts-dir "$TEST_ARTIFACTS_DIR" \
-              --phase "restore-local-tools=${{ steps.restore-tools.outputs.seconds }}" \
-              --phase "restore-nuget-packages=${{ steps.restore-packages.outputs.seconds }}" \
-              --phase "release-build=${{ steps.build.outputs.seconds }}" \
-              --phase "main-core=${{ steps.test-suite.outputs.main_core_seconds }}" \
-              --phase "main-mcp=${{ steps.test-suite.outputs.main_mcp_seconds }}" \
-              --phase "main-integration=${{ steps.test-suite.outputs.main_integration_seconds }}" \
-              --phase "coverage-report=${{ steps.test-suite.outputs.coverage_report_seconds }}" \
-              --phase "strict-preconditions=${{ steps.test-suite.outputs.strict_preconditions_seconds }}" \
-              --phase "alternate-time-zone=${{ steps.test-suite.outputs.alternate_time_zone_seconds }}" \
-              --phase "isolated-suite=${{ steps.test-suite.outputs.seconds }}" \
-              --phase "slopwatch=${{ steps.slopwatch.outputs.seconds }}" \
-              --baseline-phase "restore-local-tools=8" \
-              --baseline-phase "restore-nuget-packages=6" \
-              --baseline-phase "release-build=26" \
-              --baseline-phase "main-core=26.3" \
-              --baseline-phase "main-mcp=9.2" \
-              --baseline-phase "main-integration=322.2" \
-              --baseline-phase "coverage-report=1.7" \
-              --baseline-phase "strict-preconditions=22.6" \
-              --baseline-phase "alternate-time-zone=22.3" \
-              --baseline-phase "isolated-suite=426" \
-              --baseline-phase "slopwatch=3" \
-              --cache-status "${{ steps.dependency-cache.outputs.cache-hit == 'true' && 'hit' || 'miss' }}" \
-              >> "$GITHUB_STEP_SUMMARY"
-          fi
+        run: dotnet tool run slopwatch analyze --config .slopwatch/slopwatch.json --fail-on warning
 
       - name: Upload test evidence
         if: ${{ always() && steps.test-artifacts.outputs.path != '' }}
