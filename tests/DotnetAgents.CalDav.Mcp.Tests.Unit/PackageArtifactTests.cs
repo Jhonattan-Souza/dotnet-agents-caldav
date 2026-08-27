@@ -63,6 +63,8 @@ public sealed class PackageArtifactTests
         skill.ShouldContain("If none remains, report that no compatible Calendar is available");
         skill.ShouldContain("The schema permitting `default` does not establish one.");
         skill.ShouldContain("Resolve an unknown destination with read-only discovery before calling a mutation.");
+        skill.ShouldContain("every create and move had an authorized destination selection before the first write");
+        skill.ShouldNotContain("every mutation had an authorized destination selection");
         skill.ShouldNotContain(
             "Use the live schema's `default` scope or destination directly when the user has not selected another Calendar.");
     }
