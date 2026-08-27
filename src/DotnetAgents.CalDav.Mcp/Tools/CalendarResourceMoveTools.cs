@@ -2,7 +2,6 @@ using System.ComponentModel;
 using System.Text.Json;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Models;
-using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -17,14 +16,7 @@ public sealed class CalendarResourceMoveTools
     private readonly ICalendarService _calendarService;
     private readonly TimeProvider _timeProvider;
 
-    public CalendarResourceMoveTools(IServiceProvider services)
-        : this(
-            services.GetRequiredService<ICalendarService>(),
-            services.GetRequiredService<TimeProvider>())
-    {
-    }
-
-    internal CalendarResourceMoveTools(
+    public CalendarResourceMoveTools(
         ICalendarService calendarService,
         TimeProvider timeProvider)
     {

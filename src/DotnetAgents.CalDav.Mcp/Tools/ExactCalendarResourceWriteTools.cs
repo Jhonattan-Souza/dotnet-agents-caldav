@@ -6,7 +6,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Models;
-using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -14,7 +13,7 @@ namespace DotnetAgents.CalDav.Mcp.Tools;
 
 /// <summary>Opt-in complete-resource writes protected by MCP Multi Round-Trip Requests.</summary>
 [McpServerToolType]
-public sealed class ExactCalendarResourceWriteTools
+internal sealed class ExactCalendarResourceWriteTools
 {
     internal const int MaximumDecodedResourceBytes = 4 * 1024 * 1024;
     private const int MaximumJsonBytesPerDecodedResourceByte = 6;
@@ -34,15 +33,7 @@ public sealed class ExactCalendarResourceWriteTools
     private readonly CalendarMutationRequestStateProtector _stateProtector;
     private readonly TimeProvider _timeProvider;
 
-    public ExactCalendarResourceWriteTools(IServiceProvider services)
-        : this(
-            services.GetRequiredService<ICalendarService>(),
-            services.GetRequiredService<CalendarMutationRequestStateProtector>(),
-            services.GetRequiredService<TimeProvider>())
-    {
-    }
-
-    internal ExactCalendarResourceWriteTools(
+    public ExactCalendarResourceWriteTools(
         ICalendarService calendarService,
         CalendarMutationRequestStateProtector stateProtector,
         TimeProvider timeProvider)

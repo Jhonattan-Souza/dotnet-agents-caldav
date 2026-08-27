@@ -163,13 +163,20 @@ public class CalDavHostBuilderTests
     }
 
     [Fact]
-    public void McpToolTypes_DoNotUseServiceLocatorConstructors()
+    public void RegisteredMcpToolTypes_DoNotUseServiceLocatorConstructors()
     {
-        var constructors = typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarCollectionTools)
-            .GetConstructors(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        var registeredToolTypes = GetRegisteredMcpToolTypes(CalDavHostBuilder.CreateBuilder().Services)
+            .Concat(GetRegisteredMcpToolTypes(CalDavHostBuilder.CreateBuilder(exposeExactTools: true).Services))
+            .Distinct();
 
-        constructors.ShouldNotContain(constructor => constructor.GetParameters()
-            .Any(parameter => parameter.ParameterType == typeof(IServiceProvider)));
+        var serviceLocatorToolTypes = registeredToolTypes
+            .Where(toolType => toolType.GetConstructors(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                .Any(constructor => constructor.GetParameters()
+                    .Any(parameter => parameter.ParameterType == typeof(IServiceProvider))))
+            .Select(toolType => toolType.FullName)
+            .ToArray();
+
+        serviceLocatorToolTypes.ShouldBeEmpty("Registered MCP tool types must declare their exact dependencies for SDK activation.");
     }
 
     private static List<string> GetTypesWithoutToolMethods(List<Type> toolTypes)
@@ -406,27 +413,10 @@ public class CalDavHostBuilderTests
     }
 
     [Fact]
-    public void BuildHost_ActivatesCalendarEntityCreateToolsThroughTheSdkConstructionPath()
+    public void BuildHost_ActivatesEveryRegisteredMcpToolTypeThroughTheSdkConstructionPath()
     {
-        var builder = CalDavHostBuilder.CreateBuilder();
-        builder.Services.ConfigureCalDav(ValidOptions);
-        using var host = builder.Build();
-
-        ActivatorUtilities.CreateInstance<DotnetAgents.CalDav.Mcp.Tools.CalendarEntityCreateTools>(host.Services)
-            .ShouldNotBeNull();
-    }
-
-    [Fact]
-    public void BuildHost_ActivatesCalendarEntityToolsThroughTheSdkConstructionPath()
-    {
-        var builder = CalDavHostBuilder.CreateBuilder();
-        builder.Services.ConfigureCalDav(ValidOptions);
-        using var host = builder.Build();
-
-        host.Services.GetRequiredService<DotnetAgents.CalDav.Mcp.Tools.CalendarEntityTools>()
-            .ShouldNotBeNull();
-        ActivatorUtilities.CreateInstance<DotnetAgents.CalDav.Mcp.Tools.CalendarEntityTools>(host.Services)
-            .ShouldNotBeNull();
+        AssertActivatesRegisteredToolTypes(exposeExactTools: false);
+        AssertActivatesRegisteredToolTypes(exposeExactTools: true);
     }
 
     [Fact]
@@ -699,6 +689,16 @@ public class CalDavHostBuilderTests
             .Where(toolType => knownToolTypes.Contains(toolType))
             .Distinct()
             .ToArray();
+    }
+
+    private static void AssertActivatesRegisteredToolTypes(bool exposeExactTools)
+    {
+        var builder = CalDavHostBuilder.CreateBuilder(exposeExactTools);
+        builder.Services.ConfigureCalDav(ValidOptions);
+        using var host = builder.Build();
+
+        foreach (var toolType in GetRegisteredMcpToolTypes(builder.Services))
+            ActivatorUtilities.CreateInstance(host.Services, toolType).ShouldNotBeNull();
     }
 
     private static string RepositoryRoot()

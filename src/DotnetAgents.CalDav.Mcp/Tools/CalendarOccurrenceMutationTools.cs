@@ -3,7 +3,6 @@ using System.Globalization;
 using System.Text.Json;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Models;
-using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -16,13 +15,7 @@ public sealed class CalendarOccurrenceMutationTools
     internal const int MaximumArgumentBytes = CalendarQueryToolSupport.MaximumArgumentBytes;
     private readonly ICalendarService _calendarService;
 
-    public CalendarOccurrenceMutationTools(IServiceProvider services)
-        : this(
-            services.GetRequiredService<ICalendarService>())
-    {
-    }
-
-    internal CalendarOccurrenceMutationTools(ICalendarService calendarService)
+    public CalendarOccurrenceMutationTools(ICalendarService calendarService)
     {
         _calendarService = calendarService;
     }

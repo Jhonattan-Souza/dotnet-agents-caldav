@@ -4,7 +4,6 @@ using System.Text.Json.Serialization;
 using System.Xml;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Models;
-using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -18,14 +17,7 @@ public sealed class CalendarEntityCreateTools
     private readonly ICalendarService _calendarService;
     private readonly TimeProvider _timeProvider;
 
-    public CalendarEntityCreateTools(IServiceProvider services)
-        : this(
-            services.GetRequiredService<ICalendarService>(),
-            services.GetRequiredService<TimeProvider>())
-    {
-    }
-
-    internal CalendarEntityCreateTools(ICalendarService calendarService, TimeProvider timeProvider)
+    public CalendarEntityCreateTools(ICalendarService calendarService, TimeProvider timeProvider)
     {
         _calendarService = calendarService;
         _timeProvider = timeProvider;
