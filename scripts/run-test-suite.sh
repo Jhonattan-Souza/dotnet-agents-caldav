@@ -78,71 +78,10 @@ early_finish() {
 trap early_finish EXIT
 echo "Test artifacts: $artifacts_directory" >&2
 python3 "$script_directory/verify-worktree-state.py" capture "$repository_root" "$before_state"
-phase_timings="$artifacts_directory/phase-timings.tsv"
-manifest_timing_directory="$artifacts_directory/.manifest-timings"
-mkdir -p -- "$manifest_timing_directory"
-touch "$phase_timings"
-suite_started_at=$(date +%s%N)
-
-append_phase_timing() {
-  local phase_name=$1 started_at=$2 finished_at=$3
-  local elapsed_ns=$((finished_at - started_at))
-  printf '%s\t%d.%03d\n' \
-    "$phase_name" \
-    "$((elapsed_ns / 1000000000))" \
-    "$(((elapsed_ns % 1000000000) / 1000000))" >> "$phase_timings"
-}
-
-run_timed_phase() {
-  local phase_name=$1
-  shift
-  local started_at finished_at status
-  started_at=$(date +%s%N)
-  if "$@"; then
-    status=0
-  else
-    status=$?
-  fi
-  finished_at=$(date +%s%N)
-  append_phase_timing "$phase_name" "$started_at" "$finished_at"
-  return "$status"
-}
-
-collect_manifest_timings() {
-  local phase=$1 row _project trx _prefix _filter _environment timing_path
-  while IFS= read -r row; do
-    IFS=$'\x1f' read -r _project trx _prefix _filter _environment <<< "$row"
-    timing_path="$manifest_timing_directory/$trx.tsv"
-    [[ -f "$timing_path" ]] || {
-      echo "Missing phase timing for test manifest entry: $trx" >&2
-      return 66
-    }
-    cat -- "$timing_path" >> "$phase_timings"
-    rm -- "$timing_path"
-  done < <(emit_test_suite_manifest_rows "$manifest" "$phase")
-}
-
-collect_available_manifest_timings() {
-  local phase row _project trx _prefix _filter _environment timing_path
-  for phase in main complete; do
-    while IFS= read -r row; do
-      IFS=$'\x1f' read -r _project trx _prefix _filter _environment <<< "$row"
-      timing_path="$manifest_timing_directory/$trx.tsv"
-      if [[ -f "$timing_path" ]]; then
-        cat -- "$timing_path" >> "$phase_timings"
-        rm -- "$timing_path"
-      fi
-    done < <(emit_test_suite_manifest_rows "$manifest" "$phase")
-  done
-}
 
 finish() {
   local status=$?
   trap - EXIT
-  if ! collect_available_manifest_timings; then
-    status=70
-  fi
-  append_phase_timing isolated-suite "$suite_started_at" "$(date +%s%N)"
   if ! python3 "$script_directory/verify-worktree-state.py" compare \
     "$repository_root" "$before_state" "$after_state"; then
     status=70
@@ -164,7 +103,7 @@ bash "$script_directory/test-trx-timing-summary.sh"
 
 run_project() {
   local project=$1 trx_filename=$2 prefix=$3 filter_class=$4 environment=$5
-  local phase_name=${trx_filename%.trx} started_at finished_at elapsed_ns status
+  local output_name=${trx_filename%.trx} started_at finished_at elapsed_ns status
   local arguments=(dotnet test --project "$repository_root/$project" -c Release --no-build --no-restore
     --results-directory "$artifacts_directory" --report-trx --report-trx-filename "$trx_filename"
     --fail-skips on --zero-tests-policy strict --no-ansi)
@@ -186,11 +125,14 @@ run_project() {
     fi
   fi
   finished_at=$(date +%s%N)
-  elapsed_ns=$((finished_at - started_at))
-  printf '%s\t%d.%03d\n' \
-    "$phase_name" \
-    "$((elapsed_ns / 1000000000))" \
-    "$(((elapsed_ns % 1000000000) / 1000000))" > "$manifest_timing_directory/$trx_filename.tsv"
+  if [[ -n ${GITHUB_OUTPUT:-} ]]; then
+    output_name=${output_name//-/_}_seconds
+    elapsed_ns=$((finished_at - started_at))
+    printf '%s=%d.%03d\n' \
+      "$output_name" \
+      "$((elapsed_ns / 1000000000))" \
+      "$(((elapsed_ns % 1000000000) / 1000000))" >> "$GITHUB_OUTPUT"
+  fi
   return "$status"
 }
 
@@ -207,11 +149,21 @@ generate_and_verify_coverage() {
 }
 
 run_test_suite_manifest_phase "$manifest" main 2 run_project
-collect_manifest_timings main
-run_timed_phase coverage-report generate_and_verify_coverage
+coverage_started_at=$(date +%s%N)
+if generate_and_verify_coverage; then
+  coverage_status=0
+else
+  coverage_status=$?
+fi
+if [[ -n ${GITHUB_OUTPUT:-} ]]; then
+  coverage_elapsed_ns=$(($(date +%s%N) - coverage_started_at))
+  printf 'coverage_report_seconds=%d.%03d\n' \
+    "$((coverage_elapsed_ns / 1000000000))" \
+    "$(((coverage_elapsed_ns % 1000000000) / 1000000))" >> "$GITHUB_OUTPUT"
+fi
+((coverage_status == 0)) || exit "$coverage_status"
 
 run_test_suite_manifest_phase "$manifest" complete 2 run_project
-collect_manifest_timings complete
 "$script_directory/verify-test-artifacts.sh" "$artifacts_directory" complete >/dev/null
 
 echo "Verified isolated test evidence: $artifacts_directory" >&2

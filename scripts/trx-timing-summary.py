@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render stable CI timing evidence from repository TRX and phase timings."""
+"""Render stable CI timing evidence from repository TRX and action outputs."""
 
 from __future__ import annotations
 
@@ -21,9 +21,9 @@ PHASE_LABELS = {
     "main-core": "Main core",
     "main-mcp": "Main MCP",
     "main-integration": "Main integration",
+    "coverage-report": "Coverage report",
     "strict-preconditions": "Strict preconditions",
     "alternate-time-zone": "Alternate time zone",
-    "coverage-report": "Coverage report",
     "slopwatch": "Slopwatch",
     "isolated-suite": "Isolated suite",
 }
@@ -39,14 +39,19 @@ class TestDuration:
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--artifacts-dir", required=True, type=pathlib.Path)
-    parser.add_argument("--phase-timings", required=True, type=pathlib.Path)
+    parser.add_argument(
+        "--phase",
+        action="append",
+        default=[],
+        metavar="NAME=SECONDS",
+        help="Phase duration obtained from a GitHub Actions step output.",
+    )
     parser.add_argument(
         "--cache-status",
         required=True,
         choices=("hit", "miss", "not-reported"),
     )
     parser.add_argument("--baseline-isolated-suite-seconds", type=float)
-    parser.add_argument("--baseline-integration-seconds", type=float)
     return parser.parse_args()
 
 
@@ -89,22 +94,24 @@ def read_test_durations(artifacts_directory: pathlib.Path) -> list[TestDuration]
     return durations
 
 
-def read_phase_timings(path: pathlib.Path) -> list[tuple[str, float]]:
+def parse_phases(values: list[str]) -> list[tuple[str, float]]:
     phases: list[tuple[str, float]] = []
     seen: set[str] = set()
-    for line_number, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-        if not raw_line:
+    for value in values:
+        name, separator, raw_seconds = value.partition("=")
+        if separator == "" or name == "":
+            raise SystemExit(f"Invalid phase timing: {value!r}.")
+        if raw_seconds == "":
             continue
-        fields = raw_line.split("\t")
-        if len(fields) != 2:
-            raise SystemExit(f"Invalid phase timing at {path}:{line_number}.")
-        name, raw_seconds = fields
         if name in seen:
-            raise SystemExit(f"Duplicate phase timing {name!r} at {path}:{line_number}.")
+            raise SystemExit(f"Duplicate phase timing: {name!r}.")
         seen.add(name)
-        seconds = float(raw_seconds)
+        try:
+            seconds = float(raw_seconds)
+        except ValueError as error:
+            raise SystemExit(f"Invalid phase duration: {value!r}.") from error
         if seconds < 0:
-            raise SystemExit(f"Negative phase timing {name!r} at {path}:{line_number}.")
+            raise SystemExit(f"Negative phase timing: {value!r}.")
         phases.append((name, seconds))
     return phases
 
@@ -125,7 +132,6 @@ def render(
     tests: list[TestDuration],
     cache_status: str,
     baseline_suite: float | None,
-    baseline_integration: float | None,
 ) -> str:
     lines = ["## CI timing", "", f"Dependency cache: **{cache_status}**", ""]
     lines.extend(("| Phase | Duration |", "| --- | ---: |"))
@@ -171,8 +177,6 @@ def render(
     comparisons = []
     if baseline_suite is not None and "isolated-suite" in phase_values:
         comparisons.append(("Isolated suite", baseline_suite, phase_values["isolated-suite"]))
-    if baseline_integration is not None and "main-integration" in phase_values:
-        comparisons.append(("Baseline integration", baseline_integration, phase_values["main-integration"]))
     if comparisons:
         lines.extend((
             "",
@@ -192,13 +196,12 @@ def render(
 def main() -> int:
     arguments = parse_arguments()
     tests = read_test_durations(arguments.artifacts_dir)
-    phases = read_phase_timings(arguments.phase_timings)
+    phases = parse_phases(arguments.phase)
     print(render(
         phases,
         tests,
         arguments.cache_status,
         arguments.baseline_isolated_suite_seconds,
-        arguments.baseline_integration_seconds,
     ), end="")
     return 0
 
