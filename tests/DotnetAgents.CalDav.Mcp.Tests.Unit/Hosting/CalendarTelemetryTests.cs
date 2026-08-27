@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Reflection;
 using DotnetAgents.CalDav.Core.Models;
 using DotnetAgents.CalDav.Core.Services;
 using DotnetAgents.CalDav.Mcp.Hosting;
@@ -479,7 +480,7 @@ public sealed class CalendarTelemetryTests
         Activity? stoppedOperation = null;
         using var listener = new ActivityListener
         {
-            ShouldListenTo = static source => source.Name is CalendarTelemetry.InstrumentationName or "DotnetAgents.CalDav.Http",
+            ShouldListenTo = static source => source.Name == CalendarTelemetry.InstrumentationName,
             Sample = static (ref ActivityCreationOptions<ActivityContext> _) =>
                 ActivitySamplingResult.AllDataAndRecorded,
             ActivityStopped = activity =>
@@ -489,46 +490,19 @@ public sealed class CalendarTelemetryTests
             }
         };
         ActivitySource.AddActivityListener(listener);
-        using var httpSource = new ActivitySource("DotnetAgents.CalDav.Http");
+        var processor = new TelemetryActivityAllowlistProcessor();
 
         using (var operation = CalendarTelemetry.StartOperation("calendars.list", null))
         {
             operation.ShouldNotBeNull();
             operation.StartPhase(CalendarOperationPhase.Discovery);
-            using (var failedAttempt = httpSource.StartActivity("PROPFIND failed"))
-            {
-                failedAttempt.ShouldNotBeNull();
-                failedAttempt.SetTag("http.request.method", "PROPFIND");
-                failedAttempt.SetTag("http.response.status_code", 503);
-                failedAttempt.SetTag("http.request.resend_count", 0);
-                failedAttempt.SetStatus(ActivityStatusCode.Error);
-                failedAttempt.Stop();
-                new TelemetryActivityAllowlistProcessor().OnEnd(failedAttempt);
-                failedAttempt.Status.ShouldBe(ActivityStatusCode.Error);
-            }
-            using (var recoveredAttempt = httpSource.StartActivity("PROPFIND recovered"))
-            {
-                recoveredAttempt.ShouldNotBeNull();
-                recoveredAttempt.SetTag("http.request.method", "PROPFIND");
-                recoveredAttempt.SetTag("http.response.status_code", 207);
-                recoveredAttempt.SetTag("http.request.resend_count", 1);
-                recoveredAttempt.Stop();
-                new TelemetryActivityAllowlistProcessor().OnEnd(recoveredAttempt);
-                recoveredAttempt.Status.ShouldBe(ActivityStatusCode.Unset);
-            }
-            using (var secondRecoveredAttempt = httpSource.StartActivity("REPORT recovered"))
-            {
-                secondRecoveredAttempt.ShouldNotBeNull();
-                secondRecoveredAttempt.SetTag("http.request.method", "REPORT");
-                secondRecoveredAttempt.SetTag("http.response.status_code", 207);
-                secondRecoveredAttempt.SetTag("http.request.resend_count", 1);
-                secondRecoveredAttempt.Stop();
-                new TelemetryActivityAllowlistProcessor().OnEnd(secondRecoveredAttempt);
-            }
+            SetOperationTag(operation, "caldav.transport.retry_count", 2);
+            SetOperationTag(operation, "caldav.transport.recovered", true);
             operation.Complete(CalendarOperationOutcome.Success, default);
         }
 
         stoppedOperation.ShouldNotBeNull();
+        processor.OnEnd(stoppedOperation);
         stoppedOperation.GetTagItem("caldav.outcome").ShouldBe("success");
         stoppedOperation.GetTagItem("caldav.transport.recovered").ShouldBe(true);
         stoppedOperation.GetTagItem("caldav.transport.retry_count").ShouldBe(2);
@@ -541,7 +515,7 @@ public sealed class CalendarTelemetryTests
         Activity? stoppedOperation = null;
         using var listener = new ActivityListener
         {
-            ShouldListenTo = static source => source.Name is CalendarTelemetry.InstrumentationName or "DotnetAgents.CalDav.Http",
+            ShouldListenTo = static source => source.Name == CalendarTelemetry.InstrumentationName,
             Sample = static (ref ActivityCreationOptions<ActivityContext> _) =>
                 ActivitySamplingResult.AllDataAndRecorded,
             ActivityStopped = activity =>
@@ -551,20 +525,14 @@ public sealed class CalendarTelemetryTests
             }
         };
         ActivitySource.AddActivityListener(listener);
-        using var httpSource = new ActivitySource("DotnetAgents.CalDav.Http");
         var processor = new TelemetryActivityAllowlistProcessor();
 
         using (var operation = CalendarTelemetry.StartOperation("calendars.list", null))
         {
             operation.ShouldNotBeNull();
             operation.StartPhase(CalendarOperationPhase.Discovery);
-            using var recoveredAttempt = httpSource.StartActivity("PROPFIND recovered");
-            recoveredAttempt.ShouldNotBeNull();
-            recoveredAttempt.SetTag("http.request.method", "PROPFIND");
-            recoveredAttempt.SetTag("http.response.status_code", 207);
-            recoveredAttempt.SetTag("http.request.resend_count", 1);
-            recoveredAttempt.Stop();
-            processor.OnEnd(recoveredAttempt);
+            SetOperationTag(operation, "caldav.transport.retry_count", 1);
+            SetOperationTag(operation, "caldav.transport.recovered", true);
             operation.ObserveStructuredError(new CalendarStructuredErrorFacts(
                 CalendarTelemetryErrorCode.UpstreamUnavailable,
                 CalendarTelemetryErrorCategory.Upstream,
@@ -832,7 +800,7 @@ public sealed class CalendarTelemetryTests
     }
 
     [Fact]
-    public void FailedRetryAndOrphanRetryDoNotClaimRecovery()
+    public void ExporterDoesNotReconstructRetryTruthFromHttpChildren()
     {
         using var calendarListener = ListenTo(CalendarTelemetry.InstrumentationName);
         using var httpListener = ListenTo(OpenTelemetryHostConfiguration.HttpInstrumentationName);
@@ -862,7 +830,7 @@ public sealed class CalendarTelemetryTests
         operation.Stop();
         processor.OnEnd(operation);
 
-        operation.GetTagItem("caldav.transport.retry_count").ShouldBe(1);
+        operation.GetTagItem("caldav.transport.retry_count").ShouldBeNull();
         operation.GetTagItem("caldav.transport.recovered").ShouldBeNull();
     }
 
@@ -909,6 +877,12 @@ public sealed class CalendarTelemetryTests
         if (state is { } value)
             operation.ObserveMutationState(value);
     }
+
+    private static void SetOperationTag(CalendarTelemetryOperation operation, string name, object value) =>
+        ((Activity)typeof(CalendarTelemetryOperation)
+            .GetField("_operation", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(operation)!)
+        .SetTag(name, value);
 
     private static ActivityListener ListenTo(string sourceName)
     {

@@ -6,7 +6,6 @@ namespace DotnetAgents.CalDav.Mcp.Hosting;
 
 internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activity>
 {
-    private const string RetryAggregationKey = "DotnetAgents.CalDav.Telemetry.RetryAggregation";
     private static readonly HashSet<string> AllowedTagNames = new(StringComparer.Ordinal)
     {
         "caldav.tool.name",
@@ -109,10 +108,7 @@ internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activi
         if (data.Source.Name == OpenTelemetryHostConfiguration.McpInstrumentationName)
             SanitizeMcpActivity(data);
         else if (data.Source.Name == OpenTelemetryHostConfiguration.HttpInstrumentationName)
-        {
-            ObserveRetry(data);
             SanitizeHttpActivity(data);
-        }
         else if (data.Source.Name == OpenTelemetryHostConfiguration.InstrumentationName)
         {
             data.DisplayName = data.OperationName;
@@ -157,50 +153,6 @@ internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activi
         activity.DisplayName = method;
     }
 
-    private static void ObserveRetry(Activity activity)
-    {
-        var resendCount = NumericTag(activity.GetTagItem("http.request.resend_count"));
-        if (resendCount is not > 0)
-            return;
-
-        var operation = FindOperation(activity);
-        if (operation is null)
-            return;
-
-        var aggregation = GetRetryAggregation(operation);
-        var observation = aggregation.Observe(activity.Status != ActivityStatusCode.Error);
-        operation.SetTag("caldav.transport.retry_count", observation.RetryCount);
-        if (observation.Recovered)
-            operation.SetTag("caldav.transport.recovered", true);
-    }
-
-    private static RetryAggregation GetRetryAggregation(Activity operation)
-    {
-        if (operation.GetCustomProperty(RetryAggregationKey) is RetryAggregation existing)
-            return existing;
-        lock (operation)
-        {
-            if (operation.GetCustomProperty(RetryAggregationKey) is RetryAggregation current)
-                return current;
-            var created = new RetryAggregation();
-            operation.SetCustomProperty(RetryAggregationKey, created);
-            return created;
-        }
-    }
-
-    private static Activity? FindOperation(Activity activity)
-    {
-        for (var parent = activity.Parent; parent is not null; parent = parent.Parent)
-        {
-            if (parent.Source.Name == OpenTelemetryHostConfiguration.InstrumentationName
-                && parent.OperationName == "caldav.operation")
-            {
-                return parent;
-            }
-        }
-        return null;
-    }
-
     private static void SanitizeCalendarActivity(Activity activity)
     {
         activity.SetTag("caldav.outcome", ClosedOutcome(
@@ -229,25 +181,10 @@ internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activi
             activity.GetTagItem("caldav.move.collision") as string));
         activity.SetTag("caldav.move.reconciliation", CalendarTelemetryVocabulary.MoveReconciliation(
             activity.GetTagItem("caldav.move.reconciliation") as string));
-        ApplyRetryAggregation(activity);
-    }
-
-    private static void ApplyRetryAggregation(Activity activity)
-    {
-        if (activity.GetCustomProperty(RetryAggregationKey) is not RetryAggregation aggregation)
-        {
-            activity.SetTag("caldav.transport.recovered", null);
-            activity.SetTag("caldav.transport.retry_count", null);
-            return;
-        }
-
-        var observation = aggregation.Snapshot();
-        activity.SetTag("caldav.transport.retry_count", observation.RetryCount);
-        activity.SetTag(
-            "caldav.transport.recovered",
-            Equals(activity.GetTagItem("caldav.outcome"), "success") && observation.Recovered
-                ? true
-                : null);
+        activity.SetTag("caldav.transport.retry_count", NonNegativeCounter(
+            activity.GetTagItem("caldav.transport.retry_count")));
+        activity.SetTag("caldav.transport.recovered", BooleanTag(
+            activity.GetTagItem("caldav.transport.recovered")));
     }
 
     private static string NormalizeMcpMethod(string? method) =>
@@ -350,30 +287,5 @@ internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activi
         "unknown" => "unknown",
         _ => null
     };
-
-    private sealed class RetryAggregation
-    {
-        private readonly object _gate = new();
-        private int _retryCount;
-        private bool _recovered;
-
-        internal RetryObservation Observe(bool recovered)
-        {
-            lock (_gate)
-            {
-                _retryCount++;
-                _recovered |= recovered;
-                return new RetryObservation(_retryCount, _recovered);
-            }
-        }
-
-        internal RetryObservation Snapshot()
-        {
-            lock (_gate)
-                return new RetryObservation(_retryCount, _recovered);
-        }
-    }
-
-    private readonly record struct RetryObservation(int RetryCount, bool Recovered);
 
 }

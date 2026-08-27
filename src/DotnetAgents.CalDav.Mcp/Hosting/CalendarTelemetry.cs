@@ -350,6 +350,8 @@ internal sealed class CalendarTelemetryOperation : IDisposable
 
         var outcomeName = OutcomeName(outcome);
         _operation.SetTag("caldav.outcome", outcomeName);
+        if (outcome != CalendarOperationOutcome.Success)
+            _operation.SetTag("caldav.transport.recovered", null);
         _operation.SetTag(
             "caldav.mutation.state",
             _mutationState is { } mutationState
