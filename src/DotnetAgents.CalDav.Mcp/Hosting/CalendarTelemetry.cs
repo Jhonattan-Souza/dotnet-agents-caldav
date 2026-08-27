@@ -163,7 +163,14 @@ internal readonly record struct CalendarStructuredErrorFacts(
     CalendarTelemetryErrorCode Code,
     CalendarTelemetryErrorCategory Category,
     CalendarTelemetryErrorPhase Phase,
-    bool Retryable);
+    bool Retryable)
+{
+    internal string CodeName => CalendarTelemetryVocabulary.ErrorCodeName(Code);
+
+    internal string CategoryName => CalendarTelemetryVocabulary.ErrorCategoryName(Category);
+
+    internal string PhaseName => CalendarTelemetryVocabulary.ErrorPhaseName(Phase);
+}
 
 internal static class CalendarTelemetryVocabulary
 {

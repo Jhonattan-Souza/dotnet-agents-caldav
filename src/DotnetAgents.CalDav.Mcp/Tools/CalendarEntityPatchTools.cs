@@ -501,19 +501,21 @@ internal sealed class CalendarEntityPatchTools
 
     private static CallToolResult ToToolResult(CalendarEntityPatchResult result)
     {
-        CalendarTelemetry.ObserveMutationState(result.MutationState);
-        var mapped = result.Code switch
+        var terminal = result.Code switch
         {
-            CalendarEntityPatchCode.Success when result.Snapshot is not null => Success(result.Snapshot),
-            CalendarEntityPatchCode.NoChange => NoChange(result.Snapshot?.Diagnostics ?? []),
+            CalendarEntityPatchCode.Success when result.Snapshot is not null =>
+                CalendarToolResult.Success(Success(result.Snapshot), result.MutationState),
+            CalendarEntityPatchCode.NoChange =>
+                CalendarToolResult.Success(NoChange(result.Snapshot?.Diagnostics ?? []), result.MutationState),
             _ => Error(result)
         };
-        return CalendarQueryToolSupport.EnsureBoundedResult(mapped, (_, _) => NamedError(
-            "payload_too_large",
-            "limitsAndAdmission",
+        return terminal.FinalizeBounded((_, _) => NamedError(new CalendarStructuredErrorFacts(
+                CalendarTelemetryErrorCode.PayloadTooLarge,
+                CalendarTelemetryErrorCategory.LimitsAndAdmission,
+                CalendarTelemetryErrorPhase.AdmissionAndPayload,
+                false),
             "The Calendar Entity patch result exceeds the safe payload limit.",
-            "admissionAndPayload",
-            mutationState: MutationState(result.MutationState)));
+            result.MutationState));
     }
 
     private static CallToolResult NoChange(IReadOnlyList<CalendarResourceDiagnostic> diagnostics) => new()
@@ -526,10 +528,8 @@ internal sealed class CalendarEntityPatchTools
         Content = [new TextContentBlock { Text = "Calendar Entity patch made no change." }]
     };
 
-    private static CallToolResult ConfirmationDeclined()
-    {
-        CalendarTelemetry.ObserveMutationState(CalendarMutationState.NotAttempted);
-        return new CallToolResult
+    private static CallToolResult ConfirmationDeclined() => CalendarToolResult.Success(
+        new CallToolResult
         {
             IsError = false,
             StructuredContent = JsonSerializer.SerializeToElement(new CalendarEntityPatchNoChangeResult(
@@ -537,40 +537,29 @@ internal sealed class CalendarEntityPatchTools
                 "not_attempted",
                 [])),
             Content = [new TextContentBlock { Text = "Calendar Entity patch confirmation was declined." }]
-        };
-    }
+        }, CalendarMutationState.NotAttempted).FinalizeResult();
 
-    private static CallToolResult Error(CalendarEntityPatchResult result)
+    private static CalendarToolResult Error(CalendarEntityPatchResult result)
     {
-        CalendarTelemetry.ObserveStructuredError(
-            CalendarTelemetryFacts.From(result),
-            result.MutationState);
-        return new CallToolResult
+        var facts = CalendarTelemetryFacts.From(result);
+        return CalendarToolResult.Error(new CallToolResult
         {
             IsError = true,
             StructuredContent = JsonSerializer.SerializeToElement(new CalendarEntityCreateErrorResult(
-                Code(result.Code),
-                Category(result.Code),
+                facts.CodeName,
+                facts.CategoryName,
                 Message(result.Code),
-                result.Retryable,
-                Phase(result.Phase),
-                MutationState(result.MutationState),
+                facts.Retryable,
+                facts.PhaseName,
+                CalendarTelemetryVocabulary.MutationStateName(result.MutationState),
                 CurrentSnapshot: result.Snapshot is null ? null : CalendarSnapshotResult.FromSnapshot(result.Snapshot),
                 RetryAfterMs: result.RetryAfterMilliseconds,
                 Limits: result.LimitDimension is null
                     ? null
                     : new CalendarEntityCreateLimits(Dimension: LimitDimension(result.LimitDimension.Value)))),
             Content = [new TextContentBlock { Text = "Calendar Entity patch failed." }]
-        };
+        }, facts, result.MutationState);
     }
-
-    private static string Code(CalendarEntityPatchCode code) => code switch
-    {
-        CalendarEntityPatchCode.RemovalNotFound => "not_found",
-        CalendarEntityPatchCode.RemovalAmbiguous => "ambiguous",
-        _ => string.Concat(code.ToString().SelectMany((character, index) =>
-            char.IsUpper(character) && index > 0 ? new[] { '_', char.ToLowerInvariant(character) } : [char.ToLowerInvariant(character)]))
-    };
 
     private static string Message(CalendarEntityPatchCode code) => code switch
     {
@@ -580,133 +569,91 @@ internal sealed class CalendarEntityPatchTools
         _ => "The Calendar Entity patch could not be completed."
     };
 
-    private static string Category(CalendarEntityPatchCode code) => code switch
-    {
-        CalendarEntityPatchCode.InvalidInput or CalendarEntityPatchCode.InvalidCalendarData => "input",
-        CalendarEntityPatchCode.NotFound or CalendarEntityPatchCode.RemovalNotFound
-            or CalendarEntityPatchCode.RemovalAmbiguous or CalendarEntityPatchCode.OutsideScope
-            or CalendarEntityPatchCode.EntityKindMismatch => "selection",
-        CalendarEntityPatchCode.OpaqueResource or CalendarEntityPatchCode.TemporalUnresolved
-            or CalendarEntityPatchCode.RecurrenceUnevaluable
-            or CalendarEntityPatchCode.UnsupportedCapability => "capabilityAndProjection",
-        CalendarEntityPatchCode.Conflict or CalendarEntityPatchCode.ConcurrencyUnavailable
-            or CalendarEntityPatchCode.CompletionStateConflict => "state",
-        CalendarEntityPatchCode.PayloadTooLarge or CalendarEntityPatchCode.LimitExhausted => "limitsAndAdmission",
-        CalendarEntityPatchCode.FidelityFailure or CalendarEntityPatchCode.CommittedButUnverified
-            or CalendarEntityPatchCode.CommittedButConcurrencyUnavailable or CalendarEntityPatchCode.Indeterminate => "postWriteTruth",
-        _ => "upstream"
-    };
-
-    private static string Phase(CalendarEntityPatchPhase phase) => phase switch
-    {
-        CalendarEntityPatchPhase.SchemaLexicalDiscriminator => "schemaLexicalDiscriminator",
-        CalendarEntityPatchPhase.SelectionDiscoveryCapability => "selectionDiscoveryCapability",
-        CalendarEntityPatchPhase.OriginScopeAuthorization => "originScopeAuthorization",
-        CalendarEntityPatchPhase.TargetRevision => "targetRevision",
-        CalendarEntityPatchPhase.CompleteResourceSemantics => "completeResourceSemantics",
-        CalendarEntityPatchPhase.AdmissionAndPayload => "admissionAndPayload",
-        CalendarEntityPatchPhase.PostWriteVerificationOrReconciliation => "postWriteVerificationOrReconciliation",
-        _ => "execution"
-    };
-
-    private static string MutationState(CalendarMutationState state)
-    {
-        CalendarTelemetry.ObserveMutationState(state);
-        return CalendarTelemetryVocabulary.MutationStateName(state);
-    }
-
     private static string LimitDimension(CalendarEntityPatchLimitDimension dimension) => dimension switch
     {
         CalendarEntityPatchLimitDimension.ElapsedTime => "elapsed_time",
         _ => throw new ArgumentOutOfRangeException(nameof(dimension), dimension, null)
     };
 
-    private static CallToolResult Error() => new()
-    {
-        IsError = true,
-        StructuredContent = JsonSerializer.SerializeToElement(new CalendarEntityCreateErrorResult(
-            "invalid_input",
-            "input",
-            "The Calendar Entity patch input is invalid.",
-            false,
-            "schemaLexicalDiscriminator",
-            "not_attempted")),
-        Content = [new TextContentBlock { Text = "Calendar Entity patch failed." }]
-    };
+    private static CallToolResult Error() => NamedError(
+        CalendarTelemetryFacts.FromInputGuard(payloadTooLarge: false),
+        "The Calendar Entity patch input is invalid.",
+        CalendarMutationState.NotAttempted).FinalizeResult();
 
-    internal static CallToolResult CreateInputGuardError(bool payloadTooLarge)
-    {
-        CalendarTelemetry.ObserveStructuredError(
-            CalendarTelemetryFacts.FromInputGuard(payloadTooLarge),
-            CalendarMutationState.NotAttempted);
-        return payloadTooLarge ? NamedError(
-            "payload_too_large",
-            "limitsAndAdmission",
+    internal static CallToolResult CreateInputGuardError(bool payloadTooLarge) => payloadTooLarge
+        ? NamedError(CalendarTelemetryFacts.FromInputGuard(payloadTooLarge: true),
             "The Calendar Entity patch arguments exceed the safe payload limit.",
-            "admissionAndPayload")
+            CalendarMutationState.NotAttempted).FinalizeResult()
         : Error();
-    }
 
-    private static CallToolResult UnsupportedMrtrError() => NamedError(
-        "unsupported_capability",
-        "capabilityAndProjection",
+    private static CallToolResult UnsupportedMrtrError() => NamedError(new CalendarStructuredErrorFacts(
+        CalendarTelemetryErrorCode.UnsupportedCapability,
+        CalendarTelemetryErrorCategory.CapabilityAndProjection,
+        CalendarTelemetryErrorPhase.Mrtr,
+        false),
         "The client does not support required mutation confirmation.",
-        "mrtr");
+        CalendarMutationState.NotAttempted).FinalizeResult();
 
-    private static CallToolResult ConfirmationError(bool expired) => NamedError(
-        expired ? "confirmation_expired" : "confirmation_mismatch",
-        "confirmation",
+    private static CallToolResult ConfirmationError(bool expired) => NamedError(new CalendarStructuredErrorFacts(
+        expired ? CalendarTelemetryErrorCode.ConfirmationExpired : CalendarTelemetryErrorCode.ConfirmationMismatch,
+        CalendarTelemetryErrorCategory.Confirmation,
+        CalendarTelemetryErrorPhase.Mrtr,
+        false),
         expired ? "The mutation confirmation expired." : "The mutation confirmation did not match the reviewed request.",
-        "mrtr");
+        CalendarMutationState.NotAttempted).FinalizeResult();
 
-    private static CallToolResult ConfirmationPreviewPayloadError() => NamedError(
-        "payload_too_large",
-        "limitsAndAdmission",
+    private static CallToolResult ConfirmationPreviewPayloadError() => NamedError(new CalendarStructuredErrorFacts(
+        CalendarTelemetryErrorCode.PayloadTooLarge,
+        CalendarTelemetryErrorCategory.LimitsAndAdmission,
+        CalendarTelemetryErrorPhase.AdmissionAndPayload,
+        false),
         "The replaceAll confirmation preview exceeds the safe human-readable limit.",
-        "admissionAndPayload");
+        CalendarMutationState.NotAttempted).FinalizeResult();
 
-    private static CallToolResult ConfirmationDeadlineError() => NamedError(
-        "limit_exhausted",
-        "limitsAndAdmission",
+    private static CallToolResult ConfirmationDeadlineError() => NamedError(new CalendarStructuredErrorFacts(
+        CalendarTelemetryErrorCode.LimitExhausted,
+        CalendarTelemetryErrorCategory.LimitsAndAdmission,
+        CalendarTelemetryErrorPhase.Execution,
+        false),
         "The replaceAll confirmation review exceeded its deadline.",
-        "execution",
-        limits: new CalendarEntityCreateLimits(Dimension: "elapsed_time"));
+        CalendarMutationState.NotAttempted,
+        limits: new CalendarEntityCreateLimits(Dimension: "elapsed_time")).FinalizeResult();
 
-    private static CallToolResult PreviewUnavailableError() => NamedError(
-        "upstream_unavailable",
-        "upstream",
+    private static CallToolResult PreviewUnavailableError() => NamedError(new CalendarStructuredErrorFacts(
+        CalendarTelemetryErrorCode.UpstreamUnavailable,
+        CalendarTelemetryErrorCategory.Upstream,
+        CalendarTelemetryErrorPhase.TargetRevision,
+        true),
         "The Calendar Entity patch confirmation review is temporarily unavailable.",
-        "targetRevision",
-        retryable: true);
+        CalendarMutationState.NotAttempted).FinalizeResult();
 
-    private static CallToolResult PreviewProtocolError() => NamedError(
-        "upstream_protocol_error",
-        "upstream",
+    private static CallToolResult PreviewProtocolError() => NamedError(new CalendarStructuredErrorFacts(
+        CalendarTelemetryErrorCode.UpstreamProtocolError,
+        CalendarTelemetryErrorCategory.Upstream,
+        CalendarTelemetryErrorPhase.TargetRevision,
+        false),
         "The Calendar Entity patch confirmation review failed.",
-        "targetRevision");
+        CalendarMutationState.NotAttempted).FinalizeResult();
 
-    private static CallToolResult NamedError(
-        string code,
-        string category,
+    private static CalendarToolResult NamedError(
+        CalendarStructuredErrorFacts facts,
         string message,
-        string phase,
-        string mutationState = "not_attempted",
-        bool retryable = false,
+        CalendarMutationState mutationState,
         int? retryAfterMs = null,
-        CalendarEntityCreateLimits? limits = null) => new()
+        CalendarEntityCreateLimits? limits = null) => CalendarToolResult.Error(new CallToolResult
     {
         IsError = true,
         StructuredContent = JsonSerializer.SerializeToElement(new CalendarEntityCreateErrorResult(
-            code,
-            category,
+            facts.CodeName,
+            facts.CategoryName,
             message,
-            retryable,
-            phase,
-            mutationState,
+            facts.Retryable,
+            facts.PhaseName,
+            CalendarTelemetryVocabulary.MutationStateName(mutationState),
             RetryAfterMs: retryAfterMs,
             Limits: limits)),
         Content = [new TextContentBlock { Text = "Calendar Entity patch failed." }]
-    };
+    }, facts, mutationState);
 
     private enum ConfirmationDecision
     {

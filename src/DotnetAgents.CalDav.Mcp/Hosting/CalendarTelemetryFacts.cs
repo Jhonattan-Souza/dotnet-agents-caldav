@@ -32,6 +32,12 @@ internal static class CalendarTelemetryFacts
         ErrorPhase(result),
         result.Retryable);
 
+    internal static CalendarStructuredErrorFacts From(CalendarResourceDeleteResult result) => new(
+        ErrorCode(result.Code),
+        ErrorCategory(result.Code),
+        ErrorPhase(result),
+        result.Retryable);
+
     internal static CalendarStructuredErrorFacts From(CalendarEntityCreateResult result) => new(
         ErrorCode(result.Code),
         ErrorCategory(result.Code),
@@ -228,6 +234,71 @@ internal static class CalendarTelemetryFacts
         CalendarResourceMoveCode.Indeterminate => CalendarTelemetryErrorCode.Indeterminate,
         _ => CalendarTelemetryErrorCode.UpstreamProtocolError
     };
+
+    private static CalendarTelemetryErrorCode ErrorCode(CalendarResourceDeleteCode code) => code switch
+    {
+        CalendarResourceDeleteCode.Success => throw new ArgumentOutOfRangeException(nameof(code), code, null),
+        CalendarResourceDeleteCode.InvalidInput => CalendarTelemetryErrorCode.InvalidInput,
+        CalendarResourceDeleteCode.NotFound => CalendarTelemetryErrorCode.NotFound,
+        CalendarResourceDeleteCode.OutsideScope => CalendarTelemetryErrorCode.OutsideScope,
+        CalendarResourceDeleteCode.EntityKindMismatch => CalendarTelemetryErrorCode.EntityKindMismatch,
+        CalendarResourceDeleteCode.OpaqueResource => CalendarTelemetryErrorCode.OpaqueResource,
+        CalendarResourceDeleteCode.Conflict => CalendarTelemetryErrorCode.Conflict,
+        CalendarResourceDeleteCode.ConcurrencyUnavailable => CalendarTelemetryErrorCode.ConcurrencyUnavailable,
+        CalendarResourceDeleteCode.UnsupportedCapability => CalendarTelemetryErrorCode.UnsupportedCapability,
+        CalendarResourceDeleteCode.PayloadTooLarge => CalendarTelemetryErrorCode.PayloadTooLarge,
+        CalendarResourceDeleteCode.UpstreamUnauthorized => CalendarTelemetryErrorCode.UpstreamUnauthorized,
+        CalendarResourceDeleteCode.UpstreamForbidden => CalendarTelemetryErrorCode.UpstreamForbidden,
+        CalendarResourceDeleteCode.UpstreamRateLimited => CalendarTelemetryErrorCode.UpstreamRateLimited,
+        CalendarResourceDeleteCode.UpstreamUnavailable => CalendarTelemetryErrorCode.UpstreamUnavailable,
+        CalendarResourceDeleteCode.UpstreamProtocolError => CalendarTelemetryErrorCode.UpstreamProtocolError,
+        CalendarResourceDeleteCode.CommittedButUnverified => CalendarTelemetryErrorCode.CommittedButUnverified,
+        CalendarResourceDeleteCode.Indeterminate => CalendarTelemetryErrorCode.Indeterminate,
+        _ => throw new ArgumentOutOfRangeException(nameof(code), code, null)
+    };
+
+    private static CalendarTelemetryErrorCategory ErrorCategory(CalendarResourceDeleteCode code) => code switch
+    {
+        CalendarResourceDeleteCode.InvalidInput => CalendarTelemetryErrorCategory.Input,
+        CalendarResourceDeleteCode.NotFound or CalendarResourceDeleteCode.OutsideScope =>
+            CalendarTelemetryErrorCategory.Selection,
+        CalendarResourceDeleteCode.EntityKindMismatch or CalendarResourceDeleteCode.Conflict
+            or CalendarResourceDeleteCode.ConcurrencyUnavailable => CalendarTelemetryErrorCategory.State,
+        CalendarResourceDeleteCode.OpaqueResource or CalendarResourceDeleteCode.UnsupportedCapability =>
+            CalendarTelemetryErrorCategory.CapabilityAndProjection,
+        CalendarResourceDeleteCode.PayloadTooLarge => CalendarTelemetryErrorCategory.LimitsAndAdmission,
+        CalendarResourceDeleteCode.CommittedButUnverified or CalendarResourceDeleteCode.Indeterminate =>
+            CalendarTelemetryErrorCategory.PostWriteTruth,
+        _ => CalendarTelemetryErrorCategory.Upstream
+    };
+
+    private static CalendarTelemetryErrorPhase ErrorPhase(CalendarResourceDeleteResult result)
+    {
+        if (result.MutationState is CalendarMutationState.Committed or CalendarMutationState.Unknown)
+            return CalendarTelemetryErrorPhase.PostWriteVerificationOrReconciliation;
+        if (result.MutationState == CalendarMutationState.NotCommitted)
+        {
+            return result.Code == CalendarResourceDeleteCode.UpstreamUnavailable
+                && result.CurrentSnapshot is not null
+                    ? CalendarTelemetryErrorPhase.PostWriteVerificationOrReconciliation
+                    : CalendarTelemetryErrorPhase.Execution;
+        }
+        return result.Code switch
+        {
+            CalendarResourceDeleteCode.InvalidInput or CalendarResourceDeleteCode.OutsideScope =>
+                CalendarTelemetryErrorPhase.OriginScopeAuthorization,
+            CalendarResourceDeleteCode.NotFound or CalendarResourceDeleteCode.EntityKindMismatch
+                or CalendarResourceDeleteCode.OpaqueResource or CalendarResourceDeleteCode.Conflict
+                or CalendarResourceDeleteCode.ConcurrencyUnavailable => CalendarTelemetryErrorPhase.TargetRevision,
+            CalendarResourceDeleteCode.UnsupportedCapability =>
+                CalendarTelemetryErrorPhase.SelectionDiscoveryCapability,
+            CalendarResourceDeleteCode.PayloadTooLarge => CalendarTelemetryErrorPhase.AdmissionAndPayload,
+            CalendarResourceDeleteCode.UpstreamUnavailable => CalendarTelemetryErrorPhase.TargetRevision,
+            CalendarResourceDeleteCode.CommittedButUnverified or CalendarResourceDeleteCode.Indeterminate =>
+                CalendarTelemetryErrorPhase.PostWriteVerificationOrReconciliation,
+            _ => CalendarTelemetryErrorPhase.Execution
+        };
+    }
 
     private static CalendarTelemetryErrorCategory ErrorCategory(CalendarResourceMoveCode code) => code switch
     {

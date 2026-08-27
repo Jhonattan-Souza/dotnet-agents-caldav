@@ -1,8 +1,11 @@
 using System.Diagnostics;
 using System.Reflection;
+using System.Text.Json;
 using DotnetAgents.CalDav.Core.Models;
 using DotnetAgents.CalDav.Core.Services;
 using DotnetAgents.CalDav.Mcp.Hosting;
+using DotnetAgents.CalDav.Mcp.Tools;
+using ModelContextProtocol.Protocol;
 using OpenTelemetry.Logs;
 using Shouldly;
 using Xunit;
@@ -12,6 +15,148 @@ namespace DotnetAgents.CalDav.Mcp.Tests.Unit.Hosting;
 [Collection("TelemetryActivityCollection")]
 public sealed class CalendarTelemetryTests
 {
+    [Fact]
+    public void TerminalFacts_ObserveOnlyPayloadErrorSelectedAfterBounding()
+    {
+        Activity? stoppedOperation = null;
+        using var listener = ListenToOperation(activity => stoppedOperation = activity);
+        using (var operation = CalendarTelemetry.StartOperation("events.create", CalendarTelemetryEntityKind.Event))
+        using (CalendarTelemetry.Attach(operation))
+        {
+            operation.ShouldNotBeNull();
+            var conflict = new CalendarStructuredErrorFacts(
+                CalendarTelemetryErrorCode.Conflict,
+                CalendarTelemetryErrorCategory.State,
+                CalendarTelemetryErrorPhase.Execution,
+                false);
+            var candidate = CalendarToolResult.Error(new CallToolResult
+            {
+                IsError = true,
+                StructuredContent = JsonSerializer.SerializeToElement(new { code = "conflict" }),
+                Content = [new TextContentBlock { Text = new string('x', CalendarQueryToolSupport.MaximumHumanReadableBytes + 1) }]
+            }, conflict, CalendarMutationState.NotCommitted);
+            var payload = CalendarTelemetryFacts.FromInputGuard(payloadTooLarge: true);
+
+            var result = candidate.FinalizeBounded((_, _) => CalendarToolResult.Error(new CallToolResult
+            {
+                IsError = true,
+                StructuredContent = JsonSerializer.SerializeToElement(new
+                {
+                    code = payload.CodeName,
+                    category = payload.CategoryName,
+                    phase = payload.PhaseName
+                }),
+                Content = [new TextContentBlock { Text = "bounded" }]
+            }, payload, CalendarMutationState.NotCommitted));
+
+            result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("payload_too_large");
+            operation.Complete(CalendarOperationOutcome.Error);
+        }
+
+        stoppedOperation.ShouldNotBeNull();
+        stoppedOperation.GetTagItem("caldav.error.code").ShouldBe("payload_too_large");
+        stoppedOperation.GetTagItem("caldav.error.category").ShouldBe("limitsAndAdmission");
+        stoppedOperation.GetTagItem("caldav.error.phase").ShouldBe("admissionAndPayload");
+        stoppedOperation.GetTagItem("caldav.mutation.state").ShouldBe("not_committed");
+    }
+
+    [Theory]
+    [InlineData("timeout")]
+    [InlineData("preview")]
+    [InlineData("confirmation")]
+    public void TerminalFacts_DerivePayloadAndTelemetryFromSameClosedError(
+        string scenario)
+    {
+        Activity? stoppedOperation = null;
+        using var listener = ListenToOperation(activity => stoppedOperation = activity);
+        using (var operation = CalendarTelemetry.StartOperation("calendar_resources.delete", null))
+        using (CalendarTelemetry.Attach(operation))
+        {
+            operation.ShouldNotBeNull();
+            var facts = scenario switch
+            {
+                "timeout" => new CalendarStructuredErrorFacts(
+                    CalendarTelemetryErrorCode.LimitExhausted,
+                    CalendarTelemetryErrorCategory.LimitsAndAdmission,
+                    CalendarTelemetryErrorPhase.Execution,
+                    false),
+                "preview" => new CalendarStructuredErrorFacts(
+                    CalendarTelemetryErrorCode.UpstreamUnavailable,
+                    CalendarTelemetryErrorCategory.Upstream,
+                    CalendarTelemetryErrorPhase.TargetRevision,
+                    false),
+                _ => new CalendarStructuredErrorFacts(
+                    CalendarTelemetryErrorCode.ConfirmationMismatch,
+                    CalendarTelemetryErrorCategory.Confirmation,
+                    CalendarTelemetryErrorPhase.Mrtr,
+                    false)
+            };
+            var result = CalendarToolResult.Error(new CallToolResult
+            {
+                IsError = true,
+                StructuredContent = JsonSerializer.SerializeToElement(new
+                {
+                    code = facts.CodeName,
+                    category = facts.CategoryName,
+                    phase = facts.PhaseName
+                }),
+                Content = [new TextContentBlock { Text = "failed" }]
+            }, facts, CalendarMutationState.NotAttempted).FinalizeResult();
+
+            var structured = result.StructuredContent!.Value;
+            structured.GetProperty("code").GetString().ShouldBe(facts.CodeName);
+            structured.GetProperty("category").GetString().ShouldBe(facts.CategoryName);
+            structured.GetProperty("phase").GetString().ShouldBe(facts.PhaseName);
+            operation.Complete(CalendarOperationOutcome.Error);
+        }
+
+        stoppedOperation.ShouldNotBeNull();
+        var payload = stoppedOperation.GetTagItem("caldav.error.code");
+        payload.ShouldBe(scenario switch
+        {
+            "timeout" => "limit_exhausted",
+            "preview" => "upstream_unavailable",
+            _ => "confirmation_mismatch"
+        });
+        stoppedOperation.GetTagItem("caldav.error.category").ShouldBe(scenario switch
+        {
+            "timeout" => "limitsAndAdmission",
+            "preview" => "upstream",
+            _ => "confirmation"
+        });
+        stoppedOperation.GetTagItem("caldav.error.phase").ShouldBe(scenario switch
+        {
+            "timeout" => "execution",
+            "preview" => "targetRevision",
+            _ => "mrtr"
+        });
+    }
+
+    [Fact]
+    public void TerminalFacts_PreserveBoundedSuccessWithoutError()
+    {
+        Activity? stoppedOperation = null;
+        using var listener = ListenToOperation(activity => stoppedOperation = activity);
+        using (var operation = CalendarTelemetry.StartOperation("calendar_resources.move", null))
+        using (CalendarTelemetry.Attach(operation))
+        {
+            operation.ShouldNotBeNull();
+            var result = CalendarToolResult.Success(new CallToolResult
+            {
+                IsError = false,
+                StructuredContent = JsonSerializer.SerializeToElement(new { outcome = "success" }),
+                Content = [new TextContentBlock { Text = "complete" }]
+            }, CalendarMutationState.Committed).FinalizeBounded((_, _) => throw new UnreachableException());
+
+            result.IsError.ShouldBe(false);
+            operation.Complete(CalendarOperationOutcome.Success);
+        }
+
+        stoppedOperation.ShouldNotBeNull();
+        stoppedOperation.GetTagItem("caldav.mutation.state").ShouldBe("committed");
+        stoppedOperation.GetTagItem("caldav.error.code").ShouldBeNull();
+    }
+
     [Fact]
     public void Operation_EmitsStableParentedPhaseWaterfallWithSafeDimensions()
     {
@@ -891,6 +1036,19 @@ public sealed class CalendarTelemetryTests
             ShouldListenTo = source => source.Name == sourceName,
             Sample = static (ref ActivityCreationOptions<ActivityContext> _) =>
                 ActivitySamplingResult.AllDataAndRecorded
+        };
+        ActivitySource.AddActivityListener(listener);
+        return listener;
+    }
+
+    private static ActivityListener ListenToOperation(Action<Activity> stopped)
+    {
+        var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == CalendarTelemetry.InstrumentationName,
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) =>
+                ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = stopped
         };
         ActivitySource.AddActivityListener(listener);
         return listener;

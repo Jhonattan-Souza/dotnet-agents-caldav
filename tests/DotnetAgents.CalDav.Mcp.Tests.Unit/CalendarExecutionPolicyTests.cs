@@ -485,6 +485,10 @@ public sealed class CalendarExecutionPolicyTests
         processorHelpers.ShouldNotContain("FindOperation");
         processorHelpers.ShouldNotContain("GetRetryAggregation");
         processorHelpers.ShouldNotContain("ApplyRetryAggregation");
+        typeof(TelemetryActivityAllowlistProcessor)
+            .GetNestedTypes(BindingFlags.NonPublic)
+            .Select(type => type.Name)
+            .ShouldNotContain(name => name.Contains("RetryAggregation", StringComparison.Ordinal));
     }
 
     [Theory]
