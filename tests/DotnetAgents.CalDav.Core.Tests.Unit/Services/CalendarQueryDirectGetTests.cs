@@ -647,7 +647,7 @@ public sealed class CalendarQueryDirectGetTests
         internal List<string> RequestedHrefs { get; } = [];
 
         public Task<CalendarOperationDiscoveryResult> DiscoverAsync(CancellationToken cancellationToken) => Task.FromResult(
-            new CalendarOperationDiscoveryResult(
+            CalendarOperationDiscoveryResultFactory.Create(
                 new CalendarDiscoveryResult([new CalendarDescriptor
                 {
                     Href = CalendarHref,

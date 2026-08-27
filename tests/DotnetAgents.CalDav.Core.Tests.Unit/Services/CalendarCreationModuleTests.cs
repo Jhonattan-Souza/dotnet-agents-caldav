@@ -101,7 +101,7 @@ public sealed class CalendarCreationModuleTests
         public Task<CalendarOperationDiscoveryResult> DiscoverAsync(CancellationToken cancellationToken)
         {
             DiscoveryCount++;
-            return Task.FromResult(new CalendarOperationDiscoveryResult(
+            return Task.FromResult(CalendarOperationDiscoveryResultFactory.Create(
                 new CalendarDiscoveryResult([calendar], []),
                 CalendarSelectionResult.Success(calendar),
                 CalendarSelectionResult.Success(calendar)));

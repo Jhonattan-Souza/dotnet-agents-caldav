@@ -544,7 +544,7 @@ public sealed class CalendarTodoQueryModuleTests
                 EventSupport = EntityKindSupport.Advertised,
                 TodoSupport = EntityKindSupport.Advertised
             };
-            return Task.FromResult(new CalendarOperationDiscoveryResult(
+            return Task.FromResult(CalendarOperationDiscoveryResultFactory.Create(
                 new CalendarDiscoveryResult([calendar], []),
                 CalendarSelectionResult.Success(calendar),
                 CalendarSelectionResult.Success(calendar)));

@@ -94,14 +94,6 @@ internal sealed record CalendarOperationDiscoveryResult(
     CalendarSelectionResult EventDefault,
     CalendarSelectionResult TodoDefault)
 {
-    internal CalendarOperationDiscoveryResult(
-        CalendarDiscoveryResult discovery,
-        CalendarSelectionResult eventDefault,
-        CalendarSelectionResult todoDefault)
-        : this(default, discovery, eventDefault, todoDefault)
-    {
-    }
-
     internal CalendarSelectionResult Default(CalendarEntityKind entityKind) => entityKind switch
     {
         CalendarEntityKind.Event => EventDefault,
