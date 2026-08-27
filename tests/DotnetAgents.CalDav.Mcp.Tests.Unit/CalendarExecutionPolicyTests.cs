@@ -477,6 +477,14 @@ public sealed class CalendarExecutionPolicyTests
         typeof(TelemetryActivityAllowlistProcessor)
             .GetMethod("ClassifyHttpObservation", BindingFlags.Static | BindingFlags.NonPublic)
             .ShouldBeNull();
+        var processorHelpers = typeof(TelemetryActivityAllowlistProcessor)
+            .GetMethods(BindingFlags.Static | BindingFlags.NonPublic)
+            .Select(method => method.Name)
+            .ToArray();
+        processorHelpers.ShouldNotContain("ObserveRetry");
+        processorHelpers.ShouldNotContain("FindOperation");
+        processorHelpers.ShouldNotContain("GetRetryAggregation");
+        processorHelpers.ShouldNotContain("ApplyRetryAggregation");
     }
 
     [Theory]

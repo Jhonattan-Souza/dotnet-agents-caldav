@@ -102,8 +102,22 @@ internal sealed class CalendarHttpAttemptHandler : DelegatingHandler
     private static AttemptActivity StartAttempt(HttpRequestMessage request, int resendCount)
     {
         var method = request.Method.Method.ToUpperInvariant();
+        var operation = FindOperation(Activity.Current);
         var activity = CalendarHttpTelemetry.ActivitySource.StartActivity(method, ActivityKind.Client);
-        return new AttemptActivity(activity, method, resendCount, RequestPurpose(request));
+        return new AttemptActivity(activity, operation, method, resendCount, RequestPurpose(request));
+    }
+
+    private static Activity? FindOperation(Activity? activity)
+    {
+        for (var current = activity; current is not null; current = current.Parent)
+        {
+            if (current.Source.Name == "DotnetAgents.CalDav"
+                && current.OperationName == "caldav.operation")
+            {
+                return current;
+            }
+        }
+        return null;
     }
 
     private static CalendarHttpRequestPurpose? RequestPurpose(HttpRequestMessage request)
@@ -118,6 +132,7 @@ internal sealed class CalendarHttpAttemptHandler : DelegatingHandler
 
     private sealed class AttemptActivity(
         Activity? activity,
+        Activity? operation,
         string method,
         int resendCount,
         CalendarHttpRequestPurpose? purpose) : IDisposable
@@ -159,25 +174,35 @@ internal sealed class CalendarHttpAttemptHandler : DelegatingHandler
 
         private void ApplyFacts(CalendarHttpAttemptFacts facts)
         {
-            if (activity is null)
-                return;
-            activity.SetTag("http.request.method", facts.Method);
-            activity.SetTag("http.request.resend_count", facts.ResendCount);
-            activity.SetTag("caldav.http.request_purpose", PurposeName(facts.Purpose));
+            var successful = false;
             switch (facts.Result)
             {
                 case CalendarHttpAttemptResult.Response response:
-                    ApplyResponse(activity, response);
+                    successful = response.Classification != CalendarHttpResponseClassification.HttpError;
+                    if (activity is not null)
+                        ApplyResponse(activity, response);
                     break;
                 case CalendarHttpAttemptResult.Failure failure:
-                    activity.SetTag(
-                        "http.response.status_code",
-                        failure.StatusCode is { } status ? (int)status : null);
-                    activity.SetTag("caldav.http.observation", null);
-                    activity.SetTag("error.type", FailureName(failure.Classification));
-                    activity.SetStatus(ActivityStatusCode.Error);
+                    if (activity is not null)
+                    {
+                        activity.SetTag(
+                            "http.response.status_code",
+                            failure.StatusCode is { } status ? (int)status : null);
+                        activity.SetTag("caldav.http.observation", null);
+                        activity.SetTag("error.type", FailureName(failure.Classification));
+                        activity.SetStatus(ActivityStatusCode.Error);
+                    }
                     break;
             }
+            if (activity is not null)
+            {
+                activity.SetTag("http.request.method", facts.Method);
+                activity.SetTag("http.request.resend_count", facts.ResendCount);
+                activity.SetTag("caldav.http.request_purpose", PurposeName(facts.Purpose));
+            }
+            CalendarTransportRetryAggregation.Observe(
+                operation,
+                new CalendarTransportRetryFacts(facts.ResendCount, successful));
         }
 
         public void Dispose() => activity?.Dispose();
@@ -239,6 +264,38 @@ internal sealed class CalendarHttpAttemptHandler : DelegatingHandler
         int ResendCount,
         CalendarHttpRequestPurpose? Purpose,
         CalendarHttpAttemptResult Result);
+
+    private readonly record struct CalendarTransportRetryFacts(
+        int ResendCount,
+        bool Successful);
+
+    private static class CalendarTransportRetryAggregation
+    {
+        private const string PropertyKey = "DotnetAgents.CalDav.TransportRetryAggregation";
+
+        internal static void Observe(Activity? operation, CalendarTransportRetryFacts facts)
+        {
+            if (operation is null || facts.ResendCount <= 0)
+                return;
+            lock (operation)
+            {
+                var state = operation.GetCustomProperty(PropertyKey) as State ?? new State();
+                state.RetryCount++;
+                state.Recovered |= facts.Successful;
+                operation.SetCustomProperty(PropertyKey, state);
+                operation.SetTag("caldav.transport.retry_count", state.RetryCount);
+                if (state.Recovered)
+                    operation.SetTag("caldav.transport.recovered", true);
+            }
+        }
+
+        private sealed class State
+        {
+            internal int RetryCount { get; set; }
+
+            internal bool Recovered { get; set; }
+        }
+    }
 
     private abstract record CalendarHttpAttemptResult
     {

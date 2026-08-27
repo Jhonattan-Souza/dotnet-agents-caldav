@@ -129,6 +129,37 @@ public sealed class CalendarHttpAttemptHandlerTests
     }
 
     [Theory]
+    [InlineData(HttpStatusCode.OK, 1, true)]
+    [InlineData(HttpStatusCode.ServiceUnavailable, 1, null)]
+    public async Task RetriedAttemptAggregatesTypedTransportFactsBeforeExport(
+        HttpStatusCode statusCode,
+        int expectedRetryCount,
+        bool? expectedRecovered)
+    {
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name is "DotnetAgents.CalDav"
+                or CalendarHttpTelemetry.InstrumentationName,
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) =>
+                ActivitySamplingResult.AllDataAndRecorded
+        };
+        ActivitySource.AddActivityListener(listener);
+        using var operationSource = new ActivitySource("DotnetAgents.CalDav");
+        using var operation = operationSource.StartActivity("caldav.operation");
+        operation.ShouldNotBeNull();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "https://private.example/retry.ics");
+        var sequence = new CalendarHttpTelemetry.AttemptSequence();
+        sequence.NextResendCount().ShouldBe(0);
+        request.Options.Set(CalendarHttpTelemetry.AttemptSequenceKey, sequence);
+        using var invoker = CreateInvoker(_ => Task.FromResult(new HttpResponseMessage(statusCode)));
+
+        using var response = await invoker.SendAsync(request, TestContext.Current.CancellationToken);
+
+        operation.GetTagItem("caldav.transport.retry_count").ShouldBe(expectedRetryCount);
+        operation.GetTagItem("caldav.transport.recovered").ShouldBe(expectedRecovered);
+    }
+
+    [Theory]
     [InlineData(HttpStatusCode.OK, ActivityStatusCode.Unset, null)]
     [InlineData(HttpStatusCode.ServiceUnavailable, ActivityStatusCode.Error, "503")]
     public async Task QueryReadPurposeSurvivesSuccessfulAndFailedPhysicalResponses(
