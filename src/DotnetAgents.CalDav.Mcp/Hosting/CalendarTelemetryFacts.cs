@@ -51,6 +51,18 @@ internal static class CalendarTelemetryFacts
         ErrorPhase(result.Phase),
         result.Retryable);
 
+    internal static CalendarStructuredErrorFacts From(CalendarCollectionCreateResult result) => new(
+        ErrorCode(result),
+        ErrorCategory(result),
+        ErrorPhase(result),
+        result.Retryable);
+
+    internal static CalendarStructuredErrorFacts From(CalendarCollectionDeleteResult result) => new(
+        ErrorCode(result),
+        ErrorCategory(result),
+        ErrorPhase(result),
+        result.Retryable);
+
     internal static CalendarStructuredErrorFacts From(CalendarResourceReadCode code) => code switch
     {
         CalendarResourceReadCode.InvalidInput => new(
@@ -91,6 +103,106 @@ internal static class CalendarTelemetryFacts
         _ => throw new ArgumentOutOfRangeException(nameof(code), code, null)
     };
 
+    private static CalendarTelemetryErrorCode ErrorCode(CalendarCollectionCreateResult result) =>
+        result.Code switch
+        {
+            CalendarCollectionCreateCode.InvalidInput => CalendarTelemetryErrorCode.InvalidInput,
+            CalendarCollectionCreateCode.OutsideScope => CalendarTelemetryErrorCode.OutsideScope,
+            CalendarCollectionCreateCode.Conflict => CalendarTelemetryErrorCode.Conflict,
+            CalendarCollectionCreateCode.DestinationConflict => CalendarTelemetryErrorCode.DestinationConflict,
+            CalendarCollectionCreateCode.UnsupportedCapability => CalendarTelemetryErrorCode.UnsupportedCapability,
+            CalendarCollectionCreateCode.PayloadTooLarge => CalendarTelemetryErrorCode.PayloadTooLarge,
+            CalendarCollectionCreateCode.UpstreamUnauthorized => CalendarTelemetryErrorCode.UpstreamUnauthorized,
+            CalendarCollectionCreateCode.UpstreamForbidden => CalendarTelemetryErrorCode.UpstreamForbidden,
+            CalendarCollectionCreateCode.UpstreamRateLimited => CalendarTelemetryErrorCode.UpstreamRateLimited,
+            CalendarCollectionCreateCode.UpstreamUnavailable => CalendarTelemetryErrorCode.UpstreamUnavailable,
+            CalendarCollectionCreateCode.UpstreamProtocolError => CalendarTelemetryErrorCode.UpstreamProtocolError,
+            CalendarCollectionCreateCode.CommittedButUnverified => CalendarTelemetryErrorCode.CommittedButUnverified,
+            CalendarCollectionCreateCode.Indeterminate or CalendarCollectionCreateCode.Success =>
+                CalendarTelemetryErrorCode.Indeterminate,
+            _ => throw new ArgumentOutOfRangeException(nameof(result), result.Code, null)
+        };
+
+    private static CalendarTelemetryErrorCategory ErrorCategory(CalendarCollectionCreateResult result) =>
+        result.Code switch
+        {
+            CalendarCollectionCreateCode.InvalidInput => CalendarTelemetryErrorCategory.Input,
+            CalendarCollectionCreateCode.OutsideScope => CalendarTelemetryErrorCategory.Selection,
+            CalendarCollectionCreateCode.Conflict or CalendarCollectionCreateCode.DestinationConflict =>
+                CalendarTelemetryErrorCategory.State,
+            CalendarCollectionCreateCode.UnsupportedCapability =>
+                CalendarTelemetryErrorCategory.CapabilityAndProjection,
+            CalendarCollectionCreateCode.PayloadTooLarge => CalendarTelemetryErrorCategory.LimitsAndAdmission,
+            CalendarCollectionCreateCode.CommittedButUnverified or CalendarCollectionCreateCode.Indeterminate
+                or CalendarCollectionCreateCode.Success => CalendarTelemetryErrorCategory.PostWriteTruth,
+            _ => CalendarTelemetryErrorCategory.Upstream
+        };
+
+    private static CalendarTelemetryErrorPhase ErrorPhase(CalendarCollectionCreateResult result) =>
+        result.Code switch
+        {
+            CalendarCollectionCreateCode.InvalidInput => CalendarTelemetryErrorPhase.SchemaLexicalDiscriminator,
+            CalendarCollectionCreateCode.OutsideScope => CalendarTelemetryErrorPhase.OriginScopeAuthorization,
+            CalendarCollectionCreateCode.Conflict => CalendarTelemetryErrorPhase.SelectionDiscoveryCapability,
+            CalendarCollectionCreateCode.PayloadTooLarge => CalendarTelemetryErrorPhase.AdmissionAndPayload,
+            CalendarCollectionCreateCode.CommittedButUnverified or CalendarCollectionCreateCode.Indeterminate
+                or CalendarCollectionCreateCode.Success =>
+                CalendarTelemetryErrorPhase.PostWriteVerificationOrReconciliation,
+            _ => CalendarTelemetryErrorPhase.Execution
+        };
+
+    private static CalendarTelemetryErrorCode ErrorCode(CalendarCollectionDeleteResult result) =>
+        result.Code switch
+        {
+            CalendarCollectionDeleteCode.InvalidInput => CalendarTelemetryErrorCode.InvalidInput,
+            CalendarCollectionDeleteCode.NotFound => CalendarTelemetryErrorCode.NotFound,
+            CalendarCollectionDeleteCode.OutsideScope => CalendarTelemetryErrorCode.OutsideScope,
+            CalendarCollectionDeleteCode.Conflict => CalendarTelemetryErrorCode.Conflict,
+            CalendarCollectionDeleteCode.ConfirmationMismatch => CalendarTelemetryErrorCode.ConfirmationMismatch,
+            CalendarCollectionDeleteCode.UnsupportedCapability => CalendarTelemetryErrorCode.UnsupportedCapability,
+            CalendarCollectionDeleteCode.PayloadTooLarge => CalendarTelemetryErrorCode.PayloadTooLarge,
+            CalendarCollectionDeleteCode.UpstreamUnauthorized => CalendarTelemetryErrorCode.UpstreamUnauthorized,
+            CalendarCollectionDeleteCode.UpstreamForbidden => CalendarTelemetryErrorCode.UpstreamForbidden,
+            CalendarCollectionDeleteCode.UpstreamRateLimited => CalendarTelemetryErrorCode.UpstreamRateLimited,
+            CalendarCollectionDeleteCode.UpstreamUnavailable => CalendarTelemetryErrorCode.UpstreamUnavailable,
+            CalendarCollectionDeleteCode.UpstreamProtocolError => CalendarTelemetryErrorCode.UpstreamProtocolError,
+            CalendarCollectionDeleteCode.CommittedButUnverified => CalendarTelemetryErrorCode.CommittedButUnverified,
+            CalendarCollectionDeleteCode.Indeterminate or CalendarCollectionDeleteCode.Success =>
+                CalendarTelemetryErrorCode.Indeterminate,
+            _ => throw new ArgumentOutOfRangeException(nameof(result), result.Code, null)
+        };
+
+    private static CalendarTelemetryErrorCategory ErrorCategory(CalendarCollectionDeleteResult result) =>
+        result.Code switch
+        {
+            CalendarCollectionDeleteCode.InvalidInput => CalendarTelemetryErrorCategory.Input,
+            CalendarCollectionDeleteCode.NotFound or CalendarCollectionDeleteCode.OutsideScope =>
+                CalendarTelemetryErrorCategory.Selection,
+            CalendarCollectionDeleteCode.Conflict => CalendarTelemetryErrorCategory.State,
+            CalendarCollectionDeleteCode.ConfirmationMismatch => CalendarTelemetryErrorCategory.Confirmation,
+            CalendarCollectionDeleteCode.UnsupportedCapability =>
+                CalendarTelemetryErrorCategory.CapabilityAndProjection,
+            CalendarCollectionDeleteCode.PayloadTooLarge => CalendarTelemetryErrorCategory.LimitsAndAdmission,
+            CalendarCollectionDeleteCode.CommittedButUnverified or CalendarCollectionDeleteCode.Indeterminate
+                or CalendarCollectionDeleteCode.Success => CalendarTelemetryErrorCategory.PostWriteTruth,
+            _ => CalendarTelemetryErrorCategory.Upstream
+        };
+
+    private static CalendarTelemetryErrorPhase ErrorPhase(CalendarCollectionDeleteResult result) =>
+        result.Code switch
+        {
+            CalendarCollectionDeleteCode.InvalidInput => CalendarTelemetryErrorPhase.SchemaLexicalDiscriminator,
+            CalendarCollectionDeleteCode.NotFound => CalendarTelemetryErrorPhase.SelectionDiscoveryCapability,
+            CalendarCollectionDeleteCode.OutsideScope => CalendarTelemetryErrorPhase.OriginScopeAuthorization,
+            CalendarCollectionDeleteCode.Conflict => CalendarTelemetryErrorPhase.TargetRevision,
+            CalendarCollectionDeleteCode.ConfirmationMismatch => CalendarTelemetryErrorPhase.Mrtr,
+            CalendarCollectionDeleteCode.PayloadTooLarge => CalendarTelemetryErrorPhase.AdmissionAndPayload,
+            CalendarCollectionDeleteCode.CommittedButUnverified or CalendarCollectionDeleteCode.Indeterminate
+                or CalendarCollectionDeleteCode.Success =>
+                CalendarTelemetryErrorPhase.PostWriteVerificationOrReconciliation,
+            _ => CalendarTelemetryErrorPhase.Execution
+        };
+
     private static CalendarTelemetryErrorCode ErrorCode(QueryFailureCode code) => code switch
     {
         QueryFailureCode.InvalidInput => CalendarTelemetryErrorCode.InvalidInput,
@@ -110,7 +222,7 @@ internal static class CalendarTelemetryFacts
         QueryFailureCode.NotFound => CalendarTelemetryErrorCode.NotFound,
         QueryFailureCode.Ambiguous => CalendarTelemetryErrorCode.Ambiguous,
         QueryFailureCode.OutsideScope => CalendarTelemetryErrorCode.OutsideScope,
-        _ => CalendarTelemetryErrorCode.UpstreamProtocolError
+        _ => throw new ArgumentOutOfRangeException(nameof(code), code, null)
     };
 
     private static CalendarTelemetryErrorCategory ErrorCategory(QueryFailureCategory category) => category switch
@@ -121,7 +233,7 @@ internal static class CalendarTelemetryFacts
         QueryFailureCategory.Upstream => CalendarTelemetryErrorCategory.Upstream,
         QueryFailureCategory.CapabilityAndProjection => CalendarTelemetryErrorCategory.CapabilityAndProjection,
         QueryFailureCategory.Selection => CalendarTelemetryErrorCategory.Selection,
-        _ => CalendarTelemetryErrorCategory.Upstream
+        _ => throw new ArgumentOutOfRangeException(nameof(category), category, null)
     };
 
     private static CalendarTelemetryErrorPhase ErrorPhase(QueryFailurePhase phase) => phase switch
@@ -135,7 +247,7 @@ internal static class CalendarTelemetryFacts
         QueryFailurePhase.TargetRevision => CalendarTelemetryErrorPhase.TargetRevision,
         QueryFailurePhase.CompleteResourceSemantics => CalendarTelemetryErrorPhase.CompleteResourceSemantics,
         QueryFailurePhase.OriginScopeAuthorization => CalendarTelemetryErrorPhase.OriginScopeAuthorization,
-        _ => CalendarTelemetryErrorPhase.Execution
+        _ => throw new ArgumentOutOfRangeException(nameof(phase), phase, null)
     };
 
     private static CalendarTelemetryErrorCode ErrorCode(CalendarEntityPatchCode code) => code switch

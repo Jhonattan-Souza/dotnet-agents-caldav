@@ -1,4 +1,5 @@
 using DotnetAgents.CalDav.Mcp.Hosting;
+using DotnetAgents.CalDav.Mcp.Tools;
 using DotnetAgents.CalDav.Core.Models;
 using DotnetAgents.CalDav.Core.Services;
 using Microsoft.Extensions.DependencyInjection;
@@ -489,6 +490,39 @@ public sealed class CalendarExecutionPolicyTests
             .GetNestedTypes(BindingFlags.NonPublic)
             .Select(type => type.Name)
             .ShouldNotContain(name => name.Contains("RetryAggregation", StringComparison.Ordinal));
+        foreach (var queryTool in new[]
+                 {
+                     typeof(CalendarEntityTools),
+                     typeof(CalendarOccurrenceTools),
+                     typeof(CalendarTodoTools)
+                 })
+        {
+            var queryHelpers = queryTool
+                .GetMethods(BindingFlags.Static | BindingFlags.NonPublic)
+                .Select(method => method.Name)
+                .ToArray();
+            queryHelpers.ShouldNotContain("Code");
+            queryHelpers.ShouldNotContain("Category");
+            queryHelpers.ShouldNotContain("Phase");
+            queryHelpers.ShouldNotContain("ErrorWithoutBounding");
+            queryHelpers.ShouldNotContain("CreatePayloadLimitError");
+        }
+        var exactWriteHelpers = typeof(ExactCalendarResourceWriteTools)
+            .GetMethods(BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public)
+            .Select(method => method.Name)
+            .ToArray();
+        exactWriteHelpers.ShouldNotContain("EnsureBoundedResult");
+        exactWriteHelpers.ShouldNotContain("Phase");
+        var collectionHelpers = typeof(CalendarCollectionTools)
+            .GetMethods(BindingFlags.Static | BindingFlags.NonPublic)
+            .Select(method => method.Name)
+            .ToArray();
+        collectionHelpers.ShouldNotContain("Describe");
+        collectionHelpers.ShouldNotContain("MapHttpCode");
+        collectionHelpers.ShouldNotContain("MutationState");
+        typeof(CalendarResourceTools)
+            .GetMethod("CreateBoundedSuccess", BindingFlags.Static | BindingFlags.NonPublic)
+            .ShouldBeNull();
     }
 
     [Theory]

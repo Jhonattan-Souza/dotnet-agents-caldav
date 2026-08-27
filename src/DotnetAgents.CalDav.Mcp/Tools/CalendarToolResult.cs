@@ -21,8 +21,15 @@ internal readonly record struct CalendarToolResult(
     CallToolResult Value,
     CalendarTerminalFacts Facts)
 {
+    internal static CalendarToolResult Success(CallToolResult value) => new(value, default);
+
     internal static CalendarToolResult Success(CallToolResult value, CalendarMutationState mutationState) =>
         new(value, new CalendarTerminalFacts(MutationState: mutationState));
+
+    internal static CalendarToolResult Error(
+        CallToolResult value,
+        CalendarStructuredErrorFacts error) =>
+        new(value, new CalendarTerminalFacts(error));
 
     internal static CalendarToolResult Error(
         CallToolResult value,

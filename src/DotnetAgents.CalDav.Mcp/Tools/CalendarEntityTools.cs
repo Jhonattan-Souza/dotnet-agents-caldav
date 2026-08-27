@@ -51,25 +51,23 @@ public sealed class CalendarEntityTools
         {
             QueryReply<CalendarEntityQueryItem>.Page page => Success(page.Value),
             QueryReply<CalendarEntityQueryItem>.Failure failure => Error(failure.Error),
-            _ => Error(CalendarQueryFailure("upstream_protocol_error", "upstream",
-                "The Calendar Entity query returned an invalid response.", false, "execution"))
+            _ => Error(new QueryFailure(
+                QueryFailureCode.UpstreamProtocolError,
+                QueryFailureCategory.Upstream,
+                "The Calendar Entity query returned an invalid response.",
+                false,
+                QueryFailurePhase.Execution))
         };
     }
 
-    internal static CallToolResult CreateInputGuardError(bool payloadTooLarge) => Error(
+    internal static CallToolResult CreateInputGuardError(bool payloadTooLarge) => Error(new QueryFailure(
+        payloadTooLarge ? QueryFailureCode.PayloadTooLarge : QueryFailureCode.InvalidInput,
+        payloadTooLarge ? QueryFailureCategory.LimitsAndAdmission : QueryFailureCategory.Input,
         payloadTooLarge
-            ? CalendarQueryFailure(
-                "payload_too_large",
-                "limitsAndAdmission",
-                "The query arguments exceed the safe payload limit.",
-                false,
-                "admissionAndPayload")
-            : CalendarQueryFailure(
-                "invalid_input",
-                "input",
-                "The Calendar Entity query input is invalid.",
-                false,
-                "schemaLexicalDiscriminator"));
+            ? "The query arguments exceed the safe payload limit."
+            : "The Calendar Entity query input is invalid.",
+        false,
+        payloadTooLarge ? QueryFailurePhase.AdmissionAndPayload : QueryFailurePhase.SchemaLexicalDiscriminator));
 
     internal static int MeasureResult(CallToolResult result) => CalendarQueryToolSupport.MeasureResult(result);
 
@@ -77,31 +75,33 @@ public sealed class CalendarEntityTools
         CalendarQueryToolSupport.MeasureHumanReadableResult(result);
 
     internal static CallToolResult EnsureBoundedResult(CallToolResult result) =>
-        CalendarQueryToolSupport.EnsureBoundedResult(result, CreatePayloadLimitError);
+        CalendarToolResult.Success(result).FinalizeBounded(PayloadLimitCandidate);
 
-    private static CallToolResult Success(QueryPage<CalendarEntityQueryItem> page) => new()
-    {
-        IsError = false,
-        StructuredContent = page.StructuredContent,
-        Content = [new TextContentBlock { Text = page.HumanText }]
-    };
-
-    private static CallToolResult Error(CalendarEntityQueryErrorResult error) => EnsureBoundedResult(new CallToolResult
-    {
-        IsError = true,
-        StructuredContent = JsonSerializer.SerializeToElement(error),
-        Content = [new TextContentBlock { Text = "Calendar Entity query failed." }]
-    });
+    private static CallToolResult Success(QueryPage<CalendarEntityQueryItem> page) => CalendarToolResult.Success(
+        new CallToolResult
+        {
+            IsError = false,
+            StructuredContent = page.StructuredContent,
+            Content = [new TextContentBlock { Text = page.HumanText }]
+        }).FinalizeBounded(PayloadLimitCandidate);
 
     private static CallToolResult Error(QueryFailure failure)
     {
-        CalendarTelemetry.ObserveStructuredError(CalendarTelemetryFacts.From(failure));
-        return Error(new CalendarEntityQueryErrorResult(
-            Code(failure.Code),
-            Category(failure.Category),
+        var facts = CalendarTelemetryFacts.From(failure);
+        return ErrorCandidate(failure, facts).FinalizeBounded(PayloadLimitCandidate);
+    }
+
+    private static CalendarToolResult ErrorCandidate(
+        QueryFailure failure,
+        CalendarStructuredErrorFacts facts) => CalendarToolResult.Error(new CallToolResult
+        {
+            IsError = true,
+            StructuredContent = JsonSerializer.SerializeToElement(new CalendarEntityQueryErrorResult(
+            facts.CodeName,
+            facts.CategoryName,
             failure.Message,
-            failure.Retryable,
-            Phase(failure.Phase),
+            facts.Retryable,
+            facts.PhaseName,
             failure.Limits is null ? null : new CalendarEntityExecutionLimits(
                 failure.Limits.ResourcesInspected,
                 failure.Limits.CalendarCount,
@@ -113,8 +113,9 @@ public sealed class CalendarEntityTools
                 failure.Limits.Observed,
                 failure.Limits.Limit),
             failure.AuthorizedCandidates?.Select(Candidate).ToArray(),
-            failure.RetryAfterMs));
-    }
+            failure.RetryAfterMs)),
+            Content = [new TextContentBlock { Text = "Calendar Entity query failed." }]
+        }, facts);
 
     private static CalendarAuthorizedCandidateResult Candidate(QueryAuthorizedCandidate candidate) => new(
         new CalendarHref(candidate.CalendarHref),
@@ -300,83 +301,19 @@ public sealed class CalendarEntityTools
         }
     }
 
-    private static string Code(QueryFailureCode code) => code switch
+    private static CalendarToolResult PayloadLimitCandidate(int byteCount, bool humanReadable)
     {
-        QueryFailureCode.InvalidInput => "invalid_input",
-        QueryFailureCode.CursorExpired => "cursor_expired",
-        QueryFailureCode.LimitExhausted => "limit_exhausted",
-        QueryFailureCode.Busy => "busy",
-        QueryFailureCode.PayloadTooLarge => "payload_too_large",
-        QueryFailureCode.UpstreamProtocolError => "upstream_protocol_error",
-        QueryFailureCode.UnsupportedCapability => "unsupported_capability",
-        QueryFailureCode.ConcurrencyUnavailable => "concurrency_unavailable",
-        QueryFailureCode.TemporalUnresolved => "temporal_unresolved",
-        QueryFailureCode.RecurrenceUnevaluable => "recurrence_unevaluable",
-        QueryFailureCode.UpstreamUnavailable => "upstream_unavailable",
-        QueryFailureCode.UpstreamUnauthorized => "upstream_unauthorized",
-        QueryFailureCode.UpstreamForbidden => "upstream_forbidden",
-        QueryFailureCode.UpstreamRateLimited => "upstream_rate_limited",
-        QueryFailureCode.NotFound => "not_found",
-        QueryFailureCode.Ambiguous => "ambiguous",
-        QueryFailureCode.OutsideScope => "outside_scope",
-        _ => throw new ArgumentOutOfRangeException(nameof(code), code, null)
-    };
-
-    private static string Category(QueryFailureCategory category) => category switch
-    {
-        QueryFailureCategory.Input => "input",
-        QueryFailureCategory.State => "state",
-        QueryFailureCategory.LimitsAndAdmission => "limitsAndAdmission",
-        QueryFailureCategory.Upstream => "upstream",
-        QueryFailureCategory.CapabilityAndProjection => "capabilityAndProjection",
-        QueryFailureCategory.Selection => "selection",
-        _ => throw new ArgumentOutOfRangeException(nameof(category), category, null)
-    };
-
-    private static string Phase(QueryFailurePhase phase) => phase switch
-    {
-        QueryFailurePhase.SchemaLexicalDiscriminator => "schemaLexicalDiscriminator",
-        QueryFailurePhase.Pagination => "pagination",
-        QueryFailurePhase.Execution => "execution",
-        QueryFailurePhase.AdmissionAndPayload => "admissionAndPayload",
-        QueryFailurePhase.SelectionDiscoveryCapability => "selectionDiscoveryCapability",
-        QueryFailurePhase.TargetRevision => "targetRevision",
-        QueryFailurePhase.CompleteResourceSemantics => "completeResourceSemantics",
-        QueryFailurePhase.OriginScopeAuthorization => "originScopeAuthorization",
-        _ => throw new ArgumentOutOfRangeException(nameof(phase), phase, null)
-    };
-
-    private static CallToolResult CreatePayloadLimitError(int byteCount, bool humanReadable)
-    {
-        CalendarTelemetry.ObserveStructuredError(new CalendarStructuredErrorFacts(
-            CalendarTelemetryErrorCode.PayloadTooLarge,
-            CalendarTelemetryErrorCategory.LimitsAndAdmission,
-            CalendarTelemetryErrorPhase.AdmissionAndPayload,
-            false));
-        return Error(CalendarQueryFailure(
-            "payload_too_large",
-            "limitsAndAdmission",
+        var failure = new QueryFailure(
+            QueryFailureCode.PayloadTooLarge,
+            QueryFailureCategory.LimitsAndAdmission,
             humanReadable
                 ? "The Calendar Entity query human-readable result exceeds the safe payload limit."
                 : "The Calendar Entity query result exceeds the safe payload limit.",
             false,
-            "admissionAndPayload",
-            new CalendarEntityExecutionLimits(ByteCount: byteCount)));
+            QueryFailurePhase.AdmissionAndPayload,
+            new QueryExecutionLimits(ByteCount: byteCount));
+        return ErrorCandidate(failure, CalendarTelemetryFacts.From(failure));
     }
-
-    private static CalendarEntityQueryErrorResult CalendarQueryFailure(
-        string code,
-        string category,
-        string message,
-        bool retryable,
-        string phase,
-        CalendarEntityExecutionLimits? limits = null) => new(
-            code,
-            category,
-            message,
-            retryable,
-            phase,
-            limits);
 }
 
 public sealed record CalendarEntityScopeArgument(

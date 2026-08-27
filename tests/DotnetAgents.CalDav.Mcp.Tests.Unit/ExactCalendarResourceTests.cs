@@ -1867,14 +1867,30 @@ public sealed class ExactCalendarResourceTests
     [Theory]
     [InlineData(0, false)]
     [InlineData(1, true)]
-    public void EnsureBoundedResult_EnforcesExactStructuredByteBoundary(int extraByte, bool rejected)
+    public void CalendarToolResult_EnforcesExactStructuredByteBoundary(int extraByte, bool rejected)
     {
         var result = ResultWithStructuredSize(
             ExactCalendarResourceWriteTools.MaximumStructuredResultBytes + extraByte);
+        var payloadFacts = CalendarTelemetryFacts.FromInputGuard(payloadTooLarge: true);
 
-        var bounded = ExactCalendarResourceWriteTools.EnsureBoundedResult(
-            result,
-            CalendarMutationState.Committed);
+        var bounded = CalendarToolResult.Success(result, CalendarMutationState.Committed).FinalizeBounded(
+            (_, _) => CalendarToolResult.Error(
+                new CallToolResult
+                {
+                    IsError = true,
+                    StructuredContent = JsonSerializer.SerializeToElement(new
+                    {
+                        code = payloadFacts.CodeName,
+                        category = payloadFacts.CategoryName,
+                        message = "The exact write result exceeds the safe payload limit.",
+                        retryable = payloadFacts.Retryable,
+                        phase = payloadFacts.PhaseName,
+                        mutationState = "committed"
+                    }),
+                    Content = [new TextContentBlock { Text = "Exact Calendar Object Resource write failed." }]
+                },
+                payloadFacts,
+                CalendarMutationState.Committed));
 
         ExactCalendarResourceWriteTools.MeasureResult(result)
             .ShouldBe(ExactCalendarResourceWriteTools.MaximumStructuredResultBytes + extraByte);
