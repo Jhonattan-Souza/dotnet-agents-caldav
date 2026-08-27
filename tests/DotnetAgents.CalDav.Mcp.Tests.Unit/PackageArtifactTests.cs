@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.IO.Compression;
+using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
 using Shouldly;
@@ -8,6 +10,49 @@ namespace DotnetAgents.CalDav.Mcp.Tests.Unit;
 
 public sealed class PackageArtifactTests
 {
+    private const string BundledSkillPackagePath = "skills/caldav-calendars/SKILL.md";
+
+    [Fact]
+    public void Package_BundlesDiscoverableCalDavSkillVerbatim()
+    {
+        var repositoryRoot = RepositoryRoot();
+        var skillPath = Path.Combine(repositoryRoot, BundledSkillPackagePath);
+        var expectedBytes = File.ReadAllBytes(skillPath);
+        var temporaryDirectory = Directory.CreateTempSubdirectory("caldav-package-test-");
+
+        try
+        {
+            var result = Run(
+                "dotnet",
+                [
+                    "pack",
+                    Path.Combine(repositoryRoot, "src", "DotnetAgents.CalDav.Mcp", "DotnetAgents.CalDav.Mcp.csproj"),
+                    "-c", "Release",
+                    "--no-build",
+                    "--no-restore",
+                    "-p:PackageVersion=0.0.0-skill-test",
+                    "-o", temporaryDirectory.FullName
+                ],
+                repositoryRoot);
+
+            result.ExitCode.ShouldBe(0, result.Output);
+            var packagePath = Directory.GetFiles(temporaryDirectory.FullName, "*.nupkg")
+                .Single(path => !path.EndsWith(".snupkg", StringComparison.Ordinal));
+            using var package = ZipFile.OpenRead(packagePath);
+            var entry = package.GetEntry(BundledSkillPackagePath);
+            entry.ShouldNotBeNull();
+            using var stream = entry.Open();
+            using var actualBytes = new MemoryStream();
+            stream.CopyTo(actualBytes);
+            actualBytes.ToArray().ShouldBe(expectedBytes);
+            AssertDiscoverableSkillFrontmatter(expectedBytes);
+        }
+        finally
+        {
+            temporaryDirectory.Delete(recursive: true);
+        }
+    }
+
     [Fact]
     public void SelectedMcpAuthority_BindsStableSourcesAndOfficialSdkVersionWithoutDraftFallback()
     {
@@ -105,6 +150,20 @@ public sealed class PackageArtifactTests
         document.RootElement.GetProperty("version").GetString().ShouldBe(expectedVersion);
         document.RootElement.GetProperty("packages")[0].GetProperty("version").GetString()
             .ShouldBe(expectedVersion);
+    }
+
+    private static void AssertDiscoverableSkillFrontmatter(byte[] skillBytes)
+    {
+        var skill = Encoding.UTF8.GetString(skillBytes).ReplaceLineEndings("\n");
+        skill.ShouldStartWith("---\n");
+        var closingDelimiter = skill.IndexOf("\n---\n", 4, StringComparison.Ordinal);
+        closingDelimiter.ShouldBeGreaterThan(4);
+        var frontmatter = skill[4..closingDelimiter].Split('\n');
+        frontmatter.ShouldContain("name: caldav-calendars");
+        frontmatter.ShouldContain(line =>
+            line.StartsWith("description: ", StringComparison.Ordinal) &&
+            line.Contains("CalDAV", StringComparison.Ordinal) &&
+            line.Contains("MCP", StringComparison.Ordinal));
     }
 
     private static void AssertMcpAuthorityManifest(string manifestJson, string catalogJson, string packagesXml)

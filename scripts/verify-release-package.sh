@@ -69,7 +69,8 @@ for entry in \
   "$tool_path/DotnetAgents.CalDav.Mcp.runtimeconfig.json" \
   "$tool_path/.mcp/server.json" \
   'README.md' \
-  '.mcp/server.json'; do
+  '.mcp/server.json' \
+  'skills/caldav-calendars/SKILL.md'; do
   require_entry "$package" "$entry"
 done
 require_entry "$symbol_package" "$tool_path/DotnetAgents.CalDav.Core.pdb"
@@ -77,7 +78,7 @@ require_entry "$symbol_package" "$tool_path/DotnetAgents.CalDav.Mcp.pdb"
 
 while IFS= read -r entry; do
   case "$entry" in
-    _rels/*|package/*|tools/*|dotnet-agents-caldav.nuspec|'[Content_Types].xml'|README.md|.mcp/server.json)
+    _rels/*|package/*|tools/*|dotnet-agents-caldav.nuspec|'[Content_Types].xml'|README.md|.mcp/server.json|skills/caldav-calendars/SKILL.md)
       ;;
     *)
       echo "unexpected non-runtime package entry: $entry" >&2
@@ -94,6 +95,14 @@ cmp -s -- "$root_metadata" "$tool_metadata" || {
   echo "root and tool-path MCP metadata differ" >&2
   exit 1
 }
+
+packed_skill="$temporary_directory/caldav-calendars-SKILL.md"
+unzip -p "$package" 'skills/caldav-calendars/SKILL.md' > "$packed_skill"
+cmp -s -- "$repository_root/skills/caldav-calendars/SKILL.md" "$packed_skill" || {
+  echo "packed CalDAV skill differs from the repository source" >&2
+  exit 1
+}
+
 jq -e --arg version "$package_version" --arg package_id "$package_id" '
   .version == $version and
   (.packages | length) == 1 and

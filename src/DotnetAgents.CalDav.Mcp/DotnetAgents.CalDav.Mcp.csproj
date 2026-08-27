@@ -28,6 +28,7 @@
 
   <ItemGroup>
     <None Include="../../README.md" Pack="true" PackagePath="\" />
+    <None Include="../../skills/caldav-calendars/SKILL.md" Pack="true" PackagePath="skills/caldav-calendars/" />
     <EmbeddedResource Include="Contracts/mcp-tool-catalog.json" LogicalName="DotnetAgents.CalDav.Mcp.CalendarToolCatalog.json" />
     <None Include="$(McpServerMetadataPath)" Link=".mcp/server.json" Pack="true" PackagePath=".mcp/server.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>

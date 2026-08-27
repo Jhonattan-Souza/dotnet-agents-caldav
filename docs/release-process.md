@@ -22,8 +22,9 @@ After the tag-versioned build is packed, and before upload or publication,
 `scripts/verify-release-package.sh <version> <artifact-directory>` verifies:
 
 - exactly one `.nupkg` and one `.snupkg`, with the requested package ID and version;
-- the first-party executable payload, PDBs, README, and both MCP metadata copies;
+- the first-party executable payload, PDBs, README, both MCP metadata copies, and bundled CalDAV Agent Skill;
 - matching generated release versions and stdio package identity in the metadata;
+- byte-for-byte identity between the bundled skill and its repository source;
 - absence of repository-only documentation from the package;
 - installation of the exact package with the artifact directory as the only NuGet source;
 - MCP initialization and the default `tools/list` result from the installed executable.
@@ -39,10 +40,11 @@ The NuGet package contains only files with a package-consumer purpose:
 - the .NET tool payload for execution;
 - `README.md` for the NuGet package page;
 - root and tool-path `.mcp/server.json` for MCP discovery and installed-tool metadata;
+- `skills/caldav-calendars/SKILL.md` for harness-neutral Agent Skills discovery or installation;
 - PDBs and the symbol package for SourceLink and debugging.
 
 Versioned contracts, schemas, interoperability profiles, compatibility
-matrices, ADRs, and the agent skill remain in the repository. Published release
+matrices, and ADRs remain in the repository. Published release
 history is maintained through GitHub Releases.
 
 ## Retired audit gate
