@@ -443,7 +443,7 @@ public sealed class CalendarMoveModuleTests
         var sourceCalendar = TodoCalendar("https://cal.example/tasks/", "Tasks");
         var transport = ScriptedTransport(Resource(SourceHref, "\"r1\"", Uid)) with
         {
-            Discovery = new CalendarOperationDiscoveryResult(
+            Discovery = CalendarOperationDiscoveryResultFactory.Create(
                 new CalendarDiscoveryResult([sourceCalendar], []),
                 CalendarSelectionResult.Success(sourceCalendar),
                 CalendarSelectionResult.Success(sourceCalendar))
@@ -475,7 +475,7 @@ public sealed class CalendarMoveModuleTests
             };
         var transport = ScriptedTransport(Resource(SourceHref, "\"r1\"", Uid)) with
         {
-            Discovery = new CalendarOperationDiscoveryResult(
+            Discovery = CalendarOperationDiscoveryResultFactory.Create(
                 new CalendarDiscoveryResult([
                     TodoCalendar("https://cal.example/tasks/", "Tasks"),
                     destination
@@ -533,7 +533,7 @@ public sealed class CalendarMoveModuleTests
         var destination = TodoCalendar(DestinationCalendarHref, "Archive");
         var transport = ScriptedTransport(Resource(SourceHref, "\"r1\"", Uid)) with
         {
-            Discovery = new CalendarOperationDiscoveryResult(
+            Discovery = CalendarOperationDiscoveryResultFactory.Create(
                 new CalendarDiscoveryResult([
                     TodoCalendar(sourceCalendarHref, "Invalid source"),
                     destination
@@ -566,7 +566,7 @@ public sealed class CalendarMoveModuleTests
 
     private static ScriptedMoveTransport ScriptedTransport(CalendarResourceRead source) => new()
     {
-        Discovery = new CalendarOperationDiscoveryResult(
+        Discovery = CalendarOperationDiscoveryResultFactory.Create(
             new CalendarDiscoveryResult([
                 TodoCalendar("https://cal.example/tasks/", "Tasks"),
                 TodoCalendar(DestinationCalendarHref, "Archive")

@@ -338,7 +338,7 @@ public sealed class CalendarOccurrenceQueryModuleTests
                 EventSupport = EntityKindSupport.Advertised,
                 TodoSupport = EntityKindSupport.NotAdvertised
             };
-            return Task.FromResult(new CalendarOperationDiscoveryResult(
+            return Task.FromResult(CalendarOperationDiscoveryResultFactory.Create(
                 new CalendarDiscoveryResult([calendar], []),
                 CalendarSelectionResult.Success(calendar),
                 CalendarSelectionResult.Failure(CalendarSelectionCode.NotFound)));

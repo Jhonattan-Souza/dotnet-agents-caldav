@@ -10,7 +10,7 @@ public sealed class CalendarOperationDiscoveryResultTests
     [Fact]
     public void UnsupportedEntityKindCannotResolveADefaultCalendar()
     {
-        var discovery = new CalendarOperationDiscoveryResult(
+        var discovery = CalendarOperationDiscoveryResultFactory.Create(
             new CalendarDiscoveryResult([], []),
             CalendarSelectionResult.Failure(CalendarSelectionCode.Ambiguous),
             CalendarSelectionResult.Failure(CalendarSelectionCode.OutsideScope));
