@@ -19,9 +19,7 @@ internal sealed class CalendarMoveModule(
         CalendarResourceMoveRequest request,
         CancellationToken cancellationToken)
     {
-        CalendarOperationProgress.SetMoveDispatch(CalendarMoveDispatchClassification.NotAttempted);
-        CalendarOperationProgress.SetMoveCollision(CalendarMoveCollisionClassification.Unspecified);
-        CalendarOperationProgress.SetMoveReconciliation(CalendarMoveReconciliationClassification.NotRun);
+        CalendarOperationProgress.SetMoveNotAttempted();
         var inputFailure = ValidateInput(request);
         if (inputFailure is not null)
             return inputFailure;

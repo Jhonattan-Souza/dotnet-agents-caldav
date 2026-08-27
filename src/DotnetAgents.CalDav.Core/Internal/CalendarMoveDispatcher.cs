@@ -246,13 +246,7 @@ internal sealed class CalendarMoveDispatcher(
 
     private static void RecordDispatch(CalendarResourceMoveDispatchResult dispatch)
     {
-        CalendarOperationProgress.SetMoveDispatch(dispatch.Code switch
-        {
-            CalendarResourceMoveDispatchCode.Dispatched => CalendarMoveDispatchClassification.Dispatched,
-            CalendarResourceMoveDispatchCode.PossiblyDispatched => CalendarMoveDispatchClassification.PossiblyDispatched,
-            _ => CalendarMoveDispatchClassification.Rejected
-        });
-        CalendarOperationProgress.SetMoveCollision(dispatch.Code switch
+        var collision = dispatch.Code switch
         {
             CalendarResourceMoveDispatchCode.DestinationConflict => CalendarMoveCollisionClassification.DestinationHref,
             CalendarResourceMoveDispatchCode.Conflict => dispatch.CollisionKind switch
@@ -262,7 +256,17 @@ internal sealed class CalendarMoveDispatcher(
                 _ => CalendarMoveCollisionClassification.Unclassified
             },
             _ => CalendarMoveCollisionClassification.None
-        });
+        };
+        if (dispatch.Code is CalendarResourceMoveDispatchCode.Dispatched
+            or CalendarResourceMoveDispatchCode.PossiblyDispatched)
+        {
+            CalendarOperationProgress.SetMoveDispatched(
+                dispatch.Code == CalendarResourceMoveDispatchCode.PossiblyDispatched);
+        }
+        else
+        {
+            CalendarOperationProgress.SetMoveRejected(collision);
+        }
     }
 
     private static CalendarResourceMoveResult FromDispatchFailure(

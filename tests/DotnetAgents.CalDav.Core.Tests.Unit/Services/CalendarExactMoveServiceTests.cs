@@ -429,10 +429,10 @@ public sealed class CalendarExactMoveServiceTests
 
         if (scenario == "review")
             result.Outcome.ShouldBeNull();
-        state.Telemetry.Move.Dispatch.Value.ShouldBe(CalendarMoveDispatchClassification.NotAttempted);
-        state.Telemetry.Move.Collision.Value.ShouldBe(
+        state.MoveTelemetry.Dispatch.ShouldBe(CalendarMoveDispatchClassification.NotAttempted);
+        state.MoveTelemetry.Collision.ShouldBe(
             scenario == "review" ? CalendarMoveCollisionClassification.None : expectedCollision);
-        state.Telemetry.Move.Reconciliation.Value.ShouldBe(
+        state.MoveTelemetry.Reconciliation.ShouldBe(
             CalendarMoveReconciliationClassification.NotRun);
     }
 

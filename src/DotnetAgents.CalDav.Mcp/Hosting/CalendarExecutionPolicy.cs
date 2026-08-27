@@ -29,7 +29,7 @@ internal static class CalendarExecutionPolicy
                 toolName,
                 EntityKind(requestedToolName));
             using var telemetryScope = CalendarTelemetry.Attach(telemetry);
-            CalendarOperationTelemetrySnapshot telemetryFacts = default;
+            CalendarMoveTelemetrySnapshot? moveTelemetry = null;
             var report = request.Params?.ProgressToken is { } token
                 ? (Func<ProgressNotificationValue, CancellationToken, Task>)((progress, progressCancellationToken) =>
                     request.Server.NotifyProgressAsync(token, progress, options: null, progressCancellationToken))
@@ -46,13 +46,7 @@ internal static class CalendarExecutionPolicy
                 if (execution.Lease is null)
                 {
                     var busy = CreateBusyResult(mutation);
-                    CompleteTelemetry(
-                        telemetry,
-                        busy,
-                        mutation
-                            ? CalendarOperationTelemetrySnapshot.WithMutationState(
-                                CalendarMutationState.NotAttempted)
-                            : default);
+                    CompleteTelemetry(telemetry, busy, moveTelemetry);
                     return busy;
                 }
                 StartLegacyDiscoveryPhase(requestedToolName, telemetry);
@@ -69,9 +63,9 @@ internal static class CalendarExecutionPolicy
                 }
                 finally
                 {
-                    telemetryFacts = CalendarOperationProgress.CurrentTelemetry ?? default;
+                    moveTelemetry = CalendarOperationProgress.CurrentMoveTelemetry;
                 }
-                CompleteTelemetry(telemetry, result, telemetryFacts);
+                CompleteTelemetry(telemetry, result, moveTelemetry);
                 return result;
             }
             catch (Exception exception)
@@ -81,7 +75,7 @@ internal static class CalendarExecutionPolicy
                     exception,
                     mutation,
                     moveTool,
-                    telemetryFacts,
+                    moveTelemetry,
                     cancellationToken);
                 throw;
             }
@@ -109,22 +103,18 @@ internal static class CalendarExecutionPolicy
         Exception exception,
         bool mutation,
         bool moveTool,
-        CalendarOperationTelemetrySnapshot telemetryFacts,
+        CalendarMoveTelemetrySnapshot? moveTelemetry,
         CancellationToken callerCancellationToken)
     {
         if (exception is InputRequiredException)
         {
-            telemetry?.Complete(
-                CalendarOperationOutcome.InputRequired,
-                mutation
-                    ? WithMutationStateIfAbsent(
-                        telemetryFacts,
-                        CalendarMutationState.NotAttempted)
-                    : telemetryFacts);
+            if (mutation)
+                telemetry?.ObserveMutationStateIfAbsent(CalendarMutationState.NotAttempted);
+            telemetry?.Complete(CalendarOperationOutcome.InputRequired, moveTelemetry);
         }
         else if (exception is OperationCanceledException && callerCancellationToken.IsCancellationRequested)
         {
-            CompleteCallerCancellation(telemetry, moveTool, telemetryFacts);
+            CompleteCallerCancellation(telemetry, moveTool, moveTelemetry);
         }
         else if (exception is OperationCanceledException)
         {
@@ -139,28 +129,22 @@ internal static class CalendarExecutionPolicy
     private static void CompleteCallerCancellation(
         CalendarTelemetryOperation? telemetry,
         bool moveTool,
-        CalendarOperationTelemetrySnapshot telemetryFacts)
+        CalendarMoveTelemetrySnapshot? moveTelemetry)
     {
-        if (moveTool && !telemetryFacts.Move.Dispatch.HasValue)
+        if (moveTool && moveTelemetry is null or { Dispatch: CalendarMoveDispatchClassification.Unspecified })
         {
-            telemetryFacts = new CalendarOperationTelemetrySnapshot(
-                CalendarTelemetryFact<CalendarMutationState>.FromValue(
-                    CalendarMutationState.NotAttempted),
-                new CalendarMoveTelemetrySnapshot(
-                    CalendarTelemetryFact<CalendarMoveDispatchClassification>.FromValue(
-                        CalendarMoveDispatchClassification.NotAttempted),
-                    default,
-                    CalendarTelemetryFact<CalendarMoveReconciliationClassification>.FromValue(
-                        CalendarMoveReconciliationClassification.NotRun)));
+            telemetry?.ObserveMutationStateIfAbsent(CalendarMutationState.NotAttempted);
+            moveTelemetry = new CalendarMoveTelemetrySnapshot(
+                CalendarMoveDispatchClassification.NotAttempted,
+                CalendarMoveCollisionClassification.Unspecified,
+                CalendarMoveReconciliationClassification.NotRun);
         }
         else if (moveTool
-            && telemetryFacts.Move.Dispatch.Value == CalendarMoveDispatchClassification.NotAttempted)
+            && moveTelemetry?.Dispatch == CalendarMoveDispatchClassification.NotAttempted)
         {
-            telemetryFacts = WithMutationStateIfAbsent(
-                telemetryFacts,
-                CalendarMutationState.NotAttempted);
+            telemetry?.ObserveMutationStateIfAbsent(CalendarMutationState.NotAttempted);
         }
-        telemetry?.Complete(CalendarOperationOutcome.Cancelled, telemetryFacts);
+        telemetry?.Complete(CalendarOperationOutcome.Cancelled, moveTelemetry);
     }
 
     private static async ValueTask<CallToolResult> ExecuteWithinBudgetAsync(
@@ -185,7 +169,7 @@ internal static class CalendarExecutionPolicy
             && !callerCancellationToken.IsCancellationRequested)
         {
             if (mutation)
-                CalendarOperationProgress.ObserveMutationState(CalendarMutationState.Unknown);
+                CalendarTelemetry.ObserveMutationState(CalendarMutationState.Unknown);
             return CreateDeadlineResult(mutation);
         }
     }
@@ -239,17 +223,9 @@ internal static class CalendarExecutionPolicy
     private static void CompleteTelemetry(
         CalendarTelemetryOperation? telemetry,
         CallToolResult result,
-        CalendarOperationTelemetrySnapshot telemetryFacts) => telemetry?.Complete(
+        CalendarMoveTelemetrySnapshot? moveTelemetry) => telemetry?.Complete(
             result.IsError == true ? CalendarOperationOutcome.Error : CalendarOperationOutcome.Success,
-            telemetryFacts);
-
-    private static CalendarOperationTelemetrySnapshot WithMutationStateIfAbsent(
-        CalendarOperationTelemetrySnapshot telemetryFacts,
-        CalendarMutationState mutationState) => telemetryFacts.MutationState.HasValue
-            ? telemetryFacts
-            : new CalendarOperationTelemetrySnapshot(
-                CalendarTelemetryFact<CalendarMutationState>.FromValue(mutationState),
-                telemetryFacts.Move);
+            moveTelemetry);
 
     internal static async Task ReportProgressAsync(
         TimeProvider timeProvider,

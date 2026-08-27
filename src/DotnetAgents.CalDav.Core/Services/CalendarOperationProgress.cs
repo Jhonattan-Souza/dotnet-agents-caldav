@@ -1,5 +1,3 @@
-using DotnetAgents.CalDav.Core.Models;
-
 namespace DotnetAgents.CalDav.Core.Services;
 
 /// <summary>Tracks the current safe aggregate phase for one asynchronous Calendar operation.</summary>
@@ -19,65 +17,75 @@ public static class CalendarOperationProgress
 
     internal static void SetPhase(CalendarOperationPhase phase) => CurrentState.Value?.AdvanceTo(phase);
 
-    internal static void ObserveMutationState(CalendarMutationState mutationState) =>
-        CurrentState.Value?.ObserveMutationState(mutationState);
+    internal static void SetMoveNotAttempted(
+        CalendarMoveCollisionClassification collision = CalendarMoveCollisionClassification.Unspecified) =>
+        CurrentState.Value?.SetMoveState(new CalendarMoveTelemetryState.NotAttempted(collision));
 
-    internal static void SetMoveDispatch(CalendarMoveDispatchClassification classification) =>
-        CurrentState.Value?.SetMoveDispatch(classification);
+    internal static void SetMoveRejected(CalendarMoveCollisionClassification collision) =>
+        CurrentState.Value?.SetMoveState(new CalendarMoveTelemetryState.Rejected(collision));
 
-    internal static void SetMoveCollision(CalendarMoveCollisionClassification classification) =>
-        CurrentState.Value?.SetMoveCollision(classification);
+    internal static void SetMoveDispatched(bool possiblyDispatched) => CurrentState.Value?.SetMoveState(
+        possiblyDispatched
+            ? new CalendarMoveTelemetryState.PossiblyDispatched(
+                CalendarMoveReconciliationClassification.NotRun)
+            : new CalendarMoveTelemetryState.Dispatched(
+                CalendarMoveReconciliationClassification.NotRun));
+
+    internal static void SetMoveCollision(CalendarMoveCollisionClassification collision) =>
+        CurrentState.Value?.SetNotAttemptedCollision(collision);
 
     internal static void SetMoveReconciliation(CalendarMoveReconciliationClassification classification) =>
         CurrentState.Value?.SetMoveReconciliation(classification);
 
-    internal static CalendarOperationTelemetrySnapshot? CurrentTelemetry =>
-        CurrentState.Value?.Telemetry;
+    public static CalendarMoveTelemetrySnapshot? CurrentMoveTelemetry =>
+        CurrentState.Value?.MoveTelemetry;
 
     public sealed class State(CalendarOperationPhase phase, Action<CalendarOperationPhase>? phaseObserver = null)
     {
         private int _phase = (int)phase;
-        private int _mutationState;
-        private int _moveDispatch;
-        private int _moveCollision;
-        private int _moveReconciliation;
+        private CalendarMoveTelemetryState _moveState = CalendarMoveTelemetryState.None.Instance;
 
         public string PhaseName => ((CalendarOperationPhase)Volatile.Read(ref _phase)).ToString().ToLowerInvariant();
 
-        internal CalendarOperationTelemetrySnapshot Telemetry => new(
-            CalendarTelemetryFact<CalendarMutationState>.FromStorage(
-                Volatile.Read(ref _mutationState)),
-            new CalendarMoveTelemetrySnapshot(
-                CalendarTelemetryFact<CalendarMoveDispatchClassification>.FromStorage(
-                    Volatile.Read(ref _moveDispatch)),
-                CalendarTelemetryFact<CalendarMoveCollisionClassification>.FromStorage(
-                    Volatile.Read(ref _moveCollision)),
-                CalendarTelemetryFact<CalendarMoveReconciliationClassification>.FromStorage(
-                    Volatile.Read(ref _moveReconciliation))));
+        public CalendarMoveTelemetrySnapshot MoveTelemetry => Volatile.Read(ref _moveState).ToSnapshot();
 
-        internal void ObserveMutationState(CalendarMutationState mutationState) =>
-            Volatile.Write(ref _mutationState, CalendarTelemetryFact<CalendarMutationState>.ToStorage(mutationState));
+        internal CalendarMoveTelemetryState MoveState => Volatile.Read(ref _moveState);
 
-        internal void SetMoveDispatch(CalendarMoveDispatchClassification classification) =>
-            Volatile.Write(
-                ref _moveDispatch,
-                classification == CalendarMoveDispatchClassification.Unspecified
-                    ? 0
-                    : CalendarTelemetryFact<CalendarMoveDispatchClassification>.ToStorage(classification));
+        internal void SetMoveState(CalendarMoveTelemetryState state) =>
+            Volatile.Write(ref _moveState, state);
 
-        internal void SetMoveCollision(CalendarMoveCollisionClassification classification) =>
-            Volatile.Write(
-                ref _moveCollision,
-                classification == CalendarMoveCollisionClassification.Unspecified
-                    ? 0
-                    : CalendarTelemetryFact<CalendarMoveCollisionClassification>.ToStorage(classification));
+        internal void SetNotAttemptedCollision(CalendarMoveCollisionClassification collision)
+        {
+            while (true)
+            {
+                var observed = Volatile.Read(ref _moveState);
+                if (observed is not CalendarMoveTelemetryState.NotAttempted)
+                    return;
+                var updated = new CalendarMoveTelemetryState.NotAttempted(collision);
+                if (ReferenceEquals(Interlocked.CompareExchange(ref _moveState, updated, observed), observed))
+                    return;
+            }
+        }
 
-        internal void SetMoveReconciliation(CalendarMoveReconciliationClassification classification) =>
-            Volatile.Write(
-                ref _moveReconciliation,
-                classification == CalendarMoveReconciliationClassification.Unspecified
-                    ? 0
-                    : CalendarTelemetryFact<CalendarMoveReconciliationClassification>.ToStorage(classification));
+        internal void SetMoveReconciliation(CalendarMoveReconciliationClassification classification)
+        {
+            while (true)
+            {
+                var observed = Volatile.Read(ref _moveState);
+                CalendarMoveTelemetryState? updated = observed switch
+                {
+                    CalendarMoveTelemetryState.Dispatched =>
+                        new CalendarMoveTelemetryState.Dispatched(classification),
+                    CalendarMoveTelemetryState.PossiblyDispatched =>
+                        new CalendarMoveTelemetryState.PossiblyDispatched(classification),
+                    _ => null
+                };
+                if (updated is null)
+                    return;
+                if (ReferenceEquals(Interlocked.CompareExchange(ref _moveState, updated, observed), observed))
+                    return;
+            }
+        }
 
         public void AdvanceTo(CalendarOperationPhase next)
         {
@@ -100,7 +108,6 @@ public static class CalendarOperationProgress
     {
         private readonly State? _previous;
         private bool _disposed;
-
         private readonly State _state;
 
         internal ProgressScope(State? previous, State state)
@@ -120,45 +127,62 @@ public static class CalendarOperationProgress
     }
 }
 
-internal readonly record struct CalendarOperationTelemetrySnapshot(
-    CalendarTelemetryFact<CalendarMutationState> MutationState,
-    CalendarMoveTelemetrySnapshot Move)
+internal abstract record CalendarMoveTelemetryState
 {
-    internal static CalendarOperationTelemetrySnapshot WithMutationState(
-        CalendarMutationState mutationState) => new(
-            CalendarTelemetryFact<CalendarMutationState>.FromValue(mutationState),
-            default);
-}
+    private CalendarMoveTelemetryState() { }
 
-internal readonly record struct CalendarMoveTelemetrySnapshot(
-    CalendarTelemetryFact<CalendarMoveDispatchClassification> Dispatch,
-    CalendarTelemetryFact<CalendarMoveCollisionClassification> Collision,
-    CalendarTelemetryFact<CalendarMoveReconciliationClassification> Reconciliation);
+    internal abstract CalendarMoveTelemetrySnapshot ToSnapshot();
 
-internal readonly record struct CalendarTelemetryFact<T> where T : struct, Enum
-{
-    private readonly T _value;
-
-    private CalendarTelemetryFact(T value)
+    internal sealed record None : CalendarMoveTelemetryState
     {
-        _value = value;
-        HasValue = true;
+        internal static None Instance { get; } = new();
+
+        private None() { }
+
+        internal override CalendarMoveTelemetrySnapshot ToSnapshot() => default;
     }
 
-    internal bool HasValue { get; }
+    internal sealed record NotAttempted(
+        CalendarMoveCollisionClassification Collision) : CalendarMoveTelemetryState
+    {
+        internal override CalendarMoveTelemetrySnapshot ToSnapshot() => new(
+            CalendarMoveDispatchClassification.NotAttempted,
+            Collision,
+            CalendarMoveReconciliationClassification.NotRun);
+    }
 
-    internal T Value => HasValue
-        ? _value
-        : throw new InvalidOperationException("An absent operation fact has no value.");
+    internal sealed record Rejected(
+        CalendarMoveCollisionClassification Collision) : CalendarMoveTelemetryState
+    {
+        internal override CalendarMoveTelemetrySnapshot ToSnapshot() => new(
+            CalendarMoveDispatchClassification.Rejected,
+            Collision,
+            CalendarMoveReconciliationClassification.NotRun);
+    }
 
-    internal static CalendarTelemetryFact<T> FromStorage(int stored) => stored == 0
-        ? default
-        : new CalendarTelemetryFact<T>((T)Enum.ToObject(typeof(T), stored - 1));
+    internal sealed record Dispatched(
+        CalendarMoveReconciliationClassification Reconciliation) : CalendarMoveTelemetryState
+    {
+        internal override CalendarMoveTelemetrySnapshot ToSnapshot() => new(
+            CalendarMoveDispatchClassification.Dispatched,
+            CalendarMoveCollisionClassification.None,
+            Reconciliation);
+    }
 
-    internal static CalendarTelemetryFact<T> FromValue(T value) => new(value);
-
-    internal static int ToStorage(T value) => Convert.ToInt32(value) + 1;
+    internal sealed record PossiblyDispatched(
+        CalendarMoveReconciliationClassification Reconciliation) : CalendarMoveTelemetryState
+    {
+        internal override CalendarMoveTelemetrySnapshot ToSnapshot() => new(
+            CalendarMoveDispatchClassification.PossiblyDispatched,
+            CalendarMoveCollisionClassification.None,
+            Reconciliation);
+    }
 }
+
+public readonly record struct CalendarMoveTelemetrySnapshot(
+    CalendarMoveDispatchClassification Dispatch,
+    CalendarMoveCollisionClassification Collision,
+    CalendarMoveReconciliationClassification Reconciliation);
 
 public enum CalendarMoveDispatchClassification
 {
