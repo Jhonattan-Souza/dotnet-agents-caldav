@@ -20,7 +20,7 @@ internal static class CalendarQueryResourceMaterializer
         CalendarProjectionResult projection;
         try
         {
-            CalendarQueryTelemetry.Add("caldav.query.parse_count");
+            CalendarQueryTelemetry.Add(CalendarQueryCounter.Parse);
             document = CalendarContentDocument.Parse(read.AuthoritativeUtf8.Span);
             typedCalendar = CalendarResourceProjector.LoadTypedCalendar(document);
             projection = CalendarResourceProjector.Project(document, typedCalendar);

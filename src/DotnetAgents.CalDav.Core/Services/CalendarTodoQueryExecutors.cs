@@ -56,7 +56,7 @@ internal sealed class CalendarTodoQueryStartExecutor(
         if (acquired.Error is not null)
             return CompletedCalendarTodoQuery.Failure(acquired.Error);
         CalendarTodoEvaluationResult evaluated;
-        using (CalendarQueryTelemetry.StartPhase("evaluation"))
+        using (CalendarQueryTelemetry.StartPhase(CalendarQueryPhase.Evaluation))
         {
             evaluated = CalendarTodoSnapshotEvaluator.Evaluate(
                 acquired.Resources,

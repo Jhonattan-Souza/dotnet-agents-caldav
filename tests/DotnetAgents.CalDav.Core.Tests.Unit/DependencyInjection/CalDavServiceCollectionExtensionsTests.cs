@@ -86,7 +86,7 @@ public sealed class CalDavServiceCollectionExtensionsTests
 
         using (var first = source.StartActivity("caldav.operation", ActivityKind.Internal))
         {
-            CalendarQueryTelemetry.Begin(false);
+            CalendarQueryTelemetry.Begin(CalendarQueryMode.Start);
             (await transport.MultigetAsync(
                 calendarHref,
                 [resourceHref],
@@ -95,7 +95,7 @@ public sealed class CalDavServiceCollectionExtensionsTests
         }
         using (var cached = source.StartActivity("caldav.operation", ActivityKind.Internal))
         {
-            CalendarQueryTelemetry.Begin(false);
+            CalendarQueryTelemetry.Begin(CalendarQueryMode.Start);
             (await transport.MultigetAsync(
                 calendarHref,
                 [resourceHref],

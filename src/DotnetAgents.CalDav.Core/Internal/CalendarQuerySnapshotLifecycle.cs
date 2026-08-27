@@ -96,17 +96,17 @@ internal sealed class CalendarQuerySnapshotPublication(
     {
         var snapshot = draft.CreateSnapshot(queryPolicy.GetSnapshotExpiry());
         CalendarQueryPagePlanAdmission planned;
-        using (CalendarQueryTelemetry.StartPhase("page_admission"))
+        using (CalendarQueryTelemetry.StartPhase(CalendarQueryPhase.PageAdmission))
         {
             planned = pageAdmission.Plan(snapshot, 0, pageSize, pageCodec, cancellationToken);
-            CalendarQueryTelemetry.Add("caldav.query.page_admission_count");
+            CalendarQueryTelemetry.Add(CalendarQueryCounter.PageAdmission);
             if (planned.Error is not null)
                 return Failure<TItem>(planned.Error);
             if (planned.Value!.NextCursor is null)
                 return new QueryReply<TItem>.Page(pageCodec.Materialize(snapshot, planned.Value));
         }
 
-        using var reservationPhase = CalendarQueryTelemetry.StartPhase("reservation");
+        using var reservationPhase = CalendarQueryTelemetry.StartPhase(CalendarQueryPhase.Reservation);
         var reservation = snapshotWriter.TryReserve(snapshot);
         if (!reservation.IsAccepted)
             return Failure<TItem>(CalendarQueryFailures.Busy(reservation.RetryAfterMs!.Value));
@@ -144,7 +144,7 @@ internal sealed class CalendarQuerySnapshotReplay(
 
         CalendarQueryCursor cursor;
         CalendarQuerySnapshot? snapshot;
-        using (CalendarQueryTelemetry.StartPhase("snapshot_lookup"))
+        using (CalendarQueryTelemetry.StartPhase(CalendarQueryPhase.SnapshotLookup))
         {
             var authentication = cursorAuthenticator.Authenticate(cursorValue, pageCodec.ToolName);
             if (authentication.Code == CalendarQueryCursorAuthenticationCode.Expired)
@@ -153,14 +153,14 @@ internal sealed class CalendarQuerySnapshotReplay(
                 return Failure<TItem>(CalendarQueryFailures.InvalidCursor());
             cursor = authentication.Cursor!;
             snapshot = snapshotReader.Get(cursor.SnapshotId);
-            CalendarQueryTelemetry.Add("caldav.query.snapshot_lookup_count");
+            CalendarQueryTelemetry.Add(CalendarQueryCounter.SnapshotLookup);
             if (!MatchesSnapshot(cursor, snapshot))
                 return Failure<TItem>(CalendarQueryFailures.InvalidCursor());
         }
 
-        using var pagePhase = CalendarQueryTelemetry.StartPhase("page_admission");
+        using var pagePhase = CalendarQueryTelemetry.StartPhase(CalendarQueryPhase.PageAdmission);
         var admitted = pageAdmission.Plan(snapshot!, cursor.Position, pageSize, pageCodec, cancellationToken);
-        CalendarQueryTelemetry.Add("caldav.query.page_admission_count");
+        CalendarQueryTelemetry.Add(CalendarQueryCounter.PageAdmission);
         return admitted.Error is null
             ? new QueryReply<TItem>.Page(pageCodec.Materialize(snapshot!, admitted.Value!))
             : Failure<TItem>(admitted.Error);

@@ -43,7 +43,7 @@ internal sealed class CalendarQueryAcquisitionExecutor(
             return AcquiredCalendarQuery.Failure(prevalidation);
         var transport = transportFactory();
         CalendarOperationDiscoveryResult discovery;
-        using (CalendarQueryTelemetry.StartPhase("discovery"))
+        using (CalendarQueryTelemetry.StartPhase(CalendarQueryPhase.Discovery))
             discovery = await transport.DiscoverAsync(cancellationToken).ConfigureAwait(false);
         discovery = ValidateDiscovery(discovery);
         var selection = Select(request, discovery);
@@ -54,7 +54,7 @@ internal sealed class CalendarQueryAcquisitionExecutor(
             .Take(MaximumDiagnostics)
             .ToList();
         IReadOnlyDictionary<string, CalendarDescriptor>? candidates;
-        using (CalendarQueryTelemetry.StartPhase("candidate"))
+        using (CalendarQueryTelemetry.StartPhase(CalendarQueryPhase.Candidate))
             candidates = await CollectCandidatesAsync(transport, selection.Selections, request, cancellationToken)
                 .ConfigureAwait(false);
         if (candidates is null)
@@ -64,7 +64,7 @@ internal sealed class CalendarQueryAcquisitionExecutor(
                 new QueryExecutionLimits(ResourcesInspected: MaximumResources + 1)));
         }
         FetchResult fetched;
-        using (CalendarQueryTelemetry.StartPhase("fetch"))
+        using (CalendarQueryTelemetry.StartPhase(CalendarQueryPhase.Fetch))
             fetched = await FetchSnapshotsAsync(transport, candidates, diagnostics, cancellationToken)
                 .ConfigureAwait(false);
         return fetched.Error is null
@@ -138,7 +138,7 @@ internal sealed class CalendarQueryAcquisitionExecutor(
             if (error is not null)
                 return error;
             resources.Add(CalendarQueryResourceMaterializer.Materialize(calendar.Href, read));
-            CalendarQueryTelemetry.Add("caldav.query.snapshot_count");
+            CalendarQueryTelemetry.Add(CalendarQueryCounter.Snapshot);
         }
         return null;
     }
@@ -172,7 +172,7 @@ internal sealed class CalendarQueryAcquisitionExecutor(
                     return null;
             }
         }
-        CalendarQueryTelemetry.Add("caldav.query.candidate_count", candidates.Count);
+        CalendarQueryTelemetry.Add(CalendarQueryCounter.Candidate, candidates.Count);
         return candidates;
     }
 
