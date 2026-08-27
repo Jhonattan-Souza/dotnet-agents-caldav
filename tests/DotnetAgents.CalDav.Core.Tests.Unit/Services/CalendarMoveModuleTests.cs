@@ -16,6 +16,44 @@ public sealed class CalendarMoveModuleTests
     private const string DestinationCalendarHref = "https://cal.example/archive/";
     private const string Uid = "reviewed-move";
 
+    [Fact]
+    public void AuthorizationFailuresMapEveryNeutralReasonIntoTheSemanticContract()
+    {
+        var candidate = TodoCalendar(DestinationCalendarHref, "Archive");
+        (CalendarMoveAuthorizationFailureReason Reason, CalendarResourceMoveCode Code, CalendarResourceMovePhase Phase)[]
+            cases =
+            [
+                (CalendarMoveAuthorizationFailureReason.NonCanonicalResourceHref, CalendarResourceMoveCode.InvalidInput, CalendarResourceMovePhase.SchemaLexicalDiscriminator),
+                (CalendarMoveAuthorizationFailureReason.SameResourceHref, CalendarResourceMoveCode.InvalidInput, CalendarResourceMovePhase.SchemaLexicalDiscriminator),
+                (CalendarMoveAuthorizationFailureReason.OriginMismatch, CalendarResourceMoveCode.InvalidInput, CalendarResourceMovePhase.OriginScopeAuthorization),
+                (CalendarMoveAuthorizationFailureReason.OutsideCalendarScope, CalendarResourceMoveCode.OutsideScope, CalendarResourceMovePhase.OriginScopeAuthorization),
+                (CalendarMoveAuthorizationFailureReason.InvalidSelectedCalendar, CalendarResourceMoveCode.InvalidInput, CalendarResourceMovePhase.SchemaLexicalDiscriminator),
+                (CalendarMoveAuthorizationFailureReason.DestinationSelectionNotFound, CalendarResourceMoveCode.NotFound, CalendarResourceMovePhase.SelectionDiscoveryCapability),
+                (CalendarMoveAuthorizationFailureReason.DestinationSelectionAmbiguous, CalendarResourceMoveCode.Ambiguous, CalendarResourceMovePhase.SelectionDiscoveryCapability),
+                (CalendarMoveAuthorizationFailureReason.InteroperabilityProfileUnverified, CalendarResourceMoveCode.UnsupportedCapability, CalendarResourceMovePhase.SelectionDiscoveryCapability),
+                (CalendarMoveAuthorizationFailureReason.SourceOwnershipMissing, CalendarResourceMoveCode.OutsideScope, CalendarResourceMovePhase.OriginScopeAuthorization),
+                (CalendarMoveAuthorizationFailureReason.SourceOwnershipAmbiguous, CalendarResourceMoveCode.OutsideScope, CalendarResourceMovePhase.OriginScopeAuthorization),
+                (CalendarMoveAuthorizationFailureReason.DestinationOwnershipMissing, CalendarResourceMoveCode.OutsideScope, CalendarResourceMovePhase.OriginScopeAuthorization),
+                (CalendarMoveAuthorizationFailureReason.DestinationOwnershipAmbiguous, CalendarResourceMoveCode.OutsideScope, CalendarResourceMovePhase.OriginScopeAuthorization),
+                (CalendarMoveAuthorizationFailureReason.EntityKindNotAdvertised, CalendarResourceMoveCode.UnsupportedCapability, CalendarResourceMovePhase.SelectionDiscoveryCapability),
+                (CalendarMoveAuthorizationFailureReason.InvalidResolvedCalendar, CalendarResourceMoveCode.UpstreamProtocolError, CalendarResourceMovePhase.SelectionDiscoveryCapability),
+                (CalendarMoveAuthorizationFailureReason.ResolvedCalendarIdentityDivergent, CalendarResourceMoveCode.UpstreamProtocolError, CalendarResourceMovePhase.SelectionDiscoveryCapability),
+                (CalendarMoveAuthorizationFailureReason.SameCalendarNotAllowed, CalendarResourceMoveCode.InvalidInput, CalendarResourceMovePhase.SelectionDiscoveryCapability)
+            ];
+
+        foreach (var entry in cases)
+        {
+            var result = CalendarMoveModule.MapAuthorizationFailure(
+                new CalendarMoveAuthorizationFailure(entry.Reason, [candidate]));
+
+            result.Code.ShouldBe(entry.Code);
+            result.Phase.ShouldBe(entry.Phase);
+            result.AuthorizedCandidates.ShouldBe([candidate]);
+            result.Retryable.ShouldBeFalse();
+            result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        }
+    }
+
     [Theory]
     [InlineData("faithful-absent", CalendarResourceMoveCode.Success, CalendarMutationState.Committed)]
     [InlineData("divergent-absent", CalendarResourceMoveCode.FidelityFailure, CalendarMutationState.Committed)]

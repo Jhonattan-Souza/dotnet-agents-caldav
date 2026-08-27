@@ -85,7 +85,7 @@ internal sealed class CalendarMoveAuthorization
                         CalendarMoveAuthorizationFailureReason.EntityKindNotAdvertised,
                     _ => CalendarMoveAuthorizationFailureReason.DestinationSelectionNotFound
                 },
-                selection.Candidates));
+                AuthorizedCandidates(selection.Candidates)));
         }
         if (selection.Calendar is null)
             return CalendarResolution.Reject(Failure(CalendarMoveAuthorizationFailureReason.ResolvedCalendarIdentityDivergent));
@@ -218,6 +218,14 @@ internal sealed class CalendarMoveAuthorization
                 CalendarMoveAuthorizationFailureReason.InteroperabilityProfileUnverified,
                 [calendar]));
     }
+
+    private ImmutableArray<CalendarDescriptor> AuthorizedCandidates(
+        IEnumerable<CalendarDescriptor> candidates) => candidates
+        .Where(candidate =>
+            TryParseCanonicalHref(candidate.Href, requireTrailingSlash: true, out var calendar)
+            && HasSameOrigin(_origin, calendar)
+            && (_scope.Count == 0 || _scope.Contains(candidate.Href, StringComparer.Ordinal)))
+        .ToImmutableArray();
 
     private static CalendarResolution ResolveDirectOwner(
         Uri resource,

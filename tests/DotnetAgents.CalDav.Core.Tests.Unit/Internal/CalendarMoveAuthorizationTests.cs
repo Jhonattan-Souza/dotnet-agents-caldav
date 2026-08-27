@@ -67,30 +67,28 @@ public sealed class CalendarMoveAuthorizationTests
     }
 
     [Theory]
-    [InlineData("source-noncanonical", "NonCanonicalResourceHref")]
-    [InlineData("destination-noncanonical", "NonCanonicalResourceHref")]
-    [InlineData("source-origin", "OriginMismatch")]
-    [InlineData("destination-origin", "OriginMismatch")]
-    [InlineData("source-scope", "OutsideCalendarScope")]
-    [InlineData("destination-scope", "OutsideCalendarScope")]
-    [InlineData("same-resource", "SameResourceHref")]
-    public async Task ExactLocalAuthorizationFailuresStopBeforeDiscovery(
-        string scenario,
-        string expectedReason)
+    [InlineData(ExactLocalFailure.SourceNonCanonical)]
+    [InlineData(ExactLocalFailure.DestinationNonCanonical)]
+    [InlineData(ExactLocalFailure.SourceOrigin)]
+    [InlineData(ExactLocalFailure.DestinationOrigin)]
+    [InlineData(ExactLocalFailure.SourceScope)]
+    [InlineData(ExactLocalFailure.DestinationScope)]
+    [InlineData(ExactLocalFailure.SameResource)]
+    public async Task ExactLocalAuthorizationFailuresStopBeforeDiscovery(ExactLocalFailure scenario)
     {
         var sourceHref = scenario switch
         {
-            "source-noncanonical" => "https://cal.example/tasks/../reviewed.ics",
-            "source-origin" => "https://other.example/tasks/reviewed.ics",
-            "source-scope" => "https://cal.example/outside/reviewed.ics",
+            ExactLocalFailure.SourceNonCanonical => "https://cal.example/tasks/../reviewed.ics",
+            ExactLocalFailure.SourceOrigin => "https://other.example/tasks/reviewed.ics",
+            ExactLocalFailure.SourceScope => "https://cal.example/outside/reviewed.ics",
             _ => SourceHref
         };
         var destinationHref = scenario switch
         {
-            "destination-noncanonical" => "https://cal.example/archive/%2e/renamed.ics",
-            "destination-origin" => "https://other.example/archive/renamed.ics",
-            "destination-scope" => "https://cal.example/outside/renamed.ics",
-            "same-resource" => sourceHref,
+            ExactLocalFailure.DestinationNonCanonical => "https://cal.example/archive/%2e/renamed.ics",
+            ExactLocalFailure.DestinationOrigin => "https://other.example/archive/renamed.ics",
+            ExactLocalFailure.DestinationScope => "https://cal.example/outside/renamed.ics",
+            ExactLocalFailure.SameResource => sourceHref,
             _ => DestinationCalendarHref + "renamed.ics"
         };
         var fixture = Fixture(
@@ -110,40 +108,48 @@ public sealed class CalendarMoveAuthorizationTests
         var result = await fixture.Module.AuthorizeAsync(request, TestContext.Current.CancellationToken);
 
         var rejected = result.ShouldBeOfType<CalendarMoveAuthorizationResult.Rejected>();
-        rejected.Failure.Reason.ToString().ShouldBe(expectedReason);
+        rejected.Failure.Reason.ShouldBe(scenario switch
+        {
+            ExactLocalFailure.SourceNonCanonical or ExactLocalFailure.DestinationNonCanonical =>
+                CalendarMoveAuthorizationFailureReason.NonCanonicalResourceHref,
+            ExactLocalFailure.SourceOrigin or ExactLocalFailure.DestinationOrigin =>
+                CalendarMoveAuthorizationFailureReason.OriginMismatch,
+            ExactLocalFailure.SourceScope or ExactLocalFailure.DestinationScope =>
+                CalendarMoveAuthorizationFailureReason.OutsideCalendarScope,
+            ExactLocalFailure.SameResource => CalendarMoveAuthorizationFailureReason.SameResourceHref,
+            _ => throw new ArgumentOutOfRangeException(nameof(scenario))
+        });
         fixture.Transport.DiscoveryCount.ShouldBe(0);
     }
 
     [Theory]
-    [InlineData("source-noncanonical", "NonCanonicalResourceHref")]
-    [InlineData("source-origin", "OriginMismatch")]
-    [InlineData("source-scope", "OutsideCalendarScope")]
-    [InlineData("selected-both", "InvalidSelectedCalendar")]
-    [InlineData("selected-null", "InvalidSelectedCalendar")]
-    [InlineData("selected-noncanonical", "InvalidSelectedCalendar")]
-    [InlineData("selected-origin", "OriginMismatch")]
-    [InlineData("selected-scope", "OutsideCalendarScope")]
-    public async Task SemanticLocalAuthorizationFailuresStopBeforeDiscovery(
-        string scenario,
-        string expectedReason)
+    [InlineData(SemanticLocalFailure.SourceNonCanonical)]
+    [InlineData(SemanticLocalFailure.SourceOrigin)]
+    [InlineData(SemanticLocalFailure.SourceScope)]
+    [InlineData(SemanticLocalFailure.SelectedBoth)]
+    [InlineData(SemanticLocalFailure.SelectedNull)]
+    [InlineData(SemanticLocalFailure.SelectedNonCanonical)]
+    [InlineData(SemanticLocalFailure.SelectedOrigin)]
+    [InlineData(SemanticLocalFailure.SelectedScope)]
+    public async Task SemanticLocalAuthorizationFailuresStopBeforeDiscovery(SemanticLocalFailure scenario)
     {
         var sourceHref = scenario switch
         {
-            "source-noncanonical" => "https://cal.example/tasks/../reviewed.ics",
-            "source-origin" => "https://other.example/tasks/reviewed.ics",
-            "source-scope" => "https://cal.example/outside/reviewed.ics",
+            SemanticLocalFailure.SourceNonCanonical => "https://cal.example/tasks/../reviewed.ics",
+            SemanticLocalFailure.SourceOrigin => "https://other.example/tasks/reviewed.ics",
+            SemanticLocalFailure.SourceScope => "https://cal.example/outside/reviewed.ics",
             _ => SourceHref
         };
         var destination = scenario switch
         {
-            "selected-both" => CalendarMoveDestination.Selected(
+            SemanticLocalFailure.SelectedBoth => CalendarMoveDestination.Selected(
                 new CalendarReference("Archive", DestinationCalendarHref)),
-            "selected-null" => new CalendarMoveDestination(CalendarEntityScopeMode.Selected),
-            "selected-noncanonical" => CalendarMoveDestination.Selected(
+            SemanticLocalFailure.SelectedNull => new CalendarMoveDestination(CalendarEntityScopeMode.Selected),
+            SemanticLocalFailure.SelectedNonCanonical => CalendarMoveDestination.Selected(
                 new CalendarReference(Href: "https://cal.example/archive/../archive/")),
-            "selected-origin" => CalendarMoveDestination.Selected(
+            SemanticLocalFailure.SelectedOrigin => CalendarMoveDestination.Selected(
                 new CalendarReference(Href: "https://other.example/archive/")),
-            "selected-scope" => CalendarMoveDestination.Selected(
+            SemanticLocalFailure.SelectedScope => CalendarMoveDestination.Selected(
                 new CalendarReference(Href: "https://cal.example/outside/")),
             _ => CalendarMoveDestination.Default
         };
@@ -164,30 +170,40 @@ public sealed class CalendarMoveAuthorizationTests
         var result = await fixture.Module.AuthorizeAsync(request, TestContext.Current.CancellationToken);
 
         var rejected = result.ShouldBeOfType<CalendarMoveAuthorizationResult.Rejected>();
-        rejected.Failure.Reason.ToString().ShouldBe(expectedReason);
+        rejected.Failure.Reason.ShouldBe(scenario switch
+        {
+            SemanticLocalFailure.SourceNonCanonical => CalendarMoveAuthorizationFailureReason.NonCanonicalResourceHref,
+            SemanticLocalFailure.SourceOrigin or SemanticLocalFailure.SelectedOrigin =>
+                CalendarMoveAuthorizationFailureReason.OriginMismatch,
+            SemanticLocalFailure.SourceScope or SemanticLocalFailure.SelectedScope =>
+                CalendarMoveAuthorizationFailureReason.OutsideCalendarScope,
+            SemanticLocalFailure.SelectedBoth
+                or SemanticLocalFailure.SelectedNull
+                or SemanticLocalFailure.SelectedNonCanonical =>
+                CalendarMoveAuthorizationFailureReason.InvalidSelectedCalendar,
+            _ => throw new ArgumentOutOfRangeException(nameof(scenario))
+        });
         fixture.Transport.DiscoveryCount.ShouldBe(0);
     }
 
     [Theory]
-    [InlineData("source-missing", "SourceOwnershipMissing")]
-    [InlineData("source-ambiguous", "SourceOwnershipAmbiguous")]
-    [InlineData("destination-missing", "DestinationOwnershipMissing")]
-    [InlineData("destination-ambiguous", "DestinationOwnershipAmbiguous")]
-    [InlineData("capability", "EntityKindNotAdvertised")]
-    public async Task ExactMoveRequiresUniqueDirectOwnershipAndAdvertisedCapability(
-        string scenario,
-        string expectedReason)
+    [InlineData(ExactAuthorityFailure.SourceMissing)]
+    [InlineData(ExactAuthorityFailure.SourceAmbiguous)]
+    [InlineData(ExactAuthorityFailure.DestinationMissing)]
+    [InlineData(ExactAuthorityFailure.DestinationAmbiguous)]
+    [InlineData(ExactAuthorityFailure.Capability)]
+    public async Task ExactMoveRequiresUniqueDirectOwnershipAndAdvertisedCapability(ExactAuthorityFailure scenario)
     {
         var source = TodoCalendar(SourceCalendarHref, "Tasks");
         var destination = TodoCalendar(DestinationCalendarHref, "Archive");
         IReadOnlyList<CalendarDescriptor> calendars = scenario switch
         {
-            "source-missing" => [destination],
-            "source-ambiguous" => [source, source with { DisplayName = "Duplicate" }, destination],
-            "destination-missing" => [source],
-            "destination-ambiguous" => [source, destination, destination with { DisplayName = "Duplicate" }],
-            "capability" => [source, destination with { TodoSupport = EntityKindSupport.NotAdvertised }],
-            _ => throw new InvalidOperationException(scenario)
+            ExactAuthorityFailure.SourceMissing => [destination],
+            ExactAuthorityFailure.SourceAmbiguous => [source, source with { DisplayName = "Duplicate" }, destination],
+            ExactAuthorityFailure.DestinationMissing => [source],
+            ExactAuthorityFailure.DestinationAmbiguous => [source, destination, destination with { DisplayName = "Duplicate" }],
+            ExactAuthorityFailure.Capability => [source, destination with { TodoSupport = EntityKindSupport.NotAdvertised }],
+            _ => throw new ArgumentOutOfRangeException(nameof(scenario))
         };
         var fixture = Fixture(calendars, CalendarSelectionResult.Failure(CalendarSelectionCode.NotFound));
         var request = new CalendarExactMoveRequest(
@@ -201,57 +217,65 @@ public sealed class CalendarMoveAuthorizationTests
         var result = await fixture.Module.AuthorizeAsync(request, TestContext.Current.CancellationToken);
 
         var rejected = result.ShouldBeOfType<CalendarMoveAuthorizationResult.Rejected>();
-        rejected.Failure.Reason.ToString().ShouldBe(expectedReason);
+        rejected.Failure.Reason.ShouldBe(scenario switch
+        {
+            ExactAuthorityFailure.SourceMissing => CalendarMoveAuthorizationFailureReason.SourceOwnershipMissing,
+            ExactAuthorityFailure.SourceAmbiguous => CalendarMoveAuthorizationFailureReason.SourceOwnershipAmbiguous,
+            ExactAuthorityFailure.DestinationMissing => CalendarMoveAuthorizationFailureReason.DestinationOwnershipMissing,
+            ExactAuthorityFailure.DestinationAmbiguous => CalendarMoveAuthorizationFailureReason.DestinationOwnershipAmbiguous,
+            ExactAuthorityFailure.Capability => CalendarMoveAuthorizationFailureReason.EntityKindNotAdvertised,
+            _ => throw new ArgumentOutOfRangeException(nameof(scenario))
+        });
         fixture.Transport.DiscoveryCount.ShouldBe(1);
     }
 
     [Theory]
-    [InlineData("source-missing", "SourceOwnershipMissing")]
-    [InlineData("source-ambiguous", "SourceOwnershipAmbiguous")]
-    [InlineData("selection-missing", "DestinationSelectionNotFound")]
-    [InlineData("selection-ambiguous", "DestinationSelectionAmbiguous")]
-    [InlineData("selection-outside", "OutsideCalendarScope")]
-    [InlineData("selected-invalid", "InvalidResolvedCalendar")]
-    [InlineData("selected-divergent", "ResolvedCalendarIdentityDivergent")]
-    [InlineData("selected-null", "ResolvedCalendarIdentityDivergent")]
-    [InlineData("capability", "EntityKindNotAdvertised")]
-    [InlineData("profile", "InteroperabilityProfileUnverified")]
-    [InlineData("same-calendar", "SameCalendarNotAllowed")]
-    public async Task SemanticMoveRequiresCompleteAuthorityBeforeSuccess(
-        string scenario,
-        string expectedReason)
+    [InlineData(SemanticAuthorityFailure.SourceMissing)]
+    [InlineData(SemanticAuthorityFailure.SourceAmbiguous)]
+    [InlineData(SemanticAuthorityFailure.SelectionMissing)]
+    [InlineData(SemanticAuthorityFailure.SelectionAmbiguous)]
+    [InlineData(SemanticAuthorityFailure.SelectionOutside)]
+    [InlineData(SemanticAuthorityFailure.SelectedInvalid)]
+    [InlineData(SemanticAuthorityFailure.SelectedDivergent)]
+    [InlineData(SemanticAuthorityFailure.SelectedNull)]
+    [InlineData(SemanticAuthorityFailure.Capability)]
+    [InlineData(SemanticAuthorityFailure.Profile)]
+    [InlineData(SemanticAuthorityFailure.SameCalendar)]
+    public async Task SemanticMoveRequiresCompleteAuthorityBeforeSuccess(SemanticAuthorityFailure scenario)
     {
         var source = TodoCalendar(SourceCalendarHref, "Tasks");
         var destination = TodoCalendar(DestinationCalendarHref, "Archive");
         IReadOnlyList<CalendarDescriptor> calendars = scenario switch
         {
-            "source-missing" => [destination],
-            "source-ambiguous" => [source, source with { DisplayName = "Duplicate" }, destination],
-            "selected-invalid" => [source, destination with { Href = "https://other.example/archive/" }],
-            "same-calendar" => [source],
+            SemanticAuthorityFailure.SourceMissing => [destination],
+            SemanticAuthorityFailure.SourceAmbiguous => [source, source with { DisplayName = "Duplicate" }, destination],
+            SemanticAuthorityFailure.SelectedInvalid => [source, destination with { Href = "https://other.example/archive/" }],
+            SemanticAuthorityFailure.SameCalendar => [source],
             _ => [source, destination]
         };
         var selected = scenario switch
         {
-            "selection-missing" => CalendarSelectionResult.Failure(CalendarSelectionCode.NotFound, calendars),
-            "selection-ambiguous" => CalendarSelectionResult.Failure(CalendarSelectionCode.Ambiguous, calendars),
-            "selection-outside" => CalendarSelectionResult.Failure(CalendarSelectionCode.OutsideScope, calendars),
-            "selected-invalid" => CalendarSelectionResult.Success(calendars[1]),
-            "selected-divergent" => CalendarSelectionResult.Success(destination with { Description = "Divergent" }),
-            "selected-null" => new CalendarSelectionResult(CalendarSelectionCode.Success, null, []),
-            "capability" => CalendarSelectionResult.Success(destination with
+            SemanticAuthorityFailure.SelectionMissing => CalendarSelectionResult.Failure(CalendarSelectionCode.NotFound, calendars),
+            SemanticAuthorityFailure.SelectionAmbiguous => CalendarSelectionResult.Failure(CalendarSelectionCode.Ambiguous, calendars),
+            SemanticAuthorityFailure.SelectionOutside => CalendarSelectionResult.Failure(CalendarSelectionCode.OutsideScope, calendars),
+            SemanticAuthorityFailure.SelectedInvalid => CalendarSelectionResult.Success(calendars[1]),
+            SemanticAuthorityFailure.SelectedDivergent => CalendarSelectionResult.Success(destination with { Description = "Divergent" }),
+            SemanticAuthorityFailure.SelectedNull => new CalendarSelectionResult(CalendarSelectionCode.Success, null, []),
+            SemanticAuthorityFailure.Capability => CalendarSelectionResult.Success(destination with
             {
                 TodoSupport = EntityKindSupport.NotAdvertised
             }),
-            "same-calendar" => CalendarSelectionResult.Success(source),
+            SemanticAuthorityFailure.SameCalendar => CalendarSelectionResult.Success(source),
             _ => CalendarSelectionResult.Success(destination)
         };
-        if (scenario == "capability")
+        if (scenario == SemanticAuthorityFailure.Capability)
             calendars = [source, selected.Calendar!];
         var fixture = Fixture(
             calendars,
             selected,
-            interoperabilityProfile: scenario == "profile" ? null : CalDavInteroperabilityProfiles.Radicale_3_7_8);
+            interoperabilityProfile: scenario == SemanticAuthorityFailure.Profile
+                ? null
+                : CalDavInteroperabilityProfiles.Radicale_3_7_8);
         var request = new CalendarResourceMoveRequest(
             new CalendarResourceRevisionReference(
                 SourceHref,
@@ -263,7 +287,21 @@ public sealed class CalendarMoveAuthorizationTests
         var result = await fixture.Module.AuthorizeAsync(request, TestContext.Current.CancellationToken);
 
         var rejected = result.ShouldBeOfType<CalendarMoveAuthorizationResult.Rejected>();
-        rejected.Failure.Reason.ToString().ShouldBe(expectedReason);
+        rejected.Failure.Reason.ShouldBe(scenario switch
+        {
+            SemanticAuthorityFailure.SourceMissing => CalendarMoveAuthorizationFailureReason.SourceOwnershipMissing,
+            SemanticAuthorityFailure.SourceAmbiguous => CalendarMoveAuthorizationFailureReason.SourceOwnershipAmbiguous,
+            SemanticAuthorityFailure.SelectionMissing => CalendarMoveAuthorizationFailureReason.DestinationSelectionNotFound,
+            SemanticAuthorityFailure.SelectionAmbiguous => CalendarMoveAuthorizationFailureReason.DestinationSelectionAmbiguous,
+            SemanticAuthorityFailure.SelectionOutside => CalendarMoveAuthorizationFailureReason.OutsideCalendarScope,
+            SemanticAuthorityFailure.SelectedInvalid => CalendarMoveAuthorizationFailureReason.InvalidResolvedCalendar,
+            SemanticAuthorityFailure.SelectedDivergent or SemanticAuthorityFailure.SelectedNull =>
+                CalendarMoveAuthorizationFailureReason.ResolvedCalendarIdentityDivergent,
+            SemanticAuthorityFailure.Capability => CalendarMoveAuthorizationFailureReason.EntityKindNotAdvertised,
+            SemanticAuthorityFailure.Profile => CalendarMoveAuthorizationFailureReason.InteroperabilityProfileUnverified,
+            SemanticAuthorityFailure.SameCalendar => CalendarMoveAuthorizationFailureReason.SameCalendarNotAllowed,
+            _ => throw new ArgumentOutOfRangeException(nameof(scenario))
+        });
         fixture.Transport.DiscoveryCount.ShouldBe(1);
     }
 
@@ -288,10 +326,35 @@ public sealed class CalendarMoveAuthorizationTests
 
         var failure = result.ShouldBeOfType<CalendarMoveAuthorizationResult.Rejected>().Failure;
         failure.Reason.ShouldBe(CalendarMoveAuthorizationFailureReason.DestinationSelectionAmbiguous);
-        failure.AuthorizedCandidates.Select(calendar => calendar.Href).ShouldBe([
-            DestinationCalendarHref,
-            "https://cal.example/other/"
-        ]);
+        failure.AuthorizedCandidates.Select(calendar => calendar.Href).ShouldBe([DestinationCalendarHref]);
+    }
+
+    [Fact]
+    public async Task SemanticSelectionFailureExcludesCandidatesOutsideTheAuthorizationBoundary()
+    {
+        var source = TodoCalendar(SourceCalendarHref, "Tasks");
+        var authorized = TodoCalendar(DestinationCalendarHref, "Archive");
+        var nonCanonical = TodoCalendar("https://cal.example/archive/../archive/", "Archive");
+        var offOrigin = TodoCalendar("https://other.example/archive/", "Archive");
+        var outsideScope = TodoCalendar("https://cal.example/private/", "Archive");
+        var fixture = Fixture(
+            [source, authorized],
+            CalendarSelectionResult.Failure(
+                CalendarSelectionCode.Ambiguous,
+                [authorized, nonCanonical, offOrigin, outsideScope]));
+        var request = new CalendarResourceMoveRequest(
+            new CalendarResourceRevisionReference(
+                SourceHref,
+                "reviewed",
+                CalendarEntityKind.Todo,
+                "\"r1\""),
+            CalendarMoveDestination.Default);
+
+        var result = await fixture.Module.AuthorizeAsync(request, TestContext.Current.CancellationToken);
+
+        var failure = result.ShouldBeOfType<CalendarMoveAuthorizationResult.Rejected>().Failure;
+        failure.Reason.ShouldBe(CalendarMoveAuthorizationFailureReason.DestinationSelectionAmbiguous);
+        failure.AuthorizedCandidates.ShouldBe([authorized]);
     }
 
     private static CalendarMoveAuthorization Module(
@@ -363,4 +426,51 @@ public sealed class CalendarMoveAuthorizationTests
     private sealed record AuthorizationFixture(
         CalendarMoveAuthorization Module,
         FixedDiscoveryTransport Transport);
+
+    public enum ExactLocalFailure
+    {
+        SourceNonCanonical,
+        DestinationNonCanonical,
+        SourceOrigin,
+        DestinationOrigin,
+        SourceScope,
+        DestinationScope,
+        SameResource
+    }
+
+    public enum SemanticLocalFailure
+    {
+        SourceNonCanonical,
+        SourceOrigin,
+        SourceScope,
+        SelectedBoth,
+        SelectedNull,
+        SelectedNonCanonical,
+        SelectedOrigin,
+        SelectedScope
+    }
+
+    public enum ExactAuthorityFailure
+    {
+        SourceMissing,
+        SourceAmbiguous,
+        DestinationMissing,
+        DestinationAmbiguous,
+        Capability
+    }
+
+    public enum SemanticAuthorityFailure
+    {
+        SourceMissing,
+        SourceAmbiguous,
+        SelectionMissing,
+        SelectionAmbiguous,
+        SelectionOutside,
+        SelectedInvalid,
+        SelectedDivergent,
+        SelectedNull,
+        Capability,
+        Profile,
+        SameCalendar
+    }
 }

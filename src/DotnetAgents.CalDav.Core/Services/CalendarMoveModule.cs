@@ -77,7 +77,7 @@ internal sealed class CalendarMoveModule(
         setFailurePhase(CalendarResourceMovePhase.SelectionDiscoveryCapability);
         var authorizationResult = await authorization.AuthorizeAsync(request, cancellationToken);
         if (authorizationResult is CalendarMoveAuthorizationResult.Rejected rejected)
-            return AuthorizationFailure(rejected.Failure);
+            return MapAuthorizationFailure(rejected.Failure);
         var target = ((CalendarMoveAuthorizationResult.Authorized)authorizationResult).Target;
 
         var concurrencyFailure = ValidateStrongRevision(request.Revision);
@@ -229,45 +229,38 @@ internal sealed class CalendarMoveModule(
             _ => Failure(CalendarResourceMoveCode.UpstreamProtocolError, phase: phase)
         };
 
-    private static CalendarResourceMoveResult AuthorizationFailure(CalendarMoveAuthorizationFailure failure) => Failure(
-        failure.Reason switch
-        {
-            CalendarMoveAuthorizationFailureReason.NonCanonicalResourceHref
-                or CalendarMoveAuthorizationFailureReason.InvalidSelectedCalendar
-                or CalendarMoveAuthorizationFailureReason.SameResourceHref
-                or CalendarMoveAuthorizationFailureReason.SameCalendarNotAllowed => CalendarResourceMoveCode.InvalidInput,
-            CalendarMoveAuthorizationFailureReason.OriginMismatch => CalendarResourceMoveCode.InvalidInput,
-            CalendarMoveAuthorizationFailureReason.OutsideCalendarScope
-                or CalendarMoveAuthorizationFailureReason.SourceOwnershipMissing
-                or CalendarMoveAuthorizationFailureReason.SourceOwnershipAmbiguous
-                or CalendarMoveAuthorizationFailureReason.DestinationOwnershipMissing
-                or CalendarMoveAuthorizationFailureReason.DestinationOwnershipAmbiguous => CalendarResourceMoveCode.OutsideScope,
-            CalendarMoveAuthorizationFailureReason.DestinationSelectionNotFound => CalendarResourceMoveCode.NotFound,
-            CalendarMoveAuthorizationFailureReason.DestinationSelectionAmbiguous => CalendarResourceMoveCode.Ambiguous,
-            CalendarMoveAuthorizationFailureReason.EntityKindNotAdvertised
-                or CalendarMoveAuthorizationFailureReason.InteroperabilityProfileUnverified =>
-                CalendarResourceMoveCode.UnsupportedCapability,
-            CalendarMoveAuthorizationFailureReason.InvalidResolvedCalendar
-                or CalendarMoveAuthorizationFailureReason.ResolvedCalendarIdentityDivergent =>
-                CalendarResourceMoveCode.UpstreamProtocolError,
-            _ => CalendarResourceMoveCode.InvalidInput
-        },
-        candidates: failure.AuthorizedCandidates,
-        phase: failure.Reason switch
+    internal static CalendarResourceMoveResult MapAuthorizationFailure(CalendarMoveAuthorizationFailure failure)
+    {
+        var (code, phase) = failure.Reason switch
         {
             CalendarMoveAuthorizationFailureReason.NonCanonicalResourceHref
                 or CalendarMoveAuthorizationFailureReason.InvalidSelectedCalendar
                 or CalendarMoveAuthorizationFailureReason.SameResourceHref =>
-                CalendarResourceMovePhase.SchemaLexicalDiscriminator,
-            CalendarMoveAuthorizationFailureReason.OriginMismatch
-                or CalendarMoveAuthorizationFailureReason.OutsideCalendarScope
+                (CalendarResourceMoveCode.InvalidInput, CalendarResourceMovePhase.SchemaLexicalDiscriminator),
+            CalendarMoveAuthorizationFailureReason.OriginMismatch =>
+                (CalendarResourceMoveCode.InvalidInput, CalendarResourceMovePhase.OriginScopeAuthorization),
+            CalendarMoveAuthorizationFailureReason.OutsideCalendarScope
                 or CalendarMoveAuthorizationFailureReason.SourceOwnershipMissing
                 or CalendarMoveAuthorizationFailureReason.SourceOwnershipAmbiguous
                 or CalendarMoveAuthorizationFailureReason.DestinationOwnershipMissing
                 or CalendarMoveAuthorizationFailureReason.DestinationOwnershipAmbiguous =>
-                CalendarResourceMovePhase.OriginScopeAuthorization,
-            _ => CalendarResourceMovePhase.SelectionDiscoveryCapability
-        });
+                (CalendarResourceMoveCode.OutsideScope, CalendarResourceMovePhase.OriginScopeAuthorization),
+            CalendarMoveAuthorizationFailureReason.DestinationSelectionNotFound =>
+                (CalendarResourceMoveCode.NotFound, CalendarResourceMovePhase.SelectionDiscoveryCapability),
+            CalendarMoveAuthorizationFailureReason.DestinationSelectionAmbiguous =>
+                (CalendarResourceMoveCode.Ambiguous, CalendarResourceMovePhase.SelectionDiscoveryCapability),
+            CalendarMoveAuthorizationFailureReason.EntityKindNotAdvertised
+                or CalendarMoveAuthorizationFailureReason.InteroperabilityProfileUnverified =>
+                (CalendarResourceMoveCode.UnsupportedCapability, CalendarResourceMovePhase.SelectionDiscoveryCapability),
+            CalendarMoveAuthorizationFailureReason.InvalidResolvedCalendar
+                or CalendarMoveAuthorizationFailureReason.ResolvedCalendarIdentityDivergent =>
+                (CalendarResourceMoveCode.UpstreamProtocolError, CalendarResourceMovePhase.SelectionDiscoveryCapability),
+            CalendarMoveAuthorizationFailureReason.SameCalendarNotAllowed =>
+                (CalendarResourceMoveCode.InvalidInput, CalendarResourceMovePhase.SelectionDiscoveryCapability),
+            _ => throw new ArgumentOutOfRangeException(nameof(failure))
+        };
+        return Failure(code, candidates: failure.AuthorizedCandidates, phase: phase);
+    }
 
     private static CalendarResourceRead Attach(string calendarHref, CalendarResourceRead read) =>
         read.Code == CalendarResourceReadCode.Success
