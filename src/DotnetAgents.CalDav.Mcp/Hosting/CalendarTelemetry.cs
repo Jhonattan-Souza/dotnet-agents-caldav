@@ -393,6 +393,7 @@ internal sealed class CalendarTelemetryOperation : IDisposable
             return;
 
         _operation.SetTag("caldav.outcome", OutcomeName(CalendarOperationOutcome.Error));
+        _operation.SetTag("caldav.transport.recovered", null);
         _operation.SetTag("error.type", ClassifyException(exception));
         _operation.SetStatus(ActivityStatusCode.Error);
     }

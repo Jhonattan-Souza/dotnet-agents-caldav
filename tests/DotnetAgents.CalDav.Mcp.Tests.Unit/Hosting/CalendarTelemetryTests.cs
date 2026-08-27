@@ -695,6 +695,37 @@ public sealed class CalendarTelemetryTests
     }
 
     [Fact]
+    public void Operation_FailureClearsRecoveryAfterRetry()
+    {
+        Activity? stoppedOperation = null;
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = static source => source.Name == CalendarTelemetry.InstrumentationName,
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) =>
+                ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity =>
+            {
+                if (activity.OperationName == "caldav.operation")
+                    stoppedOperation = activity;
+            }
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        using (var operation = CalendarTelemetry.StartOperation("calendars.list", null))
+        {
+            operation.ShouldNotBeNull();
+            operation.StartPhase(CalendarOperationPhase.Discovery);
+            SetOperationTag(operation, "caldav.transport.recovered", true);
+            operation.Fail(new InvalidOperationException("secret"));
+        }
+
+        stoppedOperation.ShouldNotBeNull();
+        stoppedOperation.GetTagItem("caldav.outcome").ShouldBe("error");
+        stoppedOperation.GetTagItem("caldav.transport.recovered").ShouldBeNull();
+        stoppedOperation.Status.ShouldBe(ActivityStatusCode.Error);
+    }
+
+    [Fact]
     public void ExportAllowlist_UsesStableProductOperationName()
     {
         using var listener = ListenTo(CalendarTelemetry.InstrumentationName);
