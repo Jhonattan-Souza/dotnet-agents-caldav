@@ -1,7 +1,6 @@
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Xml;
-using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Core.Internal;
 using DotnetAgents.CalDav.Core.Internal.Ical;
 using DotnetAgents.CalDav.Core.Models;
@@ -11,7 +10,7 @@ namespace DotnetAgents.CalDav.Core.Services;
 /// <summary>Owns constant-work Exact Move review, confirmation, and plan consumption.</summary>
 internal sealed class CalendarExactMoveModule(
     ICalendarMoveTransport transport,
-    CalDavOptions options,
+    CalendarMoveAuthorization authorization,
     TimeProvider timeProvider)
 {
     internal const string PolicyVersion = "server-authoritative-exact-move/1";
@@ -142,22 +141,10 @@ internal sealed class CalendarExactMoveModule(
         CalendarExactMoveRequest request,
         CancellationToken cancellationToken)
     {
-        var discovery = await transport.DiscoverAsync(cancellationToken).ConfigureAwait(false);
-        var calendars = discovery.Discovery.Items;
-        var sourceCalendar = FindCalendar(request.Revision.Href, calendars);
-        var destinationCalendar = FindCalendar(request.DestinationHref, calendars);
-        if (sourceCalendar is null || destinationCalendar is null)
-        {
-            return ExactMovePreparation.Failed(Failure(
-                CalendarExactResourceCode.OutsideScope,
-                CalendarExactResourcePhase.OriginScopeAuthorization));
-        }
-        if (!SupportsExactMove(destinationCalendar, request.Revision.EntityKind))
-        {
-            return ExactMovePreparation.Failed(Failure(
-                CalendarExactResourceCode.UnsupportedCapability,
-                CalendarExactResourcePhase.SelectionDiscoveryCapability));
-        }
+        var authorizationResult = await authorization.AuthorizeAsync(request, cancellationToken).ConfigureAwait(false);
+        if (authorizationResult is CalendarMoveAuthorizationResult.Rejected rejected)
+            return ExactMovePreparation.Failed(AuthorizationFailure(rejected.Failure));
+        var target = ((CalendarMoveAuthorizationResult.Authorized)authorizationResult).Target;
         if (EntityTagHeaderValue.Parse(request.Revision.EntityTag).IsWeak)
         {
             return ExactMovePreparation.Failed(Failure(
@@ -166,8 +153,8 @@ internal sealed class CalendarExactMoveModule(
         }
 
         var sourceAttempt = await ReadSourceAsync(
-            sourceCalendar.Href,
-            request.Revision.Href,
+            target.SourceCalendar.Href,
+            target.SourceHref,
             cancellationToken).ConfigureAwait(false);
         if (sourceAttempt.Failure is not null)
             return ExactMovePreparation.Failed(sourceAttempt.Failure);
@@ -180,8 +167,8 @@ internal sealed class CalendarExactMoveModule(
 
         var destinationRead = await transport
             .ProbeDestinationPresenceAsync(
-                destinationCalendar.Href,
-                request.DestinationHref,
+                target.DestinationCalendar.Href,
+                target.DestinationHref,
                 cancellationToken)
             .ConfigureAwait(false);
         if (destinationRead.Code != CalendarResourceReadCode.NotFound)
@@ -197,36 +184,18 @@ internal sealed class CalendarExactMoveModule(
             null,
             binding,
             sourceRead.Snapshot,
-            destinationCalendar.Href);
+            target.DestinationCalendar.Href);
     }
 
     private CalendarExactResourceResult? ValidateInput(CalendarExactMoveRequest request)
     {
-        if (!CalendarMoveHrefPolicy.TryParseSafeResourceHref(request.Revision.Href, out var source)
-            || !CalendarMoveHrefPolicy.TryParseSafeResourceHref(request.DestinationHref, out var destination)
-            || string.Equals(request.Revision.Href, request.DestinationHref, StringComparison.Ordinal)
-            || !HasValidRevisionShape(request.Revision))
+        if (!HasValidRevisionShape(request.Revision))
         {
             return Failure(
                 CalendarExactResourceCode.InvalidInput,
                 CalendarExactResourcePhase.SchemaLexicalDiscriminator);
         }
-        var origin = new Uri(options.BaseUrl, UriKind.Absolute);
-        if (!CalendarMoveHrefPolicy.HasSameOrigin(origin, source)
-            || !CalendarMoveHrefPolicy.HasSameOrigin(origin, destination))
-        {
-            return Failure(
-                CalendarExactResourceCode.InvalidInput,
-                CalendarExactResourcePhase.OriginScopeAuthorization);
-        }
-        var scope = ParseScope(options.CalendarHrefs);
-        return scope.Count > 0
-            && (!scope.Any(href => CalendarMoveHrefPolicy.IsDirectResourceOf(source, href))
-                || !scope.Any(href => CalendarMoveHrefPolicy.IsDirectResourceOf(destination, href)))
-            ? Failure(
-                CalendarExactResourceCode.OutsideScope,
-                CalendarExactResourcePhase.OriginScopeAuthorization)
-            : null;
+        return null;
     }
 
     private static bool HasValidRevisionShape(CalendarResourceRevisionReference revision)
@@ -299,32 +268,6 @@ internal sealed class CalendarExactMoveModule(
         destination.CopyTo(value.AsSpan(authoritativeUtf8.Length + 1));
         return SHA256.HashData(value);
     }
-
-    private CalendarDescriptor? FindCalendar(
-        string resourceHref,
-        IReadOnlyList<CalendarDescriptor> calendars)
-    {
-        var resource = new Uri(resourceHref, UriKind.Absolute);
-        return calendars
-            .Where(calendar => CalendarMoveHrefPolicy.IsSafeCalendarHref(calendar.Href, options.BaseUrl)
-                && CalendarMoveHrefPolicy.IsDirectResourceOf(resource, calendar.Href))
-            .OrderByDescending(calendar => calendar.Href.Length)
-            .FirstOrDefault();
-    }
-
-    private static bool Advertises(CalendarDescriptor calendar, CalendarEntityKind kind) => kind switch
-    {
-        CalendarEntityKind.Event => calendar.EventSupport == EntityKindSupport.Advertised,
-        CalendarEntityKind.Todo => calendar.TodoSupport == EntityKindSupport.Advertised,
-        _ => false
-    };
-
-    private bool SupportsExactMove(CalendarDescriptor calendar, CalendarEntityKind kind) =>
-        string.Equals(
-            options.InteroperabilityProfile,
-            CalDavInteroperabilityProfiles.Radicale_3_7_8,
-            StringComparison.Ordinal)
-        && Advertises(calendar, kind);
 
     private static CalendarResourceRead Attach(string calendarHref, CalendarResourceRead read) =>
         read.Code == CalendarResourceReadCode.Success
@@ -427,6 +370,42 @@ internal sealed class CalendarExactMoveModule(
         _ => Failure(CalendarExactResourceCode.UpstreamProtocolError)
     };
 
+    private static CalendarExactResourceResult AuthorizationFailure(CalendarMoveAuthorizationFailure failure) => Failure(
+        failure.Reason switch
+        {
+            CalendarMoveAuthorizationFailureReason.NonCanonicalResourceHref
+                or CalendarMoveAuthorizationFailureReason.SameResourceHref
+                or CalendarMoveAuthorizationFailureReason.InvalidSelectedCalendar
+                or CalendarMoveAuthorizationFailureReason.SameCalendarNotAllowed =>
+                CalendarExactResourceCode.InvalidInput,
+            CalendarMoveAuthorizationFailureReason.OriginMismatch => CalendarExactResourceCode.InvalidInput,
+            CalendarMoveAuthorizationFailureReason.OutsideCalendarScope
+                or CalendarMoveAuthorizationFailureReason.SourceOwnershipMissing
+                or CalendarMoveAuthorizationFailureReason.SourceOwnershipAmbiguous
+                or CalendarMoveAuthorizationFailureReason.DestinationOwnershipMissing
+                or CalendarMoveAuthorizationFailureReason.DestinationOwnershipAmbiguous =>
+                CalendarExactResourceCode.OutsideScope,
+            CalendarMoveAuthorizationFailureReason.EntityKindNotAdvertised
+                or CalendarMoveAuthorizationFailureReason.InteroperabilityProfileUnverified =>
+                CalendarExactResourceCode.UnsupportedCapability,
+            _ => CalendarExactResourceCode.UpstreamProtocolError
+        },
+        failure.Reason switch
+        {
+            CalendarMoveAuthorizationFailureReason.NonCanonicalResourceHref
+                or CalendarMoveAuthorizationFailureReason.SameResourceHref
+                or CalendarMoveAuthorizationFailureReason.InvalidSelectedCalendar =>
+                CalendarExactResourcePhase.SchemaLexicalDiscriminator,
+            CalendarMoveAuthorizationFailureReason.OriginMismatch
+                or CalendarMoveAuthorizationFailureReason.OutsideCalendarScope
+                or CalendarMoveAuthorizationFailureReason.SourceOwnershipMissing
+                or CalendarMoveAuthorizationFailureReason.SourceOwnershipAmbiguous
+                or CalendarMoveAuthorizationFailureReason.DestinationOwnershipMissing
+                or CalendarMoveAuthorizationFailureReason.DestinationOwnershipAmbiguous =>
+                CalendarExactResourcePhase.OriginScopeAuthorization,
+            _ => CalendarExactResourcePhase.SelectionDiscoveryCapability
+        });
+
     private static CalendarExactResourceResult FromSharedResult(CalendarResourceMoveResult result) => new(
         result.Code switch
         {
@@ -499,10 +478,6 @@ internal sealed class CalendarExactMoveModule(
     {
         public static ExactMoveSourceRead Failed(CalendarExactResourceResult failure) => new(null, failure);
     }
-
-    private static IReadOnlyList<string> ParseScope(string? calendarHrefs) => calendarHrefs is null
-        ? []
-        : calendarHrefs.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
     private sealed record ExactMovePreparation(
         CalendarExactResourceResult? Outcome,

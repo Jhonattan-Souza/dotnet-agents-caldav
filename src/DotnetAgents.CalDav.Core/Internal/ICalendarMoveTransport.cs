@@ -6,8 +6,6 @@ namespace DotnetAgents.CalDav.Core.Internal;
 /// <summary>Closed CalDAV seam for one server-authoritative Calendar Object Resource Move.</summary>
 internal interface ICalendarMoveTransport
 {
-    Task<CalendarOperationDiscoveryResult> DiscoverAsync(CancellationToken cancellationToken);
-
     Task<CalendarResourceRead> ReadSourceAsync(
         string sourceCalendarHref,
         string href,
@@ -50,13 +48,8 @@ internal interface ICalendarMoveResourceTransport
         CancellationToken cancellationToken);
 }
 
-internal sealed class CalendarClientMoveTransport(
-    CalendarOperationDiscovery discovery,
-    ICalendarClient client) : ICalendarMoveTransport
+internal sealed class CalendarClientMoveTransport(ICalendarClient client) : ICalendarMoveTransport
 {
-    public Task<CalendarOperationDiscoveryResult> DiscoverAsync(CancellationToken cancellationToken) =>
-        discovery.DiscoverAsync(cancellationToken);
-
     public Task<CalendarResourceRead> ReadSourceAsync(
         string sourceCalendarHref,
         string href,
