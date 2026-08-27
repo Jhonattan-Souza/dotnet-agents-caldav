@@ -333,7 +333,7 @@ public class CalDavClientTests
         {
             requestCount++;
             marked.Add(request.Options.TryGetValue(CalendarHttpTelemetry.RequestPurposeKey, out var purpose)
-                && purpose == CalendarHttpTelemetry.QueryResourceRead);
+                && purpose == CalendarHttpRequestPurpose.QueryResourceRead);
             return requestCount == 1
                 ? new HttpResponseMessage(HttpStatusCode.TemporaryRedirect)
                 {
@@ -1803,7 +1803,7 @@ public class CalDavClientTests
     [Fact]
     public async Task ProbeCalendarResourceAbsenceAsync_MarksOnlyTheExplicitWireRequest()
     {
-        var purposes = new List<string?>();
+        var purposes = new List<CalendarHttpRequestPurpose?>();
         var handler = new StubHttpMessageHandler(request =>
         {
             purposes.Add(request.Options.TryGetValue(
@@ -1824,16 +1824,17 @@ public class CalDavClientTests
 
         probe.Code.ShouldBe(CalendarResourceReadCode.NotFound);
         ordinary.Code.ShouldBe(CalendarResourceReadCode.NotFound);
-        purposes.ShouldBe([CalendarHttpTelemetry.AbsenceProbe, null]);
+        purposes.ShouldBe([CalendarHttpRequestPurpose.AbsenceProbe, null]);
     }
 
     [Fact]
     public async Task MovePresenceProbe_UsesHeadersOnlyAndMarksExpectedAbsencePurpose()
     {
-        string? purpose = null;
+        CalendarHttpRequestPurpose? purpose = null;
         var handler = new StubHttpMessageHandler(request =>
         {
-            _ = request.Options.TryGetValue(CalendarHttpTelemetry.RequestPurposeKey, out purpose);
+            if (request.Options.TryGetValue(CalendarHttpTelemetry.RequestPurposeKey, out var observed))
+                purpose = observed;
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Headers = { ETag = new EntityTagHeaderValue("\"private-tag\"") },
@@ -1850,7 +1851,7 @@ public class CalDavClientTests
         result.Code.ShouldBe(CalendarResourceReadCode.Success);
         result.AuthoritativeUtf8.IsEmpty.ShouldBeTrue();
         result.EntityTag.ShouldBeNull();
-        purpose.ShouldBe(CalendarHttpTelemetry.AbsenceProbe);
+        purpose.ShouldBe(CalendarHttpRequestPurpose.AbsenceProbe);
     }
 
     [Fact]
@@ -1870,10 +1871,11 @@ public class CalDavClientTests
     [Fact]
     public async Task ProbeCalendarResourceAbsenceAsync_PreservesPurposeThroughDecoratorDefault()
     {
-        string? purpose = null;
+        CalendarHttpRequestPurpose? purpose = null;
         var concrete = CreateSut(new StubHttpMessageHandler(request =>
         {
-            _ = request.Options.TryGetValue(CalendarHttpTelemetry.RequestPurposeKey, out purpose);
+            if (request.Options.TryGetValue(CalendarHttpTelemetry.RequestPurposeKey, out var observed))
+                purpose = observed;
             return new HttpResponseMessage(HttpStatusCode.NotFound);
         }));
         ICalendarClient decorator = new GetOnlyCalendarClient(concrete);
@@ -1883,7 +1885,7 @@ public class CalDavClientTests
             CancellationToken.None);
 
         result.Code.ShouldBe(CalendarResourceReadCode.NotFound);
-        purpose.ShouldBe(CalendarHttpTelemetry.AbsenceProbe);
+        purpose.ShouldBe(CalendarHttpRequestPurpose.AbsenceProbe);
     }
 
     [Theory]

@@ -390,17 +390,17 @@ public sealed class CalendarTelemetryTests
         marked.ShouldNotBeNull();
         marked.SetTag("http.request.method", "GET");
         marked.SetTag("http.response.status_code", 404);
-        marked.SetTag("error.type", "404");
         marked.SetTag("caldav.http.request_purpose", "absence_probe");
-        marked.SetStatus(ActivityStatusCode.Error);
+        marked.SetTag("caldav.http.observation", "expected_absence");
+        marked.SetStatus(ActivityStatusCode.Ok);
         marked.Stop();
         using var queryRead = source.StartActivity("GET query");
         queryRead.ShouldNotBeNull();
         queryRead.SetTag("http.request.method", "GET");
         queryRead.SetTag("http.response.status_code", 404);
-        queryRead.SetTag("error.type", "404");
         queryRead.SetTag("caldav.http.request_purpose", "query_resource_read");
-        queryRead.SetStatus(ActivityStatusCode.Error);
+        queryRead.SetTag("caldav.http.observation", "resource_disappeared");
+        queryRead.SetStatus(ActivityStatusCode.Ok);
         queryRead.Stop();
         using var unmarked = source.StartActivity("GET unmarked");
         unmarked.ShouldNotBeNull();
@@ -409,11 +409,20 @@ public sealed class CalendarTelemetryTests
         unmarked.SetTag("error.type", "404");
         unmarked.SetStatus(ActivityStatusCode.Error);
         unmarked.Stop();
+        using var incomplete = source.StartActivity("GET incomplete marked");
+        incomplete.ShouldNotBeNull();
+        incomplete.SetTag("http.request.method", "GET");
+        incomplete.SetTag("http.response.status_code", 404);
+        incomplete.SetTag("error.type", "404");
+        incomplete.SetTag("caldav.http.request_purpose", "absence_probe");
+        incomplete.SetStatus(ActivityStatusCode.Error);
+        incomplete.Stop();
 
         var processor = new TelemetryActivityAllowlistProcessor();
         processor.OnEnd(marked);
         processor.OnEnd(queryRead);
         processor.OnEnd(unmarked);
+        processor.OnEnd(incomplete);
 
         marked.GetTagItem("http.response.status_code").ShouldBe(404);
         marked.GetTagItem("caldav.http.request_purpose").ShouldBe("absence_probe");
@@ -429,6 +438,10 @@ public sealed class CalendarTelemetryTests
         unmarked.GetTagItem("caldav.http.observation").ShouldBeNull();
         unmarked.GetTagItem("error.type").ShouldBe("404");
         unmarked.Status.ShouldBe(ActivityStatusCode.Error);
+        incomplete.GetTagItem("caldav.http.request_purpose").ShouldBe("absence_probe");
+        incomplete.GetTagItem("caldav.http.observation").ShouldBeNull();
+        incomplete.GetTagItem("error.type").ShouldBe("404");
+        incomplete.Status.ShouldBe(ActivityStatusCode.Error);
     }
 
     [Theory]

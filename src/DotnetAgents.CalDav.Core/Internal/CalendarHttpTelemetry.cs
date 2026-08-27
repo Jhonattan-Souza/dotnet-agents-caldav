@@ -7,13 +7,11 @@ internal static class CalendarHttpTelemetry
     private static readonly AsyncLocal<int> AbsenceProbeDepth = new();
     private static readonly AsyncLocal<CalendarDirectGetReadMeter?> QueryResourceReadMeter = new();
 
-    internal const string AbsenceProbe = "absence_probe";
-    internal const string QueryResourceRead = "query_resource_read";
     internal const string InstrumentationName = "DotnetAgents.CalDav.Http";
 
     internal static readonly ActivitySource ActivitySource = new(InstrumentationName);
 
-    internal static readonly HttpRequestOptionsKey<string> RequestPurposeKey =
+    internal static readonly HttpRequestOptionsKey<CalendarHttpRequestPurpose> RequestPurposeKey =
         new("DotnetAgents.CalDav.Telemetry.RequestPurpose");
 
     internal static readonly HttpRequestOptionsKey<AttemptSequence> AttemptSequenceKey =
@@ -46,11 +44,11 @@ internal static class CalendarHttpTelemetry
     }
 
     internal static void MarkAbsenceProbe(HttpRequestMessage request) =>
-        request.Options.Set(RequestPurposeKey, AbsenceProbe);
+        request.Options.Set(RequestPurposeKey, CalendarHttpRequestPurpose.AbsenceProbe);
 
     internal static void MarkQueryResourceRead(HttpRequestMessage request)
     {
-        request.Options.Set(RequestPurposeKey, QueryResourceRead);
+        request.Options.Set(RequestPurposeKey, CalendarHttpRequestPurpose.QueryResourceRead);
         request.Options.Set(DirectGetMeterKey, QueryResourceReadMeter.Value!);
     }
 
@@ -73,4 +71,16 @@ internal static class CalendarHttpTelemetry
 
         internal int NextResendCount() => Interlocked.Increment(ref _attempt);
     }
+}
+
+internal enum CalendarHttpRequestPurpose
+{
+    AbsenceProbe = 1,
+    QueryResourceRead
+}
+
+internal enum CalendarHttpObservation
+{
+    ExpectedAbsence,
+    ResourceDisappeared
 }
