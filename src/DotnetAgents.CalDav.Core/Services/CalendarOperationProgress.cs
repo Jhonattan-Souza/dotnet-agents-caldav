@@ -24,12 +24,11 @@ public static class CalendarOperationProgress
     internal static void SetMoveRejected(CalendarMoveCollisionClassification collision) =>
         CurrentState.Value?.SetMoveState(new CalendarMoveTelemetryState.Rejected(collision));
 
-    internal static void SetMoveDispatched(bool possiblyDispatched) => CurrentState.Value?.SetMoveState(
-        possiblyDispatched
-            ? new CalendarMoveTelemetryState.PossiblyDispatched(
-                CalendarMoveReconciliationClassification.NotRun)
-            : new CalendarMoveTelemetryState.Dispatched(
-                CalendarMoveReconciliationClassification.NotRun));
+    internal static void SetMoveDispatched() => CurrentState.Value?.SetMoveState(
+        new CalendarMoveTelemetryState.Dispatched(CalendarMoveReconciliationClassification.NotRun));
+
+    internal static void SetMovePossiblyDispatched() => CurrentState.Value?.SetMoveState(
+        new CalendarMoveTelemetryState.PossiblyDispatched(CalendarMoveReconciliationClassification.NotRun));
 
     internal static void SetMoveCollision(CalendarMoveCollisionClassification collision) =>
         CurrentState.Value?.SetNotAttemptedCollision(collision);

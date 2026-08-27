@@ -145,10 +145,11 @@ public sealed class CalendarExecutionPolicyTests
                 InvokeProgressSetter("SetMoveRejected", collision);
                 break;
             case CalendarMoveDispatchClassification.Dispatched:
+                InvokeProgressSetter("SetMoveDispatched");
+                InvokeProgressSetter("SetMoveReconciliation", reconciliation);
+                break;
             case CalendarMoveDispatchClassification.PossiblyDispatched:
-                InvokeProgressSetter(
-                    "SetMoveDispatched",
-                    dispatch == CalendarMoveDispatchClassification.PossiblyDispatched);
+                InvokeProgressSetter("SetMovePossiblyDispatched");
                 InvokeProgressSetter("SetMoveReconciliation", reconciliation);
                 break;
         }
@@ -268,6 +269,11 @@ public sealed class CalendarExecutionPolicyTests
         typeof(CalendarOperationProgress)
             .GetMethod(name, BindingFlags.Static | BindingFlags.NonPublic)!
             .Invoke(null, [value]);
+
+    private static void InvokeProgressSetter(string name) =>
+        typeof(CalendarOperationProgress)
+            .GetMethod(name, BindingFlags.Static | BindingFlags.NonPublic)!
+            .Invoke(null, null);
 
     [Fact]
     public async Task PublicToolFilter_UnsignalledCancellationIsControlledTimeoutFailure()
