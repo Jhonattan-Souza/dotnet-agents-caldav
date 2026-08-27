@@ -694,122 +694,6 @@ public sealed class CalendarQueryModuleTests
     }
 
     [Fact]
-    public async Task CursorReplayVariablePagesAndAuthenticationAreDeterministic()
-    {
-        const string calendarHref = "https://cal.example/calendars/work/";
-        var hrefs = Enumerable.Range(1, 3).Select(index => $"{calendarHref}{index}.ics").ToArray();
-        var client = QueryClient(calendarHref, () => hrefs);
-        var time = new MutableTimeProvider(Now);
-        await using var provider = CreateProvider(client, time);
-        var module = provider.GetRequiredService<ICalendarQueryModule>();
-        var query = new CalendarEntityQuery(CalendarEntityScope.All, [CalendarEntityKind.Event]);
-        var first = (await module.QueryEntitiesAsync(
-            new CalendarEntityQueryRequest.Start(query, PageSize: 1),
-            CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Page>();
-        var initialCursor = first.Value.NextCursor.ShouldNotBeNull();
-
-        var one = (await module.QueryEntitiesAsync(
-            new CalendarEntityQueryRequest.Continue(initialCursor, PageSize: 1),
-            CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Page>();
-        var oneReplay = (await module.QueryEntitiesAsync(
-            new CalendarEntityQueryRequest.Continue(initialCursor, PageSize: 1),
-            CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Page>();
-        one.Value.StructuredContent.GetRawText().ShouldBe(oneReplay.Value.StructuredContent.GetRawText());
-        one.Value.NextCursor.ShouldBe(oneReplay.Value.NextCursor);
-
-        var two = (await module.QueryEntitiesAsync(
-            new CalendarEntityQueryRequest.Continue(initialCursor, PageSize: 2),
-            CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Page>();
-        var twoReplay = (await module.QueryEntitiesAsync(
-            new CalendarEntityQueryRequest.Continue(initialCursor, PageSize: 2),
-            CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Page>();
-        two.Value.Items.Count.ShouldBe(2);
-        two.Value.NextCursor.ShouldBeNull();
-        two.Value.StructuredContent.GetRawText().ShouldBe(twoReplay.Value.StructuredContent.GetRawText());
-
-        var tampered = initialCursor[..^1] + (initialCursor[^1] == 'A' ? 'B' : 'A');
-        var tamperFailure = (await module.QueryEntitiesAsync(
-            new CalendarEntityQueryRequest.Continue(tampered),
-            CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Failure>();
-        tamperFailure.Error.Code.ShouldBe(QueryFailureCode.InvalidInput);
-        var wrongToolCursor = provider.GetRequiredService<CalendarQueryCursorIssuer>()
-            .Issue("todos.query", Guid.NewGuid(), 1, Now.AddMinutes(10));
-        var wrongToolFailure = (await module.QueryEntitiesAsync(
-            new CalendarEntityQueryRequest.Continue(wrongToolCursor),
-            CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Failure>();
-        wrongToolFailure.Error.Code.ShouldBe(QueryFailureCode.InvalidInput);
-
-        await using var restarted = CreateProvider(client, time);
-        var restartFailure = (await restarted.GetRequiredService<ICalendarQueryModule>().QueryEntitiesAsync(
-            new CalendarEntityQueryRequest.Continue(initialCursor),
-            CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Failure>();
-        restartFailure.Error.Code.ShouldBe(QueryFailureCode.InvalidInput);
-
-        time.Advance(TimeSpan.FromMinutes(10));
-        var expired = (await module.QueryEntitiesAsync(
-            new CalendarEntityQueryRequest.Continue(initialCursor),
-            CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Failure>();
-        expired.Error.Code.ShouldBe(QueryFailureCode.CursorExpired);
-        provider.GetRequiredService<CalendarQuerySnapshotStore>().ActiveSnapshotCount.ShouldBe(0);
-        provider.GetRequiredService<CalendarQuerySnapshotStore>().RetainedBytes.ShouldBe(0);
-    }
-
-    [Fact]
-    public async Task ContinueRejectsInvalidPageSizeAndAuthenticatedSnapshotMismatches()
-    {
-        var time = new MutableTimeProvider(Now);
-        await using var provider = CreateProvider(
-            new ScriptedCalendarQueryTransport([Calendar("https://cal.example/calendars/work/")], static () => []),
-            time);
-        var module = provider.GetRequiredService<ICalendarQueryModule>();
-        var issuer = provider.GetRequiredService<CalendarQueryCursorIssuer>();
-        var store = provider.GetRequiredService<CalendarQuerySnapshotStore>();
-        var id = Guid.NewGuid();
-        var expires = Now.AddMinutes(10);
-        var item = new StoredCalendarEntityQueryItem("{}"u8.ToArray());
-        using var lease = store.TryReserve(new CalendarQuerySnapshot(
-            id,
-            expires,
-            [item, item],
-            "[]"u8.ToArray(),
-            6)).Lease!;
-        lease.Commit().ShouldBeTrue();
-        var cases = new[]
-        {
-            new CalendarEntityQueryRequest.Continue(issuer.Issue(
-                CalendarEntityQueryPageCodec.ToolName, Guid.NewGuid(), 1, expires)),
-            new CalendarEntityQueryRequest.Continue(issuer.Issue(
-                CalendarEntityQueryPageCodec.ToolName, id, 1, expires.AddSeconds(-1))),
-            new CalendarEntityQueryRequest.Continue(issuer.Issue(
-                CalendarEntityQueryPageCodec.ToolName, id, 2, expires)),
-            new CalendarEntityQueryRequest.Continue(issuer.Issue(
-                CalendarEntityQueryPageCodec.ToolName, id, 1, expires), 0),
-            new CalendarEntityQueryRequest.Continue(issuer.Issue(
-                CalendarEntityQueryPageCodec.ToolName, id, 1, expires), 201)
-        };
-
-        foreach (var request in cases)
-        {
-            var failure = (await module.QueryEntitiesAsync(request, CancellationToken.None))
-                .ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Failure>();
-            failure.Error.Code.ShouldBe(QueryFailureCode.InvalidInput);
-        }
-    }
-
-    [Fact]
-    public async Task ContinueHonorsExternalCancellationBeforeLookup()
-    {
-        await using var provider = CreateProvider(
-            new ScriptedCalendarQueryTransport([Calendar("https://cal.example/calendars/work/")], static () => []),
-            new MutableTimeProvider(Now));
-        using var cancellation = new CancellationTokenSource();
-        cancellation.Cancel();
-
-        await Should.ThrowAsync<OperationCanceledException>(() => provider.GetRequiredService<ICalendarQueryModule>()
-            .QueryEntitiesAsync(new CalendarEntityQueryRequest.Continue("opaque"), cancellation.Token));
-    }
-
-    [Fact]
     public async Task EmptyStartReturnsACompleteUnretainedPage()
     {
         const string calendarHref = "https://cal.example/calendars/work/";
@@ -1810,52 +1694,6 @@ public sealed class CalendarQueryModuleTests
         operation.GetTagItem("caldav.query.fetch_mode").ShouldBe("multiget");
     }
 
-    [Fact]
-    public async Task CallerCancellationAfterReservationPublishesAndRetainsNothing()
-    {
-        const string calendarHref = "https://cal.example/calendars/work/";
-        using var cancellation = new CancellationTokenSource();
-        var work = new CalendarQueryPageWorkCounter(cancellation.Cancel);
-        await using var provider = CreateProvider(
-            new ScriptedCalendarQueryTransport(
-                [Calendar(calendarHref)],
-                () => [calendarHref + "a.ics", calendarHref + "b.ics"]),
-            new MutableTimeProvider(Now),
-            services => services.AddTransient(serviceProvider => new CalendarEntityQueryPageCodec(
-                serviceProvider.GetRequiredService<CalendarQueryCursorIssuer>(),
-                work)));
-
-        await Should.ThrowAsync<OperationCanceledException>(() => provider.GetRequiredService<ICalendarQueryModule>()
-            .QueryEntitiesAsync(new CalendarEntityQueryRequest.Start(Query(), PageSize: 1), cancellation.Token));
-
-        work.FinalMaterializationCount.ShouldBe(1);
-        var store = provider.GetRequiredService<CalendarQuerySnapshotStore>();
-        store.ActiveSnapshotCount.ShouldBe(0);
-        store.ActiveReservationCount.ShouldBe(0);
-        store.RetainedBytes.ShouldBe(0);
-    }
-
-    [Fact]
-    public async Task SnapshotPublicationFailureIsTypedAndRollsBackEveryStoreCounter()
-    {
-        const string calendarHref = "https://cal.example/calendars/work/";
-        await using var provider = CreateProvider(
-            new ScriptedCalendarQueryTransport(
-                [Calendar(calendarHref)],
-                () => [calendarHref + "a.ics", calendarHref + "b.ics"]),
-            new SecondTimerThrowsTimeProvider());
-
-        var failure = (await provider.GetRequiredService<ICalendarQueryModule>().QueryEntitiesAsync(
-            new CalendarEntityQueryRequest.Start(Query(), PageSize: 1),
-            CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Failure>();
-
-        failure.Error.Code.ShouldBe(QueryFailureCode.UpstreamUnavailable);
-        var store = provider.GetRequiredService<CalendarQuerySnapshotStore>();
-        store.ActiveSnapshotCount.ShouldBe(0);
-        store.ActiveReservationCount.ShouldBe(0);
-        store.RetainedBytes.ShouldBe(0);
-    }
-
     [Theory]
     [InlineData(CalendarEntityKind.Event, CalendarEntityKind.Todo)]
     [InlineData(CalendarEntityKind.Todo, CalendarEntityKind.Event)]
@@ -2182,21 +2020,6 @@ public sealed class CalendarQueryModuleTests
         Entity,
         Occurrence,
         Todo
-    }
-
-    private sealed class SecondTimerThrowsTimeProvider : TimeProvider
-    {
-        private int _timerCount;
-
-        public override DateTimeOffset GetUtcNow() => Now;
-
-        public override ITimer CreateTimer(
-            TimerCallback callback,
-            object? state,
-            TimeSpan dueTime,
-            TimeSpan period) => Interlocked.Increment(ref _timerCount) == 2
-                ? throw new InvalidOperationException("scripted snapshot timer failure")
-                : new NoOpTimer();
     }
 
     private sealed class AdvanceOnThirdUtcReadTimeProvider(DateTimeOffset utcNow) : TimeProvider

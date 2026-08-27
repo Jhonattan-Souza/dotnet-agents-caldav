@@ -5,7 +5,7 @@ using DotnetAgents.CalDav.Core.Services;
 
 namespace DotnetAgents.CalDav.Core.Internal;
 
-internal sealed class CalendarEntityQueryPageCodec
+internal sealed class CalendarEntityQueryPageCodec : ICalendarQueryPageCodec<CalendarEntityQueryItem>
 {
     private readonly CalendarQueryCursorIssuer _cursorIssuer;
     private readonly CalendarQueryPageWorkCounter? _workCounter;
@@ -25,17 +25,21 @@ internal sealed class CalendarEntityQueryPageCodec
     internal const int MaximumHumanReadableBytes = 64 * 1024;
     internal const string SuccessText = "Calendar Entity query completed.";
 
-    internal CalendarQueryPageAdmission Admit(
+    string ICalendarQueryPageCodec<CalendarEntityQueryItem>.ToolName => ToolName;
+
+    int ICalendarQueryPageCodec<CalendarEntityQueryItem>.DefaultPageSize => DefaultPageSize;
+
+    int ICalendarQueryPageCodec<CalendarEntityQueryItem>.MaximumPageSize => MaximumPageSize;
+
+    CalendarQueryPagePlanAdmission ICalendarQueryPageCodec<CalendarEntityQueryItem>.Plan(
         CalendarQuerySnapshot snapshot,
         int position,
         int pageSize,
-        CancellationToken cancellationToken)
-    {
-        var planned = Plan(snapshot, position, pageSize, cancellationToken);
-        return planned.Error is null
-            ? CalendarQueryPageAdmission.Page(Materialize(snapshot, planned.Value!))
-            : CalendarQueryPageAdmission.Failure(planned.Error);
-    }
+        CancellationToken cancellationToken) => Plan(snapshot, position, pageSize, cancellationToken);
+
+    QueryPage<CalendarEntityQueryItem> ICalendarQueryPageCodec<CalendarEntityQueryItem>.Materialize(
+        CalendarQuerySnapshot snapshot,
+        CalendarQueryPagePlan plan) => Materialize(snapshot, plan);
 
     internal CalendarQueryPagePlanAdmission Plan(
         CalendarQuerySnapshot snapshot,
@@ -240,29 +244,4 @@ internal sealed class CalendarQueryPageWorkCounter(Action? onFinalMaterializatio
         Interlocked.Increment(ref _finalMaterializationCount);
         onFinalMaterialization?.Invoke();
     }
-}
-
-internal sealed record CalendarQueryPageAdmission(
-    QueryPage<CalendarEntityQueryItem>? Value,
-    QueryFailure? Error)
-{
-    internal static CalendarQueryPageAdmission Page(QueryPage<CalendarEntityQueryItem> value) => new(value, null);
-
-    internal static CalendarQueryPageAdmission Failure(QueryFailure error) => new(null, error);
-}
-
-internal sealed record CalendarQueryPagePlan(
-    IReadOnlyList<StoredCalendarEntityQueryItem> Items,
-    string? NextCursor,
-    int MeasuredCallToolResultBytes);
-
-internal sealed record CalendarQueryFixedBudget(int CallToolResultBytes, int HumanReadableBytes);
-
-internal sealed record CalendarQueryPagePlanAdmission(
-    CalendarQueryPagePlan? Value,
-    QueryFailure? Error)
-{
-    internal static CalendarQueryPagePlanAdmission Page(CalendarQueryPagePlan value) => new(value, null);
-
-    internal static CalendarQueryPagePlanAdmission Failure(QueryFailure error) => new(null, error);
 }

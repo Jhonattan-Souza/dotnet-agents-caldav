@@ -124,6 +124,12 @@ public static class CalDavServiceCollectionExtensions
             serviceProvider.GetRequiredService<CalendarQuerySnapshotStore>()));
         services.AddTransient(serviceProvider => new CalendarQuerySnapshotWriter(
             serviceProvider.GetRequiredService<CalendarQuerySnapshotStore>()));
+        services.AddTransient(serviceProvider => new CalendarQuerySnapshotPublication(
+            serviceProvider.GetRequiredService<CalendarQueryPolicy>(),
+            serviceProvider.GetRequiredService<CalendarQuerySnapshotWriter>()));
+        services.AddTransient(serviceProvider => new CalendarQuerySnapshotReplay(
+            serviceProvider.GetRequiredService<CalendarQueryCursorAuthenticator>(),
+            serviceProvider.GetRequiredService<CalendarQuerySnapshotReader>()));
         services.AddTransient(serviceProvider => new CalendarEntityQueryPageCodec(
             serviceProvider.GetRequiredService<CalendarQueryCursorIssuer>()));
         services.AddTransient(serviceProvider => new CalendarOccurrenceQueryPageCodec(
@@ -154,33 +160,30 @@ public static class CalDavServiceCollectionExtensions
             serviceProvider.GetRequiredService<IOptions<CalDavOptions>>()));
         services.AddTransient(serviceProvider => new CalendarEntityQueryStartExecutor(
             serviceProvider.GetRequiredService<CalendarQueryPolicy>(),
-            serviceProvider.GetRequiredService<CalendarQuerySnapshotWriter>(),
+            serviceProvider.GetRequiredService<CalendarQuerySnapshotPublication>(),
             serviceProvider.GetRequiredService<CalendarEntityQueryPageCodec>(),
             serviceProvider.GetRequiredService<CalendarQueryAcquisitionExecutor>(),
             serviceProvider.GetRequiredService<CalendarTemporalContextResolver>()));
         services.AddTransient(serviceProvider => new CalendarEntityQueryContinueExecutor(
-            serviceProvider.GetRequiredService<CalendarQueryCursorAuthenticator>(),
-            serviceProvider.GetRequiredService<CalendarQuerySnapshotReader>(),
+            serviceProvider.GetRequiredService<CalendarQuerySnapshotReplay>(),
             serviceProvider.GetRequiredService<CalendarEntityQueryPageCodec>()));
         services.AddTransient(serviceProvider => new CalendarOccurrenceQueryStartExecutor(
             serviceProvider.GetRequiredService<CalendarQueryPolicy>(),
-            serviceProvider.GetRequiredService<CalendarQuerySnapshotWriter>(),
+            serviceProvider.GetRequiredService<CalendarQuerySnapshotPublication>(),
             serviceProvider.GetRequiredService<CalendarOccurrenceQueryPageCodec>(),
             serviceProvider.GetRequiredService<CalendarQueryAcquisitionExecutor>(),
             serviceProvider.GetRequiredService<CalendarTemporalContextResolver>()));
         services.AddTransient(serviceProvider => new CalendarOccurrenceQueryContinueExecutor(
-            serviceProvider.GetRequiredService<CalendarQueryCursorAuthenticator>(),
-            serviceProvider.GetRequiredService<CalendarQuerySnapshotReader>(),
+            serviceProvider.GetRequiredService<CalendarQuerySnapshotReplay>(),
             serviceProvider.GetRequiredService<CalendarOccurrenceQueryPageCodec>()));
         services.AddTransient(serviceProvider => new CalendarTodoQueryStartExecutor(
             serviceProvider.GetRequiredService<CalendarQueryPolicy>(),
-            serviceProvider.GetRequiredService<CalendarQuerySnapshotWriter>(),
+            serviceProvider.GetRequiredService<CalendarQuerySnapshotPublication>(),
             serviceProvider.GetRequiredService<CalendarTodoQueryPageCodec>(),
             serviceProvider.GetRequiredService<CalendarQueryAcquisitionExecutor>(),
             serviceProvider.GetRequiredService<CalendarTemporalContextResolver>()));
         services.AddTransient(serviceProvider => new CalendarTodoQueryContinueExecutor(
-            serviceProvider.GetRequiredService<CalendarQueryCursorAuthenticator>(),
-            serviceProvider.GetRequiredService<CalendarQuerySnapshotReader>(),
+            serviceProvider.GetRequiredService<CalendarQuerySnapshotReplay>(),
             serviceProvider.GetRequiredService<CalendarTodoQueryPageCodec>()));
         services.AddTransient<ICalendarQueryModule>(serviceProvider => new CalendarQueryModule(
             serviceProvider.GetRequiredService<CalendarEntityQueryStartExecutor>(),
