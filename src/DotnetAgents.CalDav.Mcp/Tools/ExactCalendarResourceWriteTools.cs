@@ -148,18 +148,15 @@ internal sealed class ExactCalendarResourceWriteTools
         catch (OperationCanceledException) when (deadline.IsCancellationRequested
             && !cancellationToken.IsCancellationRequested)
         {
-            return Error("limit_exhausted", "limitsAndAdmission", "The exact write review exceeded its time limit.", false,
-                "execution", "not_attempted", limits: new CalendarEntityCreateLimits(Dimension: "elapsed_time"));
+            return ReviewDeadlineError(includeLimit: true);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            return Error("upstream_unavailable", "upstream", "The exact write review is unavailable.", true,
-                "selectionDiscoveryCapability", "not_attempted");
+            return ReviewUnavailableError();
         }
         catch (Exception exception) when (exception is not (InputRequiredException or OperationCanceledException))
         {
-            return Error("upstream_protocol_error", "upstream", "The exact write could not be completed.", false,
-                "execution", "not_attempted");
+            return ReviewProtocolError();
         }
     }
 
@@ -324,18 +321,15 @@ internal sealed class ExactCalendarResourceWriteTools
         catch (OperationCanceledException) when (deadline.IsCancellationRequested
             && !cancellationToken.IsCancellationRequested)
         {
-            return Error("limit_exhausted", "limitsAndAdmission", "The exact write review exceeded its time limit.", false,
-                "execution", "not_attempted");
+            return ReviewDeadlineError(includeLimit: false);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            return Error("upstream_unavailable", "upstream", "The exact write review is unavailable.", true,
-                "selectionDiscoveryCapability", "not_attempted");
+            return ReviewUnavailableError();
         }
         catch (Exception exception) when (exception is not (InputRequiredException or OperationCanceledException))
         {
-            return Error("upstream_protocol_error", "upstream", "The exact write could not be completed.", false,
-                "execution", "not_attempted");
+            return ReviewProtocolError();
         }
     }
 
@@ -415,18 +409,15 @@ internal sealed class ExactCalendarResourceWriteTools
         catch (OperationCanceledException) when (deadline.IsCancellationRequested
             && !cancellationToken.IsCancellationRequested)
         {
-            return Error("limit_exhausted", "limitsAndAdmission", "The exact write review exceeded its time limit.", false,
-                "execution", "not_attempted");
+            return ReviewDeadlineError(includeLimit: false);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            return Error("upstream_unavailable", "upstream", "The exact write review is unavailable.", true,
-                "selectionDiscoveryCapability", "not_attempted");
+            return ReviewUnavailableError();
         }
         catch (Exception exception) when (exception is not (InputRequiredException or OperationCanceledException))
         {
-            return Error("upstream_protocol_error", "upstream", "The exact write could not be completed.", false,
-                "execution", "not_attempted");
+            return ReviewProtocolError();
         }
     }
 
@@ -739,14 +730,21 @@ internal sealed class ExactCalendarResourceWriteTools
 
     private static CallToolResult ToToolResult(CalendarExactResourceResult result)
     {
-        CalendarTelemetry.ObserveMutationState(result.MutationState);
-        var mapped = result.Code switch
+        var normalized = result.Code == CalendarExactResourceCode.Success && result.Snapshot is null
+            ? result with
+            {
+                Code = CalendarExactResourceCode.UpstreamProtocolError,
+                Phase = CalendarExactResourcePhase.PostWriteVerificationOrReconciliation
+            }
+            : result;
+        var terminal = normalized.Code switch
         {
-            CalendarExactResourceCode.Success when result.Snapshot is not null => Success(result.Snapshot),
+            CalendarExactResourceCode.Success when normalized.Snapshot is not null =>
+                CalendarToolResult.Success(Success(normalized.Snapshot), normalized.MutationState),
             CalendarExactResourceCode.NoChange => NonMutation("no_change"),
-            _ => ExactError(result)
+            _ => ExactError(normalized)
         };
-        return EnsureBoundedResult(mapped, result.MutationState);
+        return terminal.FinalizeBounded((_, _) => PayloadLimitError(normalized.MutationState));
     }
 
     internal static int MeasureResult(CallToolResult result) => CalendarQueryToolSupport.MeasureResult(result);
@@ -760,7 +758,7 @@ internal sealed class ExactCalendarResourceWriteTools
             "The exact write result exceeds the safe payload limit.",
             false,
             "admissionAndPayload",
-            MutationState(mutationState)));
+            CalendarTelemetryVocabulary.MutationStateName(mutationState)));
 
     private static CallToolResult Success(CalendarResourceSnapshot snapshot) => new()
     {
@@ -773,10 +771,8 @@ internal sealed class ExactCalendarResourceWriteTools
         Content = [new TextContentBlock { Text = "Exact Calendar Object Resource write completed." }]
     };
 
-    private static CallToolResult NonMutation(string outcome)
-    {
-        CalendarTelemetry.ObserveMutationState(CalendarMutationState.NotAttempted);
-        return new CallToolResult
+    private static CalendarToolResult NonMutation(string outcome) => CalendarToolResult.Success(
+        new CallToolResult
         {
             IsError = false,
             StructuredContent = JsonSerializer.SerializeToElement(new CalendarResourceDeleteNonMutationResult(
@@ -784,99 +780,138 @@ internal sealed class ExactCalendarResourceWriteTools
                 "not_attempted",
                 [])),
             Content = [new TextContentBlock { Text = "Exact Calendar Object Resource write made no change." }]
-        };
-    }
+        }, CalendarMutationState.NotAttempted);
 
-    private static CallToolResult ExactError(CalendarExactResourceResult result)
+    private static CalendarToolResult ExactError(CalendarExactResourceResult result)
     {
-        CalendarTelemetry.ObserveStructuredError(
-            CalendarTelemetryFacts.From(result),
-            result.MutationState);
-        var description = Describe(result.Code);
-        return Error(
-            description.Code,
-            description.Category,
-            description.Message,
-            result.Retryable,
-            Phase(result.Phase),
-            MutationState(result.MutationState),
+        var facts = CalendarTelemetryFacts.From(result);
+        return TypedError(
+            facts,
+            Message(result.Code),
+            result.MutationState,
             result.Snapshot is null ? null : ExactConflictSnapshotResult.FromSnapshot(result.Snapshot),
             result.RetryAfterMilliseconds,
             result.Limits is null ? null : CalendarEntityCreateLimits.FromLimits(result.Limits));
     }
 
-    private static ExactErrorDescription Describe(CalendarExactResourceCode code) => code switch
+    private static string Message(CalendarExactResourceCode code) => code switch
     {
-        CalendarExactResourceCode.InvalidInput => new("invalid_input", "input", "The exact write input is invalid."),
-        CalendarExactResourceCode.InvalidCalendarData => new("invalid_calendar_data", "input", "The complete Calendar resource is invalid."),
-        CalendarExactResourceCode.NotFound => new("not_found", "selection", "The exact write target was not found."),
-        CalendarExactResourceCode.OutsideScope => new("outside_scope", "selection", "The exact write target is outside Calendar Scope."),
-        CalendarExactResourceCode.EntityKindMismatch => new("entity_kind_mismatch", "state", "The Entity Kind changed."),
-        CalendarExactResourceCode.UnsupportedCapability => new("unsupported_capability", "capabilityAndProjection", "The exact write is unsupported."),
-        CalendarExactResourceCode.Conflict => new("conflict", "state", "The resource revision changed."),
-        CalendarExactResourceCode.DestinationConflict => new("destination_conflict", "state", "The destination already exists."),
-        CalendarExactResourceCode.ConcurrencyUnavailable => new("concurrency_unavailable", "state", "A strong Entity Tag is unavailable."),
-        CalendarExactResourceCode.LimitExhausted => new("limit_exhausted", "limitsAndAdmission", "The exact write exceeded its work limit."),
-        CalendarExactResourceCode.PayloadTooLarge => new("payload_too_large", "limitsAndAdmission", "The exact payload is too large."),
-        CalendarExactResourceCode.UpstreamUnauthorized => new("upstream_unauthorized", "upstream", "The Calendar mutation was not authorized."),
-        CalendarExactResourceCode.UpstreamForbidden => new("upstream_forbidden", "upstream", "The Calendar mutation was forbidden."),
-        CalendarExactResourceCode.UpstreamRateLimited => new("upstream_rate_limited", "upstream", "The Calendar mutation is rate limited."),
-        CalendarExactResourceCode.UpstreamUnavailable => new("upstream_unavailable", "upstream", "The Calendar service is unavailable."),
-        CalendarExactResourceCode.FidelityFailure => new("fidelity_failure", "postWriteTruth", "The committed resource differs from the reviewed intent."),
-        CalendarExactResourceCode.CommittedButUnverified => new("committed_but_unverified", "postWriteTruth", "The committed resource could not be verified."),
-        CalendarExactResourceCode.CommittedButConcurrencyUnavailable => new("committed_but_concurrency_unavailable", "postWriteTruth", "The committed resource has no strong Entity Tag."),
-        CalendarExactResourceCode.ConfirmationMismatch => new("confirmation_mismatch", "confirmation", "The mutation confirmation does not match the reviewed request."),
-        CalendarExactResourceCode.Indeterminate => new("indeterminate", "postWriteTruth", "The mutation outcome is indeterminate."),
-        _ => new("upstream_protocol_error", "upstream", "The Calendar service returned an invalid response.")
+        CalendarExactResourceCode.InvalidInput => "The exact write input is invalid.",
+        CalendarExactResourceCode.InvalidCalendarData => "The complete Calendar resource is invalid.",
+        CalendarExactResourceCode.NotFound => "The exact write target was not found.",
+        CalendarExactResourceCode.OutsideScope => "The exact write target is outside Calendar Scope.",
+        CalendarExactResourceCode.EntityKindMismatch => "The Entity Kind changed.",
+        CalendarExactResourceCode.UnsupportedCapability => "The exact write is unsupported.",
+        CalendarExactResourceCode.Conflict => "The resource revision changed.",
+        CalendarExactResourceCode.DestinationConflict => "The destination already exists.",
+        CalendarExactResourceCode.ConcurrencyUnavailable => "A strong Entity Tag is unavailable.",
+        CalendarExactResourceCode.LimitExhausted => "The exact write exceeded its work limit.",
+        CalendarExactResourceCode.PayloadTooLarge => "The exact payload is too large.",
+        CalendarExactResourceCode.UpstreamUnauthorized => "The Calendar mutation was not authorized.",
+        CalendarExactResourceCode.UpstreamForbidden => "The Calendar mutation was forbidden.",
+        CalendarExactResourceCode.UpstreamRateLimited => "The Calendar mutation is rate limited.",
+        CalendarExactResourceCode.UpstreamUnavailable => "The Calendar service is unavailable.",
+        CalendarExactResourceCode.FidelityFailure => "The committed resource differs from the reviewed intent.",
+        CalendarExactResourceCode.CommittedButUnverified => "The committed resource could not be verified.",
+        CalendarExactResourceCode.CommittedButConcurrencyUnavailable => "The committed resource has no strong Entity Tag.",
+        CalendarExactResourceCode.ConfirmationMismatch => "The mutation confirmation does not match the reviewed request.",
+        CalendarExactResourceCode.Indeterminate => "The mutation outcome is indeterminate.",
+        _ => "The Calendar service returned an invalid response."
     };
 
-    private static CallToolResult ConfirmationDeclined() => NonMutation("confirmation_declined");
+    private static CallToolResult ConfirmationDeclined() => NonMutation("confirmation_declined").FinalizeResult();
 
-    private static CallToolResult ConfirmationError(bool expired) => Error(
-        expired ? "confirmation_expired" : "confirmation_mismatch",
-        "confirmation",
+    private static CallToolResult ConfirmationError(bool expired) => TerminalError(new CalendarStructuredErrorFacts(
+        expired ? CalendarTelemetryErrorCode.ConfirmationExpired : CalendarTelemetryErrorCode.ConfirmationMismatch,
+        CalendarTelemetryErrorCategory.Confirmation,
+        CalendarTelemetryErrorPhase.Mrtr,
+        false),
         expired ? "The mutation confirmation expired." : "The mutation confirmation does not match the reviewed request.",
-        false,
-        "mrtr",
-        "not_attempted");
+        CalendarMutationState.NotAttempted);
 
-    private static CallToolResult ConfirmationPreviewPayloadError() => Error(
-        "payload_too_large",
-        "limitsAndAdmission",
+    private static CallToolResult ConfirmationPreviewPayloadError() => TerminalError(new CalendarStructuredErrorFacts(
+        CalendarTelemetryErrorCode.PayloadTooLarge,
+        CalendarTelemetryErrorCategory.LimitsAndAdmission,
+        CalendarTelemetryErrorPhase.AdmissionAndPayload,
+        false),
         "The exact write confirmation preview exceeds the safe human-readable limit.",
-        false,
-        "admissionAndPayload",
-        "not_attempted");
+        CalendarMutationState.NotAttempted);
 
-    private static CallToolResult UnsupportedMrtrError() => Error(
-        "unsupported_capability",
-        "capabilityAndProjection",
+    private static CallToolResult UnsupportedMrtrError() => TerminalError(new CalendarStructuredErrorFacts(
+        CalendarTelemetryErrorCode.UnsupportedCapability,
+        CalendarTelemetryErrorCategory.CapabilityAndProjection,
+        CalendarTelemetryErrorPhase.Mrtr,
+        false),
         "Exact writes require MCP Multi Round-Trip Request support.",
-        false,
-        "mrtr",
-        "not_attempted");
+        CalendarMutationState.NotAttempted);
 
-    private static CallToolResult ProtocolError() => Error(
-        "upstream_protocol_error",
-        "upstream",
+    private static CallToolResult ProtocolError() => TerminalError(new CalendarStructuredErrorFacts(
+        CalendarTelemetryErrorCode.UpstreamProtocolError,
+        CalendarTelemetryErrorCategory.Upstream,
+        CalendarTelemetryErrorPhase.CompleteResourceSemantics,
+        false),
         "The exact write review returned invalid evidence.",
-        false,
-        "completeResourceSemantics",
-        "not_attempted");
+        CalendarMutationState.NotAttempted);
 
-    private static CallToolResult InputError(bool payloadTooLarge)
-    {
-        CalendarTelemetry.ObserveStructuredError(
+    private static CallToolResult ReviewDeadlineError(bool includeLimit) => TerminalError(
+        new CalendarStructuredErrorFacts(
+            CalendarTelemetryErrorCode.LimitExhausted,
+            CalendarTelemetryErrorCategory.LimitsAndAdmission,
+            CalendarTelemetryErrorPhase.Execution,
+            false),
+        "The exact write review exceeded its time limit.",
+        CalendarMutationState.NotAttempted,
+        limits: includeLimit ? new CalendarEntityCreateLimits(Dimension: "elapsed_time") : null);
+
+    private static CallToolResult ReviewUnavailableError() => TerminalError(new CalendarStructuredErrorFacts(
+        CalendarTelemetryErrorCode.UpstreamUnavailable,
+        CalendarTelemetryErrorCategory.Upstream,
+        CalendarTelemetryErrorPhase.SelectionDiscoveryCapability,
+        true),
+        "The exact write review is unavailable.",
+        CalendarMutationState.NotAttempted);
+
+    private static CallToolResult ReviewProtocolError() => TerminalError(new CalendarStructuredErrorFacts(
+        CalendarTelemetryErrorCode.UpstreamProtocolError,
+        CalendarTelemetryErrorCategory.Upstream,
+        CalendarTelemetryErrorPhase.Execution,
+        false),
+        "The exact write could not be completed.",
+        CalendarMutationState.NotAttempted);
+
+    private static CallToolResult InputError(bool payloadTooLarge) => TerminalError(
             CalendarTelemetryFacts.FromInputGuard(payloadTooLarge),
-            CalendarMutationState.NotAttempted);
-        return Error(
-            payloadTooLarge ? "payload_too_large" : "invalid_input",
-            payloadTooLarge ? "limitsAndAdmission" : "input",
             payloadTooLarge ? "The exact write arguments are too large." : "The exact write input is invalid.",
-            false,
-            payloadTooLarge ? "admissionAndPayload" : "schemaLexicalDiscriminator",
-            "not_attempted");
-    }
+            CalendarMutationState.NotAttempted);
+
+    private static CalendarToolResult PayloadLimitError(CalendarMutationState mutationState) => TypedError(
+        CalendarTelemetryFacts.FromInputGuard(payloadTooLarge: true),
+        "The exact write result exceeds the safe payload limit.",
+        mutationState);
+
+    private static CalendarToolResult TypedError(
+        CalendarStructuredErrorFacts facts,
+        string message,
+        CalendarMutationState mutationState,
+        ExactConflictSnapshotResult? currentSnapshot = null,
+        int? retryAfterMs = null,
+        CalendarEntityCreateLimits? limits = null) => CalendarToolResult.Error(Error(
+            facts.CodeName,
+            facts.CategoryName,
+            message,
+            facts.Retryable,
+            facts.PhaseName,
+            CalendarTelemetryVocabulary.MutationStateName(mutationState),
+            currentSnapshot,
+            retryAfterMs,
+            limits), facts, mutationState);
+
+    private static CallToolResult TerminalError(
+        CalendarStructuredErrorFacts facts,
+        string message,
+        CalendarMutationState mutationState,
+        CalendarEntityCreateLimits? limits = null) =>
+        TypedError(facts, message, mutationState, limits: limits).FinalizeResult();
 
     private static CallToolResult Error(
         string code,
@@ -915,12 +950,6 @@ internal sealed class ExactCalendarResourceWriteTools
         _ => "execution"
     };
 
-    private static string MutationState(CalendarMutationState state)
-    {
-        CalendarTelemetry.ObserveMutationState(state);
-        return CalendarTelemetryVocabulary.MutationStateName(state);
-    }
-
     private static string Kind(CalendarEntityKind kind) => kind == CalendarEntityKind.Event ? "event" : "todo";
 
     private enum ConfirmationDecision
@@ -938,8 +967,6 @@ internal sealed class ExactCalendarResourceWriteTools
         CalendarExactMoveReviewBinding? Binding);
 
     private sealed record ConfirmationPreviewBudget(string Message, string Title, string Description);
-
-    private sealed record ExactErrorDescription(string Code, string Category, string Message);
 
     private sealed record ExactCalendarResourceErrorResult(
         [property: JsonPropertyName("code")] string Code,
