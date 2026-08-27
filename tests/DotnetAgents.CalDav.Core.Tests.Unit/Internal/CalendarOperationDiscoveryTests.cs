@@ -1,4 +1,3 @@
-using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Core.Internal;
 using DotnetAgents.CalDav.Core.Models;
@@ -12,31 +11,46 @@ namespace DotnetAgents.CalDav.Core.Tests.Unit.Internal;
 public sealed class CalendarOperationDiscoveryTests
 {
     [Fact]
-    public async Task AbsenceProbe_DefaultTransportMethodPreservesMarkerThroughDiscoveryDecorator()
+    public async Task DiscoverAsync_ReturnsOneCompleteImmutableAuthority()
     {
-        var markerObserved = false;
-        var client = Substitute.For<ICalendarClient>();
-        client.GetCalendarResourceAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(_ =>
-            {
-                markerObserved = CalendarHttpTelemetry.IsAbsenceProbe;
-                return Task.FromResult(new CalendarResourceRead(CalendarResourceReadCode.NotFound));
-            });
+        var transport = Substitute.For<ICalendarDiscoveryTransport>();
+        transport.DiscoverAsync(Arg.Any<CancellationToken>()).Returns(
+        [
+            Calendar("https://cal.example/events/", "Events", EntityKindSupport.Advertised, EntityKindSupport.NotAdvertised),
+            Calendar("https://cal.example/todos/", "To-dos", EntityKindSupport.NotAdvertised, EntityKindSupport.Advertised)
+        ]);
         var sut = new CalendarOperationDiscovery(
-            client,
+            transport,
             Options.Create(new CalDavOptions
             {
                 BaseUrl = "https://cal.example/",
                 Username = "principal"
             }),
             calendars => new CalendarDiscoveryResult(calendars, []),
-            static (_, _, _) => CalendarSelectionResult.Failure(CalendarSelectionCode.NotFound));
+            static (kind, discovered, authorized) => CalendarSelectionResult.Success(
+                authorized.Single(calendar => kind == CalendarEntityKind.Event
+                    ? calendar.EventSupport == EntityKindSupport.Advertised
+                    : calendar.TodoSupport == EntityKindSupport.Advertised)));
 
-        var result = await ((ICalendarCreateTransport)sut).ProbeCalendarResourceAbsenceAsync(
-            "https://cal.example/events/missing.ics",
-            CancellationToken.None);
+        var authority = await sut.DiscoverAsync(CancellationToken.None);
 
-        result.Code.ShouldBe(CalendarResourceReadCode.NotFound);
-        markerObserved.ShouldBeTrue();
+        authority.Discovery.Items.Select(calendar => calendar.Href).ShouldBe(
+            ["https://cal.example/events/", "https://cal.example/todos/"]);
+        authority.Default(CalendarEntityKind.Event).Calendar!.Href.ShouldBe("https://cal.example/events/");
+        authority.Default(CalendarEntityKind.Todo).Calendar!.Href.ShouldBe("https://cal.example/todos/");
+        await transport.Received(1).DiscoverAsync(Arg.Any<CancellationToken>());
     }
+
+    private static CalendarDescriptor Calendar(
+        string href,
+        string displayName,
+        EntityKindSupport eventSupport,
+        EntityKindSupport todoSupport) => new()
+        {
+            Href = href,
+            DisplayName = displayName,
+            DisplayNameProvenance = DisplayNameProvenance.DavDisplayName,
+            EventSupport = eventSupport,
+            TodoSupport = todoSupport
+        };
 }

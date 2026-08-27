@@ -36,12 +36,7 @@ public sealed class CalendarCreationModuleTests
                 DefaultTodoCalendarName = "Mixed"
             },
             TimeProvider.System,
-            identities,
-            calendars => new CalendarDiscoveryResult(calendars, []),
-            (
-                CalendarEntityKind kind,
-                IReadOnlyList<CalendarDescriptor> discovered,
-                IReadOnlyList<CalendarDescriptor> scoped) => CalendarSelectionResult.Success(scoped.Single()));
+            identities);
 
         var eventOutcome = await module.CreateAsync(
             new CalendarCreationCommand.Event(new CalendarEventCreateRequest(
@@ -103,10 +98,13 @@ public sealed class CalendarCreationModuleTests
 
         public int ConditionalPutCount { get; private set; }
 
-        public Task<IReadOnlyList<CalendarDescriptor>> GetCalendarsAsync(CancellationToken cancellationToken)
+        public Task<CalendarOperationDiscoveryResult> DiscoverAsync(CancellationToken cancellationToken)
         {
             DiscoveryCount++;
-            return Task.FromResult<IReadOnlyList<CalendarDescriptor>>([calendar]);
+            return Task.FromResult(new CalendarOperationDiscoveryResult(
+                new CalendarDiscoveryResult([calendar], []),
+                CalendarSelectionResult.Success(calendar),
+                CalendarSelectionResult.Success(calendar)));
         }
 
         public Task<CalendarResourceRead> GetCalendarResourceAsync(

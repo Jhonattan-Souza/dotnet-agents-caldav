@@ -646,8 +646,8 @@ public sealed class CalendarQueryDirectGetTests
         internal int InFlight => Volatile.Read(ref _inFlight);
         internal List<string> RequestedHrefs { get; } = [];
 
-        public Task<CalendarQueryDiscovery> DiscoverAsync(CancellationToken cancellationToken) => Task.FromResult(
-            new CalendarQueryDiscovery(
+        public Task<CalendarOperationDiscoveryResult> DiscoverAsync(CancellationToken cancellationToken) => Task.FromResult(
+            new CalendarOperationDiscoveryResult(
                 new CalendarDiscoveryResult([new CalendarDescriptor
                 {
                     Href = CalendarHref,
@@ -708,7 +708,7 @@ public sealed class CalendarQueryDirectGetTests
 
     private sealed class TimeoutFallbackTransport(HttpClient client) : ICalendarQueryTransport
     {
-        public Task<CalendarQueryDiscovery> DiscoverAsync(CancellationToken cancellationToken) =>
+        public Task<CalendarOperationDiscoveryResult> DiscoverAsync(CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
         public Task<IReadOnlyList<string>> QueryCandidateHrefsAsync(
@@ -774,7 +774,7 @@ public sealed class CalendarQueryDirectGetTests
         private IReadOnlyList<string> Hrefs { get; }
         internal int WireAttempts => Volatile.Read(ref _wireAttempts);
 
-        public Task<CalendarQueryDiscovery> DiscoverAsync(CancellationToken cancellationToken) =>
+        public Task<CalendarOperationDiscoveryResult> DiscoverAsync(CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
         public Task<IReadOnlyList<string>> QueryCandidateHrefsAsync(
@@ -849,7 +849,7 @@ public sealed class CalendarQueryDirectGetTests
 
         internal int WireAttempts => Volatile.Read(ref _wireAttempts);
 
-        public Task<CalendarQueryDiscovery> DiscoverAsync(CancellationToken cancellationToken) =>
+        public Task<CalendarOperationDiscoveryResult> DiscoverAsync(CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
         public Task<IReadOnlyList<string>> QueryCandidateHrefsAsync(

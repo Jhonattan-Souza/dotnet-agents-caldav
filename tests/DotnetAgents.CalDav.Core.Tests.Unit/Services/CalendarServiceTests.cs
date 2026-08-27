@@ -19,40 +19,40 @@ namespace DotnetAgents.CalDav.Core.Tests.Unit.Services;
 public sealed class CalendarServiceTests
 {
     [Fact]
-    public async Task GetCalendarsAsync_ConcurrentConsumersShareOneCompleteAcquisition()
+    public async Task DiscoverAsync_ConcurrentConsumersShareOneCompleteAuthority()
     {
         var client = Substitute.For<ICalendarClient>();
         var acquisition = new TaskCompletionSource<IReadOnlyList<CalendarDescriptor>>(
             TaskCreationOptions.RunContinuationsAsynchronously);
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(acquisition.Task);
-        var sut = Service(client);
+        var sut = Discovery(client);
 
-        var first = sut.GetCalendarsAsync(CancellationToken.None);
-        var second = sut.GetCalendarsAsync(CancellationToken.None);
+        var first = sut.DiscoverAsync(CancellationToken.None);
+        var second = sut.DiscoverAsync(CancellationToken.None);
         acquisition.SetResult([EntityCalendar(
             "https://cal.example/events/",
             "Events",
             EntityKindSupport.Advertised,
             EntityKindSupport.NotAdvertised)]);
 
-        (await first).Items.ShouldHaveSingleItem();
-        (await second).Items.ShouldHaveSingleItem();
+        (await first).Discovery.Items.ShouldHaveSingleItem();
+        (await second).Discovery.Items.ShouldHaveSingleItem();
         await client.Received(1).GetCalendarsAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task GetCalendarsAsync_SharedFailureIsMemoizedForTheToolCall()
+    public async Task DiscoverAsync_SharedFailureIsMemoizedForTheToolCall()
     {
         var client = Substitute.For<ICalendarClient>();
         var failure = new CalendarDiscoveryProtocolException("private upstream response");
         client.GetCalendarsAsync(Arg.Any<CancellationToken>())
             .Returns(Task.FromException<IReadOnlyList<CalendarDescriptor>>(failure));
-        var sut = Service(client);
+        var sut = Discovery(client);
 
         var first = await Should.ThrowAsync<CalendarDiscoveryProtocolException>(
-            () => sut.GetCalendarsAsync(CancellationToken.None));
+            () => sut.DiscoverAsync(CancellationToken.None));
         var second = await Should.ThrowAsync<CalendarDiscoveryProtocolException>(
-            () => sut.ResolveDefaultCalendarAsync(CalendarEntityKind.Event, CancellationToken.None));
+            () => sut.DiscoverAsync(CancellationToken.None));
 
         first.ShouldBeSameAs(failure);
         second.ShouldBeSameAs(failure);
@@ -60,7 +60,7 @@ public sealed class CalendarServiceTests
     }
 
     [Fact]
-    public async Task GetCalendarsAsync_SharedCancellationStopsTheSingleAcquisition()
+    public async Task DiscoverAsync_SharedCancellationStopsTheSingleAcquisition()
     {
         var client = Substitute.For<ICalendarClient>();
         var acquisition = new TaskCompletionSource<IReadOnlyList<CalendarDescriptor>>(
@@ -71,11 +71,11 @@ public sealed class CalendarServiceTests
             token.Register(() => acquisition.TrySetCanceled(token));
             return acquisition.Task;
         });
-        var sut = Service(client);
+        var sut = Discovery(client);
         using var cancellation = new CancellationTokenSource();
 
-        var first = sut.GetCalendarsAsync(cancellation.Token);
-        var second = sut.GetCalendarsAsync(cancellation.Token);
+        var first = sut.DiscoverAsync(cancellation.Token);
+        var second = sut.DiscoverAsync(cancellation.Token);
         cancellation.Cancel();
 
         await Should.ThrowAsync<OperationCanceledException>(() => first);
@@ -84,18 +84,18 @@ public sealed class CalendarServiceTests
     }
 
     [Fact]
-    public async Task GetCalendarsAsync_LaterSameKeyTokenDoesNotOverrideTheOperationToken()
+    public async Task DiscoverAsync_LaterSameKeyTokenDoesNotOverrideTheOperationToken()
     {
         var client = Substitute.For<ICalendarClient>();
         var acquisition = new TaskCompletionSource<IReadOnlyList<CalendarDescriptor>>(
             TaskCreationOptions.RunContinuationsAsynchronously);
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(acquisition.Task);
-        var sut = Service(client);
+        var sut = Discovery(client);
         using var operationCancellation = new CancellationTokenSource();
         using var laterConsumerCancellation = new CancellationTokenSource();
 
-        var operation = sut.GetCalendarsAsync(operationCancellation.Token);
-        var laterConsumer = sut.GetCalendarsAsync(laterConsumerCancellation.Token);
+        var operation = sut.DiscoverAsync(operationCancellation.Token);
+        var laterConsumer = sut.DiscoverAsync(laterConsumerCancellation.Token);
         laterConsumerCancellation.Cancel();
         acquisition.SetResult([EntityCalendar(
             "https://cal.example/events/",
@@ -103,13 +103,13 @@ public sealed class CalendarServiceTests
             EntityKindSupport.Advertised,
             EntityKindSupport.NotAdvertised)]);
 
-        (await operation).Items.ShouldHaveSingleItem();
-        (await laterConsumer).Items.ShouldHaveSingleItem();
+        (await operation).Discovery.Items.ShouldHaveSingleItem();
+        (await laterConsumer).Discovery.Items.ShouldHaveSingleItem();
         await client.Received(1).GetCalendarsAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task GetCalendarsAsync_OperationCancellationIsTheSharedSameKeyOutcome()
+    public async Task DiscoverAsync_OperationCancellationIsTheSharedSameKeyOutcome()
     {
         var client = Substitute.For<ICalendarClient>();
         var acquisition = new TaskCompletionSource<IReadOnlyList<CalendarDescriptor>>(
@@ -120,11 +120,11 @@ public sealed class CalendarServiceTests
             token.Register(() => acquisition.TrySetCanceled(token));
             return acquisition.Task;
         });
-        var sut = Service(client);
+        var sut = Discovery(client);
         using var operationCancellation = new CancellationTokenSource();
 
-        var operation = sut.GetCalendarsAsync(operationCancellation.Token);
-        var laterConsumer = sut.GetCalendarsAsync(CancellationToken.None);
+        var operation = sut.DiscoverAsync(operationCancellation.Token);
+        var laterConsumer = sut.DiscoverAsync(CancellationToken.None);
         operationCancellation.Cancel();
 
         await Should.ThrowAsync<OperationCanceledException>(() => operation);
@@ -134,7 +134,7 @@ public sealed class CalendarServiceTests
     }
 
     [Fact]
-    public async Task GetCalendarsAsync_CancelledToolCallDoesNotPoisonAnotherToolCall()
+    public async Task DiscoverAsync_CancelledToolCallDoesNotPoisonAnotherToolCall()
     {
         var client = Substitute.For<ICalendarClient>();
         var firstAcquisition = new TaskCompletionSource<IReadOnlyList<CalendarDescriptor>>(
@@ -156,18 +156,18 @@ public sealed class CalendarServiceTests
         });
         using var cancelled = new CancellationTokenSource();
 
-        var cancelledCall = Service(client).GetCalendarsAsync(cancelled.Token);
+        var cancelledCall = Discovery(client).DiscoverAsync(cancelled.Token);
         cancelled.Cancel();
 
         await Should.ThrowAsync<OperationCanceledException>(() => cancelledCall);
-        var unrelated = await Service(client).GetCalendarsAsync(CancellationToken.None);
+        var unrelated = await Discovery(client).DiscoverAsync(CancellationToken.None);
 
-        unrelated.Items.ShouldHaveSingleItem();
+        unrelated.Discovery.Items.ShouldHaveSingleItem();
         await client.Received(2).GetCalendarsAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task GetCalendarsAsync_NewToolCallDoesNotReuseReviewTimeDiscovery()
+    public async Task DiscoverAsync_NewToolCallDoesNotReuseReviewTimeAuthority()
     {
         var client = Substitute.For<ICalendarClient>();
         var calls = 0;
@@ -187,13 +187,13 @@ public sealed class CalendarServiceTests
             CalendarHrefs = "https://cal.example/events-1/,https://cal.example/events-2/"
         });
 
-        var reviewCall = Service(client, options);
-        var executionCall = Service(client, options);
-        var reviewed = await reviewCall.GetCalendarsAsync(CancellationToken.None);
-        var executed = await executionCall.GetCalendarsAsync(CancellationToken.None);
+        var reviewCall = Discovery(client, options);
+        var executionCall = Discovery(client, options);
+        var reviewed = await reviewCall.DiscoverAsync(CancellationToken.None);
+        var executed = await executionCall.DiscoverAsync(CancellationToken.None);
 
-        reviewed.Items.ShouldHaveSingleItem().Href.ShouldBe("https://cal.example/events-1/");
-        executed.Items.ShouldHaveSingleItem().Href.ShouldBe("https://cal.example/events-2/");
+        reviewed.Discovery.Items.ShouldHaveSingleItem().Href.ShouldBe("https://cal.example/events-1/");
+        executed.Discovery.Items.ShouldHaveSingleItem().Href.ShouldBe("https://cal.example/events-2/");
         await client.Received(2).GetCalendarsAsync(Arg.Any<CancellationToken>());
     }
 
@@ -317,7 +317,7 @@ public sealed class CalendarServiceTests
     }
 
     [Fact]
-    public async Task GetCalendarsAsync_FreezesDiscoveryEvidenceForTheToolCall()
+    public async Task DiscoverAsync_FreezesCalendarsAndDefaultDecisionsForTheToolCall()
     {
         var evidence = new List<CapabilityEvidence> { new("supported-calendar-component-set", "VEVENT") };
         var calendars = new List<CalendarDescriptor>
@@ -333,15 +333,21 @@ public sealed class CalendarServiceTests
         };
         var client = Substitute.For<ICalendarClient>();
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(calendars);
-        var sut = Service(client);
+        var sut = Discovery(client, Options.Create(new CalDavOptions
+        {
+            BaseUrl = "https://cal.example",
+            DefaultEventCalendarName = "Events"
+        }));
 
-        var first = await sut.GetCalendarsAsync(CancellationToken.None);
+        var first = await sut.DiscoverAsync(CancellationToken.None);
         calendars.Clear();
         evidence.Clear();
-        var second = await sut.GetCalendarsAsync(CancellationToken.None);
+        var second = await sut.DiscoverAsync(CancellationToken.None);
 
-        first.Items.ShouldHaveSingleItem().EventEvidence.ShouldHaveSingleItem();
-        second.Items.ShouldHaveSingleItem().EventEvidence.ShouldHaveSingleItem();
+        first.Discovery.Items.ShouldHaveSingleItem().EventEvidence.ShouldHaveSingleItem();
+        first.EventDefault.Calendar!.EventEvidence.ShouldHaveSingleItem();
+        second.Discovery.Items.ShouldHaveSingleItem().EventEvidence.ShouldHaveSingleItem();
+        second.EventDefault.Calendar!.EventEvidence.ShouldHaveSingleItem();
         await client.Received(1).GetCalendarsAsync(Arg.Any<CancellationToken>());
     }
 
@@ -735,6 +741,23 @@ public sealed class CalendarServiceTests
         };
 
     private static ICalendarClient QueryClientSubstitute() => Substitute.For<ICalendarClient>();
+
+    private static CalendarOperationDiscovery Discovery(
+        ICalendarClient client,
+        IOptions<CalDavOptions>? options = null)
+    {
+        var configured = options ?? Options.Create(new CalDavOptions
+        {
+            BaseUrl = "https://cal.example",
+            Username = "principal"
+        });
+        var policy = new CalendarDiscoveryPolicy(configured, Substitute.For<ILogger<CalendarService>>());
+        return new CalendarOperationDiscovery(
+            new CalendarClientDiscoveryTransport(client),
+            configured,
+            policy.ApplyScope,
+            policy.ResolveDefault);
+    }
 
     private static CalendarService Service(
         ICalendarClient client,

@@ -327,7 +327,7 @@ public sealed class CalendarOccurrenceQueryModuleTests
         internal int TotalCalls { get; private set; }
         internal string EntityTag { get; init; } = "\"r1\"";
 
-        public Task<CalendarQueryDiscovery> DiscoverAsync(CancellationToken cancellationToken)
+        public Task<CalendarOperationDiscoveryResult> DiscoverAsync(CancellationToken cancellationToken)
         {
             TotalCalls++;
             var calendar = new CalendarDescriptor
@@ -338,7 +338,7 @@ public sealed class CalendarOccurrenceQueryModuleTests
                 EventSupport = EntityKindSupport.Advertised,
                 TodoSupport = EntityKindSupport.NotAdvertised
             };
-            return Task.FromResult(new CalendarQueryDiscovery(
+            return Task.FromResult(new CalendarOperationDiscoveryResult(
                 new CalendarDiscoveryResult([calendar], []),
                 CalendarSelectionResult.Success(calendar),
                 CalendarSelectionResult.Failure(CalendarSelectionCode.NotFound)));

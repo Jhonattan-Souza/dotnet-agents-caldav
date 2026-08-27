@@ -5,12 +5,12 @@ using Xunit;
 
 namespace DotnetAgents.CalDav.Core.Tests.Unit.Internal;
 
-public sealed class CalendarQueryDiscoveryTests
+public sealed class CalendarOperationDiscoveryResultTests
 {
     [Fact]
     public void UnsupportedEntityKindCannotResolveADefaultCalendar()
     {
-        var discovery = new CalendarQueryDiscovery(
+        var discovery = new CalendarOperationDiscoveryResult(
             new CalendarDiscoveryResult([], []),
             CalendarSelectionResult.Failure(CalendarSelectionCode.Ambiguous),
             CalendarSelectionResult.Failure(CalendarSelectionCode.OutsideScope));
