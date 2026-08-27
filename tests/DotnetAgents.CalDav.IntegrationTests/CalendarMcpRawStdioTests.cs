@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+using DotnetAgents.CalDav.IntegrationTests.Fixtures;
 using DotnetAgents.CalDav.Mcp.Tools;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
@@ -203,21 +204,15 @@ public sealed class CalendarMcpRawStdioTests
         await using var server = new DeleteServer();
         var stderr = new ConcurrentQueue<string>();
         var elicitationCount = 0;
-        var transport = new StdioClientTransport(new StdioClientTransportOptions
-        {
-            Command = "dotnet",
-            Arguments = [GetServerAssemblyPath()],
-            WorkingDirectory = AppContext.BaseDirectory,
-            InheritEnvironmentVariables = true,
-            EnvironmentVariables = new Dictionary<string, string?>
+        var launch = McpStdioClientFactory.CreateBuiltServerLaunch(
+            new Dictionary<string, string?>
             {
                 ["CALDAV_URL"] = server.BaseUrl,
                 ["CALDAV_USERNAME"] = "test",
                 ["CALDAV_PASSWORD"] = "test",
                 ["CALDAV_CALENDAR_HREFS"] = server.CalendarHref
             },
-            StandardErrorLines = stderr.Enqueue
-        });
+            stderr.Enqueue);
         var options = new McpClientOptions
         {
             ProtocolVersion = "2026-07-28",
@@ -242,7 +237,10 @@ public sealed class CalendarMcpRawStdioTests
         };
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(20));
-        await using var client = await McpClient.CreateAsync(transport, options, cancellationToken: timeout.Token);
+        await using var client = await McpStdioClientFactory.ConnectAsync(
+            launch,
+            options,
+            cancellationToken: timeout.Token);
 
         var result = await client.CallToolAsync(
             "calendar_resources.delete",
@@ -279,7 +277,7 @@ public sealed class CalendarMcpRawStdioTests
     {
         await using var server = new DeleteServer();
         var stderr = new ConcurrentQueue<string>();
-        var transport = CreateDeleteTransport(server, stderr);
+        var launch = CreateDeleteLaunch(server, stderr);
         var options = new McpClientOptions
         {
             ProtocolVersion = "2026-07-28",
@@ -291,7 +289,10 @@ public sealed class CalendarMcpRawStdioTests
         };
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(20));
-        await using var client = await McpClient.CreateAsync(transport, options, cancellationToken: timeout.Token);
+        await using var client = await McpStdioClientFactory.ConnectAsync(
+            launch,
+            options,
+            cancellationToken: timeout.Token);
 
         var result = await CallDeleteAsync(client, server.ResourceHref, timeout.Token);
 
@@ -308,7 +309,7 @@ public sealed class CalendarMcpRawStdioTests
     {
         await using var server = new DeleteServer();
         var stderr = new ConcurrentQueue<string>();
-        var transport = CreateDeleteTransport(server, stderr);
+        var launch = CreateDeleteLaunch(server, stderr);
         var options = new McpClientOptions
         {
             ProtocolVersion = "2025-06-18",
@@ -318,7 +319,10 @@ public sealed class CalendarMcpRawStdioTests
         timeout.CancelAfter(TimeSpan.FromSeconds(20));
         await Should.ThrowAsync<UnsupportedProtocolVersionException>(async () =>
         {
-            await using var client = await McpClient.CreateAsync(transport, options, cancellationToken: timeout.Token);
+            await using var client = await McpStdioClientFactory.ConnectAsync(
+                launch,
+                options,
+                cancellationToken: timeout.Token);
         });
         server.DeleteCount.ShouldBe(0);
     }
@@ -867,23 +871,17 @@ public sealed class CalendarMcpRawStdioTests
         }
     }
 
-    private static StdioClientTransport CreateDeleteTransport(
+    private static McpStdioServerLaunch CreateDeleteLaunch(
         DeleteServer server,
-        ConcurrentQueue<string> stderr) => new(new StdioClientTransportOptions
-        {
-            Command = "dotnet",
-            Arguments = [GetServerAssemblyPath()],
-            WorkingDirectory = AppContext.BaseDirectory,
-            InheritEnvironmentVariables = true,
-            EnvironmentVariables = new Dictionary<string, string?>
+        ConcurrentQueue<string> stderr) => McpStdioClientFactory.CreateBuiltServerLaunch(
+            new Dictionary<string, string?>
             {
                 ["CALDAV_URL"] = server.BaseUrl,
                 ["CALDAV_USERNAME"] = "test",
                 ["CALDAV_PASSWORD"] = "test",
                 ["CALDAV_CALENDAR_HREFS"] = server.CalendarHref
             },
-            StandardErrorLines = stderr.Enqueue
-        });
+            stderr.Enqueue);
 
     private static Task<CallToolResult> CallDeleteAsync(
         McpClient client,

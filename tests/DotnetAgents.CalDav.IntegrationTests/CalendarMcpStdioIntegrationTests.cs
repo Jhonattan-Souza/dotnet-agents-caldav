@@ -28,22 +28,17 @@ public sealed class CalendarMcpStdioIntegrationTests
     public async Task CalendarList_UsesNativeDiscoverAndReturnsStructuredContentOverStdio()
     {
         var stderr = new ConcurrentQueue<string>();
-        var transport = new StdioClientTransport(new StdioClientTransportOptions
-        {
-            Command = "dotnet",
-            Arguments = [GetServerAssemblyPath()],
-            WorkingDirectory = AppContext.BaseDirectory,
-            InheritEnvironmentVariables = true,
-            EnvironmentVariables = CreateEnvironment(),
-            StandardErrorLines = stderr.Enqueue
-        });
+        var launch = McpStdioClientFactory.CreateBuiltServerLaunch(CreateEnvironment(), stderr.Enqueue);
         var options = new McpClientOptions
         {
             ProtocolVersion = "2026-07-28",
             DiscoverProbeTimeout = TimeSpan.FromSeconds(10)
         };
 
-        await using var client = await McpClient.CreateAsync(transport, options, cancellationToken: TestContext.Current.CancellationToken);
+        await using var client = await McpStdioClientFactory.ConnectAsync(
+            launch,
+            options,
+            cancellationToken: TestContext.Current.CancellationToken);
         var listedTools = await client.ListToolsAsync(new ListToolsRequestParams(), TestContext.Current.CancellationToken);
         var calendarTool = listedTools.Tools.Single(tool => tool.Name == "calendars.list");
         var result = await client.CallToolAsync("calendars.list", null, cancellationToken: TestContext.Current.CancellationToken);
@@ -1589,15 +1584,7 @@ public sealed class CalendarMcpStdioIntegrationTests
         if (evaluationTimeZone is not null)
             environment["CALDAV_EVALUATION_TIME_ZONE"] = evaluationTimeZone;
         environment["CALDAV_EXPOSE_EXACT_TOOLS"] = exposeExact ? "true" : "false";
-        var transport = new StdioClientTransport(new StdioClientTransportOptions
-        {
-            Command = "dotnet",
-            Arguments = [GetServerAssemblyPath()],
-            WorkingDirectory = AppContext.BaseDirectory,
-            InheritEnvironmentVariables = true,
-            EnvironmentVariables = environment,
-            StandardErrorLines = stderr.Enqueue
-        });
+        var launch = McpStdioClientFactory.CreateBuiltServerLaunch(environment, stderr.Enqueue);
         var options = new McpClientOptions
         {
             ProtocolVersion = "2026-07-28",
@@ -1617,8 +1604,8 @@ public sealed class CalendarMcpStdioIntegrationTests
                 })
             };
         }
-        return await McpClient.CreateAsync(
-            transport,
+        return await McpStdioClientFactory.ConnectAsync(
+            launch,
             options,
             cancellationToken: TestContext.Current.CancellationToken);
     }

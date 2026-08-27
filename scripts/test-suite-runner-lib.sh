@@ -15,12 +15,64 @@ PY
 }
 
 run_test_suite_manifest_phase() {
-  local manifest=$1 phase=$2 callback=$3
+  local manifest=$1 phase=$2
+  if [[ $# -eq 3 ]]; then
+    local callback=$3
+    local row project trx prefix filter environment
+    local -a rows
+    mapfile -t rows < <(emit_test_suite_manifest_rows "$manifest" "$phase")
+    for row in "${rows[@]}"; do
+      IFS=$'\x1f' read -r project trx prefix filter environment <<< "$row"
+      "$callback" "$project" "$trx" "$prefix" "$filter" "$environment" </dev/null
+    done
+    return
+  fi
+  if [[ $# -ne 4 || ! $3 =~ ^[1-9][0-9]*$ ]]; then
+    echo "Usage: run_test_suite_manifest_phase <manifest> <phase> <worker-limit> <callback>" >&2
+    return 64
+  fi
+  local worker_limit=$3 callback=$4
   local row project trx prefix filter environment
-  local -a rows
+  local next=0 first_failure=0 finished_pid child_status index
+  local -a rows pids
   mapfile -t rows < <(emit_test_suite_manifest_rows "$manifest" "$phase")
-  for row in "${rows[@]}"; do
-    IFS=$'\x1f' read -r project trx prefix filter environment <<< "$row"
-    "$callback" "$project" "$trx" "$prefix" "$filter" "$environment" </dev/null
+  pids=()
+  while (( next < ${#rows[@]} || ${#pids[@]} > 0 )); do
+    while (( first_failure == 0 && next < ${#rows[@]} && ${#pids[@]} < worker_limit )); do
+      row=${rows[$next]}
+      IFS=$'\x1f' read -r project trx prefix filter environment <<< "$row"
+      (
+        echo "START test manifest entry [$trx]" >&2
+        if "$callback" "$project" "$trx" "$prefix" "$filter" "$environment" </dev/null; then
+          echo "PASS test manifest entry [$trx]" >&2
+        else
+          child_status=$?
+          echo "FAIL test manifest entry [$trx] (exit $child_status)" >&2
+          exit "$child_status"
+        fi
+      ) &
+      pids+=("$!")
+      ((next += 1))
+    done
+
+    if (( ${#pids[@]} == 0 )); then
+      break
+    fi
+    if wait -n -p finished_pid "${pids[@]}"; then
+      child_status=0
+    else
+      child_status=$?
+      if (( first_failure == 0 )); then
+        first_failure=$child_status
+      fi
+    fi
+    for index in "${!pids[@]}"; do
+      if [[ "${pids[$index]}" == "$finished_pid" ]]; then
+        unset 'pids[index]'
+        break
+      fi
+    done
+    pids=("${pids[@]}")
   done
+  return "$first_failure"
 }

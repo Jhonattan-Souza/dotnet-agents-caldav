@@ -1477,33 +1477,26 @@ public sealed class OpenTelemetryStdioIntegrationTests
         var eventCalendarHref = $"{baseUrl}{_fixture.EventCalendarHref}";
         var todoCalendarHref = $"{baseUrl}{_fixture.TodoCalendarHref}";
         calendarHrefs ??= $"{eventCalendarHref},{todoCalendarHref}";
-        var transport = new StdioClientTransport(new StdioClientTransportOptions
+        var launch = McpStdioClientFactory.CreateBuiltServerLaunch(
+            new Dictionary<string, string?>
         {
-            Command = "dotnet",
-            Arguments = [GetServerAssemblyPath()],
-            WorkingDirectory = AppContext.BaseDirectory,
-            InheritEnvironmentVariables = true,
-            EnvironmentVariables = new Dictionary<string, string?>
-            {
-                ["CALDAV_URL"] = baseUrl,
-                ["CALDAV_USERNAME"] = "caldavtest",
-                ["CALDAV_PASSWORD"] = "caldavtest123",
-                ["CALDAV_INTEROPERABILITY_PROFILE"] = "radicale-3.7.8",
-                ["CALDAV_CALENDAR_HREFS"] = calendarHrefs,
-                ["CALDAV_DEFAULT_TODO_CALENDAR_NAME"] = defaultTodoCalendarName,
-                ["CALDAV_EVALUATION_TIME_ZONE"] = evaluationTimeZone,
-                ["CALDAV_EXPOSE_EXACT_TOOLS"] = exposeExact ? "true" : "false",
-                ["OTEL_EXPORTER_OTLP_ENDPOINT"] = endpoint.GetLeftPart(UriPartial.Authority),
-                ["OTEL_EXPORTER_OTLP_PROTOCOL"] = "http/protobuf",
-                ["OTEL_EXPORTER_OTLP_HEADERS"] = "authorization=Bearer otlp-private-header",
-                ["OTEL_SERVICE_NAME"] = "dotnet-agents-caldav-test",
-                ["OTEL_SDK_DISABLED"] = "false",
-                ["OTEL_BSP_SCHEDULE_DELAY"] = "100",
-                ["OTEL_BLRP_SCHEDULE_DELAY"] = "100",
-                ["OTEL_METRIC_EXPORT_INTERVAL"] = "100"
-            },
-            StandardErrorLines = stderr.Enqueue
-        });
+            ["CALDAV_URL"] = baseUrl,
+            ["CALDAV_USERNAME"] = "caldavtest",
+            ["CALDAV_PASSWORD"] = "caldavtest123",
+            ["CALDAV_INTEROPERABILITY_PROFILE"] = "radicale-3.7.8",
+            ["CALDAV_CALENDAR_HREFS"] = calendarHrefs,
+            ["CALDAV_DEFAULT_TODO_CALENDAR_NAME"] = defaultTodoCalendarName,
+            ["CALDAV_EVALUATION_TIME_ZONE"] = evaluationTimeZone,
+            ["CALDAV_EXPOSE_EXACT_TOOLS"] = exposeExact ? "true" : "false",
+            ["OTEL_EXPORTER_OTLP_ENDPOINT"] = endpoint.GetLeftPart(UriPartial.Authority),
+            ["OTEL_EXPORTER_OTLP_PROTOCOL"] = "http/protobuf",
+            ["OTEL_EXPORTER_OTLP_HEADERS"] = "authorization=Bearer otlp-private-header",
+            ["OTEL_SERVICE_NAME"] = "dotnet-agents-caldav-test",
+            ["OTEL_SDK_DISABLED"] = "false",
+            ["OTEL_BSP_SCHEDULE_DELAY"] = "100",
+            ["OTEL_BLRP_SCHEDULE_DELAY"] = "100",
+            ["OTEL_METRIC_EXPORT_INTERVAL"] = "100"
+        }, stderr.Enqueue);
         var options = new McpClientOptions
         {
             ProtocolVersion = "2026-07-28",
@@ -1523,8 +1516,8 @@ public sealed class OpenTelemetryStdioIntegrationTests
                 })
             };
         }
-        return await McpClient.CreateAsync(
-            transport,
+        return await McpStdioClientFactory.ConnectAsync(
+            launch,
             options,
             cancellationToken: TestContext.Current.CancellationToken);
     }

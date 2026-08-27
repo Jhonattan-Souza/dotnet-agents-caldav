@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using DotnetAgents.CalDav.IntegrationTests.Fixtures;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using Shouldly;
@@ -18,24 +19,22 @@ public sealed class McpStartupSmokeTests
         var stderr = new ConcurrentQueue<string>();
         var executable = Environment.GetEnvironmentVariable(PackageSmokeExecutableEnvironmentVariable);
         var useInstalledExecutable = !string.IsNullOrWhiteSpace(executable);
-        var transport = new StdioClientTransport(new StdioClientTransportOptions
+        var environment = new Dictionary<string, string?>
         {
-            Command = useInstalledExecutable ? executable! : "dotnet",
-            Arguments = useInstalledExecutable ? [] : [GetServerAssemblyPath()],
-            WorkingDirectory = useInstalledExecutable
-                ? Path.GetDirectoryName(Path.GetFullPath(executable!))
-                : AppContext.BaseDirectory,
-            InheritEnvironmentVariables = true,
-            EnvironmentVariables = new Dictionary<string, string?>
-            {
-                ["CALDAV_URL"] = "http://127.0.0.1:1/",
-                ["CALDAV_USERNAME"] = "package-smoke",
-                ["CALDAV_PASSWORD"] = "package-smoke",
-                ["CALDAV_CALENDAR_HREFS"] = "http://127.0.0.1:1/calendars/package-smoke/",
-                ["CALDAV_EXPOSE_EXACT_TOOLS"] = "false"
-            },
-            StandardErrorLines = stderr.Enqueue
-        });
+            ["CALDAV_URL"] = "http://127.0.0.1:1/",
+            ["CALDAV_USERNAME"] = "package-smoke",
+            ["CALDAV_PASSWORD"] = "package-smoke",
+            ["CALDAV_CALENDAR_HREFS"] = "http://127.0.0.1:1/calendars/package-smoke/",
+            ["CALDAV_EXPOSE_EXACT_TOOLS"] = "false"
+        };
+        var launch = useInstalledExecutable
+            ? new McpStdioServerLaunch(
+                executable!,
+                [],
+                Path.GetDirectoryName(Path.GetFullPath(executable!)) ?? AppContext.BaseDirectory,
+                environment,
+                stderr.Enqueue)
+            : McpStdioClientFactory.CreateBuiltServerLaunch(environment, stderr.Enqueue);
         var options = new McpClientOptions
         {
             ProtocolVersion = "2026-07-28",
@@ -44,8 +43,8 @@ public sealed class McpStartupSmokeTests
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(20));
 
-        await using (var client = await McpClient.CreateAsync(
-                         transport,
+        await using (var client = await McpStdioClientFactory.ConnectAsync(
+                         launch,
                          options,
                          cancellationToken: timeout.Token))
         {
@@ -80,25 +79,5 @@ public sealed class McpStartupSmokeTests
         }
 
         stderr.ShouldBeEmpty();
-    }
-
-    private static string GetServerAssemblyPath()
-    {
-        var directory = AppContext.BaseDirectory;
-        while (directory is not null)
-        {
-            var candidate = Path.Combine(
-                directory,
-                "src",
-                "DotnetAgents.CalDav.Mcp",
-                "bin",
-                "Release",
-                "net10.0",
-                "DotnetAgents.CalDav.Mcp.dll");
-            if (File.Exists(candidate))
-                return candidate;
-            directory = Directory.GetParent(directory)?.FullName;
-        }
-        throw new FileNotFoundException("Could not locate the built MCP server assembly.");
     }
 }
