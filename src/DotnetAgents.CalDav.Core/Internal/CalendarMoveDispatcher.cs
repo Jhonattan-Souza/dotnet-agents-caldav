@@ -257,15 +257,17 @@ internal sealed class CalendarMoveDispatcher(
             },
             _ => CalendarMoveCollisionClassification.None
         };
-        if (dispatch.Code is CalendarResourceMoveDispatchCode.Dispatched
-            or CalendarResourceMoveDispatchCode.PossiblyDispatched)
+        switch (dispatch.Code)
         {
-            CalendarOperationProgress.SetMoveDispatched(
-                dispatch.Code == CalendarResourceMoveDispatchCode.PossiblyDispatched);
-        }
-        else
-        {
-            CalendarOperationProgress.SetMoveRejected(collision);
+            case CalendarResourceMoveDispatchCode.Dispatched:
+                CalendarOperationProgress.SetMoveDispatched();
+                break;
+            case CalendarResourceMoveDispatchCode.PossiblyDispatched:
+                CalendarOperationProgress.SetMovePossiblyDispatched();
+                break;
+            default:
+                CalendarOperationProgress.SetMoveRejected(collision);
+                break;
         }
     }
 

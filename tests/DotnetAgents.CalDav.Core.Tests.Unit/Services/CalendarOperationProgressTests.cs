@@ -1,3 +1,4 @@
+using System.Reflection;
 using DotnetAgents.CalDav.Core.Services;
 using Shouldly;
 using Xunit;
@@ -23,28 +24,47 @@ public sealed class CalendarOperationProgressTests
     }
 
     [Theory]
-    [InlineData(false, CalendarMoveDispatchClassification.Dispatched)]
-    [InlineData(true, CalendarMoveDispatchClassification.PossiblyDispatched)]
+    [InlineData(CalendarMoveDispatchClassification.Dispatched)]
+    [InlineData(CalendarMoveDispatchClassification.PossiblyDispatched)]
     public void DispatchedMoveStateChangesReconciliationAtomically(
-        bool possiblyDispatched,
-        CalendarMoveDispatchClassification expectedDispatch)
+        CalendarMoveDispatchClassification dispatch)
     {
         var state = CalendarOperationProgress.CreateState();
 
         using (CalendarOperationProgress.Attach(state))
         {
-            CalendarOperationProgress.SetMoveDispatched(possiblyDispatched);
+            if (dispatch == CalendarMoveDispatchClassification.PossiblyDispatched)
+                CalendarOperationProgress.SetMovePossiblyDispatched();
+            else
+                CalendarOperationProgress.SetMoveDispatched();
             CalendarOperationProgress.SetMoveReconciliation(
                 CalendarMoveReconciliationClassification.ObservationUnavailable);
         }
 
-        state.MoveState.ShouldBeOfType(possiblyDispatched
+        state.MoveState.ShouldBeOfType(dispatch == CalendarMoveDispatchClassification.PossiblyDispatched
             ? typeof(CalendarMoveTelemetryState.PossiblyDispatched)
             : typeof(CalendarMoveTelemetryState.Dispatched));
         state.MoveTelemetry.ShouldBe(new CalendarMoveTelemetrySnapshot(
-            expectedDispatch,
+            dispatch,
             CalendarMoveCollisionClassification.None,
             CalendarMoveReconciliationClassification.ObservationUnavailable));
+    }
+
+    [Fact]
+    public void MoveDispatchBoundaryExposesOnlyClosedParameterlessTransitions()
+    {
+        var setters = typeof(CalendarOperationProgress)
+            .GetMethods(BindingFlags.Static | BindingFlags.NonPublic)
+            .Where(method => method.Name is "SetMoveDispatched" or "SetMovePossiblyDispatched")
+            .OrderBy(method => method.Name, StringComparer.Ordinal)
+            .ToArray();
+
+        setters.Select(method => method.Name).ShouldBe(
+        [
+            "SetMoveDispatched",
+            "SetMovePossiblyDispatched"
+        ]);
+        setters.ShouldAllBe(method => method.GetParameters().Length == 0);
     }
 
     [Fact]
