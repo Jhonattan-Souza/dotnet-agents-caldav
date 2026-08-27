@@ -17,6 +17,42 @@ namespace DotnetAgents.CalDav.Core.Tests.Unit.Services;
 public sealed class CalendarExactMoveServiceTests
 {
     [Fact]
+    public void AuthorizationFailuresMapEveryNeutralReasonIntoTheExactContract()
+    {
+        (CalendarMoveAuthorizationFailureReason Reason, CalendarExactResourceCode Code, CalendarExactResourcePhase Phase)[]
+            cases =
+            [
+                (CalendarMoveAuthorizationFailureReason.NonCanonicalResourceHref, CalendarExactResourceCode.InvalidInput, CalendarExactResourcePhase.SchemaLexicalDiscriminator),
+                (CalendarMoveAuthorizationFailureReason.SameResourceHref, CalendarExactResourceCode.InvalidInput, CalendarExactResourcePhase.SchemaLexicalDiscriminator),
+                (CalendarMoveAuthorizationFailureReason.OriginMismatch, CalendarExactResourceCode.InvalidInput, CalendarExactResourcePhase.OriginScopeAuthorization),
+                (CalendarMoveAuthorizationFailureReason.OutsideCalendarScope, CalendarExactResourceCode.OutsideScope, CalendarExactResourcePhase.OriginScopeAuthorization),
+                (CalendarMoveAuthorizationFailureReason.InvalidSelectedCalendar, CalendarExactResourceCode.InvalidInput, CalendarExactResourcePhase.SchemaLexicalDiscriminator),
+                (CalendarMoveAuthorizationFailureReason.DestinationSelectionNotFound, CalendarExactResourceCode.UpstreamProtocolError, CalendarExactResourcePhase.SelectionDiscoveryCapability),
+                (CalendarMoveAuthorizationFailureReason.DestinationSelectionAmbiguous, CalendarExactResourceCode.UpstreamProtocolError, CalendarExactResourcePhase.SelectionDiscoveryCapability),
+                (CalendarMoveAuthorizationFailureReason.InteroperabilityProfileUnverified, CalendarExactResourceCode.UnsupportedCapability, CalendarExactResourcePhase.SelectionDiscoveryCapability),
+                (CalendarMoveAuthorizationFailureReason.SourceOwnershipMissing, CalendarExactResourceCode.OutsideScope, CalendarExactResourcePhase.OriginScopeAuthorization),
+                (CalendarMoveAuthorizationFailureReason.SourceOwnershipAmbiguous, CalendarExactResourceCode.OutsideScope, CalendarExactResourcePhase.OriginScopeAuthorization),
+                (CalendarMoveAuthorizationFailureReason.DestinationOwnershipMissing, CalendarExactResourceCode.OutsideScope, CalendarExactResourcePhase.OriginScopeAuthorization),
+                (CalendarMoveAuthorizationFailureReason.DestinationOwnershipAmbiguous, CalendarExactResourceCode.OutsideScope, CalendarExactResourcePhase.OriginScopeAuthorization),
+                (CalendarMoveAuthorizationFailureReason.EntityKindNotAdvertised, CalendarExactResourceCode.UnsupportedCapability, CalendarExactResourcePhase.SelectionDiscoveryCapability),
+                (CalendarMoveAuthorizationFailureReason.InvalidResolvedCalendar, CalendarExactResourceCode.UpstreamProtocolError, CalendarExactResourcePhase.SelectionDiscoveryCapability),
+                (CalendarMoveAuthorizationFailureReason.ResolvedCalendarIdentityDivergent, CalendarExactResourceCode.UpstreamProtocolError, CalendarExactResourcePhase.SelectionDiscoveryCapability),
+                (CalendarMoveAuthorizationFailureReason.SameCalendarNotAllowed, CalendarExactResourceCode.InvalidInput, CalendarExactResourcePhase.SelectionDiscoveryCapability)
+            ];
+
+        foreach (var entry in cases)
+        {
+            var result = CalendarExactMoveModule.MapAuthorizationFailure(
+                new CalendarMoveAuthorizationFailure(entry.Reason, []));
+
+            result.Code.ShouldBe(entry.Code);
+            result.Phase.ShouldBe(entry.Phase);
+            result.Retryable.ShouldBeFalse();
+            result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        }
+    }
+
+    [Fact]
     public async Task ReviewExactMoveResourceAsync_UsesOneFreshConstantWorkReviewWithoutDispatch()
     {
         const string calendarHref = "https://cal.example/events/";
