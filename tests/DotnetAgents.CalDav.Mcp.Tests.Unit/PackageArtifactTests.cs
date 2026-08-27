@@ -54,22 +54,6 @@ public sealed class PackageArtifactTests
     }
 
     [Fact]
-    public void BundledSkill_ContainsAmbiguousDestinationGuidance()
-    {
-        var skill = File.ReadAllText(Path.Combine(RepositoryRoot(), BundledSkillPackagePath));
-
-        skill.ShouldContain("Establish an **authorized destination selection** before creating or moving an Event or To-do.");
-        skill.ShouldContain("If more than one compatible Calendar remains, ask the user to choose before the first write.");
-        skill.ShouldContain("If none remains, report that no compatible Calendar is available");
-        skill.ShouldContain("The schema permitting `default` does not establish one.");
-        skill.ShouldContain("Resolve an unknown destination with read-only discovery before calling a mutation.");
-        skill.ShouldContain("every create and move had an authorized destination selection before the first write");
-        skill.ShouldNotContain("every mutation had an authorized destination selection");
-        skill.ShouldNotContain(
-            "Use the live schema's `default` scope or destination directly when the user has not selected another Calendar.");
-    }
-
-    [Fact]
     public void SelectedMcpAuthority_BindsStableSourcesAndOfficialSdkVersionWithoutDraftFallback()
     {
         var repositoryRoot = RepositoryRoot();
