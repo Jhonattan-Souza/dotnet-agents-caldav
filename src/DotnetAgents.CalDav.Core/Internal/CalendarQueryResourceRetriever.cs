@@ -163,7 +163,7 @@ internal sealed class CalendarQueryResourceRetriever
         try
         {
             CalendarQueryTelemetry.ObserveDirectGetFallback();
-            CalendarQueryTelemetry.Add("caldav.query.direct_get_resource_count");
+            CalendarQueryTelemetry.Add(CalendarQueryCounter.DirectGetResource);
             using var purpose = CalendarHttpTelemetry.BeginQueryResourceRead(meter);
             var read = await transport.GetAsync(calendar.Href, resourceHref, cancellationToken).ConfigureAwait(false);
             if (meter.Attempts == 0)
@@ -268,7 +268,7 @@ internal sealed class CalendarQueryResourceRetriever
         IReadOnlyList<CalendarQueryResourceRetrieval> resources)
     {
         CalendarQueryTelemetry.Add(
-            "caldav.query.disappeared_resource_count",
+            CalendarQueryCounter.DisappearedResource,
             resources.Where(resource => resource.Read.Code == CalendarResourceReadCode.NotFound)
                 .Select(resource => resource.RequestedHref)
                 .Distinct(StringComparer.Ordinal)

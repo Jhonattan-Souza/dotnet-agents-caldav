@@ -9,26 +9,28 @@ namespace DotnetAgents.CalDav.Core.Tests.Unit.Internal;
 public sealed class CalendarQueryTelemetryTests
 {
     [Theory]
-    [InlineData("discovery")]
-    [InlineData("candidate")]
-    [InlineData("fetch")]
-    [InlineData("evaluation")]
-    [InlineData("serialization")]
-    [InlineData("reservation")]
-    [InlineData("snapshot_lookup")]
-    [InlineData("page_admission")]
-    public void StartPhaseCreatesOnlyClosedDirectOperationChildren(string phase)
+    [InlineData((int)CalendarQueryPhase.Discovery, "discovery")]
+    [InlineData((int)CalendarQueryPhase.Candidate, "candidate")]
+    [InlineData((int)CalendarQueryPhase.Fetch, "fetch")]
+    [InlineData((int)CalendarQueryPhase.Evaluation, "evaluation")]
+    [InlineData((int)CalendarQueryPhase.Serialization, "serialization")]
+    [InlineData((int)CalendarQueryPhase.Reservation, "reservation")]
+    [InlineData((int)CalendarQueryPhase.SnapshotLookup, "snapshot_lookup")]
+    [InlineData((int)CalendarQueryPhase.PageAdmission, "page_admission")]
+    public void StartPhaseCreatesOnlyClosedDirectOperationChildren(
+        int phaseValue,
+        string expectedName)
     {
         using var listener = Listen();
         using var source = new ActivitySource(CalendarQueryTelemetry.InstrumentationName, "0.1.0");
         using var operation = source.StartActivity("caldav.operation");
         operation.ShouldNotBeNull();
 
-        using var activity = CalendarQueryTelemetry.StartPhase(phase);
+        using var activity = CalendarQueryTelemetry.StartPhase((CalendarQueryPhase)phaseValue);
 
         activity.ShouldNotBeNull();
         activity.ParentId.ShouldBe(operation.Id);
-        activity.GetTagItem("caldav.query.phase").ShouldBe(phase);
+        activity.GetTagItem("caldav.query.phase").ShouldBe(expectedName);
     }
 
     [Fact]
@@ -36,15 +38,16 @@ public sealed class CalendarQueryTelemetryTests
     {
         using var listener = Listen();
 
-        CalendarQueryTelemetry.StartPhase("discovery").ShouldBeNull();
-        Should.Throw<ArgumentOutOfRangeException>(() => CalendarQueryTelemetry.StartPhase("private"));
+        CalendarQueryTelemetry.StartPhase(CalendarQueryPhase.Discovery).ShouldBeNull();
+        Should.Throw<ArgumentOutOfRangeException>(() =>
+            CalendarQueryTelemetry.StartPhase((CalendarQueryPhase)int.MaxValue));
     }
 
     [Fact]
     public void BeginAndCountersRequireRecordedOperationAndIgnoreNonPositiveWork()
     {
-        CalendarQueryTelemetry.Begin(false);
-        CalendarQueryTelemetry.Add("caldav.query.candidate_count", 1);
+        CalendarQueryTelemetry.Begin(CalendarQueryMode.Start);
+        CalendarQueryTelemetry.Add(CalendarQueryCounter.Candidate, 1);
         CalendarQueryTelemetry.ObserveMultigetAttempt(1);
         CalendarQueryTelemetry.ObserveMultigetSuccess();
         using var listener = Listen();
@@ -52,11 +55,11 @@ public sealed class CalendarQueryTelemetryTests
         using var operation = source.StartActivity("caldav.operation");
         operation.ShouldNotBeNull();
 
-        CalendarQueryTelemetry.Begin(false);
-        CalendarQueryTelemetry.Add("caldav.query.candidate_count", 0);
-        CalendarQueryTelemetry.Add("caldav.query.candidate_count", -1);
-        CalendarQueryTelemetry.Add("caldav.query.candidate_count", 2);
-        CalendarQueryTelemetry.Add("caldav.query.candidate_count", 3);
+        CalendarQueryTelemetry.Begin(CalendarQueryMode.Start);
+        CalendarQueryTelemetry.Add(CalendarQueryCounter.Candidate, 0);
+        CalendarQueryTelemetry.Add(CalendarQueryCounter.Candidate, -1);
+        CalendarQueryTelemetry.Add(CalendarQueryCounter.Candidate, 2);
+        CalendarQueryTelemetry.Add(CalendarQueryCounter.Candidate, 3);
         CalendarQueryTelemetry.ObserveMultigetAttempt(4);
         CalendarQueryTelemetry.ObserveMultigetSuccess();
 
@@ -74,7 +77,7 @@ public sealed class CalendarQueryTelemetryTests
         using var operation = source.StartActivity("caldav.operation");
         operation.ShouldNotBeNull();
 
-        CalendarQueryTelemetry.Begin(true);
+        CalendarQueryTelemetry.Begin(CalendarQueryMode.Continue);
 
         operation.GetTagItem("caldav.query.mode").ShouldBe("continue");
         operation.GetTagItem("caldav.query.snapshot_lookup_count").ShouldBe(0L);
@@ -91,7 +94,7 @@ public sealed class CalendarQueryTelemetryTests
         using var source = new ActivitySource(CalendarQueryTelemetry.InstrumentationName, "0.1.0");
         using var operation = source.StartActivity("caldav.operation");
         operation.ShouldNotBeNull();
-        CalendarQueryTelemetry.Begin(false);
+        CalendarQueryTelemetry.Begin(CalendarQueryMode.Start);
         CalendarQueryTelemetry.ObserveMultigetSuccess();
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -99,9 +102,9 @@ public sealed class CalendarQueryTelemetryTests
         {
             await release.Task;
             CalendarQueryTelemetry.ObserveDirectGetFallback();
-            CalendarQueryTelemetry.Add("caldav.query.direct_get_resource_count");
-            CalendarQueryTelemetry.Add("caldav.query.direct_get_attempt_count");
-            CalendarQueryTelemetry.Add("caldav.query.disappeared_resource_count");
+            CalendarQueryTelemetry.Add(CalendarQueryCounter.DirectGetResource);
+            CalendarQueryTelemetry.Add(CalendarQueryCounter.DirectGetAttempt);
+            CalendarQueryTelemetry.Add(CalendarQueryCounter.DisappearedResource);
         }).ToArray();
         release.SetResult();
         await Task.WhenAll(workers);
@@ -120,7 +123,7 @@ public sealed class CalendarQueryTelemetryTests
         using var source = new ActivitySource(CalendarQueryTelemetry.InstrumentationName, "0.1.0");
         using var operation = source.StartActivity("caldav.operation");
         operation.ShouldNotBeNull();
-        CalendarQueryTelemetry.Begin(false);
+        CalendarQueryTelemetry.Begin(CalendarQueryMode.Start);
 
         CalendarQueryTelemetry.ObserveDirectGetFallback();
         CalendarQueryTelemetry.ObserveMultigetSuccess();
@@ -144,11 +147,11 @@ public sealed class CalendarQueryTelemetryTests
         using var operation = source.StartActivity("caldav.operation");
         operation.ShouldNotBeNull();
 
-        CalendarQueryTelemetry.Begin(false);
-        CalendarQueryTelemetry.Add("caldav.query.candidate_count", 1);
+        CalendarQueryTelemetry.Begin(CalendarQueryMode.Start);
+        CalendarQueryTelemetry.Add(CalendarQueryCounter.Candidate, 1);
         CalendarQueryTelemetry.ObserveMultigetAttempt(2);
         CalendarQueryTelemetry.ObserveMultigetSuccess();
-        using var phase = CalendarQueryTelemetry.StartPhase("candidate");
+        using var phase = CalendarQueryTelemetry.StartPhase(CalendarQueryPhase.Candidate);
 
         phase.ShouldNotBeNull();
         phase.IsAllDataRequested.ShouldBeFalse();

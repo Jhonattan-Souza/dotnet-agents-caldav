@@ -57,7 +57,7 @@ internal sealed class CalendarOccurrenceQueryStartExecutor(
         var effectiveQuery = query with { EvaluationTimeZone = temporalContext.TimeZone };
         var occurrences = new List<EvaluatedOccurrence>();
         var observedCount = 0;
-        using (CalendarQueryTelemetry.StartPhase("evaluation"))
+        using (CalendarQueryTelemetry.StartPhase(CalendarQueryPhase.Evaluation))
         {
             foreach (var resource in acquired.Resources)
             {
@@ -65,7 +65,7 @@ internal sealed class CalendarOccurrenceQueryStartExecutor(
                 cancellationToken.ThrowIfCancellationRequested();
                 if (snapshot.Projection.Kind == CalendarResourceProjectionKind.Opaque)
                     continue;
-                CalendarQueryTelemetry.Add("caldav.query.evaluation_count");
+                CalendarQueryTelemetry.Add(CalendarQueryCounter.Evaluation);
                 if (CalendarOccurrenceEvaluator.HasInvalidComponentStructure(snapshot))
                     return CompletedCalendarOccurrenceQuery.Failure(CalendarQueryFailures.RecurrenceUnevaluable());
                 var evaluated = CalendarOccurrenceEvaluator.Evaluate(
@@ -102,13 +102,13 @@ internal sealed class CalendarOccurrenceQueryStartExecutor(
             return CompletedCalendarOccurrenceQuery.Failure(countFailure);
         var projected = ImmutableArray.CreateBuilder<StoredCalendarEntityQueryItem>(occurrences.Count);
         long itemBytes = 0;
-        using (CalendarQueryTelemetry.StartPhase("serialization"))
+        using (CalendarQueryTelemetry.StartPhase(CalendarQueryPhase.Serialization))
         {
             foreach (var occurrence in occurrences)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var item = CalendarOccurrenceQueryProjector.Project(occurrence);
-                CalendarQueryTelemetry.Add("caldav.query.serialization_count");
+                CalendarQueryTelemetry.Add(CalendarQueryCounter.Serialization);
                 projected.Add(item);
                 itemBytes += item.JsonByteCount;
                 var byteFailure = CalendarQuerySnapshotPolicy.Validate(projected.Count, itemBytes);

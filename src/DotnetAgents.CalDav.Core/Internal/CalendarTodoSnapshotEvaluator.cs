@@ -39,7 +39,7 @@ internal static class CalendarTodoSnapshotEvaluator
         foreach (var resource in resources)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            CalendarQueryTelemetry.Add("caldav.query.evaluation_count");
+            CalendarQueryTelemetry.Add(CalendarQueryCounter.Evaluation);
             var evaluated = EvaluateResource(resource, query, cancellationToken);
             observedOccurrences += evaluated.ObservedOccurrences;
             if (evaluated.Error is not null)
@@ -286,7 +286,7 @@ internal static class CalendarTodoSnapshotEvaluator
         CalendarTodoEvaluatedRow row,
         IReadOnlyList<CalendarTodoProjectionField> projection)
     {
-        CalendarQueryTelemetry.Add("caldav.query.serialization_count");
+        CalendarQueryTelemetry.Add(CalendarQueryCounter.Serialization);
         return CalendarTodoQueryProjector.Project(row, projection);
     }
 

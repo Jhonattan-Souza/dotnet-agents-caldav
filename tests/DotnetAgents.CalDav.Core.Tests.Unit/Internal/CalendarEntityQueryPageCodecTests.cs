@@ -80,7 +80,7 @@ public sealed class CalendarEntityQueryPageCodecTests
         };
         System.Diagnostics.ActivitySource.AddActivityListener(listener);
 
-        CalendarQueryTelemetry.StartPhase("discovery").ShouldBeNull();
+        CalendarQueryTelemetry.StartPhase(CalendarQueryPhase.Discovery).ShouldBeNull();
         stopped.ShouldBeEmpty();
     }
 

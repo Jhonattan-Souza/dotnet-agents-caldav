@@ -6,71 +6,55 @@ internal static class CalendarQueryTelemetry
 {
     internal const string InstrumentationName = "DotnetAgents.CalDav";
     private const string InstrumentationVersion = "0.1.0";
-    private static readonly ActivitySource Source = new(InstrumentationName, InstrumentationVersion);
     private const string OperationStateProperty = "DotnetAgents.CalDav.QueryTelemetryState";
-    private static readonly string[] StartCounters =
+    private static readonly ActivitySource Source = new(InstrumentationName, InstrumentationVersion);
+    private static readonly CalendarQueryCounter[] StartCounters =
     [
-        "caldav.query.candidate_count",
-        "caldav.query.multiget_resource_count",
-        "caldav.query.direct_get_resource_count",
-        "caldav.query.direct_get_attempt_count",
-        "caldav.query.disappeared_resource_count",
-        "caldav.query.snapshot_count",
-        "caldav.query.parse_count",
-        "caldav.query.evaluation_count",
-        "caldav.query.serialization_count",
-        "caldav.query.page_admission_count"
+        CalendarQueryCounter.Candidate,
+        CalendarQueryCounter.MultigetResource,
+        CalendarQueryCounter.DirectGetResource,
+        CalendarQueryCounter.DirectGetAttempt,
+        CalendarQueryCounter.DisappearedResource,
+        CalendarQueryCounter.Snapshot,
+        CalendarQueryCounter.Parse,
+        CalendarQueryCounter.Evaluation,
+        CalendarQueryCounter.Serialization,
+        CalendarQueryCounter.PageAdmission
     ];
 
-    internal static void Begin(bool continuation)
+    internal static void Begin(CalendarQueryMode mode)
     {
         var activity = FindOperation();
         if (activity?.IsAllDataRequested != true)
             return;
         var state = new OperationTelemetryState(activity);
         activity.SetCustomProperty(OperationStateProperty, state);
-        state.Set("caldav.query.mode", continuation ? "continue" : "start");
-        if (continuation)
-        {
-            state.Set("caldav.query.snapshot_lookup_count", 0L);
-            state.Set("caldav.query.page_admission_count", 0L);
-            return;
-        }
-        foreach (var name in StartCounters)
-            state.Set(name, 0L);
+        state.Begin(mode);
     }
 
-    internal static void Add(string name, int count = 1)
+    internal static void Add(CalendarQueryCounter counter, int count = 1)
     {
         if (count <= 0 || FindState() is not { } state)
             return;
-        state.Add(name, count);
+        state.Add(counter, count);
     }
 
     internal static void ObserveMultigetAttempt(int requestedCount) =>
-        Add("caldav.query.multiget_resource_count", requestedCount);
+        Add(CalendarQueryCounter.MultigetResource, requestedCount);
 
-    internal static void ObserveMultigetSuccess()
-    {
-        FindState()?.ObserveMultigetSuccess();
-    }
+    internal static void ObserveMultigetSuccess() => FindState()?.ObserveMultigetSuccess();
 
-    internal static void ObserveDirectGetFallback()
-    {
-        FindState()?.ObserveDirectGetFallback();
-    }
+    internal static void ObserveDirectGetFallback() => FindState()?.ObserveDirectGetFallback();
 
-    internal static Activity? StartPhase(string phase)
+    internal static Activity? StartPhase(CalendarQueryPhase phase)
     {
-        if (phase is not ("discovery" or "candidate" or "fetch" or "evaluation" or "serialization"
-            or "reservation" or "snapshot_lookup" or "page_admission"))
-            throw new ArgumentOutOfRangeException(nameof(phase), phase, null);
+        var phaseName = PhaseName(phase);
         var operation = FindOperation();
         if (operation is null)
             return null;
-        var activity = Source.StartActivity($"caldav.query.phase.{phase}", ActivityKind.Internal);
+        var activity = Source.StartActivity($"caldav.query.phase.{phaseName}", ActivityKind.Internal);
         if (activity?.IsAllDataRequested == true)
-            activity.SetTag("caldav.query.phase", phase);
+            activity.SetTag("caldav.query.phase", phaseName);
         return activity;
     }
 
@@ -92,25 +76,80 @@ internal static class CalendarQueryTelemetry
             : null;
     }
 
+    private static string ModeName(CalendarQueryMode mode) => mode switch
+    {
+        CalendarQueryMode.Start => "start",
+        CalendarQueryMode.Continue => "continue",
+        _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, null)
+    };
+
+    private static string CounterName(CalendarQueryCounter counter) => counter switch
+    {
+        CalendarQueryCounter.Candidate => "caldav.query.candidate_count",
+        CalendarQueryCounter.MultigetResource => "caldav.query.multiget_resource_count",
+        CalendarQueryCounter.DirectGetResource => "caldav.query.direct_get_resource_count",
+        CalendarQueryCounter.DirectGetAttempt => "caldav.query.direct_get_attempt_count",
+        CalendarQueryCounter.DisappearedResource => "caldav.query.disappeared_resource_count",
+        CalendarQueryCounter.Snapshot => "caldav.query.snapshot_count",
+        CalendarQueryCounter.Parse => "caldav.query.parse_count",
+        CalendarQueryCounter.Evaluation => "caldav.query.evaluation_count",
+        CalendarQueryCounter.Serialization => "caldav.query.serialization_count",
+        CalendarQueryCounter.SnapshotLookup => "caldav.query.snapshot_lookup_count",
+        CalendarQueryCounter.PageAdmission => "caldav.query.page_admission_count",
+        _ => throw new ArgumentOutOfRangeException(nameof(counter), counter, null)
+    };
+
+    private static string PhaseName(CalendarQueryPhase phase) => phase switch
+    {
+        CalendarQueryPhase.Discovery => "discovery",
+        CalendarQueryPhase.Candidate => "candidate",
+        CalendarQueryPhase.Fetch => "fetch",
+        CalendarQueryPhase.Evaluation => "evaluation",
+        CalendarQueryPhase.Serialization => "serialization",
+        CalendarQueryPhase.Reservation => "reservation",
+        CalendarQueryPhase.SnapshotLookup => "snapshot_lookup",
+        CalendarQueryPhase.PageAdmission => "page_admission",
+        _ => throw new ArgumentOutOfRangeException(nameof(phase), phase, null)
+    };
+
+    private static string FetchModeName(CalendarQueryFetchMode mode) => mode switch
+    {
+        CalendarQueryFetchMode.Multiget => "multiget",
+        CalendarQueryFetchMode.DirectGetFallback => "direct_get_fallback",
+        CalendarQueryFetchMode.Mixed => "mixed",
+        _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, null)
+    };
+
     private sealed class OperationTelemetryState(Activity activity)
     {
         private readonly object _gate = new();
-        private readonly Dictionary<string, long> _counters = new(StringComparer.Ordinal);
-        private string? _fetchMode;
+        private readonly Dictionary<CalendarQueryCounter, long> _counters = [];
+        private CalendarQueryFetchMode? _fetchMode;
 
-        internal void Set(string name, object value)
-        {
-            lock (_gate)
-                activity.SetTag(name, value);
-        }
-
-        internal void Add(string name, int count)
+        internal void Begin(CalendarQueryMode mode)
         {
             lock (_gate)
             {
-                var updated = _counters.GetValueOrDefault(name) + count;
-                _counters[name] = updated;
-                activity.SetTag(name, updated);
+                activity.SetTag("caldav.query.mode", ModeName(mode));
+                if (mode == CalendarQueryMode.Continue)
+                {
+                    SetCounter(CalendarQueryCounter.SnapshotLookup, 0);
+                    SetCounter(CalendarQueryCounter.PageAdmission, 0);
+                    return;
+                }
+                if (mode != CalendarQueryMode.Start)
+                    throw new ArgumentOutOfRangeException(nameof(mode), mode, null);
+                foreach (var counter in StartCounters)
+                    SetCounter(counter, 0);
+            }
+        }
+
+        internal void Add(CalendarQueryCounter counter, int count)
+        {
+            lock (_gate)
+            {
+                var updated = _counters.GetValueOrDefault(counter) + count;
+                SetCounter(counter, updated);
             }
         }
 
@@ -118,8 +157,11 @@ internal static class CalendarQueryTelemetry
         {
             lock (_gate)
             {
-                _fetchMode = _fetchMode is "direct_get_fallback" or "mixed" ? "mixed" : "multiget";
-                activity.SetTag("caldav.query.fetch_mode", _fetchMode);
+                _fetchMode = _fetchMode is CalendarQueryFetchMode.DirectGetFallback
+                    or CalendarQueryFetchMode.Mixed
+                    ? CalendarQueryFetchMode.Mixed
+                    : CalendarQueryFetchMode.Multiget;
+                activity.SetTag("caldav.query.fetch_mode", FetchModeName(_fetchMode.Value));
             }
         }
 
@@ -127,10 +169,59 @@ internal static class CalendarQueryTelemetry
         {
             lock (_gate)
             {
-                _fetchMode = _fetchMode is "multiget" or "mixed" ? "mixed" : "direct_get_fallback";
-                activity.SetTag("caldav.query.fetch_mode", _fetchMode);
+                _fetchMode = _fetchMode is CalendarQueryFetchMode.Multiget
+                    or CalendarQueryFetchMode.Mixed
+                    ? CalendarQueryFetchMode.Mixed
+                    : CalendarQueryFetchMode.DirectGetFallback;
+                activity.SetTag("caldav.query.fetch_mode", FetchModeName(_fetchMode.Value));
                 activity.SetTag("caldav.query.fallback_reason", "multiget_unavailable");
             }
         }
+
+        private void SetCounter(CalendarQueryCounter counter, long value)
+        {
+            _counters[counter] = value;
+            activity.SetTag(CounterName(counter), value);
+        }
     }
+}
+
+internal enum CalendarQueryMode
+{
+    Start,
+    Continue
+}
+
+internal enum CalendarQueryCounter
+{
+    Candidate,
+    MultigetResource,
+    DirectGetResource,
+    DirectGetAttempt,
+    DisappearedResource,
+    Snapshot,
+    Parse,
+    Evaluation,
+    Serialization,
+    SnapshotLookup,
+    PageAdmission
+}
+
+internal enum CalendarQueryPhase
+{
+    Discovery,
+    Candidate,
+    Fetch,
+    Evaluation,
+    Serialization,
+    Reservation,
+    SnapshotLookup,
+    PageAdmission
+}
+
+internal enum CalendarQueryFetchMode
+{
+    Multiget,
+    DirectGetFallback,
+    Mixed
 }

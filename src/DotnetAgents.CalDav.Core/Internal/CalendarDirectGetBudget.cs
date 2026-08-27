@@ -150,7 +150,7 @@ internal sealed class CalendarDirectGetReadMeter(CalendarDirectGetBudget budget)
             }
             _attempts++;
             _attemptBodyBytes = 0;
-            CalendarQueryTelemetry.Add("caldav.query.direct_get_attempt_count");
+            CalendarQueryTelemetry.Add(CalendarQueryCounter.DirectGetAttempt);
             return true;
         }
     }
