@@ -609,72 +609,148 @@ public sealed class CalendarExecutionPolicyTests
         callerCancellation.Cancel();
 
         await Should.ThrowAsync<OperationCanceledException>(pending);
-        using var next = await admission.AcquireAsync(
-            mutation: CalendarExecutionPolicy.IsMutation(toolName),
-            CancellationToken.None);
-        next.ShouldNotBeNull();
+        var nextStarted = false;
+        var nextContext = new RequestContext<CallToolRequestParams>(
+            server,
+            new JsonRpcRequest { Id = new RequestId(2L), Method = "tools/call" },
+            new CallToolRequestParams { Name = toolName });
+        var nextFilter = CalendarExecutionPolicy.CallTool((_, _) =>
+        {
+            nextStarted = true;
+            return ValueTask.FromResult(new CallToolResult { IsError = false });
+        });
+
+        var next = await nextFilter(nextContext, TestContext.Current.CancellationToken);
+
+        next.IsError.ShouldBe(false);
+        nextStarted.ShouldBeTrue();
     }
 
     [Fact]
-    public async Task Admission_EnforcesFourOperationsOneMutationAndOneSharedFifoQueue()
-    {
-        var admission = new CalendarOperationAdmission(TimeProvider.System);
-        using var mutation = (await admission.AcquireAsync(mutation: true, CancellationToken.None))!;
-        using var readOne = (await admission.AcquireAsync(mutation: false, CancellationToken.None))!;
-        using var readTwo = (await admission.AcquireAsync(mutation: false, CancellationToken.None))!;
-        using var readThree = (await admission.AcquireAsync(mutation: false, CancellationToken.None))!;
-        var secondMutation = admission.AcquireAsync(mutation: true, CancellationToken.None).AsTask();
-        var queuedRead = admission.AcquireAsync(mutation: false, CancellationToken.None).AsTask();
-
-        readOne.Dispose();
-        await Task.Yield();
-        secondMutation.IsCompleted.ShouldBeFalse();
-        queuedRead.IsCompleted.ShouldBeFalse();
-
-        mutation.Dispose();
-        using var admittedMutation = await secondMutation;
-        admittedMutation.ShouldNotBeNull();
-        using var admittedRead = await queuedRead;
-        admittedRead.ShouldNotBeNull();
-    }
-
-    [Fact]
-    public async Task Admission_QueuesExactlySixteenCallsAndRejectsTheSeventeenth()
-    {
-        var admission = new CalendarOperationAdmission(TimeProvider.System);
-        var active = new List<CalendarOperationAdmission.Lease>();
-        for (var index = 0; index < CalendarOperationAdmission.MaximumConcurrentOperations; index++)
-            active.Add((await admission.AcquireAsync(mutation: false, CancellationToken.None))!);
-        var queued = Enumerable.Range(0, CalendarOperationAdmission.MaximumQueuedOperations)
-            .Select(_ => admission.AcquireAsync(mutation: false, CancellationToken.None).AsTask())
-            .ToArray();
-
-        var overflow = await admission.AcquireAsync(mutation: false, CancellationToken.None);
-
-        overflow.ShouldBeNull();
-        queued.ShouldAllBe(task => !task.IsCompleted);
-        foreach (var lease in active)
-            lease.Dispose();
-        foreach (var pending in queued)
-            (await pending)!.Dispose();
-    }
-
-    [Fact]
-    public async Task Admission_ReturnsBusyAtTwoSecondsWithoutSleeping()
+    public async Task PublicToolFilter_MutationQueueIsFifoAndTheSeventeenthWaiterReceivesBusy()
     {
         var time = new ManualTimeProvider(DateTimeOffset.Parse("2026-08-17T12:00:00Z"));
         var admission = new CalendarOperationAdmission(time);
-        var active = new List<CalendarOperationAdmission.Lease>();
-        for (var index = 0; index < CalendarOperationAdmission.MaximumConcurrentOperations; index++)
-            active.Add((await admission.AcquireAsync(mutation: false, CancellationToken.None))!);
-        var pending = admission.AcquireAsync(mutation: false, CancellationToken.None).AsTask();
+        using var services = CreateServices(time, admission);
+        await using var transport = CreateTransport("mutation-fifo-test");
+        await using var server = CreateServer(transport, services);
+        var activeEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseActive = new TaskCompletionSource<CallToolResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var active = InvokeFilter(server, "events.create", 1, _ =>
+        {
+            activeEntered.TrySetResult();
+            return new ValueTask<CallToolResult>(releaseActive.Task);
+        });
+        await activeEntered.Task.WaitAsync(TestContext.Current.CancellationToken);
+
+        var executionOrder = new List<int>();
+        var queued = Enumerable.Range(1, CalendarOperationAdmission.MaximumQueuedOperations)
+            .Select(index => InvokeFilter(server, "events.create", index + 1, _ =>
+            {
+                executionOrder.Add(index);
+                return ValueTask.FromResult(new CallToolResult { IsError = false });
+            }))
+            .ToArray();
+        var overflow = await InvokeFilter(server, "events.create", 99, _ =>
+            ValueTask.FromResult(new CallToolResult { IsError = false }));
+
+        overflow.IsError.ShouldBe(true);
+        overflow.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("busy");
+        overflow.StructuredContent.Value.GetProperty("mutationState").GetString().ShouldBe("not_attempted");
+        releaseActive.SetResult(new CallToolResult { IsError = false });
+
+        await active;
+        await Task.WhenAll(queued);
+        executionOrder.ShouldBe(Enumerable.Range(1, CalendarOperationAdmission.MaximumQueuedOperations));
+    }
+
+    [Fact]
+    public async Task PublicToolFilter_ReturnsBusyAfterTwoSecondReadAdmissionTimeoutWithoutDispatchingTheWaiter()
+    {
+        var time = new ManualTimeProvider(DateTimeOffset.Parse("2026-08-17T12:00:00Z"));
+        var admission = new CalendarOperationAdmission(time);
+        using var services = CreateServices(time, admission);
+        await using var transport = CreateTransport("read-admission-timeout-test");
+        await using var server = CreateServer(transport, services);
+        var release = new TaskCompletionSource<CallToolResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var active = Enumerable.Range(1, CalendarOperationAdmission.MaximumConcurrentOperations)
+            .Select(id => InvokeFilter(server, "calendars.list", id, _ => new ValueTask<CallToolResult>(release.Task)))
+            .ToArray();
+        var dispatched = false;
+        var waiter = InvokeFilter(server, "calendars.list", 99, _ =>
+        {
+            dispatched = true;
+            return ValueTask.FromResult(new CallToolResult { IsError = false });
+        });
 
         time.Advance(TimeSpan.FromSeconds(2));
-        var result = await pending;
+        var result = await waiter;
 
-        result.ShouldBeNull();
-        foreach (var lease in active)
-            lease.Dispose();
+        result.IsError.ShouldBe(true);
+        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("busy");
+        dispatched.ShouldBeFalse();
+        release.SetResult(new CallToolResult { IsError = false });
+        await Task.WhenAll(active);
+    }
+
+    [Fact]
+    public async Task PublicToolFilter_CancelledMutationWaiterCannotReleaseTheActiveMutation()
+    {
+        var admission = new CalendarOperationAdmission(TimeProvider.System);
+        using var services = CreateServices(TimeProvider.System, admission);
+        await using var transport = CreateTransport("mutation-waiter-cancellation-test");
+        await using var server = CreateServer(transport, services);
+        var activeEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseActive = new TaskCompletionSource<CallToolResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var active = InvokeFilter(server, "events.create", 1, _ =>
+        {
+            activeEntered.TrySetResult();
+            return new ValueTask<CallToolResult>(releaseActive.Task);
+        });
+        await activeEntered.Task.WaitAsync(TestContext.Current.CancellationToken);
+        using var cancellation = new CancellationTokenSource();
+        var cancelledContext = CreateFilterContext(server, "events.create", 2);
+        var cancelledFilter = CalendarExecutionPolicy.CallTool((_, _) =>
+            ValueTask.FromResult(new CallToolResult { IsError = false }));
+        var cancelledWaiter = cancelledFilter(cancelledContext, cancellation.Token).AsTask();
+        cancellation.Cancel();
+        await Should.ThrowAsync<OperationCanceledException>(cancelledWaiter);
+
+        var laterStarted = false;
+        var later = InvokeFilter(server, "events.create", 3, _ =>
+        {
+            laterStarted = true;
+            return ValueTask.FromResult(new CallToolResult { IsError = false });
+        });
+        laterStarted.ShouldBeFalse();
+        releaseActive.SetResult(new CallToolResult { IsError = false });
+
+        await active;
+        await later;
+        laterStarted.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task PublicToolFilter_ActiveMutationExceptionReleasesTheSlotForLaterMutation()
+    {
+        var admission = new CalendarOperationAdmission(TimeProvider.System);
+        using var services = CreateServices(TimeProvider.System, admission);
+        await using var transport = CreateTransport("mutation-exception-cleanup-test");
+        await using var server = CreateServer(transport, services);
+
+        var failed = InvokeFilter(server, "events.create", 1, _ =>
+            ValueTask.FromException<CallToolResult>(new IOException("private transport detail")));
+        await Should.ThrowAsync<IOException>(failed);
+
+        var laterStarted = false;
+        var later = await InvokeFilter(server, "events.create", 2, _ =>
+        {
+            laterStarted = true;
+            return ValueTask.FromResult(new CallToolResult { IsError = false });
+        });
+
+        later.IsError.ShouldBe(false);
+        laterStarted.ShouldBeTrue();
     }
 
     [Fact]
@@ -893,6 +969,44 @@ public sealed class CalendarExecutionPolicyTests
         if (expectedMutationState)
             mutationState.GetString().ShouldBe("not_attempted");
     }
+
+    private static ServiceProvider CreateServices(TimeProvider timeProvider, CalendarOperationAdmission admission) =>
+        new ServiceCollection()
+            .AddSingleton(timeProvider)
+            .AddSingleton(admission)
+            .BuildServiceProvider();
+
+    private static StreamServerTransport CreateTransport(string name) => new(
+        new MemoryStream(),
+        new MemoryStream(),
+        name,
+        Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
+
+    private static McpServer CreateServer(StreamServerTransport transport, IServiceProvider services) =>
+        McpServer.Create(
+            transport,
+            new McpServerOptions(),
+            Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance,
+            services);
+
+    private static Task<CallToolResult> InvokeFilter(
+        McpServer server,
+        string toolName,
+        long requestId,
+        Func<CancellationToken, ValueTask<CallToolResult>> next)
+    {
+        return CalendarExecutionPolicy.CallTool((_, token) => next(token))(
+            CreateFilterContext(server, toolName, requestId),
+            TestContext.Current.CancellationToken).AsTask();
+    }
+
+    private static RequestContext<CallToolRequestParams> CreateFilterContext(
+        McpServer server,
+        string toolName,
+        long requestId) => new(
+        server,
+        new JsonRpcRequest { Id = new RequestId(requestId), Method = "tools/call" },
+        new CallToolRequestParams { Name = toolName });
 
     private static async Task<CallToolResult> InvokeAfterElapsedAsync(
         string toolName,

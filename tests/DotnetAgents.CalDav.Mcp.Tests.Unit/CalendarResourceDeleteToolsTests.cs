@@ -30,11 +30,7 @@ public sealed class CalendarResourceDeleteToolsTests
             timeProvider,
             Options.Create(CreateOptions()),
             Enumerable.Range(0, 64).Select(value => (byte)value).ToArray());
-        var sut = new CalendarResourceDeleteTools(
-            service,
-            protector,
-            timeProvider,
-            new CalendarMutationAdmission(timeProvider));
+        var sut = new CalendarResourceDeleteTools(service, protector, timeProvider);
 
         var exception = await Should.ThrowAsync<InputRequiredException>(() => sut.DeleteRawAsync(
             ValidArguments(),
@@ -741,32 +737,6 @@ public sealed class CalendarResourceDeleteToolsTests
             Arg.Any<CancellationToken>());
     }
 
-    [Fact]
-    public async Task DeleteRawAsync_AdmissionTimeoutReturnsFrozenBusyBeforeSchemaOrRead()
-    {
-        var service = Substitute.For<ICalendarService>();
-        var timeProvider = new FixedTimeProvider(DateTimeOffset.Parse("2026-08-16T12:00:00Z"));
-        var admission = new CalendarMutationAdmission(timeProvider);
-        using var active = (await admission.AcquireAsync(CancellationToken.None))!;
-        var sut = CreateTool(service, timeProvider, admission);
-        var pending = sut.DeleteRawAsync(
-            new Dictionary<string, JsonElement>(),
-            requestState: null,
-            inputResponses: null,
-            mrtrSupported: true,
-            CancellationToken.None);
-
-        timeProvider.Advance(TimeSpan.FromSeconds(2));
-        var result = await pending;
-
-        result.IsError.ShouldBe(true);
-        var structured = result.StructuredContent!.Value;
-        structured.GetProperty("code").GetString().ShouldBe("busy");
-        structured.GetProperty("phase").GetString().ShouldBe("admissionAndPayload");
-        structured.GetProperty("retryAfterMs").GetInt32().ShouldBe(2_000);
-        await service.DidNotReceive().GetResourceAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
-    }
-
     [Theory]
     [InlineData("io")]
     [InlineData("unexpected")]
@@ -914,18 +884,13 @@ public sealed class CalendarResourceDeleteToolsTests
 
     private static CalendarResourceDeleteTools CreateTool(
         ICalendarService service,
-        TimeProvider timeProvider,
-        CalendarMutationAdmission? admission = null)
+        TimeProvider timeProvider)
     {
         var protector = new CalendarMutationRequestStateProtector(
             timeProvider,
             Options.Create(CreateOptions()),
             Enumerable.Range(0, 64).Select(value => (byte)value).ToArray());
-        return new CalendarResourceDeleteTools(
-            service,
-            protector,
-            timeProvider,
-            admission ?? new CalendarMutationAdmission(timeProvider));
+        return new CalendarResourceDeleteTools(service, protector, timeProvider);
     }
 
     private static Task<InputRequiredException> BeginAsync(CalendarResourceDeleteTools sut) =>

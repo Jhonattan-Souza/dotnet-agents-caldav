@@ -33,27 +33,23 @@ public sealed class ExactCalendarResourceWriteTools
     private readonly ICalendarService _calendarService;
     private readonly CalendarMutationRequestStateProtector _stateProtector;
     private readonly TimeProvider _timeProvider;
-    private readonly CalendarMutationAdmission _admission;
 
     public ExactCalendarResourceWriteTools(IServiceProvider services)
         : this(
             services.GetRequiredService<ICalendarService>(),
             services.GetRequiredService<CalendarMutationRequestStateProtector>(),
-            services.GetRequiredService<TimeProvider>(),
-            services.GetRequiredService<CalendarMutationAdmission>())
+            services.GetRequiredService<TimeProvider>())
     {
     }
 
     internal ExactCalendarResourceWriteTools(
         ICalendarService calendarService,
         CalendarMutationRequestStateProtector stateProtector,
-        TimeProvider timeProvider,
-        CalendarMutationAdmission admission)
+        TimeProvider timeProvider)
     {
         _calendarService = calendarService;
         _stateProtector = stateProtector;
         _timeProvider = timeProvider;
-        _admission = admission;
     }
 
     [McpServerTool(
@@ -131,9 +127,6 @@ public sealed class ExactCalendarResourceWriteTools
             return InputError(payloadTooLarge: false);
         if (request.AuthoritativeUtf8.Length > MaximumDecodedResourceBytes)
             return InputError(payloadTooLarge: true);
-        using var lease = await _admission.AcquireAsync(cancellationToken).ConfigureAwait(false);
-        if (lease is null)
-            return BusyError();
         return await ConfirmCreateAsync(
             request,
             requestState,
@@ -277,9 +270,6 @@ public sealed class ExactCalendarResourceWriteTools
             return InputError(payloadTooLarge: false);
         if (request.AuthoritativeUtf8.Length > MaximumDecodedResourceBytes)
             return InputError(payloadTooLarge: true);
-        using var lease = await _admission.AcquireAsync(cancellationToken).ConfigureAwait(false);
-        if (lease is null)
-            return BusyError();
         return await ConfirmAsync(
             ReplaceOperation,
             request.Revision,
@@ -304,9 +294,6 @@ public sealed class ExactCalendarResourceWriteTools
             return InputError(payloadTooLarge: true);
         if (!ExactCalendarResourceArgumentParser.TryParseMove(arguments, out var request))
             return InputError(payloadTooLarge: false);
-        using var lease = await _admission.AcquireAsync(cancellationToken).ConfigureAwait(false);
-        if (lease is null)
-            return BusyError();
         return await ConfirmMoveAsync(
             request,
             requestState,
@@ -884,15 +871,6 @@ public sealed class ExactCalendarResourceWriteTools
         false,
         payloadTooLarge ? "admissionAndPayload" : "schemaLexicalDiscriminator",
         "not_attempted");
-
-    private static CallToolResult BusyError() => Error(
-        "busy",
-        "limitsAndAdmission",
-        "Calendar mutation admission is busy.",
-        true,
-        "admissionAndPayload",
-        "not_attempted",
-        retryAfterMs: CalendarMutationAdmission.RetryAfterMilliseconds);
 
     private static CallToolResult Error(
         string code,

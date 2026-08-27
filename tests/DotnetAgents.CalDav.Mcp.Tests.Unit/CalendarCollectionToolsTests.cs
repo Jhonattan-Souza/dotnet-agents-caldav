@@ -209,55 +209,6 @@ public sealed class CalendarCollectionToolsTests
     }
 
     [Fact]
-    public async Task CreateRawAsync_ReturnsBusyWhenAdmissionQueueIsFull()
-    {
-        var module = Substitute.For<ICalendarCollectionModule>();
-        var time = new FixedTimeProvider(DateTimeOffset.Parse("2026-08-16T12:00:00Z"));
-        var admission = new CalendarMutationAdmission(time);
-        using var active = await admission.AcquireAsync(CancellationToken.None);
-        using var cancellation = new CancellationTokenSource();
-        var waiters = Enumerable.Range(0, CalendarMutationAdmission.MaximumQueuedMutations)
-            .Select(_ => admission.AcquireAsync(cancellation.Token).AsTask())
-            .ToArray();
-        var sut = CreateTool(module, time, admission);
-
-        var result = await sut.CreateRawAsync(CreateArguments(), CancellationToken.None);
-
-        result.IsError.ShouldBe(true);
-        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("busy");
-        cancellation.Cancel();
-        foreach (var waiter in waiters)
-            await Should.ThrowAsync<OperationCanceledException>(async () => await waiter);
-    }
-
-    [Fact]
-    public async Task DeleteRawAsync_ReturnsBusyWhenAdmissionQueueIsFull()
-    {
-        var module = Substitute.For<ICalendarCollectionModule>();
-        var time = new FixedTimeProvider(DateTimeOffset.Parse("2026-08-16T12:00:00Z"));
-        var admission = new CalendarMutationAdmission(time);
-        using var active = await admission.AcquireAsync(CancellationToken.None);
-        using var cancellation = new CancellationTokenSource();
-        var waiters = Enumerable.Range(0, CalendarMutationAdmission.MaximumQueuedMutations)
-            .Select(_ => admission.AcquireAsync(cancellation.Token).AsTask())
-            .ToArray();
-        var sut = CreateTool(module, time, admission);
-
-        var result = await sut.DeleteRawAsync(
-            DeleteArguments("https://cal.example/calendars/user/tasks/"),
-            null,
-            null,
-            true,
-            CancellationToken.None);
-
-        result.IsError.ShouldBe(true);
-        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("busy");
-        cancellation.Cancel();
-        foreach (var waiter in waiters)
-            await Should.ThrowAsync<OperationCanceledException>(async () => await waiter);
-    }
-
-    [Fact]
     public async Task DeleteRawAsync_DeclinedConfirmationDoesNotExecute()
     {
         const string href = "https://cal.example/calendars/user/tasks/";
@@ -786,8 +737,7 @@ public sealed class CalendarCollectionToolsTests
 
     private static CalendarCollectionTools CreateTool(
         ICalendarCollectionModule module,
-        TimeProvider time,
-        CalendarMutationAdmission? admission = null) => new(
+        TimeProvider time) => new(
             module,
             new CalendarMutationRequestStateProtector(
                 time,
@@ -798,8 +748,7 @@ public sealed class CalendarCollectionToolsTests
                     Password = "password"
                 }),
                 Enumerable.Range(0, 64).Select(value => (byte)value).ToArray()),
-            time,
-            admission ?? new CalendarMutationAdmission(time));
+            time);
 
     private static Dictionary<string, JsonElement> CreateArguments(
         string displayName = "Planning",

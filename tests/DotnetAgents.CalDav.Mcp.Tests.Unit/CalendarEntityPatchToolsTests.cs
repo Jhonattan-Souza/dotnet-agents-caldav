@@ -747,25 +747,6 @@ public sealed class CalendarEntityPatchToolsTests
     }
 
     [Fact]
-    public async Task Admission_timeout_returns_busy_before_parsing_or_service_access()
-    {
-        var service = Substitute.For<ICalendarService>();
-        var time = new MutableTimeProvider(DateTimeOffset.Parse("2026-08-16T12:00:00Z"));
-        var admission = new CalendarMutationAdmission(time);
-        using var active = (await admission.AcquireAsync(CancellationToken.None))!;
-        var sut = CreateTool(service, time, admission);
-        var pending = sut.PatchEventRawAsync(new Dictionary<string, JsonElement>(), CancellationToken.None);
-
-        time.Advance(TimeSpan.FromSeconds(2));
-        var result = await pending;
-
-        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("busy");
-        result.StructuredContent.Value.GetProperty("retryAfterMs").GetInt32().ShouldBe(2_000);
-        await service.DidNotReceive().ReviewEventPatchAsync(
-            Arg.Any<CalendarEventPatchRequest>(), Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
     public async Task Malformed_replaceAll_continuations_are_mismatches_with_zero_write()
     {
         var service = ReviewedService();
@@ -1300,8 +1281,7 @@ public sealed class CalendarEntityPatchToolsTests
 
     private static CalendarEntityPatchTools CreateTool(
         ICalendarService service,
-        TimeProvider time,
-        CalendarMutationAdmission? admission = null)
+        TimeProvider time)
     {
         var protector = new CalendarMutationRequestStateProtector(
             time,
@@ -1312,7 +1292,7 @@ public sealed class CalendarEntityPatchToolsTests
                 Password = "secret"
             }),
             Enumerable.Range(0, 64).Select(value => (byte)value).ToArray());
-        return new(service, time, protector, admission ?? new CalendarMutationAdmission(time));
+        return new(service, time, protector);
     }
 
     private static ICalendarService ReviewedService(string uid = "event-1")

@@ -19,27 +19,23 @@ public sealed class CalendarCollectionTools
     private readonly ICalendarCollectionModule _module;
     private readonly CalendarMutationRequestStateProtector _stateProtector;
     private readonly TimeProvider _timeProvider;
-    private readonly CalendarMutationAdmission _admission;
 
     public CalendarCollectionTools(IServiceProvider services)
         : this(
             services.GetRequiredService<ICalendarCollectionModule>(),
             services.GetRequiredService<CalendarMutationRequestStateProtector>(),
-            services.GetRequiredService<TimeProvider>(),
-            services.GetRequiredService<CalendarMutationAdmission>())
+            services.GetRequiredService<TimeProvider>())
     {
     }
 
     internal CalendarCollectionTools(
         ICalendarCollectionModule module,
         CalendarMutationRequestStateProtector stateProtector,
-        TimeProvider timeProvider,
-        CalendarMutationAdmission admission)
+        TimeProvider timeProvider)
     {
         _module = module;
         _stateProtector = stateProtector;
         _timeProvider = timeProvider;
-        _admission = admission;
     }
 
     [McpServerTool(
@@ -82,9 +78,6 @@ public sealed class CalendarCollectionTools
     {
         if (MeasureArguments(arguments) > MaximumArgumentBytes)
             return Error("payload_too_large", "limitsAndAdmission", "The Calendar collection create arguments exceed the safe payload limit.", false, "admissionAndPayload", "not_attempted");
-        using var lease = await _admission.AcquireAsync(cancellationToken).ConfigureAwait(false);
-        if (lease is null)
-            return BusyError();
         return !CalendarCollectionArgumentParser.TryParseCreate(arguments, out var request)
             ? Error("invalid_input", "input", "The Calendar collection create input is invalid.", false, "schemaLexicalDiscriminator", "not_attempted")
             : await ExecuteCreateAsync(request, cancellationToken).ConfigureAwait(false);
@@ -99,9 +92,6 @@ public sealed class CalendarCollectionTools
     {
         if (MeasureArguments(arguments) > MaximumArgumentBytes)
             return Error("payload_too_large", "limitsAndAdmission", "The Calendar collection delete arguments exceed the safe payload limit.", false, "admissionAndPayload", "not_attempted");
-        using var lease = await _admission.AcquireAsync(cancellationToken).ConfigureAwait(false);
-        if (lease is null)
-            return BusyError();
         if (!CalendarCollectionArgumentParser.TryParseDelete(arguments, out var request))
             return Error("invalid_input", "input", "The Calendar collection delete input is invalid.", false, "schemaLexicalDiscriminator", "not_attempted");
         return await ExecuteDeleteAsync(request, requestState, inputResponses, mrtrSupported, cancellationToken).ConfigureAwait(false);
@@ -364,8 +354,6 @@ public sealed class CalendarCollectionTools
         string phase,
         string mutationState,
         CalendarCollectionLimits? limits = null) => Error((code, category, message, phase), mutationState, retryable, limits: limits);
-
-    private static CallToolResult BusyError() => Error("busy", "limitsAndAdmission", "The Calendar mutation admission queue is busy.", true, "admissionAndPayload", "not_attempted", null);
 
     private static (string Code, string Category, string Message, string Phase) Describe(
         CalendarCollectionCreateCode code,

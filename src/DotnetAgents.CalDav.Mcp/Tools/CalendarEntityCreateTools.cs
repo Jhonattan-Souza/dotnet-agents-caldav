@@ -17,29 +17,18 @@ public sealed class CalendarEntityCreateTools
     internal const int MaximumArgumentBytes = CalendarQueryToolSupport.MaximumArgumentBytes;
     private readonly ICalendarService _calendarService;
     private readonly TimeProvider _timeProvider;
-    private readonly CalendarMutationAdmission _admission;
 
     public CalendarEntityCreateTools(IServiceProvider services)
         : this(
             services.GetRequiredService<ICalendarService>(),
-            services.GetRequiredService<TimeProvider>(),
-            services.GetRequiredService<CalendarMutationAdmission>())
+            services.GetRequiredService<TimeProvider>())
     {
     }
 
     internal CalendarEntityCreateTools(ICalendarService calendarService, TimeProvider timeProvider)
-        : this(calendarService, timeProvider, new CalendarMutationAdmission(timeProvider))
-    {
-    }
-
-    internal CalendarEntityCreateTools(
-        ICalendarService calendarService,
-        TimeProvider timeProvider,
-        CalendarMutationAdmission admission)
     {
         _calendarService = calendarService;
         _timeProvider = timeProvider;
-        _admission = admission;
     }
 
     [McpServerTool(
@@ -76,9 +65,6 @@ public sealed class CalendarEntityCreateTools
     {
         if (MeasureArguments(arguments) > MaximumArgumentBytes)
             return InputError(payloadTooLarge: true);
-        using var lease = await _admission.AcquireAsync(cancellationToken);
-        if (lease is null)
-            return BusyError();
         return !CalendarEntityCreateArgumentParser.TryParseEvent(arguments, out var request)
             ? InputError(payloadTooLarge: false)
             : await ExecuteAsync(
@@ -92,9 +78,6 @@ public sealed class CalendarEntityCreateTools
     {
         if (MeasureArguments(arguments) > MaximumArgumentBytes)
             return InputError(payloadTooLarge: true);
-        using var lease = await _admission.AcquireAsync(cancellationToken);
-        if (lease is null)
-            return BusyError();
         return !CalendarEntityCreateArgumentParser.TryParseTodo(arguments, out var request)
             ? InputError(payloadTooLarge: false)
             : await ExecuteAsync(
@@ -292,15 +275,6 @@ public sealed class CalendarEntityCreateTools
             false,
             "schemaLexicalDiscriminator",
             "not_attempted");
-
-    private static CallToolResult BusyError() => Error(
-        "busy",
-        "limitsAndAdmission",
-        "The Calendar mutation admission queue is busy.",
-        true,
-        "admissionAndPayload",
-        "not_attempted",
-        retryAfterMs: CalendarMutationAdmission.RetryAfterMilliseconds);
 
     private static CallToolResult Error(
         string code,

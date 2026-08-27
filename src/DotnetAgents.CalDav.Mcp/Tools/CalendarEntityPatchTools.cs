@@ -21,32 +21,28 @@ public sealed class CalendarEntityPatchTools
     private static readonly TimeSpan ConfirmationDeadline = TimeSpan.FromSeconds(30);
     private readonly ICalendarService _calendarService;
     private readonly CalendarMutationRequestStateProtector? _stateProtector;
-    private readonly CalendarMutationAdmission _admission;
     private readonly TimeProvider _timeProvider;
 
     public CalendarEntityPatchTools(IServiceProvider services)
         : this(
             services.GetRequiredService<ICalendarService>(),
             services.GetRequiredService<TimeProvider>(),
-            services.GetRequiredService<CalendarMutationRequestStateProtector>(),
-            services.GetRequiredService<CalendarMutationAdmission>())
+            services.GetRequiredService<CalendarMutationRequestStateProtector>())
     {
     }
 
     internal CalendarEntityPatchTools(ICalendarService calendarService, TimeProvider timeProvider)
-        : this(calendarService, timeProvider, null, new CalendarMutationAdmission(timeProvider))
+        : this(calendarService, timeProvider, null)
     {
     }
 
     internal CalendarEntityPatchTools(
         ICalendarService calendarService,
         TimeProvider timeProvider,
-        CalendarMutationRequestStateProtector? stateProtector,
-        CalendarMutationAdmission admission)
+        CalendarMutationRequestStateProtector? stateProtector)
     {
         _calendarService = calendarService;
         _stateProtector = stateProtector;
-        _admission = admission;
         _timeProvider = timeProvider;
     }
 
@@ -105,9 +101,6 @@ public sealed class CalendarEntityPatchTools
         if (CalendarQueryToolSupport.MeasureArguments(arguments, arguments ?? new Dictionary<string, JsonElement>())
             > MaximumArgumentBytes)
             return CreateInputGuardError(payloadTooLarge: true);
-        using var lease = await _admission.AcquireAsync(cancellationToken).ConfigureAwait(false);
-        if (lease is null)
-            return BusyError();
         if (!CalendarEntityPatchArgumentParser.TryParseEvent(arguments, out var request))
             return Error();
         if (RequiresConfirmation(request.Target, request.Patch))
@@ -131,9 +124,6 @@ public sealed class CalendarEntityPatchTools
         if (CalendarQueryToolSupport.MeasureArguments(arguments, arguments ?? new Dictionary<string, JsonElement>())
             > MaximumArgumentBytes)
             return CreateInputGuardError(payloadTooLarge: true);
-        using var lease = await _admission.AcquireAsync(cancellationToken).ConfigureAwait(false);
-        if (lease is null)
-            return BusyError();
         if (!CalendarEntityPatchArgumentParser.TryParseTodo(arguments, out var request))
             return Error();
         if (RequiresConfirmation(request.Target, request.Patch))
@@ -650,14 +640,6 @@ public sealed class CalendarEntityPatchTools
             "The Calendar Entity patch arguments exceed the safe payload limit.",
             "admissionAndPayload")
         : Error();
-
-    private static CallToolResult BusyError() => NamedError(
-        "busy",
-        "limitsAndAdmission",
-        "Calendar mutation admission is busy.",
-        "admissionAndPayload",
-        retryable: true,
-        retryAfterMs: CalendarMutationAdmission.RetryAfterMilliseconds);
 
     private static CallToolResult UnsupportedMrtrError() => NamedError(
         "unsupported_capability",

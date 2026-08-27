@@ -53,128 +53,6 @@ public sealed class CalendarEntityCreateToolsTests
     }
 
     [Fact]
-    public async Task MutationAdmission_QueuesExactlySixteenInFifoOrderAndRejectsTheSeventeenth()
-    {
-        var admission = new CalendarMutationAdmission(TimeProvider.System);
-        using var active = (await admission.AcquireAsync(CancellationToken.None))!;
-        var queued = Enumerable.Range(0, CalendarMutationAdmission.MaximumQueuedMutations)
-            .Select(_ => admission.AcquireAsync(CancellationToken.None).AsTask())
-            .ToArray();
-
-        var overflow = await admission.AcquireAsync(CancellationToken.None);
-
-        overflow.ShouldBeNull();
-        queued.ShouldAllBe(task => !task.IsCompleted);
-        active.Dispose();
-        for (var index = 0; index < queued.Length; index++)
-        {
-            using var lease = await queued[index];
-            lease.ShouldNotBeNull();
-            queued.Take(index + 1).ShouldAllBe(task => task.IsCompletedSuccessfully);
-            queued.Skip(index + 1).ShouldAllBe(task => !task.IsCompleted);
-        }
-    }
-
-    [Fact]
-    public async Task MutationAdmission_TimesOutAtTwoSecondsAndRemovesTheWaiterWithoutSleeping()
-    {
-        var timeProvider = new ManualTimeProvider(DateTimeOffset.Parse("2026-08-16T12:00:00Z"));
-        var admission = new CalendarMutationAdmission(timeProvider);
-        using var active = (await admission.AcquireAsync(CancellationToken.None))!;
-        var waiting = admission.AcquireAsync(CancellationToken.None).AsTask();
-
-        timeProvider.Advance(TimeSpan.FromSeconds(2));
-        var timedOut = await waiting;
-        active.Dispose();
-        using var next = await admission.AcquireAsync(CancellationToken.None);
-
-        timedOut.ShouldBeNull();
-        next.ShouldNotBeNull();
-    }
-
-    [Fact]
-    public async Task CreateEventRawAsync_MapsAdmissionTimeoutToFrozenBusyError()
-    {
-        var timeProvider = new ManualTimeProvider(DateTimeOffset.Parse("2026-08-16T12:00:00Z"));
-        var admission = new CalendarMutationAdmission(timeProvider);
-        using var active = (await admission.AcquireAsync(CancellationToken.None))!;
-        var sut = new CalendarEntityCreateTools(
-            Substitute.For<ICalendarService>(),
-            timeProvider,
-            admission);
-        var waiting = sut.CreateEventRawAsync(ValidEventArguments(), CancellationToken.None);
-
-        timeProvider.Advance(TimeSpan.FromSeconds(2));
-        var result = await waiting;
-
-        result.IsError.ShouldBe(true);
-        var structured = result.StructuredContent!.Value;
-        structured.GetProperty("code").GetString().ShouldBe("busy");
-        structured.GetProperty("category").GetString().ShouldBe("limitsAndAdmission");
-        structured.GetProperty("phase").GetString().ShouldBe("admissionAndPayload");
-        structured.GetProperty("mutationState").GetString().ShouldBe("not_attempted");
-        structured.GetProperty("retryable").GetBoolean().ShouldBeTrue();
-        structured.GetProperty("retryAfterMs").GetInt32().ShouldBe(2_000);
-    }
-
-    [Theory]
-    [InlineData("success")]
-    [InlineData("error")]
-    [InlineData("cancel")]
-    public async Task CreateEventRawAsync_ReleasesMutationLeaseAfterEveryTerminalPath(string terminalPath)
-    {
-        var service = Substitute.For<ICalendarService>();
-        var admission = new CalendarMutationAdmission(TimeProvider.System);
-        var completions = new[]
-        {
-            new TaskCompletionSource<CalendarEntityCreateResult>(TaskCreationOptions.RunContinuationsAsynchronously),
-            new TaskCompletionSource<CalendarEntityCreateResult>(TaskCreationOptions.RunContinuationsAsynchronously)
-        };
-        var entered = new[]
-        {
-            new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
-            new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)
-        };
-        var callIndex = -1;
-        service.CreateEventAsync(Arg.Any<CalendarEventCreateRequest>(), Arg.Any<CancellationToken>()).Returns(call =>
-        {
-            var index = Interlocked.Increment(ref callIndex);
-            entered[index].TrySetResult();
-            return completions[index].Task.WaitAsync(call.Arg<CancellationToken>());
-        });
-        var sut = new CalendarEntityCreateTools(service, TimeProvider.System, admission);
-        using var firstCancellation = new CancellationTokenSource();
-        var arguments = ValidEventArguments();
-
-        var first = sut.CreateEventRawAsync(arguments, firstCancellation.Token);
-        await entered[0].Task;
-        var second = sut.CreateEventRawAsync(arguments, CancellationToken.None);
-        entered[1].Task.IsCompleted.ShouldBeFalse();
-
-        if (terminalPath == "cancel")
-        {
-            firstCancellation.Cancel();
-            await Should.ThrowAsync<OperationCanceledException>(first);
-        }
-        else
-        {
-            completions[0].SetResult(terminalPath == "success"
-                ? CalendarEntityCreateResult.Success(EventSnapshot())
-                : new CalendarEntityCreateResult(
-                    CalendarEntityCreateCode.UpstreamForbidden,
-                    CalendarMutationState.NotCommitted));
-            await first;
-        }
-
-        await entered[1].Task;
-        completions[1].SetResult(new CalendarEntityCreateResult(
-            CalendarEntityCreateCode.UpstreamForbidden,
-            CalendarMutationState.NotCommitted));
-        await second;
-        callIndex.ShouldBe(1);
-    }
-
-    [Fact]
     public async Task CreateEventRawAsync_MapsFrozenInputAndReturnsRefetchedSnapshot()
     {
         var service = Substitute.For<ICalendarService>();
@@ -725,10 +603,7 @@ public sealed class CalendarEntityCreateToolsTests
             entered.TrySetResult();
             return await completion.Task;
         });
-        var sut = new CalendarEntityCreateTools(
-            service,
-            timeProvider,
-            new CalendarMutationAdmission(timeProvider));
+        var sut = new CalendarEntityCreateTools(service, timeProvider);
         var pending = sut.CreateEventRawAsync(ValidEventArguments(), CancellationToken.None);
         await entered.Task;
 

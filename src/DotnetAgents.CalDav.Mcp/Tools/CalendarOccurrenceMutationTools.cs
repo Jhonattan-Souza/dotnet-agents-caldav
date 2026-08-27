@@ -15,21 +15,16 @@ public sealed class CalendarOccurrenceMutationTools
 {
     internal const int MaximumArgumentBytes = CalendarQueryToolSupport.MaximumArgumentBytes;
     private readonly ICalendarService _calendarService;
-    private readonly CalendarMutationAdmission _admission;
 
     public CalendarOccurrenceMutationTools(IServiceProvider services)
         : this(
-            services.GetRequiredService<ICalendarService>(),
-            services.GetRequiredService<CalendarMutationAdmission>())
+            services.GetRequiredService<ICalendarService>())
     {
     }
 
-    internal CalendarOccurrenceMutationTools(
-        ICalendarService calendarService,
-        CalendarMutationAdmission admission)
+    internal CalendarOccurrenceMutationTools(ICalendarService calendarService)
     {
         _calendarService = calendarService;
-        _admission = admission;
     }
 
     [McpServerTool(
@@ -180,9 +175,6 @@ public sealed class CalendarOccurrenceMutationTools
         if (CalendarQueryToolSupport.MeasureArguments(arguments, arguments ?? new Dictionary<string, JsonElement>())
             > MaximumArgumentBytes)
             return InputError(payloadTooLarge: true);
-        using var lease = await _admission.AcquireAsync(cancellationToken).ConfigureAwait(false);
-        if (lease is null)
-            return BusyError();
         var request = parse(arguments);
         if (request is null)
             return InputError(payloadTooLarge: false);
@@ -429,15 +421,6 @@ public sealed class CalendarOccurrenceMutationTools
             "not_attempted");
 
     internal static CallToolResult CreateInputGuardError(bool payloadTooLarge) => InputError(payloadTooLarge);
-
-    private static CallToolResult BusyError() => NamedError(
-        "busy",
-        "limitsAndAdmission",
-        "Calendar mutation admission is busy.",
-        "admissionAndPayload",
-        "not_attempted",
-        retryable: true,
-        retryAfterMs: CalendarMutationAdmission.RetryAfterMilliseconds);
 
     private static CallToolResult NamedError(
         string code,
