@@ -1,4 +1,3 @@
-using DotnetAgents.CalDav.Core.Models;
 using DotnetAgents.CalDav.Core.Services;
 using Shouldly;
 using Xunit;
@@ -8,48 +7,64 @@ namespace DotnetAgents.CalDav.Core.Tests.Unit.Services;
 public sealed class CalendarOperationProgressTests
 {
     [Fact]
-    public void SnapshotKeepsAbsentAndObservedOperationFactsDistinct()
+    public void PublicMoveSnapshotCompatibilityRemainsAvailable()
     {
         var state = CalendarOperationProgress.CreateState();
 
-        state.Telemetry.MutationState.HasValue.ShouldBeFalse();
-        state.Telemetry.Move.Dispatch.HasValue.ShouldBeFalse();
-        state.Telemetry.Move.Collision.HasValue.ShouldBeFalse();
-        state.Telemetry.Move.Reconciliation.HasValue.ShouldBeFalse();
+        using (CalendarOperationProgress.Attach(state))
+        {
+            CalendarOperationProgress.SetMoveNotAttempted(CalendarMoveCollisionClassification.SourceRevision);
+
+            CalendarOperationProgress.CurrentMoveTelemetry.ShouldBe(new CalendarMoveTelemetrySnapshot(
+                CalendarMoveDispatchClassification.NotAttempted,
+                CalendarMoveCollisionClassification.SourceRevision,
+                CalendarMoveReconciliationClassification.NotRun));
+        }
+    }
+
+    [Theory]
+    [InlineData(false, CalendarMoveDispatchClassification.Dispatched)]
+    [InlineData(true, CalendarMoveDispatchClassification.PossiblyDispatched)]
+    public void DispatchedMoveStateChangesReconciliationAtomically(
+        bool possiblyDispatched,
+        CalendarMoveDispatchClassification expectedDispatch)
+    {
+        var state = CalendarOperationProgress.CreateState();
 
         using (CalendarOperationProgress.Attach(state))
         {
-            CalendarOperationProgress.ObserveMutationState(CalendarMutationState.Committed);
-            CalendarOperationProgress.SetMoveDispatch(
-                CalendarMoveDispatchClassification.PossiblyDispatched);
-            CalendarOperationProgress.SetMoveCollision(CalendarMoveCollisionClassification.None);
+            CalendarOperationProgress.SetMoveDispatched(possiblyDispatched);
             CalendarOperationProgress.SetMoveReconciliation(
                 CalendarMoveReconciliationClassification.ObservationUnavailable);
         }
 
-        state.Telemetry.MutationState.Value.ShouldBe(CalendarMutationState.Committed);
-        state.Telemetry.Move.Dispatch.Value.ShouldBe(
-            CalendarMoveDispatchClassification.PossiblyDispatched);
-        state.Telemetry.Move.Collision.Value.ShouldBe(CalendarMoveCollisionClassification.None);
-        state.Telemetry.Move.Reconciliation.Value.ShouldBe(
-            CalendarMoveReconciliationClassification.ObservationUnavailable);
+        state.MoveState.ShouldBeOfType(possiblyDispatched
+            ? typeof(CalendarMoveTelemetryState.PossiblyDispatched)
+            : typeof(CalendarMoveTelemetryState.Dispatched));
+        state.MoveTelemetry.ShouldBe(new CalendarMoveTelemetrySnapshot(
+            expectedDispatch,
+            CalendarMoveCollisionClassification.None,
+            CalendarMoveReconciliationClassification.ObservationUnavailable));
     }
 
     [Fact]
-    public void UnspecifiedMoveFactsRemainAbsentInsteadOfBecomingExportableStates()
+    public void RejectedMoveCannotAcquireAReconciliationState()
     {
         var state = CalendarOperationProgress.CreateState();
 
         using (CalendarOperationProgress.Attach(state))
         {
-            CalendarOperationProgress.SetMoveDispatch(CalendarMoveDispatchClassification.Unspecified);
-            CalendarOperationProgress.SetMoveCollision(CalendarMoveCollisionClassification.Unspecified);
+            CalendarOperationProgress.SetMoveRejected(CalendarMoveCollisionClassification.Uid);
             CalendarOperationProgress.SetMoveReconciliation(
-                CalendarMoveReconciliationClassification.Unspecified);
+                CalendarMoveReconciliationClassification.FaithfulDestinationSourceAbsent);
+            CalendarOperationProgress.SetMoveCollision(CalendarMoveCollisionClassification.DestinationHref);
         }
 
-        state.Telemetry.Move.Dispatch.HasValue.ShouldBeFalse();
-        state.Telemetry.Move.Collision.HasValue.ShouldBeFalse();
-        state.Telemetry.Move.Reconciliation.HasValue.ShouldBeFalse();
+        state.MoveState.ShouldBe(new CalendarMoveTelemetryState.Rejected(
+            CalendarMoveCollisionClassification.Uid));
+        state.MoveTelemetry.ShouldBe(new CalendarMoveTelemetrySnapshot(
+            CalendarMoveDispatchClassification.Rejected,
+            CalendarMoveCollisionClassification.Uid,
+            CalendarMoveReconciliationClassification.NotRun));
     }
 }

@@ -56,7 +56,7 @@ internal static class CalendarTelemetry
         CurrentOperation.Value?.ObserveStructuredError(facts);
 
     internal static void ObserveMutationState(CalendarMutationState mutationState) =>
-        CalendarOperationProgress.ObserveMutationState(mutationState);
+        CurrentOperation.Value?.ObserveMutationState(mutationState);
 
     internal static void ObserveStructuredError(
         CalendarStructuredErrorFacts facts,
@@ -318,6 +318,7 @@ internal sealed class CalendarTelemetryOperation : IDisposable
     private readonly Activity _operation;
     private Activity? _phase;
     private CalendarStructuredErrorFacts? _structuredError;
+    private CalendarMutationState? _mutationState;
 
     internal CalendarTelemetryOperation(ActivitySource source, Activity operation)
     {
@@ -335,19 +336,28 @@ internal sealed class CalendarTelemetryOperation : IDisposable
 
     internal void ObserveStructuredError(CalendarStructuredErrorFacts facts) => _structuredError = facts;
 
+    internal void ObserveMutationState(CalendarMutationState mutationState) => _mutationState = mutationState;
+
+    internal void ObserveMutationStateIfAbsent(CalendarMutationState mutationState) =>
+        _mutationState ??= mutationState;
+
     internal void Complete(
         CalendarOperationOutcome outcome,
-        CalendarOperationTelemetrySnapshot telemetry)
+        CalendarMoveTelemetrySnapshot? moveTelemetry = null)
     {
         if (!_operation.IsAllDataRequested)
             return;
 
         var outcomeName = OutcomeName(outcome);
         _operation.SetTag("caldav.outcome", outcomeName);
-        _operation.SetTag("caldav.mutation.state", MutationStateName(telemetry.MutationState));
-        _operation.SetTag("caldav.move.dispatch", MoveDispatch(telemetry.Move.Dispatch));
-        _operation.SetTag("caldav.move.collision", MoveCollision(telemetry.Move.Collision));
-        _operation.SetTag("caldav.move.reconciliation", MoveReconciliation(telemetry.Move.Reconciliation));
+        _operation.SetTag(
+            "caldav.mutation.state",
+            _mutationState is { } mutationState
+                ? CalendarTelemetryVocabulary.MutationStateName(mutationState)
+                : null);
+        _operation.SetTag("caldav.move.dispatch", MoveDispatch(moveTelemetry));
+        _operation.SetTag("caldav.move.collision", MoveCollision(moveTelemetry));
+        _operation.SetTag("caldav.move.reconciliation", MoveReconciliation(moveTelemetry));
         if (outcome == CalendarOperationOutcome.Error && _structuredError is { } error)
         {
             var errorCode = CalendarTelemetryVocabulary.ErrorCodeName(error.Code);
@@ -422,35 +432,29 @@ internal sealed class CalendarTelemetryOperation : IDisposable
         _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, null)
     };
 
-    private static string? MutationStateName(CalendarTelemetryFact<CalendarMutationState> fact) =>
-        fact.HasValue ? CalendarTelemetryVocabulary.MutationStateName(fact.Value) : null;
-
-    private static string? MoveDispatch(
-        CalendarTelemetryFact<CalendarMoveDispatchClassification> fact) =>
-        fact.HasValue ? fact.Value switch
+    private static string? MoveDispatch(CalendarMoveTelemetrySnapshot? telemetry) =>
+        telemetry?.Dispatch switch
     {
         CalendarMoveDispatchClassification.NotAttempted => "not_attempted",
         CalendarMoveDispatchClassification.Rejected => "rejected",
         CalendarMoveDispatchClassification.Dispatched => "dispatched",
         CalendarMoveDispatchClassification.PossiblyDispatched => "possibly_dispatched",
-        _ => throw new ArgumentOutOfRangeException(nameof(fact), fact.Value, null)
-    } : null;
+        _ => null
+    };
 
-    private static string? MoveCollision(
-        CalendarTelemetryFact<CalendarMoveCollisionClassification> fact) =>
-        fact.HasValue ? fact.Value switch
+    private static string? MoveCollision(CalendarMoveTelemetrySnapshot? telemetry) =>
+        telemetry?.Collision switch
     {
         CalendarMoveCollisionClassification.None => "none",
         CalendarMoveCollisionClassification.SourceRevision => "source_revision",
         CalendarMoveCollisionClassification.DestinationHref => "destination_href",
         CalendarMoveCollisionClassification.Uid => "uid",
         CalendarMoveCollisionClassification.Unclassified => "unclassified",
-        _ => throw new ArgumentOutOfRangeException(nameof(fact), fact.Value, null)
-    } : null;
+        _ => null
+    };
 
-    private static string? MoveReconciliation(
-        CalendarTelemetryFact<CalendarMoveReconciliationClassification> fact) =>
-        fact.HasValue ? fact.Value switch
+    private static string? MoveReconciliation(CalendarMoveTelemetrySnapshot? telemetry) =>
+        telemetry?.Reconciliation switch
     {
         CalendarMoveReconciliationClassification.NotRun => "not_run",
         CalendarMoveReconciliationClassification.FaithfulDestinationSourceAbsent =>
@@ -461,6 +465,6 @@ internal sealed class CalendarTelemetryOperation : IDisposable
         CalendarMoveReconciliationClassification.UnchangedSourceDestinationAbsent =>
             "unchanged_source_destination_absent",
         CalendarMoveReconciliationClassification.Indeterminate => "indeterminate",
-        _ => throw new ArgumentOutOfRangeException(nameof(fact), fact.Value, null)
-    } : null;
+        _ => null
+    };
 }

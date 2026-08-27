@@ -83,9 +83,8 @@ public sealed class CalendarTelemetryTests
         using (var operation = CalendarTelemetry.StartOperation("todos.complete", null))
         {
             operation.ShouldNotBeNull();
-            operation.Complete(
-                OperationOutcome(outcome),
-                OperationTelemetry(mutationState));
+            ObserveMutationState(operation, mutationState);
+            operation.Complete(OperationOutcome(outcome));
         }
 
         stoppedOperation.ShouldNotBeNull();
@@ -110,18 +109,13 @@ public sealed class CalendarTelemetryTests
         using (var operation = CalendarTelemetry.StartOperation("calendar_resources.move", null))
         {
             operation.ShouldNotBeNull();
+            operation.ObserveMutationState(CalendarMutationState.Committed);
             operation.Complete(
                 CalendarOperationOutcome.Success,
-                new CalendarOperationTelemetrySnapshot(
-                    CalendarTelemetryFact<CalendarMutationState>.FromValue(
-                        CalendarMutationState.Committed),
-                    new CalendarMoveTelemetrySnapshot(
-                        CalendarTelemetryFact<CalendarMoveDispatchClassification>.FromValue(
-                            CalendarMoveDispatchClassification.PossiblyDispatched),
-                        CalendarTelemetryFact<CalendarMoveCollisionClassification>.FromValue(
-                            CalendarMoveCollisionClassification.None),
-                        CalendarTelemetryFact<CalendarMoveReconciliationClassification>.FromValue(
-                            CalendarMoveReconciliationClassification.FaithfulDestinationSourceAbsent))));
+                new CalendarMoveTelemetrySnapshot(
+                    CalendarMoveDispatchClassification.PossiblyDispatched,
+                    CalendarMoveCollisionClassification.None,
+                    CalendarMoveReconciliationClassification.FaithfulDestinationSourceAbsent));
         }
 
         stoppedOperation.ShouldNotBeNull();
@@ -152,9 +146,8 @@ public sealed class CalendarTelemetryTests
                 CalendarTelemetryErrorCategory.PostWriteTruth,
                 CalendarTelemetryErrorPhase.PostWriteVerificationOrReconciliation,
                 Retryable: false));
-            operation.Complete(
-                CalendarOperationOutcome.Error,
-                OperationTelemetry("committed"));
+            operation.ObserveMutationState(CalendarMutationState.Committed);
+            operation.Complete(CalendarOperationOutcome.Error);
         }
 
         stoppedOperation.ShouldNotBeNull();
@@ -900,20 +893,22 @@ public sealed class CalendarTelemetryTests
         _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, null)
     };
 
-    private static CalendarOperationTelemetrySnapshot OperationTelemetry(string? mutationState) =>
-        mutationState switch
+    private static void ObserveMutationState(
+        CalendarTelemetryOperation operation,
+        string? mutationState)
+    {
+        var state = mutationState switch
         {
-            null => default,
-            "not_attempted" => CalendarOperationTelemetrySnapshot.WithMutationState(
-                CalendarMutationState.NotAttempted),
-            "not_committed" => CalendarOperationTelemetrySnapshot.WithMutationState(
-                CalendarMutationState.NotCommitted),
-            "committed" => CalendarOperationTelemetrySnapshot.WithMutationState(
-                CalendarMutationState.Committed),
-            "unknown" => CalendarOperationTelemetrySnapshot.WithMutationState(
-                CalendarMutationState.Unknown),
+            null => (CalendarMutationState?)null,
+            "not_attempted" => CalendarMutationState.NotAttempted,
+            "not_committed" => CalendarMutationState.NotCommitted,
+            "committed" => CalendarMutationState.Committed,
+            "unknown" => CalendarMutationState.Unknown,
             _ => throw new ArgumentOutOfRangeException(nameof(mutationState), mutationState, null)
         };
+        if (state is { } value)
+            operation.ObserveMutationState(value);
+    }
 
     private static ActivityListener ListenTo(string sourceName)
     {

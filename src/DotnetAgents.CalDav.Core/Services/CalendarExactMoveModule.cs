@@ -348,9 +348,7 @@ internal sealed class CalendarExactMoveModule(
 
     private static void InitializeMoveProgress()
     {
-        CalendarOperationProgress.SetMoveDispatch(CalendarMoveDispatchClassification.NotAttempted);
-        CalendarOperationProgress.SetMoveCollision(CalendarMoveCollisionClassification.Unspecified);
-        CalendarOperationProgress.SetMoveReconciliation(CalendarMoveReconciliationClassification.NotRun);
+        CalendarOperationProgress.SetMoveNotAttempted();
     }
 
     private static CalendarExactResourceResult FromReadFailure(CalendarResourceReadCode code) => code switch

@@ -135,9 +135,22 @@ public sealed class CalendarExecutionPolicyTests
         CalendarMoveCollisionClassification collision,
         CalendarMoveReconciliationClassification reconciliation)
     {
-        InvokeProgressSetter("SetMoveDispatch", dispatch);
-        InvokeProgressSetter("SetMoveCollision", collision);
-        InvokeProgressSetter("SetMoveReconciliation", reconciliation);
+        switch (dispatch)
+        {
+            case CalendarMoveDispatchClassification.NotAttempted:
+                InvokeProgressSetter("SetMoveNotAttempted", collision);
+                break;
+            case CalendarMoveDispatchClassification.Rejected:
+                InvokeProgressSetter("SetMoveRejected", collision);
+                break;
+            case CalendarMoveDispatchClassification.Dispatched:
+            case CalendarMoveDispatchClassification.PossiblyDispatched:
+                InvokeProgressSetter(
+                    "SetMoveDispatched",
+                    dispatch == CalendarMoveDispatchClassification.PossiblyDispatched);
+                InvokeProgressSetter("SetMoveReconciliation", reconciliation);
+                break;
+        }
     }
 
     private static IReadOnlyDictionary<string, ExactMoveCancellationScenario> ExactMoveCancellationProgress { get; } =
@@ -347,7 +360,7 @@ public sealed class CalendarExecutionPolicyTests
                 CalendarTelemetryErrorCategory.State,
                 CalendarTelemetryErrorPhase.TargetRevision,
                 Retryable: false));
-            CalendarOperationProgress.ObserveMutationState(CalendarMutationState.NotCommitted);
+            CalendarTelemetry.ObserveMutationState(CalendarMutationState.NotCommitted);
             return ValueTask.FromResult(result);
         });
         await filtered(context, TestContext.Current.CancellationToken);
@@ -431,7 +444,7 @@ public sealed class CalendarExecutionPolicyTests
                 if (@case.Error is { } error)
                     CalendarTelemetry.ObserveStructuredError(error);
                 if (@case.Mutation is { } mutation)
-                    CalendarOperationProgress.ObserveMutationState(mutation);
+                    CalendarTelemetry.ObserveMutationState(mutation);
                 return ValueTask.FromResult(result);
             });
             await filtered(context, CancellationToken.None);
