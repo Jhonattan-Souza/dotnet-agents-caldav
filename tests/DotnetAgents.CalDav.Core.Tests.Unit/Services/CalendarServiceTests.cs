@@ -27,16 +27,23 @@ public sealed class CalendarServiceTests
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns(acquisition.Task);
         var sut = Discovery(client);
 
-        var first = sut.DiscoverAsync(CancellationToken.None);
-        var second = sut.DiscoverAsync(CancellationToken.None);
+        var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var consumers = Enumerable.Range(0, 16).Select(_ => Task.Run(async () =>
+        {
+            await start.Task;
+            return await sut.DiscoverAsync(CancellationToken.None);
+        })).ToArray();
+        start.SetResult();
         acquisition.SetResult([EntityCalendar(
             "https://cal.example/events/",
             "Events",
             EntityKindSupport.Advertised,
             EntityKindSupport.NotAdvertised)]);
 
-        (await first).Discovery.Items.ShouldHaveSingleItem();
-        (await second).Discovery.Items.ShouldHaveSingleItem();
+        var results = await Task.WhenAll(consumers);
+        results[0].Discovery.Items.ShouldHaveSingleItem();
+        foreach (var result in results)
+            result.ShouldBeSameAs(results[0]);
         await client.Received(1).GetCalendarsAsync(Arg.Any<CancellationToken>());
     }
 
@@ -84,7 +91,7 @@ public sealed class CalendarServiceTests
     }
 
     [Fact]
-    public async Task DiscoverAsync_LaterSameKeyTokenDoesNotOverrideTheOperationToken()
+    public async Task DiscoverAsync_LaterConsumerTokenDoesNotOverrideTheOperationToken()
     {
         var client = Substitute.For<ICalendarClient>();
         var acquisition = new TaskCompletionSource<IReadOnlyList<CalendarDescriptor>>(
@@ -109,7 +116,7 @@ public sealed class CalendarServiceTests
     }
 
     [Fact]
-    public async Task DiscoverAsync_OperationCancellationIsTheSharedSameKeyOutcome()
+    public async Task DiscoverAsync_OperationCancellationIsTheSharedOutcome()
     {
         var client = Substitute.For<ICalendarClient>();
         var acquisition = new TaskCompletionSource<IReadOnlyList<CalendarDescriptor>>(
@@ -198,7 +205,7 @@ public sealed class CalendarServiceTests
     }
 
     [Fact]
-    public async Task GetCalendarsAsync_OperationContextIsOpaqueAndIsolatesCredentialRotation()
+    public async Task GetCalendarsAsync_SeparateOperationsRediscoverAfterCredentialRotation()
     {
         var client = Substitute.For<ICalendarClient>();
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([]);
@@ -220,71 +227,10 @@ public sealed class CalendarServiceTests
             CalendarHrefs = firstContext.CalendarHrefs,
             DefaultEventCalendarName = firstContext.DefaultEventCalendarName
         };
-        var firstGeneration = CalendarOperationContextGeneration.Create();
-        var secondGeneration = CalendarOperationContextGeneration.Create();
-
-        var firstKey = CalendarDiscoveryKey.Create(firstContext, firstGeneration);
-        var secondKey = CalendarDiscoveryKey.Create(secondContext, secondGeneration);
         await Service(client, Options.Create(firstContext)).GetCalendarsAsync(CancellationToken.None);
         await Service(client, Options.Create(secondContext)).GetCalendarsAsync(CancellationToken.None);
 
-        firstKey.ShouldNotBe(secondKey);
-        firstKey.ToString().ShouldNotContain(firstCredential);
-        secondKey.ToString().ShouldNotContain(secondCredential);
         await client.Received(2).GetCalendarsAsync(Arg.Any<CancellationToken>());
-    }
-
-    [Theory]
-    [InlineData("principal")]
-    [InlineData("origin")]
-    [InlineData("endpoint")]
-    [InlineData("scope")]
-    [InlineData("event-default")]
-    [InlineData("todo-default")]
-    [InlineData("timeout")]
-    public void CalendarDiscoveryKey_RelevantConfigurationChangesAreDistinct(string change)
-    {
-        var context = new CalDavOptions
-        {
-            BaseUrl = "https://cal.example/server/",
-            Username = "principal-a",
-            Password = "private-password",
-            CalendarHrefs = "https://cal.example/a/",
-            DefaultEventCalendarName = "Events",
-            DefaultTodoCalendarName = "Tasks",
-            RequestTimeout = TimeSpan.FromSeconds(30)
-        };
-        var generation = CalendarOperationContextGeneration.Create();
-        var baseline = CalendarDiscoveryKey.Create(context, generation);
-
-        switch (change)
-        {
-            case "principal":
-                context.Username = "principal-b";
-                break;
-            case "origin":
-                context.BaseUrl = "https://other.example/server/";
-                break;
-            case "endpoint":
-                context.BaseUrl = "https://cal.example/other/";
-                break;
-            case "scope":
-                context.CalendarHrefs = "https://cal.example/b/";
-                break;
-            case "event-default":
-                context.DefaultEventCalendarName = "Archive";
-                break;
-            case "todo-default":
-                context.DefaultTodoCalendarName = "Backlog";
-                break;
-            case "timeout":
-                context.RequestTimeout = TimeSpan.FromSeconds(15);
-                break;
-            default:
-                throw new ArgumentOutOfRangeException(nameof(change), change, null);
-        }
-
-        CalendarDiscoveryKey.Create(context, generation).ShouldNotBe(baseline);
     }
 
     [Fact]
@@ -754,7 +700,6 @@ public sealed class CalendarServiceTests
         var policy = new CalendarDiscoveryPolicy(configured, Substitute.For<ILogger<CalendarService>>());
         return new CalendarOperationDiscovery(
             new CalendarClientDiscoveryTransport(client),
-            configured,
             policy.ApplyScope,
             policy.ResolveDefault);
     }

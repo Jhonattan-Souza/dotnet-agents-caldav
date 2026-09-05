@@ -377,7 +377,6 @@ public sealed class CalendarMoveAuthorizationTests
         var transport = new FixedDiscoveryTransport(calendars);
         var discovery = new CalendarOperationDiscovery(
             transport,
-            Microsoft.Extensions.Options.Options.Create(options),
             discovered => new CalendarDiscoveryResult(discovered, []),
             (kind, _, _) => kind == CalendarEntityKind.Todo
                 ? todoDefault

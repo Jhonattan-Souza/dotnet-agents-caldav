@@ -236,7 +236,6 @@ internal sealed class CalendarQueryAcquisitionExecutor(
         var frozen = items.OrderBy(calendar => calendar.Href, StringComparer.Ordinal).Select(Freeze).ToArray();
         var byHref = frozen.ToDictionary(calendar => calendar.Href, StringComparer.Ordinal);
         return new CalendarOperationDiscoveryResult(
-            discovery.Key,
             new CalendarDiscoveryResult(
                 frozen,
                 discovery.Discovery.Diagnostics.Select(FreezeDiagnostic).ToArray()),
