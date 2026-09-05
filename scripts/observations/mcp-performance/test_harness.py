@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Harness regressions; temporary Git repositories and stub external executables."""
 import contextlib
+import asyncio
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -8,8 +10,12 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
-from build_manifest import capture, finalize, load_builds, source_identity
+from build_manifest import capture, finalize, load_builds, source_identity, benchmark_inputs, verify_process_inputs
+from aggregate import load_traces
+import benchmark
 
 HARNESS = Path(__file__).resolve().parent
 ASSEMBLIES = ['DotnetAgents.CalDav.Mcp.dll', 'DotnetAgents.CalDav.Core.dll']
@@ -68,6 +74,23 @@ class BuildIdentityTests(unittest.TestCase):
             for label in expected:
                 self.assertEqual(expected[label], builds[label]['source']['sha'])
                 self.assertFalse(builds[label]['source']['dirty'])
+            baseline = root / 'baseline' / ASSEMBLIES[0]
+            candidate = root / 'candidate' / ASSEMBLIES[0]
+            inputs = benchmark_inputs(builds, baseline, candidate)
+            manifest = dict(baseline=str(baseline), candidate=str(candidate), compare_otlp=False, build_inputs=inputs)
+            (root / 'paired-manifest.json').write_text(json.dumps(manifest))
+            processes = [dict(label=label, assembly=value['assembly'],
+                sha256=value['assembly_sha256'][ASSEMBLIES[0]], core_sha256=value['assembly_sha256'][ASSEMBLIES[1]])
+                for label, value in inputs.items()]
+            verify_process_inputs(root, 'paired', processes, builds)
+            with self.assertRaisesRegex(RuntimeError, 'prepared build'):
+                benchmark_inputs(builds, candidate, baseline)
+            processes[0]['assembly'] = str(candidate)
+            with self.assertRaisesRegex(RuntimeError, 'declared benchmark input'):
+                verify_process_inputs(root, 'paired', processes, builds)
+            otlp = benchmark_inputs(builds, candidate, candidate, compare_otlp=True)
+            self.assertEqual(expected['candidate'], otlp['baseline']['source']['sha'])
+            self.assertEqual(otlp['baseline'], otlp['candidate'])
             (root / 'candidate' / ASSEMBLIES[0]).write_bytes(b'replaced binary')
             with self.assertRaisesRegex(RuntimeError, 'differs'):
                 load_builds(root)
@@ -92,6 +115,22 @@ class BuildIdentityTests(unittest.TestCase):
 
 
 class CommandTests(unittest.TestCase):
+    def test_existing_hermes_wire_is_preserved_and_rejected_before_launch(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            wire = root / 'hermes-wire-sanitized.jsonl'
+            wire.write_text('previous attempt\n')
+            for script, arguments in [('hermes.py', [str(root), 'missing.dll']),
+                                      ('hermes_proxy.py', ['missing.dll', str(wire)])]:
+                with self.subTest(script=script):
+                    (root / 'yaml.py').write_text('')
+                    (root / 'dotenv.py').write_text('def dotenv_values(path): return {}\n')
+                    result = subprocess.run([sys.executable, str(HARNESS / script), *arguments],
+                        env=dict(os.environ, PYTHONPATH=str(root)), capture_output=True, text=True)
+                    self.assertNotEqual(0, result.returncode)
+                    self.assertTrue('already exists' in result.stderr or 'FileExistsError' in result.stderr, result.stderr)
+                    self.assertEqual('previous attempt\n', wire.read_text())
+
     def test_invalid_start_counts_fail_before_opening_infrastructure(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -162,6 +201,69 @@ class CommandTests(unittest.TestCase):
                         env=env, capture_output=True, text=True)
                     self.assertEqual(exit_code, result.returncode, result.stderr)
                     self.assertEqual(exit_code, json.loads(result.stdout)['exit_code'])
+
+
+class EvidenceTests(unittest.TestCase):
+    def test_named_trace_exports_merge_without_silent_conflicts(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            first, second = root / 'complete-traces.json', root / 'earlier-traces.json'
+            trace = dict(trace_id='test-a', operation_ms=1)
+            first.write_text(json.dumps([trace]))
+            second.write_text(json.dumps([trace, dict(trace_id='test-b', operation_ms=2)]))
+            self.assertEqual(2, len(load_traces([first, second])))
+            second.write_text(json.dumps([dict(trace, operation_ms=3)]))
+            with self.assertRaisesRegex(RuntimeError, 'Conflicting exports'):
+                load_traces([first, second])
+
+    def test_both_topologies_compare_build_results_and_retain_failures(self):
+        for topology in ['single_session', 'processes']:
+            for variation in ['equal', 'different', 'timeout']:
+                with self.subTest(topology=topology, variation=variation), tempfile.TemporaryDirectory() as temporary:
+                    root = Path(temporary)
+                    (root / 'infra-private.json').write_text(json.dumps(dict(
+                        url='http://127.0.0.1:1', username='test', password='test-only', otlp='http://127.0.0.1:1')))
+                    args = SimpleNamespace(root=root, baseline=root/'baseline.dll', candidate=root/'candidate.dll',
+                        name='check', mode='continue', no_otlp=True, compare_otlp=False, topology=topology,
+                        concurrency=2, blocks=1, tools=['todos.query'], samples=2, sizes=[5], cohort_samples=5)
+
+                    class FakeClient:
+                        def __init__(self, assembly, env):
+                            self.label = assembly.stem
+                            self.process = SimpleNamespace(pid=1)
+                            self.identity = {}
+
+                        async def __aenter__(self):
+                            return self
+
+                        async def __aexit__(self, *args):
+                            pass
+
+                        async def request(self, *args):
+                            return dict(result=dict(tools=[dict(name=tool) for tool in benchmark.TOOLS]))
+
+                        async def call(self, tool, arguments):
+                            failed = variation == 'timeout' and self.label == 'candidate' and 'cursor' in arguments
+                            items = [2 if variation == 'different' and self.label == 'candidate' else 1]
+                            record = dict(outcome='client_timeout' if failed else 'success', is_error=failed,
+                                timed_out=failed, item_sha256=hashlib.sha256(json.dumps(items).encode()).hexdigest(),
+                                items=1, elapsed_ms=1, cpu_ms=0, rss_bytes=1)
+                            response = {} if failed else dict(result=dict(structuredContent=dict(
+                                items=items, pagination=dict(nextCursor='test-cursor'))))
+                            return response, record
+
+                    with patch.object(benchmark, 'Client', FakeClient), patch.object(benchmark, 'load_builds', return_value={}), \
+                            patch.object(benchmark, 'benchmark_inputs', return_value={}):
+                        if variation == 'equal':
+                            asyncio.run(benchmark.run(args))
+                            self.assertTrue((root/'check-summary.json').exists())
+                        else:
+                            with self.assertRaisesRegex(RuntimeError, 'content/order|client_timeout'):
+                                asyncio.run(benchmark.run(args))
+                    rows = [json.loads(line) for line in (root/'check-samples.jsonl').read_text().splitlines()]
+                    self.assertTrue(any(row['label'] == 'candidate' for row in rows))
+                    if variation == 'timeout':
+                        self.assertTrue(rows[-1]['timed_out'])
 
 
 if __name__ == '__main__':

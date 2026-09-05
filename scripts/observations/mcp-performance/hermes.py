@@ -8,7 +8,10 @@ p=argparse.ArgumentParser(description='Run installed Hermes against an isolated 
 p.add_argument('root',type=Path);p.add_argument('assembly',type=Path)
 p.add_argument('--source-home',type=Path,default=Path.home()/'.hermes')
 a=p.parse_args()
-root=a.root.resolve(); state=json.loads((root/'infra-private.json').read_text())
+root=a.root.resolve()
+if (root/'hermes-wire-sanitized.jsonl').exists():
+    p.error('Hermes wire evidence already exists; use a fresh evidence directory')
+state=json.loads((root/'infra-private.json').read_text())
 repo=Path(__file__).resolve().parents[3]
 sys.path.insert(0,str(repo/'scripts/observations/mcp-performance'))
 from driver import environment
