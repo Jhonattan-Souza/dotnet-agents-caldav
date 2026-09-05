@@ -1,5 +1,7 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using DotnetAgents.CalDav.Mcp.Hosting;
+using Json.Schema;
 using ModelContextProtocol.Protocol;
 using Shouldly;
 using Xunit;
@@ -8,6 +10,55 @@ namespace DotnetAgents.CalDav.Mcp.Tests.Unit;
 
 public sealed class CalendarOutputSchemaGuardTests
 {
+    [Theory]
+    [InlineData("valid", true)]
+    [InlineData("late-invalid-enum", false)]
+    [InlineData("late-extra-property", false)]
+    [InlineData("late-wrong-revision-kind", false)]
+    [InlineData("late-invalid-percentage", false)]
+    public void Validate_ChecksTheEntirePageAndNestedReferences(string variation, bool valid)
+    {
+        var item = JsonNode.Parse("""
+            {"resultKind":"entity","completionState":"open","percentComplete":0,
+             "completionTarget":{"kind":"direct","entityRevision":{
+               "href":"https://cal.example/todos/one.ics","entityUid":"one",
+               "entityKind":"todo","entityTag":"\"strong\""}},"diagnostics":[]}
+            """)!;
+        var items = new JsonArray(Enumerable.Range(0, 200).Select(_ => item.DeepClone()).ToArray());
+        CorruptLastItem(items[199]!, variation);
+        var result = Result(new JsonObject
+        {
+            ["outcome"] = "success",
+            ["items"] = items,
+            ["diagnostics"] = new JsonArray(),
+            ["excludedIndeterminateCount"] = 0,
+            ["pagination"] = new JsonObject { ["mode"] = "query_result_snapshot", ["nextCursor"] = null },
+            ["temporalEvaluationContext"] = new JsonObject
+            {
+                ["timeZone"] = "America/Sao_Paulo", ["source"] = "configuration"
+            }
+        }.ToJsonString());
+        var schema = JsonSchema.FromText(CalendarToolContract.GetOutputSchema("todos.query").GetRawText());
+        schema.Evaluate(result.StructuredContent!.Value,
+            new EvaluationOptions { OutputFormat = OutputFormat.List }).IsValid.ShouldBe(valid);
+
+        if (valid)
+            Should.NotThrow(() => CalendarOutputSchemaGuard.Validate("todos.query", result));
+        else
+            Should.Throw<InvalidOperationException>(() => CalendarOutputSchemaGuard.Validate("todos.query", result));
+    }
+
+    private static void CorruptLastItem(JsonNode item, string variation)
+    {
+        switch (variation)
+        {
+            case "late-invalid-enum": item["completionState"] = "done"; break;
+            case "late-extra-property": item["completionTarget"]!["extra"] = true; break;
+            case "late-wrong-revision-kind": item["completionTarget"]!["entityRevision"]!["entityKind"] = "event"; break;
+            case "late-invalid-percentage": item["percentComplete"] = 101; break;
+        }
+    }
+
     [Fact]
     public void Validate_AcceptsSchemaValidToolOutput()
     {

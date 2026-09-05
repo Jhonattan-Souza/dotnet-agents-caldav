@@ -1,0 +1,3748 @@
+{
+  "baseline_sha": "37cdba56f3c957ee8f241eadf1e55b883e950458",
+  "candidate_is_working_tree": true,
+  "product_and_test_patch_sha256": "34672eca679a6dea3e2d51567c42e1a84e5df5af3ddf433d4f6442bc186e2771",
+  "percentile_estimator": "nearest rank ceil(p*n)",
+  "p99_is_descriptive_only": true,
+  "full_evidence_directory": "/tmp/caldav-perf-20260905",
+  "corpus": {
+    "seed": 20260905,
+    "resources": {
+      "events": 600,
+      "todos": 600,
+      "archive": 0
+    },
+    "authored_sha256": "9dc856499dc41593ba1acdd8bd7abdd8a28d4c247202f020e33408f57dabfac8",
+    "window": [
+      "2026-07-01T00:00:00Z",
+      "2026-12-31T00:00:00Z"
+    ],
+    "timezone": "America/Sao_Paulo"
+  },
+  "measurements": [
+    {
+      "label": "baseline",
+      "tool": "calendar_entities.query",
+      "mode": "continue",
+      "size": 1,
+      "concurrency": 1,
+      "n": 300,
+      "p50_ms": 3.398163,
+      "p95_ms": 4.446654,
+      "p99_descriptive_ms": 5.013877,
+      "min_ms": 2.529711,
+      "max_ms": 8.597691,
+      "block_p95_ms": {
+        "0": 4.391229,
+        "1": 4.006472,
+        "2": 4.807116
+      },
+      "errors": 0,
+      "mean_cpu_ms": 4.000000000000003,
+      "max_rss_bytes": 169656320,
+      "serial_service_ops_per_second": 289.2053515449002,
+      "run": "continue-serial",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 300,
+      "mean_stdio_response_bytes": 3776.24,
+      "distinct_item_hashes": [
+        "93ca3a81f11b0318f77b7fae98b6afb0348d4d724bf742a02512c6c0c0696c4f"
+      ],
+      "driver_ops_per_second": 249.30138895027935,
+      "server_mcp_p50_ms": 3.0835,
+      "server_mcp_p95_ms": 4.1292,
+      "operation_p50_ms": 0.5855,
+      "operation_p95_ms": 0.8557,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.09348166666666667,
+        "caldav.query.phase.page_admission": 0.16835366666666668
+      },
+      "representative_trace_ids": [
+        "75a3d521326a56ef4cc35708ca7a1c50",
+        "4b013c1465b509590806230f4da098df",
+        "06f0d328db3166103c690758b65a8991"
+      ]
+    },
+    {
+      "label": "baseline",
+      "tool": "calendar_entities.query",
+      "mode": "continue",
+      "size": 5,
+      "concurrency": 1,
+      "n": 300,
+      "p50_ms": 10.785965,
+      "p95_ms": 12.580948,
+      "p99_descriptive_ms": 12.935778,
+      "min_ms": 8.388645,
+      "max_ms": 14.712266,
+      "block_p95_ms": {
+        "0": 12.779593,
+        "1": 12.14776,
+        "2": 11.935499
+      },
+      "errors": 0,
+      "mean_cpu_ms": 15.633333333333333,
+      "max_rss_bytes": 180649984,
+      "serial_service_ops_per_second": 92.51248483274001,
+      "run": "continue-serial",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 300,
+      "mean_stdio_response_bytes": 15355,
+      "distinct_item_hashes": [
+        "9f1719a87250cb9ed7ef3292392903df7de92b3f29532b3d43ebbc049c5e03d4"
+      ],
+      "driver_ops_per_second": 85.80164726000767,
+      "server_mcp_p50_ms": 10.3113,
+      "server_mcp_p95_ms": 12.1944,
+      "operation_p50_ms": 1.3314,
+      "operation_p95_ms": 1.9354,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.10249933333333333,
+        "caldav.query.phase.page_admission": 0.5102923333333333
+      },
+      "representative_trace_ids": [
+        "a2f1a1a11d27c1d4cc6ed2a7165714fb",
+        "8f350cf6cfc723da12ac38a504564bac",
+        "cd25f4945df1b363c7ae00e564484f8a"
+      ]
+    },
+    {
+      "label": "baseline",
+      "tool": "calendar_entities.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 1,
+      "n": 300,
+      "p50_ms": 183.96058,
+      "p95_ms": 261.622574,
+      "p99_descriptive_ms": 335.795815,
+      "min_ms": 145.021568,
+      "max_ms": 462.748022,
+      "block_p95_ms": {
+        "0": 205.630676,
+        "1": 332.487262,
+        "2": 197.436529
+      },
+      "errors": 0,
+      "mean_cpu_ms": 199.73333333333332,
+      "max_rss_bytes": 271765504,
+      "serial_service_ops_per_second": 5.132300431279379,
+      "run": "continue-serial",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 300,
+      "mean_stdio_response_bytes": 576125,
+      "distinct_item_hashes": [
+        "15595ffd23c0a8f21585e72c079e7bd33c76c0503d496f885ed2b27f41ba80cf"
+      ],
+      "driver_ops_per_second": 4.863858914518142,
+      "server_mcp_p50_ms": 179.088,
+      "server_mcp_p95_ms": 254.9867,
+      "operation_p50_ms": 6.1254,
+      "operation_p95_ms": 14.7833,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.08425666666666666,
+        "caldav.query.phase.page_admission": 3.71351
+      },
+      "representative_trace_ids": [
+        "4afae28f686f347d8f216b53a89bd0b8",
+        "f5d502ec0632beb6481fe7f9663002cd",
+        "a9263bb7b00d2ed41fa7b0a89eadb1c2"
+      ]
+    },
+    {
+      "label": "candidate",
+      "tool": "calendar_entities.query",
+      "mode": "continue",
+      "size": 1,
+      "concurrency": 1,
+      "n": 300,
+      "p50_ms": 2.316578,
+      "p95_ms": 3.112162,
+      "p99_descriptive_ms": 3.527687,
+      "min_ms": 1.708068,
+      "max_ms": 8.228442,
+      "block_p95_ms": {
+        "0": 3.097013,
+        "1": 3.060645,
+        "2": 3.112162
+      },
+      "errors": 0,
+      "mean_cpu_ms": 3.099999999999999,
+      "max_rss_bytes": 167464960,
+      "serial_service_ops_per_second": 419.3888445159182,
+      "run": "continue-serial",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 300,
+      "mean_stdio_response_bytes": 3776.24,
+      "distinct_item_hashes": [
+        "93ca3a81f11b0318f77b7fae98b6afb0348d4d724bf742a02512c6c0c0696c4f"
+      ],
+      "driver_ops_per_second": 351.5730786416698,
+      "server_mcp_p50_ms": 2.0755,
+      "server_mcp_p95_ms": 2.7821,
+      "operation_p50_ms": 0.4964,
+      "operation_p95_ms": 0.7743,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.092266,
+        "caldav.query.phase.page_admission": 0.161319
+      },
+      "representative_trace_ids": [
+        "98f3fcd4d82b6f40cfcc099460e1f147",
+        "3d312c74612e00cfc7e8dced42c30f32",
+        "f965840dbabf0b5bd6267b6c58a5917f"
+      ]
+    },
+    {
+      "label": "candidate",
+      "tool": "calendar_entities.query",
+      "mode": "continue",
+      "size": 5,
+      "concurrency": 1,
+      "n": 300,
+      "p50_ms": 7.571742,
+      "p95_ms": 8.978039,
+      "p99_descriptive_ms": 9.765747,
+      "min_ms": 6.426687,
+      "max_ms": 9.993688,
+      "block_p95_ms": {
+        "0": 9.162848,
+        "1": 8.519162,
+        "2": 8.945929
+      },
+      "errors": 0,
+      "mean_cpu_ms": 11.5,
+      "max_rss_bytes": 183062528,
+      "serial_service_ops_per_second": 130.01749197695972,
+      "run": "continue-serial",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 300,
+      "mean_stdio_response_bytes": 15355,
+      "distinct_item_hashes": [
+        "9f1719a87250cb9ed7ef3292392903df7de92b3f29532b3d43ebbc049c5e03d4"
+      ],
+      "driver_ops_per_second": 116.95869402668453,
+      "server_mcp_p50_ms": 7.0719,
+      "server_mcp_p95_ms": 8.4713,
+      "operation_p50_ms": 1.2507,
+      "operation_p95_ms": 1.8014,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.09552766666666666,
+        "caldav.query.phase.page_admission": 0.48076766666666665
+      },
+      "representative_trace_ids": [
+        "0cad4b54d94deb4bcc9dfbafeff10d52",
+        "a9dc5b0f653551cd1796ac97c58b98b9",
+        "00a08140966a8578a111ce7721a0e17a"
+      ]
+    },
+    {
+      "label": "candidate",
+      "tool": "calendar_entities.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 1,
+      "n": 300,
+      "p50_ms": 51.61887,
+      "p95_ms": 56.959343,
+      "p99_descriptive_ms": 59.456322,
+      "min_ms": 47.29662,
+      "max_ms": 68.806002,
+      "block_p95_ms": {
+        "0": 57.501567,
+        "1": 54.40059,
+        "2": 58.463003
+      },
+      "errors": 0,
+      "mean_cpu_ms": 55.733333333333334,
+      "max_rss_bytes": 211931136,
+      "serial_service_ops_per_second": 19.25143130329688,
+      "run": "continue-serial",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 300,
+      "mean_stdio_response_bytes": 576125,
+      "distinct_item_hashes": [
+        "15595ffd23c0a8f21585e72c079e7bd33c76c0503d496f885ed2b27f41ba80cf"
+      ],
+      "driver_ops_per_second": 16.139412086666265,
+      "server_mcp_p50_ms": 46.5251,
+      "server_mcp_p95_ms": 51.3624,
+      "operation_p50_ms": 6.4229,
+      "operation_p95_ms": 8.8128,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.08695333333333333,
+        "caldav.query.phase.page_admission": 3.008124
+      },
+      "representative_trace_ids": [
+        "63307d2fca8f4c6aee386571780c2d31",
+        "f4bffd63cd6cab8547f009259a2318f1",
+        "edea03e89146ddc10686f1bf702149e5"
+      ]
+    },
+    {
+      "label": "baseline",
+      "tool": "calendar_occurrences.query",
+      "mode": "continue",
+      "size": 1,
+      "concurrency": 1,
+      "n": 300,
+      "p50_ms": 3.805743,
+      "p95_ms": 4.876897,
+      "p99_descriptive_ms": 5.424302,
+      "min_ms": 3.092735,
+      "max_ms": 6.274239,
+      "block_p95_ms": {
+        "0": 4.979902,
+        "1": 4.863012,
+        "2": 4.844668
+      },
+      "errors": 0,
+      "mean_cpu_ms": 5.199999999999997,
+      "max_rss_bytes": 187961344,
+      "serial_service_ops_per_second": 254.43489995997143,
+      "run": "continue-serial",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 300,
+      "mean_stdio_response_bytes": 4741.24,
+      "distinct_item_hashes": [
+        "6fa3c99da83de898883e522f1b691b162bc4069a8abc863d4b4a56cf1a318542"
+      ],
+      "driver_ops_per_second": 222.77263895755237,
+      "server_mcp_p50_ms": 3.5114,
+      "server_mcp_p95_ms": 4.5943,
+      "operation_p50_ms": 0.5455,
+      "operation_p95_ms": 0.982,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.08755133333333333,
+        "caldav.query.phase.page_admission": 0.187306
+      },
+      "representative_trace_ids": [
+        "70015540504774517bbb3d2554760447",
+        "07895f1986cb279151c686d74f82ca13",
+        "e5fc07f2b74d3e0b230b350fc5022700"
+      ]
+    },
+    {
+      "label": "baseline",
+      "tool": "calendar_occurrences.query",
+      "mode": "continue",
+      "size": 5,
+      "concurrency": 1,
+      "n": 300,
+      "p50_ms": 14.819531,
+      "p95_ms": 17.5124,
+      "p99_descriptive_ms": 20.171286,
+      "min_ms": 12.300558,
+      "max_ms": 24.43821,
+      "block_p95_ms": {
+        "0": 16.336335,
+        "1": 18.160956,
+        "2": 17.378948
+      },
+      "errors": 0,
+      "mean_cpu_ms": 17.900000000000002,
+      "max_rss_bytes": 190660608,
+      "serial_service_ops_per_second": 66.59429060056124,
+      "run": "continue-serial",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 300,
+      "mean_stdio_response_bytes": 21466,
+      "distinct_item_hashes": [
+        "07569f540908f8efd3996ae2c07e64c72881fc930152028007cd1ed08de7c5b0"
+      ],
+      "driver_ops_per_second": 62.53004671658767,
+      "server_mcp_p50_ms": 14.2558,
+      "server_mcp_p95_ms": 16.9291,
+      "operation_p50_ms": 1.3013,
+      "operation_p95_ms": 2.1659,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.11415033333333334,
+        "caldav.query.phase.page_admission": 0.490163
+      },
+      "representative_trace_ids": [
+        "9e979669358a36fbc3743fbad6d2464e",
+        "3081681bf75e095241ed9cb8829135ad",
+        "ffded965f1152ea7250c49fc6b3e69a8"
+      ]
+    },
+    {
+      "label": "baseline",
+      "tool": "calendar_occurrences.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 1,
+      "n": 300,
+      "p50_ms": 276.757547,
+      "p95_ms": 307.925834,
+      "p99_descriptive_ms": 342.264589,
+      "min_ms": 227.247109,
+      "max_ms": 368.70185,
+      "block_p95_ms": {
+        "0": 312.86174,
+        "1": 307.023563,
+        "2": 305.478076
+      },
+      "errors": 0,
+      "mean_cpu_ms": 281.53333333333336,
+      "max_rss_bytes": 339894272,
+      "serial_service_ops_per_second": 3.60386796032705,
+      "run": "continue-serial",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 300,
+      "mean_stdio_response_bytes": 742404,
+      "distinct_item_hashes": [
+        "3e933bc895d8c7ea816e7be018ddf32119e347573589f9f6155499cae89b2730"
+      ],
+      "driver_ops_per_second": 3.435216298270209,
+      "server_mcp_p50_ms": 270.5338,
+      "server_mcp_p95_ms": 302.2245,
+      "operation_p50_ms": 7.2983,
+      "operation_p95_ms": 14.6118,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.10061866666666666,
+        "caldav.query.phase.page_admission": 3.9256426666666666
+      },
+      "representative_trace_ids": [
+        "f517c8e2b8fa91a0d978094ff7504d6d",
+        "1c4504aebd9c0cc11e867a8a1605a20c",
+        "12b98387bd3ec290e4bcc7a7c8478cd0"
+      ]
+    },
+    {
+      "label": "candidate",
+      "tool": "calendar_occurrences.query",
+      "mode": "continue",
+      "size": 1,
+      "concurrency": 1,
+      "n": 300,
+      "p50_ms": 2.918427,
+      "p95_ms": 3.910501,
+      "p99_descriptive_ms": 4.738095,
+      "min_ms": 2.287273,
+      "max_ms": 6.43377,
+      "block_p95_ms": {
+        "0": 3.829117,
+        "1": 3.713018,
+        "2": 4.12138
+      },
+      "errors": 0,
+      "mean_cpu_ms": 3.8000000000000016,
+      "max_rss_bytes": 186662912,
+      "serial_service_ops_per_second": 332.1435298877147,
+      "run": "continue-serial",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 300,
+      "mean_stdio_response_bytes": 4741.24,
+      "distinct_item_hashes": [
+        "6fa3c99da83de898883e522f1b691b162bc4069a8abc863d4b4a56cf1a318542"
+      ],
+      "driver_ops_per_second": 280.4194201111843,
+      "server_mcp_p50_ms": 2.6439,
+      "server_mcp_p95_ms": 3.601,
+      "operation_p50_ms": 0.5669,
+      "operation_p95_ms": 0.9412,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.08969566666666667,
+        "caldav.query.phase.page_admission": 0.18737366666666666
+      },
+      "representative_trace_ids": [
+        "9807553b9f80895f4c532ef12615de59",
+        "6596e2d546cc4038c6ffcf308bedee45",
+        "f6454c7cd4e509bc6f27e494f409d0f8"
+      ]
+    },
+    {
+      "label": "candidate",
+      "tool": "calendar_occurrences.query",
+      "mode": "continue",
+      "size": 5,
+      "concurrency": 1,
+      "n": 300,
+      "p50_ms": 11.068089,
+      "p95_ms": 16.538479,
+      "p99_descriptive_ms": 25.984202,
+      "min_ms": 9.289047,
+      "max_ms": 34.435395,
+      "block_p95_ms": {
+        "0": 13.78814,
+        "1": 19.344703,
+        "2": 11.968442
+      },
+      "errors": 0,
+      "mean_cpu_ms": 14.533333333333333,
+      "max_rss_bytes": 189841408,
+      "serial_service_ops_per_second": 84.63570187134954,
+      "run": "continue-serial",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 300,
+      "mean_stdio_response_bytes": 21466,
+      "distinct_item_hashes": [
+        "07569f540908f8efd3996ae2c07e64c72881fc930152028007cd1ed08de7c5b0"
+      ],
+      "driver_ops_per_second": 77.96276612271542,
+      "server_mcp_p50_ms": 10.5535,
+      "server_mcp_p95_ms": 15.7042,
+      "operation_p50_ms": 1.7033,
+      "operation_p95_ms": 2.3477,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.10973733333333334,
+        "caldav.query.phase.page_admission": 0.613629
+      },
+      "representative_trace_ids": [
+        "c00685734b2e1a6e54bc4f57c0e62ebc",
+        "a9a18456d4a6bc56fd827d1b19fcd0d3",
+        "dd23b5dcb4e77be342e57037c9fb5728"
+      ]
+    },
+    {
+      "label": "candidate",
+      "tool": "calendar_occurrences.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 1,
+      "n": 300,
+      "p50_ms": 70.857676,
+      "p95_ms": 75.769806,
+      "p99_descriptive_ms": 83.710719,
+      "min_ms": 66.331078,
+      "max_ms": 91.159536,
+      "block_p95_ms": {
+        "0": 72.900554,
+        "1": 75.540368,
+        "2": 77.514735
+      },
+      "errors": 0,
+      "mean_cpu_ms": 71.76666666666667,
+      "max_rss_bytes": 210583552,
+      "serial_service_ops_per_second": 14.029777152953942,
+      "run": "continue-serial",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 300,
+      "mean_stdio_response_bytes": 742404,
+      "distinct_item_hashes": [
+        "3e933bc895d8c7ea816e7be018ddf32119e347573589f9f6155499cae89b2730"
+      ],
+      "driver_ops_per_second": 11.818884883065339,
+      "server_mcp_p50_ms": 64.1589,
+      "server_mcp_p95_ms": 68.7498,
+      "operation_p50_ms": 7.4893,
+      "operation_p95_ms": 9.7371,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.08337033333333334,
+        "caldav.query.phase.page_admission": 3.351170333333333
+      },
+      "representative_trace_ids": [
+        "b80510805a7f22e8fc7ab379066bfaee",
+        "f15d45f080d2e481f660d42be6f79101",
+        "156094c831e08cf59895dd67e64d8f7e"
+      ]
+    },
+    {
+      "label": "baseline",
+      "tool": "todos.query",
+      "mode": "continue",
+      "size": 1,
+      "concurrency": 1,
+      "n": 300,
+      "p50_ms": 2.083378,
+      "p95_ms": 2.93122,
+      "p99_descriptive_ms": 4.051759,
+      "min_ms": 1.387602,
+      "max_ms": 5.467473,
+      "block_p95_ms": {
+        "0": 3.140816,
+        "1": 2.93077,
+        "2": 2.5822
+      },
+      "errors": 0,
+      "mean_cpu_ms": 2.1666666666666656,
+      "max_rss_bytes": 143478784,
+      "serial_service_ops_per_second": 471.08225537582933,
+      "run": "continue-serial",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 300,
+      "mean_stdio_response_bytes": 1851.24,
+      "distinct_item_hashes": [
+        "46094766d7c161d12d4e4c56f348d2c52745ebd9d0433939ea434a044b0790cf"
+      ],
+      "driver_ops_per_second": 397.75359482473146,
+      "server_mcp_p50_ms": 1.8651,
+      "server_mcp_p95_ms": 2.6653,
+      "operation_p50_ms": 0.4269,
+      "operation_p95_ms": 0.6178,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.08574033333333334,
+        "caldav.query.phase.page_admission": 0.10635166666666666
+      },
+      "representative_trace_ids": [
+        "5786b9f0fd3ab9d299e8330b5a1e0c14",
+        "85fa65397fc5bd99c932cf815fdc6c17",
+        "87e8c78fb60501028933f86a1ba19336"
+      ]
+    },
+    {
+      "label": "baseline",
+      "tool": "todos.query",
+      "mode": "continue",
+      "size": 5,
+      "concurrency": 1,
+      "n": 300,
+      "p50_ms": 4.567363,
+      "p95_ms": 5.854855,
+      "p99_descriptive_ms": 6.323452,
+      "min_ms": 3.806595,
+      "max_ms": 10.102937,
+      "block_p95_ms": {
+        "0": 5.808709,
+        "1": 5.907215,
+        "2": 5.769215
+      },
+      "errors": 0,
+      "mean_cpu_ms": 6.1,
+      "max_rss_bytes": 149532672,
+      "serial_service_ops_per_second": 213.18639458244252,
+      "run": "continue-serial",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 300,
+      "mean_stdio_response_bytes": 4960,
+      "distinct_item_hashes": [
+        "588a90c428ab752cedb1863852685b11a9ecf70d194080a76c4858bb2aeb920c"
+      ],
+      "driver_ops_per_second": 189.3424211619703,
+      "server_mcp_p50_ms": 4.2584,
+      "server_mcp_p95_ms": 5.5155,
+      "operation_p50_ms": 0.5403,
+      "operation_p95_ms": 0.9406,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.07066566666666667,
+        "caldav.query.phase.page_admission": 0.21986133333333333
+      },
+      "representative_trace_ids": [
+        "9f9ddcc31702866a92fb79fe8868f7d1",
+        "021f1085e7b64a7dbff87d56953e1894",
+        "a78622954f36c134bee8e2bdaf942c52"
+      ]
+    },
+    {
+      "label": "baseline",
+      "tool": "todos.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 1,
+      "n": 300,
+      "p50_ms": 62.137661,
+      "p95_ms": 121.911267,
+      "p99_descriptive_ms": 145.905034,
+      "min_ms": 49.000266,
+      "max_ms": 154.969015,
+      "block_p95_ms": {
+        "0": 118.332433,
+        "1": 120.384179,
+        "2": 126.894711
+      },
+      "errors": 0,
+      "mean_cpu_ms": 85.86666666666666,
+      "max_rss_bytes": 197799936,
+      "serial_service_ops_per_second": 14.557411886412936,
+      "run": "continue-serial",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 300,
+      "mean_stdio_response_bytes": 146739,
+      "distinct_item_hashes": [
+        "74f73d492cc638d65e6d20cf9e485fce2ff4e7e97b9f4afba767896f6be14764"
+      ],
+      "driver_ops_per_second": 14.037520674142264,
+      "server_mcp_p50_ms": 60.5807,
+      "server_mcp_p95_ms": 120.2694,
+      "operation_p50_ms": 2.8046,
+      "operation_p95_ms": 10.5471,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.12693466666666667,
+        "caldav.query.phase.page_admission": 2.5452996666666667
+      },
+      "representative_trace_ids": [
+        "d974bafcaf8a43a7ff993f549b155ce3",
+        "fb2a15583d75b847e9fb716f24e9d41c",
+        "b3c6e9881c0ea7d4ae909e883e1db32e"
+      ]
+    },
+    {
+      "label": "candidate",
+      "tool": "todos.query",
+      "mode": "continue",
+      "size": 1,
+      "concurrency": 1,
+      "n": 300,
+      "p50_ms": 1.449951,
+      "p95_ms": 2.087205,
+      "p99_descriptive_ms": 3.281793,
+      "min_ms": 0.990933,
+      "max_ms": 9.105851,
+      "block_p95_ms": {
+        "0": 2.120598,
+        "1": 2.023735,
+        "2": 2.057349
+      },
+      "errors": 0,
+      "mean_cpu_ms": 1.7333333333333325,
+      "max_rss_bytes": 150380544,
+      "serial_service_ops_per_second": 630.5380392438553,
+      "run": "continue-serial",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 300,
+      "mean_stdio_response_bytes": 1851.24,
+      "distinct_item_hashes": [
+        "46094766d7c161d12d4e4c56f348d2c52745ebd9d0433939ea434a044b0790cf"
+      ],
+      "driver_ops_per_second": 517.8911514435034,
+      "server_mcp_p50_ms": 1.2502,
+      "server_mcp_p95_ms": 1.8744,
+      "operation_p50_ms": 0.3142,
+      "operation_p95_ms": 0.5318,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.06184066666666667,
+        "caldav.query.phase.page_admission": 0.098306
+      },
+      "representative_trace_ids": [
+        "bd94811bcc957cd020479cf409dac7f7",
+        "fe05ef2dbf5e34eef8415e6466ec5915",
+        "c041c1b16547d51ad1d14f97e1d64fdc"
+      ]
+    },
+    {
+      "label": "candidate",
+      "tool": "todos.query",
+      "mode": "continue",
+      "size": 5,
+      "concurrency": 1,
+      "n": 300,
+      "p50_ms": 2.948372,
+      "p95_ms": 4.141869,
+      "p99_descriptive_ms": 4.434972,
+      "min_ms": 2.469428,
+      "max_ms": 5.997456,
+      "block_p95_ms": {
+        "0": 3.877188,
+        "1": 4.02604,
+        "2": 4.326127
+      },
+      "errors": 0,
+      "mean_cpu_ms": 3.533333333333334,
+      "max_rss_bytes": 148004864,
+      "serial_service_ops_per_second": 323.50828220185184,
+      "run": "continue-serial",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 300,
+      "mean_stdio_response_bytes": 4960,
+      "distinct_item_hashes": [
+        "588a90c428ab752cedb1863852685b11a9ecf70d194080a76c4858bb2aeb920c"
+      ],
+      "driver_ops_per_second": 274.2053026249182,
+      "server_mcp_p50_ms": 2.658,
+      "server_mcp_p95_ms": 3.8956,
+      "operation_p50_ms": 0.4653,
+      "operation_p95_ms": 0.8622,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.06383233333333334,
+        "caldav.query.phase.page_admission": 0.19956966666666667
+      },
+      "representative_trace_ids": [
+        "8d3e2bc51756ccb6b04e0f8c9cca6a7d",
+        "e54bc20f50bd587895c21c5e014ee6bf",
+        "de544db6ff894af9b2d40da486462c9e"
+      ]
+    },
+    {
+      "label": "candidate",
+      "tool": "todos.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 1,
+      "n": 300,
+      "p50_ms": 25.977011,
+      "p95_ms": 67.286823,
+      "p99_descriptive_ms": 72.444373,
+      "min_ms": 16.114909,
+      "max_ms": 92.696621,
+      "block_p95_ms": {
+        "0": 67.029168,
+        "1": 64.890149,
+        "2": 71.192936
+      },
+      "errors": 0,
+      "mean_cpu_ms": 54.43333333333334,
+      "max_rss_bytes": 172396544,
+      "serial_service_ops_per_second": 25.91361913805825,
+      "run": "continue-serial",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 300,
+      "mean_stdio_response_bytes": 146739,
+      "distinct_item_hashes": [
+        "74f73d492cc638d65e6d20cf9e485fce2ff4e7e97b9f4afba767896f6be14764"
+      ],
+      "driver_ops_per_second": 24.134346321741525,
+      "server_mcp_p50_ms": 24.1205,
+      "server_mcp_p95_ms": 65.6648,
+      "operation_p50_ms": 3.8496,
+      "operation_p95_ms": 5.975,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.12334866666666666,
+        "caldav.query.phase.page_admission": 2.180035
+      },
+      "representative_trace_ids": [
+        "e838a2b0a6df14192c8649a28a2f9a8e",
+        "ee82be7f3179e7612171aa2040c939bf",
+        "b87e3b51c35a387910544044f577f7e8"
+      ]
+    },
+    {
+      "label": "baseline",
+      "tool": "calendar_entities.query",
+      "mode": "start",
+      "size": 200,
+      "concurrency": 1,
+      "n": 90,
+      "p50_ms": 1408.529961,
+      "p95_ms": 1600.494974,
+      "p99_descriptive_ms": 1642.96873,
+      "min_ms": 1357.80951,
+      "max_ms": 1642.96873,
+      "block_p95_ms": {
+        "0": 1447.22038,
+        "1": 1609.516813,
+        "2": 1631.809508
+      },
+      "errors": 0,
+      "mean_cpu_ms": 726.0,
+      "max_rss_bytes": 361508864,
+      "serial_service_ops_per_second": 0.7031840493037096,
+      "run": "start-serial-bounded",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 90,
+      "mean_stdio_response_bytes": 576123.6,
+      "distinct_item_hashes": [
+        "36be43b711dc864dd85a453c241bb754db76ebe88f884e8195503f16ed9a7b2e"
+      ],
+      "server_mcp_p50_ms": 1403.072,
+      "server_mcp_p95_ms": 1595.8039,
+      "operation_p50_ms": 1218.5621,
+      "operation_p95_ms": 1403.0445,
+      "http_attempt_totals": {
+        "PROPFIND": 457,
+        "REPORT": 2430
+      },
+      "http_status_totals": {
+        "207": 2790,
+        "301": 90,
+        "unavailable": 7
+      },
+      "retries": 7,
+      "error_spans": 7,
+      "mean_phase_ms": {
+        "caldav.query.phase.discovery": 124.37723777777778,
+        "caldav.query.phase.candidate": 189.30853555555555,
+        "caldav.query.phase.fetch": 853.0458111111111,
+        "caldav.query.phase.evaluation": 14.470424444444445,
+        "caldav.query.phase.serialization": 47.33310222222222,
+        "caldav.query.phase.page_admission": 1.334631111111111,
+        "caldav.query.phase.reservation": 1.4770544444444444
+      },
+      "representative_trace_ids": [
+        "bedc1c732472911ab4bb46d284616040",
+        "e808b2acfba3014a887e610493916939",
+        "12a1d40556f384676b4d02c1338b420e"
+      ]
+    },
+    {
+      "label": "candidate",
+      "tool": "calendar_entities.query",
+      "mode": "start",
+      "size": 200,
+      "concurrency": 1,
+      "n": 90,
+      "p50_ms": 1276.8494,
+      "p95_ms": 1489.23965,
+      "p99_descriptive_ms": 1556.282423,
+      "min_ms": 1241.359734,
+      "max_ms": 1556.282423,
+      "block_p95_ms": {
+        "0": 1539.641402,
+        "1": 1489.23965,
+        "2": 1379.236307
+      },
+      "errors": 0,
+      "mean_cpu_ms": 649.3333333333333,
+      "max_rss_bytes": 303906816,
+      "serial_service_ops_per_second": 0.7696295769045244,
+      "run": "start-serial-bounded",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 90,
+      "mean_stdio_response_bytes": 576123.6,
+      "distinct_item_hashes": [
+        "36be43b711dc864dd85a453c241bb754db76ebe88f884e8195503f16ed9a7b2e"
+      ],
+      "server_mcp_p50_ms": 1270.5426,
+      "server_mcp_p95_ms": 1484.5829,
+      "operation_p50_ms": 1226.755,
+      "operation_p95_ms": 1437.0253,
+      "http_attempt_totals": {
+        "PROPFIND": 458,
+        "REPORT": 2431
+      },
+      "http_status_totals": {
+        "207": 2790,
+        "301": 90,
+        "unavailable": 9
+      },
+      "retries": 9,
+      "error_spans": 9,
+      "mean_phase_ms": {
+        "caldav.query.phase.discovery": 125.27899111111111,
+        "caldav.query.phase.candidate": 185.95948444444446,
+        "caldav.query.phase.fetch": 863.2453822222222,
+        "caldav.query.phase.evaluation": 17.732577777777777,
+        "caldav.query.phase.serialization": 48.39677555555556,
+        "caldav.query.phase.page_admission": 1.262671111111111,
+        "caldav.query.phase.reservation": 1.654188888888889
+      },
+      "representative_trace_ids": [
+        "cfdc3957b71bfd31c1d776298ee411bc",
+        "b47abf02a20e32b5327a8006daa5a39a",
+        "8deab02f249ca9f917dfcbe861395dad"
+      ]
+    },
+    {
+      "label": "baseline",
+      "tool": "calendar_occurrences.query",
+      "mode": "start",
+      "size": 200,
+      "concurrency": 1,
+      "n": 90,
+      "p50_ms": 1595.630814,
+      "p95_ms": 1679.558302,
+      "p99_descriptive_ms": 1911.730458,
+      "min_ms": 1552.448613,
+      "max_ms": 1911.730458,
+      "block_p95_ms": {
+        "0": 1848.766565,
+        "1": 1641.883429,
+        "2": 1679.558302
+      },
+      "errors": 0,
+      "mean_cpu_ms": 737.2222222222222,
+      "max_rss_bytes": 473092096,
+      "serial_service_ops_per_second": 0.6217616134017052,
+      "run": "start-serial-bounded",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 90,
+      "mean_stdio_response_bytes": 741658.6,
+      "distinct_item_hashes": [
+        "2f31a3867446b66faf447765f92f002baeaf03c705adbe3c0e7f8c030669ca0e"
+      ],
+      "server_mcp_p50_ms": 1588.7878,
+      "server_mcp_p95_ms": 1670.5234,
+      "operation_p50_ms": 1337.9615,
+      "operation_p95_ms": 1395.4816,
+      "http_attempt_totals": {
+        "PROPFIND": 453,
+        "REPORT": 2431
+      },
+      "http_status_totals": {
+        "207": 2790,
+        "301": 90,
+        "unavailable": 4
+      },
+      "retries": 4,
+      "error_spans": 4,
+      "mean_phase_ms": {
+        "caldav.query.phase.discovery": 117.35077111111111,
+        "caldav.query.phase.candidate": 186.95263,
+        "caldav.query.phase.fetch": 859.8023088888889,
+        "caldav.query.phase.evaluation": 21.084127777777777,
+        "caldav.query.phase.serialization": 152.8819411111111,
+        "caldav.query.phase.page_admission": 1.206288888888889,
+        "caldav.query.phase.reservation": 2.0286555555555554
+      },
+      "representative_trace_ids": [
+        "a2f6d8b22125d8dbf9b0c612eb37a931",
+        "9e9ce4d2abf5d6971c7f1fccd06268da",
+        "47820828a66f00caf591513412c01818"
+      ]
+    },
+    {
+      "label": "candidate",
+      "tool": "calendar_occurrences.query",
+      "mode": "start",
+      "size": 200,
+      "concurrency": 1,
+      "n": 90,
+      "p50_ms": 1405.207911,
+      "p95_ms": 1568.902172,
+      "p99_descriptive_ms": 1657.347789,
+      "min_ms": 1373.631446,
+      "max_ms": 1657.347789,
+      "block_p95_ms": {
+        "0": 1614.684327,
+        "1": 1440.192699,
+        "2": 1454.939697
+      },
+      "errors": 0,
+      "mean_cpu_ms": 556.7777777777777,
+      "max_rss_bytes": 363974656,
+      "serial_service_ops_per_second": 0.705685245969393,
+      "run": "start-serial-bounded",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 90,
+      "mean_stdio_response_bytes": 741658.6,
+      "distinct_item_hashes": [
+        "2f31a3867446b66faf447765f92f002baeaf03c705adbe3c0e7f8c030669ca0e"
+      ],
+      "server_mcp_p50_ms": 1398.0204,
+      "server_mcp_p95_ms": 1563.8,
+      "operation_p50_ms": 1330.1164,
+      "operation_p95_ms": 1497.645,
+      "http_attempt_totals": {
+        "PROPFIND": 457,
+        "REPORT": 2431
+      },
+      "http_status_totals": {
+        "207": 2790,
+        "301": 90,
+        "unavailable": 8
+      },
+      "retries": 8,
+      "error_spans": 8,
+      "mean_phase_ms": {
+        "caldav.query.phase.discovery": 122.36523222222222,
+        "caldav.query.phase.candidate": 186.21388222222222,
+        "caldav.query.phase.fetch": 851.6715188888888,
+        "caldav.query.phase.evaluation": 21.99575,
+        "caldav.query.phase.serialization": 151.27851555555554,
+        "caldav.query.phase.page_admission": 1.1546544444444444,
+        "caldav.query.phase.reservation": 2.2059155555555554
+      },
+      "representative_trace_ids": [
+        "f6de62a5a245eadd129d4be31f74ea72",
+        "0b187dce232a1448f680932df189f9f4",
+        "886196effb5b3ac6f47f5f87a5edf593"
+      ]
+    },
+    {
+      "label": "baseline",
+      "tool": "todos.query",
+      "mode": "start",
+      "size": 200,
+      "concurrency": 1,
+      "n": 90,
+      "p50_ms": 826.568551,
+      "p95_ms": 1049.444925,
+      "p99_descriptive_ms": 1069.832273,
+      "min_ms": 753.326678,
+      "max_ms": 1069.832273,
+      "block_p95_ms": {
+        "0": 1048.968494,
+        "1": 1046.758618,
+        "2": 1068.785004
+      },
+      "errors": 0,
+      "mean_cpu_ms": 790.8888888888889,
+      "max_rss_bytes": 230551552,
+      "serial_service_ops_per_second": 1.1538368329007405,
+      "run": "start-serial-bounded",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 90,
+      "mean_stdio_response_bytes": 146736.6,
+      "distinct_item_hashes": [
+        "496f3118789cc64dd1d32424ae96fa2b2fd1df4b5f9eaca09108814f7c510746"
+      ],
+      "server_mcp_p50_ms": 824.8256,
+      "server_mcp_p95_ms": 1047.9107,
+      "operation_p50_ms": 746.331,
+      "operation_p95_ms": 928.911,
+      "http_attempt_totals": {
+        "PROPFIND": 450,
+        "REPORT": 1261
+      },
+      "http_status_totals": {
+        "207": 1620,
+        "301": 90,
+        "unavailable": 1
+      },
+      "retries": 1,
+      "error_spans": 1,
+      "mean_phase_ms": {
+        "caldav.query.phase.discovery": 110.63356222222222,
+        "caldav.query.phase.candidate": 97.18511333333333,
+        "caldav.query.phase.fetch": 484.3843655555556,
+        "caldav.query.phase.evaluation": 78.85148666666667,
+        "caldav.query.phase.page_admission": 2.8977755555555555,
+        "caldav.query.phase.reservation": 0.8855877777777778
+      },
+      "representative_trace_ids": [
+        "b5403ddd12169f9a1f45428fe3ed337c",
+        "97193f00c7ba2d261bdb9f0c5fb903c4",
+        "7d24b59d81176d6428f620801e93cc3c"
+      ]
+    },
+    {
+      "label": "candidate",
+      "tool": "todos.query",
+      "mode": "start",
+      "size": 200,
+      "concurrency": 1,
+      "n": 90,
+      "p50_ms": 801.847665,
+      "p95_ms": 988.795241,
+      "p99_descriptive_ms": 1001.368334,
+      "min_ms": 705.148398,
+      "max_ms": 1001.368334,
+      "block_p95_ms": {
+        "0": 994.351025,
+        "1": 974.015479,
+        "2": 989.039998
+      },
+      "errors": 0,
+      "mean_cpu_ms": 749.6666666666666,
+      "max_rss_bytes": 215810048,
+      "serial_service_ops_per_second": 1.200270032030744,
+      "run": "start-serial-bounded",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 90,
+      "mean_stdio_response_bytes": 146736.6,
+      "distinct_item_hashes": [
+        "496f3118789cc64dd1d32424ae96fa2b2fd1df4b5f9eaca09108814f7c510746"
+      ],
+      "server_mcp_p50_ms": 800.3152,
+      "server_mcp_p95_ms": 987.4515,
+      "operation_p50_ms": 739.8133,
+      "operation_p95_ms": 915.1914,
+      "http_attempt_totals": {
+        "PROPFIND": 450,
+        "REPORT": 1260
+      },
+      "http_status_totals": {
+        "207": 1620,
+        "301": 90
+      },
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.discovery": 110.64934333333333,
+        "caldav.query.phase.candidate": 94.45655444444445,
+        "caldav.query.phase.fetch": 481.80161444444445,
+        "caldav.query.phase.evaluation": 81.66436666666667,
+        "caldav.query.phase.page_admission": 1.3249444444444445,
+        "caldav.query.phase.reservation": 0.7452466666666667
+      },
+      "representative_trace_ids": [
+        "fcf7f27c4a10fb0d3ad7a952f5f344d4",
+        "900b1494f2d21d379740ce96428faa30",
+        "573136f0870fcf1f76d3ffa824d272a4"
+      ]
+    },
+    {
+      "label": "baseline",
+      "tool": "calendar_entities.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 2,
+      "n": 300,
+      "p50_ms": 309.576107,
+      "p95_ms": 339.055122,
+      "p99_descriptive_ms": 375.245936,
+      "min_ms": 238.761823,
+      "max_ms": 399.551371,
+      "block_p95_ms": {
+        "0": 341.303612,
+        "1": 327.935803,
+        "2": 339.504131
+      },
+      "errors": 0,
+      "timeouts": 0,
+      "mean_cpu_ms": 425.93333333333334,
+      "max_rss_bytes": 378900480,
+      "serial_service_ops_per_second": 3.230835086342127,
+      "run": "continue-single_session-2",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 300,
+      "mean_stdio_response_bytes": 576124.44,
+      "distinct_item_hashes": [
+        "15595ffd23c0a8f21585e72c079e7bd33c76c0503d496f885ed2b27f41ba80cf"
+      ],
+      "driver_ops_per_second": 6.023302978536106,
+      "server_mcp_p50_ms": 304.3342,
+      "server_mcp_p95_ms": 331.1241,
+      "operation_p50_ms": 6.824,
+      "operation_p95_ms": 17.5511,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.09159366666666667,
+        "caldav.query.phase.page_admission": 4.887203333333334
+      },
+      "representative_trace_ids": [
+        "b4a419245b1a708f97d5d40a61ac01cc",
+        "bfa884ec90edc8490b01e3644580b4ea",
+        "37148baec8136b9bdea8d5565bb7b807"
+      ]
+    },
+    {
+      "label": "candidate",
+      "tool": "calendar_entities.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 2,
+      "n": 300,
+      "p50_ms": 68.687624,
+      "p95_ms": 81.763071,
+      "p99_descriptive_ms": 88.562043,
+      "min_ms": 57.199387,
+      "max_ms": 95.654721,
+      "block_p95_ms": {
+        "0": 79.452212,
+        "1": 76.945784,
+        "2": 82.341904
+      },
+      "errors": 0,
+      "timeouts": 0,
+      "mean_cpu_ms": 128.20000000000002,
+      "max_rss_bytes": 264343552,
+      "serial_service_ops_per_second": 14.449620918385596,
+      "run": "continue-single_session-2",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 300,
+      "mean_stdio_response_bytes": 576124.44,
+      "distinct_item_hashes": [
+        "15595ffd23c0a8f21585e72c079e7bd33c76c0503d496f885ed2b27f41ba80cf"
+      ],
+      "driver_ops_per_second": 22.037474965358655,
+      "server_mcp_p50_ms": 63.9959,
+      "server_mcp_p95_ms": 74.7422,
+      "operation_p50_ms": 7.0991,
+      "operation_p95_ms": 10.4748,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.113852,
+        "caldav.query.phase.page_admission": 3.338988
+      },
+      "representative_trace_ids": [
+        "63041f8acaa5810ee5a6fdb1618b0bd1",
+        "64c6fdaa8bcc05a42d463eae21eebfd7",
+        "dc18a7c9f404b78e7d6f242c7d1f68df"
+      ]
+    },
+    {
+      "label": "baseline",
+      "tool": "calendar_occurrences.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 2,
+      "n": 300,
+      "p50_ms": 468.628502,
+      "p95_ms": 509.275088,
+      "p99_descriptive_ms": 545.574545,
+      "min_ms": 385.587835,
+      "max_ms": 564.608707,
+      "block_p95_ms": {
+        "0": 507.491555,
+        "1": 510.657851,
+        "2": 509.275088
+      },
+      "errors": 0,
+      "timeouts": 0,
+      "mean_cpu_ms": 641.2666666666667,
+      "max_rss_bytes": 493948928,
+      "serial_service_ops_per_second": 2.1318098751581473,
+      "run": "continue-single_session-2",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 300,
+      "mean_stdio_response_bytes": 742403.44,
+      "distinct_item_hashes": [
+        "3e933bc895d8c7ea816e7be018ddf32119e347573589f9f6155499cae89b2730"
+      ],
+      "driver_ops_per_second": 4.005800558907214,
+      "server_mcp_p50_ms": 461.1935,
+      "server_mcp_p95_ms": 502.0545,
+      "operation_p50_ms": 7.8605,
+      "operation_p95_ms": 19.6864,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.16331266666666666,
+        "caldav.query.phase.page_admission": 5.882611333333333
+      },
+      "representative_trace_ids": [
+        "55f8784a5a658a61f2d7fd40c107edf0",
+        "17f85816d071e1258d8ef3f042bd99d0",
+        "c17bfdae99cc2b2f5d315f25430dc52e"
+      ]
+    },
+    {
+      "label": "candidate",
+      "tool": "calendar_occurrences.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 2,
+      "n": 300,
+      "p50_ms": 97.159495,
+      "p95_ms": 113.56127,
+      "p99_descriptive_ms": 119.646614,
+      "min_ms": 81.280218,
+      "max_ms": 138.102993,
+      "block_p95_ms": {
+        "0": 108.661559,
+        "1": 116.898238,
+        "2": 112.530422
+      },
+      "errors": 0,
+      "timeouts": 0,
+      "mean_cpu_ms": 169.4,
+      "max_rss_bytes": 230866944,
+      "serial_service_ops_per_second": 10.208006415640023,
+      "run": "continue-single_session-2",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 300,
+      "mean_stdio_response_bytes": 742403.44,
+      "distinct_item_hashes": [
+        "3e933bc895d8c7ea816e7be018ddf32119e347573589f9f6155499cae89b2730"
+      ],
+      "driver_ops_per_second": 15.745876726145829,
+      "server_mcp_p50_ms": 90.7087,
+      "server_mcp_p95_ms": 106.782,
+      "operation_p50_ms": 8.6161,
+      "operation_p95_ms": 10.5074,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.102069,
+        "caldav.query.phase.page_admission": 3.886974
+      },
+      "representative_trace_ids": [
+        "c65ffbf0830572f4a28033002d43d687",
+        "15ac955338c6cd448183f6952d966b05",
+        "a8a1b699527f3bb80478e676ae6d1cff"
+      ]
+    },
+    {
+      "label": "baseline",
+      "tool": "todos.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 2,
+      "n": 300,
+      "p50_ms": 113.978088,
+      "p95_ms": 170.133902,
+      "p99_descriptive_ms": 179.839058,
+      "min_ms": 83.112281,
+      "max_ms": 188.68509,
+      "block_p95_ms": {
+        "0": 169.373265,
+        "1": 169.73096,
+        "2": 172.137459
+      },
+      "errors": 0,
+      "timeouts": 0,
+      "mean_cpu_ms": 202.4666666666667,
+      "max_rss_bytes": 226578432,
+      "serial_service_ops_per_second": 8.320564746754398,
+      "run": "continue-single_session-2",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 300,
+      "mean_stdio_response_bytes": 146738.44,
+      "distinct_item_hashes": [
+        "74f73d492cc638d65e6d20cf9e485fce2ff4e7e97b9f4afba767896f6be14764"
+      ],
+      "driver_ops_per_second": 15.75770115436917,
+      "server_mcp_p50_ms": 112.3574,
+      "server_mcp_p95_ms": 168.9688,
+      "operation_p50_ms": 3.9025,
+      "operation_p95_ms": 13.7331,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.15773966666666667,
+        "caldav.query.phase.page_admission": 3.560521666666667
+      },
+      "representative_trace_ids": [
+        "b0102b2a6f0958a6dd780e6754baad3c",
+        "dc46976163233726d23a236bc29e1b60",
+        "72fd814c54ba78041d13dee97a11901f"
+      ]
+    },
+    {
+      "label": "candidate",
+      "tool": "todos.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 2,
+      "n": 300,
+      "p50_ms": 67.044337,
+      "p95_ms": 81.025857,
+      "p99_descriptive_ms": 84.731923,
+      "min_ms": 21.674202,
+      "max_ms": 86.331196,
+      "block_p95_ms": {
+        "0": 79.521192,
+        "1": 78.991632,
+        "2": 82.760276
+      },
+      "errors": 0,
+      "timeouts": 0,
+      "mean_cpu_ms": 137.2,
+      "max_rss_bytes": 172294144,
+      "serial_service_ops_per_second": 16.092943025222453,
+      "run": "continue-single_session-2",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 300,
+      "mean_stdio_response_bytes": 146738.44,
+      "distinct_item_hashes": [
+        "74f73d492cc638d65e6d20cf9e485fce2ff4e7e97b9f4afba767896f6be14764"
+      ],
+      "driver_ops_per_second": 29.51220601255508,
+      "server_mcp_p50_ms": 65.3782,
+      "server_mcp_p95_ms": 79.9797,
+      "operation_p50_ms": 5.7519,
+      "operation_p95_ms": 7.5845,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.15020166666666668,
+        "caldav.query.phase.page_admission": 2.99554
+      },
+      "representative_trace_ids": [
+        "77c2288b5bd6127a2f5777e993c61d9d",
+        "c027df318c6019bc6d6c0eb64cd4b77c",
+        "1be6d053965b09c50654433caf1450b3"
+      ]
+    },
+    {
+      "label": "baseline",
+      "tool": "calendar_entities.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 4,
+      "n": 300,
+      "p50_ms": 529.090951,
+      "p95_ms": 615.826404,
+      "p99_descriptive_ms": 652.294532,
+      "min_ms": 444.236152,
+      "max_ms": 674.073147,
+      "block_p95_ms": {
+        "0": 589.296435,
+        "1": 632.9022,
+        "2": 594.413399
+      },
+      "errors": 0,
+      "timeouts": 0,
+      "mean_cpu_ms": 901.0666666666667,
+      "max_rss_bytes": 592134144,
+      "serial_service_ops_per_second": 1.8740775347506011,
+      "run": "continue-single_session-4",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 300,
+      "mean_stdio_response_bytes": 576124.84,
+      "distinct_item_hashes": [
+        "15595ffd23c0a8f21585e72c079e7bd33c76c0503d496f885ed2b27f41ba80cf"
+      ],
+      "driver_ops_per_second": 6.8745162961007225,
+      "server_mcp_p50_ms": 523.8461,
+      "server_mcp_p95_ms": 608.7234,
+      "operation_p50_ms": 11.2475,
+      "operation_p95_ms": 15.6671,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.06468566666666667,
+        "caldav.query.phase.page_admission": 6.385944333333334
+      },
+      "representative_trace_ids": [
+        "203a60f8bc2820c3fab63a85f82e8571",
+        "615ec53ec3c8bfa2886a9338cea26ba8",
+        "1a491d2f5d74bbe8603c1a66d6f6a723"
+      ]
+    },
+    {
+      "label": "candidate",
+      "tool": "calendar_entities.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 4,
+      "n": 300,
+      "p50_ms": 97.864653,
+      "p95_ms": 135.284626,
+      "p99_descriptive_ms": 151.522879,
+      "min_ms": 72.858135,
+      "max_ms": 156.391869,
+      "block_p95_ms": {
+        "0": 119.563297,
+        "1": 141.806986,
+        "2": 134.649953
+      },
+      "errors": 0,
+      "timeouts": 0,
+      "mean_cpu_ms": 266.2666666666666,
+      "max_rss_bytes": 328912896,
+      "serial_service_ops_per_second": 9.929632373634869,
+      "run": "continue-single_session-4",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 300,
+      "mean_stdio_response_bytes": 576124.84,
+      "distinct_item_hashes": [
+        "15595ffd23c0a8f21585e72c079e7bd33c76c0503d496f885ed2b27f41ba80cf"
+      ],
+      "driver_ops_per_second": 27.119216769271322,
+      "server_mcp_p50_ms": 92.8163,
+      "server_mcp_p95_ms": 122.1685,
+      "operation_p50_ms": 8.6516,
+      "operation_p95_ms": 12.1813,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.11049733333333334,
+        "caldav.query.phase.page_admission": 4.131959666666667
+      },
+      "representative_trace_ids": [
+        "450008fecd1bb350adf5dd33f5121c48",
+        "4835124c9eb9ac6c8f87a697a3f49295",
+        "f0b8472691194250d6e82c92e884e786"
+      ]
+    },
+    {
+      "label": "baseline",
+      "tool": "calendar_occurrences.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 4,
+      "n": 300,
+      "p50_ms": 806.29124,
+      "p95_ms": 889.768976,
+      "p99_descriptive_ms": 907.426173,
+      "min_ms": 667.747593,
+      "max_ms": 931.736544,
+      "block_p95_ms": {
+        "0": 895.120534,
+        "1": 868.187677,
+        "2": 892.673252
+      },
+      "errors": 0,
+      "timeouts": 0,
+      "mean_cpu_ms": 1366.0666666666662,
+      "max_rss_bytes": 840560640,
+      "serial_service_ops_per_second": 1.2363262156937107,
+      "run": "continue-single_session-4",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 300,
+      "mean_stdio_response_bytes": 742403.84,
+      "distinct_item_hashes": [
+        "3e933bc895d8c7ea816e7be018ddf32119e347573589f9f6155499cae89b2730"
+      ],
+      "driver_ops_per_second": 4.584540974428446,
+      "server_mcp_p50_ms": 798.0222,
+      "server_mcp_p95_ms": 883.9634,
+      "operation_p50_ms": 12.8871,
+      "operation_p95_ms": 20.9715,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.06401766666666667,
+        "caldav.query.phase.page_admission": 7.241569666666667
+      },
+      "representative_trace_ids": [
+        "433e2b54448b2057f3ff06bc626096bd",
+        "8134992e7dd0dd9ca7b7c640a8f2a008",
+        "6f4ecdc37a9d6cc62531871143c23636"
+      ]
+    },
+    {
+      "label": "candidate",
+      "tool": "calendar_occurrences.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 4,
+      "n": 300,
+      "p50_ms": 144.021045,
+      "p95_ms": 180.169042,
+      "p99_descriptive_ms": 201.422272,
+      "min_ms": 108.512697,
+      "max_ms": 210.064274,
+      "block_p95_ms": {
+        "0": 182.485595,
+        "1": 167.248557,
+        "2": 182.51244
+      },
+      "errors": 0,
+      "timeouts": 0,
+      "mean_cpu_ms": 354.99999999999994,
+      "max_rss_bytes": 345075712,
+      "serial_service_ops_per_second": 6.863236818296969,
+      "run": "continue-single_session-4",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 300,
+      "mean_stdio_response_bytes": 742403.84,
+      "distinct_item_hashes": [
+        "3e933bc895d8c7ea816e7be018ddf32119e347573589f9f6155499cae89b2730"
+      ],
+      "driver_ops_per_second": 19.659319104823584,
+      "server_mcp_p50_ms": 137.6257,
+      "server_mcp_p95_ms": 168.7423,
+      "operation_p50_ms": 10.0561,
+      "operation_p95_ms": 12.9185,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.092387,
+        "caldav.query.phase.page_admission": 4.642769
+      },
+      "representative_trace_ids": [
+        "f91343d169ea25f7e7656ba84f9af6a9",
+        "18b99ef7adc0e2d93172ecabba340369",
+        "715cb719f6a4550b8c0dd61de8b40bda"
+      ]
+    },
+    {
+      "label": "baseline",
+      "tool": "todos.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 4,
+      "n": 300,
+      "p50_ms": 198.597388,
+      "p95_ms": 257.111942,
+      "p99_descriptive_ms": 267.141603,
+      "min_ms": 146.683089,
+      "max_ms": 322.400696,
+      "block_p95_ms": {
+        "0": 257.802335,
+        "1": 254.332236,
+        "2": 255.1168
+      },
+      "errors": 0,
+      "timeouts": 0,
+      "mean_cpu_ms": 412.7000000000001,
+      "max_rss_bytes": 293519360,
+      "serial_service_ops_per_second": 4.8768281660650485,
+      "run": "continue-single_session-4",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 300,
+      "mean_stdio_response_bytes": 146738.84,
+      "distinct_item_hashes": [
+        "74f73d492cc638d65e6d20cf9e485fce2ff4e7e97b9f4afba767896f6be14764"
+      ],
+      "driver_ops_per_second": 18.048964687233017,
+      "server_mcp_p50_ms": 197.1828,
+      "server_mcp_p95_ms": 253.7518,
+      "operation_p50_ms": 6.9175,
+      "operation_p95_ms": 17.0176,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.14735633333333334,
+        "caldav.query.phase.page_admission": 5.640074333333334
+      },
+      "representative_trace_ids": [
+        "d037ea7794ce6f5e5d1a5d2ac4c8d12e",
+        "4f251543b678b48fa355e77c580bd90c",
+        "9aec4df9f1cf5110ca2dea29daa5cffa"
+      ]
+    },
+    {
+      "label": "candidate",
+      "tool": "todos.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 4,
+      "n": 300,
+      "p50_ms": 84.313752,
+      "p95_ms": 95.366096,
+      "p99_descriptive_ms": 99.813216,
+      "min_ms": 71.432932,
+      "max_ms": 103.133076,
+      "block_p95_ms": {
+        "0": 91.201766,
+        "1": 98.208093,
+        "2": 88.200099
+      },
+      "errors": 0,
+      "timeouts": 0,
+      "mean_cpu_ms": 308.7999999999999,
+      "max_rss_bytes": 181047296,
+      "serial_service_ops_per_second": 11.780635705075888,
+      "run": "continue-single_session-4",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 300,
+      "mean_stdio_response_bytes": 146738.84,
+      "distinct_item_hashes": [
+        "74f73d492cc638d65e6d20cf9e485fce2ff4e7e97b9f4afba767896f6be14764"
+      ],
+      "driver_ops_per_second": 41.59941531278535,
+      "server_mcp_p50_ms": 82.6755,
+      "server_mcp_p95_ms": 93.5404,
+      "operation_p50_ms": 7.008,
+      "operation_p95_ms": 9.1824,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.15543666666666667,
+        "caldav.query.phase.page_admission": 4.2741
+      },
+      "representative_trace_ids": [
+        "b3e6bbd1a0b40fd8b5ef048419f42151",
+        "323c3b37ad2320d63356ab6bdd92bca3",
+        "e8a53e4cab013f1f58669a34aea5542e"
+      ]
+    },
+    {
+      "label": "baseline",
+      "tool": "calendar_entities.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 2,
+      "n": 96,
+      "p50_ms": 221.58498,
+      "p95_ms": 279.666878,
+      "p99_descriptive_ms": 291.51607,
+      "min_ms": 174.627803,
+      "max_ms": 291.51607,
+      "block_p95_ms": {
+        "0": 226.198696,
+        "1": 239.854689,
+        "2": 286.197419
+      },
+      "errors": 0,
+      "timeouts": 0,
+      "mean_cpu_ms": 254.79166666666654,
+      "max_rss_bytes": 267644928,
+      "serial_service_ops_per_second": 4.337392687447592,
+      "run": "continue-processes-2",
+      "topology": "processes",
+      "otlp": true,
+      "trace_matches": 96,
+      "mean_stdio_response_bytes": 576124,
+      "distinct_item_hashes": [
+        "15595ffd23c0a8f21585e72c079e7bd33c76c0503d496f885ed2b27f41ba80cf"
+      ],
+      "driver_ops_per_second": 8.16861929010327,
+      "server_mcp_p50_ms": 215.5491,
+      "server_mcp_p95_ms": 273.2387,
+      "operation_p50_ms": 7.2229,
+      "operation_p95_ms": 18.5966,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.13409895833333332,
+        "caldav.query.phase.page_admission": 4.441665625
+      },
+      "representative_trace_ids": [
+        "66521621e599b99d4a1fce7106ea34b1",
+        "8f8b5954f823cc116f1b687cee68cff5",
+        "0a94f081090331d9b502fdbaa4b4c7a0"
+      ]
+    },
+    {
+      "label": "candidate",
+      "tool": "calendar_entities.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 2,
+      "n": 96,
+      "p50_ms": 66.926349,
+      "p95_ms": 87.048372,
+      "p99_descriptive_ms": 91.050447,
+      "min_ms": 54.326089,
+      "max_ms": 91.050447,
+      "block_p95_ms": {
+        "0": 70.504227,
+        "1": 71.835563,
+        "2": 89.568125
+      },
+      "errors": 0,
+      "timeouts": 0,
+      "mean_cpu_ms": 78.22916666666666,
+      "max_rss_bytes": 184188928,
+      "serial_service_ops_per_second": 14.726420254465124,
+      "run": "continue-processes-2",
+      "topology": "processes",
+      "otlp": true,
+      "trace_matches": 96,
+      "mean_stdio_response_bytes": 576124,
+      "distinct_item_hashes": [
+        "15595ffd23c0a8f21585e72c079e7bd33c76c0503d496f885ed2b27f41ba80cf"
+      ],
+      "driver_ops_per_second": 24.95345992572902,
+      "server_mcp_p50_ms": 61.4648,
+      "server_mcp_p95_ms": 79.3343,
+      "operation_p50_ms": 7.7222,
+      "operation_p95_ms": 11.1889,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.11994166666666667,
+        "caldav.query.phase.page_admission": 3.3163416666666667
+      },
+      "representative_trace_ids": [
+        "52327ed877d935bb6da6aaf0329be670",
+        "8795e28536cbe7ac0ce25483cb21d85c",
+        "66b9bc65421d1c3414842121f487ef4c"
+      ]
+    },
+    {
+      "label": "baseline",
+      "tool": "calendar_occurrences.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 2,
+      "n": 96,
+      "p50_ms": 334.227003,
+      "p95_ms": 423.427549,
+      "p99_descriptive_ms": 456.821492,
+      "min_ms": 279.808176,
+      "max_ms": 456.821492,
+      "block_p95_ms": {
+        "0": 347.289364,
+        "1": 356.480273,
+        "2": 443.777685
+      },
+      "errors": 0,
+      "timeouts": 0,
+      "mean_cpu_ms": 367.0833333333334,
+      "max_rss_bytes": 337260544,
+      "serial_service_ops_per_second": 2.878581973846549,
+      "run": "continue-processes-2",
+      "topology": "processes",
+      "otlp": true,
+      "trace_matches": 96,
+      "mean_stdio_response_bytes": 742403,
+      "distinct_item_hashes": [
+        "3e933bc895d8c7ea816e7be018ddf32119e347573589f9f6155499cae89b2730"
+      ],
+      "driver_ops_per_second": 5.449734020931369,
+      "server_mcp_p50_ms": 326.6605,
+      "server_mcp_p95_ms": 412.8372,
+      "operation_p50_ms": 8.9644,
+      "operation_p95_ms": 17.507,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.17903229166666665,
+        "caldav.query.phase.page_admission": 4.767008333333333
+      },
+      "representative_trace_ids": [
+        "98f09a99a0fe4be34eb1dc89499006e0",
+        "7901e9fba4b692c6c042dbb50b3dfb2e",
+        "632dc61ae25fe540b182a2577f0fe0a8"
+      ]
+    },
+    {
+      "label": "candidate",
+      "tool": "calendar_occurrences.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 2,
+      "n": 96,
+      "p50_ms": 92.258503,
+      "p95_ms": 123.469237,
+      "p99_descriptive_ms": 127.050723,
+      "min_ms": 76.000444,
+      "max_ms": 127.050723,
+      "block_p95_ms": {
+        "0": 96.579615,
+        "1": 96.298285,
+        "2": 125.518007
+      },
+      "errors": 0,
+      "timeouts": 0,
+      "mean_cpu_ms": 102.18750000000004,
+      "max_rss_bytes": 222162944,
+      "serial_service_ops_per_second": 10.511437416874484,
+      "run": "continue-processes-2",
+      "topology": "processes",
+      "otlp": true,
+      "trace_matches": 96,
+      "mean_stdio_response_bytes": 742403,
+      "distinct_item_hashes": [
+        "3e933bc895d8c7ea816e7be018ddf32119e347573589f9f6155499cae89b2730"
+      ],
+      "driver_ops_per_second": 17.935346901375187,
+      "server_mcp_p50_ms": 85.2522,
+      "server_mcp_p95_ms": 112.4113,
+      "operation_p50_ms": 9.0972,
+      "operation_p95_ms": 12.281,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.129071875,
+        "caldav.query.phase.page_admission": 3.9216104166666668
+      },
+      "representative_trace_ids": [
+        "e3d6434cb41478ba572dbde91ed67fbe",
+        "f09686d54e367c293efb9a05b8d4f9a9",
+        "171dcf9e6719e579f45a0caef65bd9da"
+      ]
+    },
+    {
+      "label": "baseline",
+      "tool": "todos.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 2,
+      "n": 96,
+      "p50_ms": 99.125996,
+      "p95_ms": 188.743471,
+      "p99_descriptive_ms": 903.88936,
+      "min_ms": 57.929399,
+      "max_ms": 903.88936,
+      "block_p95_ms": {
+        "0": 142.23672,
+        "1": 667.478872,
+        "2": 173.462013
+      },
+      "errors": 0,
+      "timeouts": 0,
+      "mean_cpu_ms": 168.22916666666669,
+      "max_rss_bytes": 187645952,
+      "serial_service_ops_per_second": 7.994695930310854,
+      "run": "continue-processes-2",
+      "topology": "processes",
+      "otlp": true,
+      "trace_matches": 96,
+      "mean_stdio_response_bytes": 146738,
+      "distinct_item_hashes": [
+        "74f73d492cc638d65e6d20cf9e485fce2ff4e7e97b9f4afba767896f6be14764"
+      ],
+      "driver_ops_per_second": 12.837720044076208,
+      "server_mcp_p50_ms": 97.0598,
+      "server_mcp_p95_ms": 185.515,
+      "operation_p50_ms": 4.38,
+      "operation_p95_ms": 15.6052,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.2826885416666667,
+        "caldav.query.phase.page_admission": 3.4934052083333333
+      },
+      "representative_trace_ids": [
+        "1c1615a0b5568748f814dae4b3efcd59",
+        "124012991a092cd2e6379aca680bf91b",
+        "7144f4197529fdb049a9d1cc0226cd0a"
+      ]
+    },
+    {
+      "label": "candidate",
+      "tool": "todos.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 2,
+      "n": 96,
+      "p50_ms": 65.911654,
+      "p95_ms": 90.611645,
+      "p99_descriptive_ms": 95.873418,
+      "min_ms": 18.534275,
+      "max_ms": 95.873418,
+      "block_p95_ms": {
+        "0": 76.248007,
+        "1": 71.487389,
+        "2": 92.749271
+      },
+      "errors": 0,
+      "timeouts": 0,
+      "mean_cpu_ms": 72.81249999999997,
+      "max_rss_bytes": 163536896,
+      "serial_service_ops_per_second": 16.881044285272097,
+      "run": "continue-processes-2",
+      "topology": "processes",
+      "otlp": true,
+      "trace_matches": 96,
+      "mean_stdio_response_bytes": 146738,
+      "distinct_item_hashes": [
+        "74f73d492cc638d65e6d20cf9e485fce2ff4e7e97b9f4afba767896f6be14764"
+      ],
+      "driver_ops_per_second": 25.219327208435125,
+      "server_mcp_p50_ms": 64.4332,
+      "server_mcp_p95_ms": 88.8031,
+      "operation_p50_ms": 4.949,
+      "operation_p95_ms": 7.5158,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.12749375,
+        "caldav.query.phase.page_admission": 2.6837989583333335
+      },
+      "representative_trace_ids": [
+        "87c3e5ade2afd471dadc997fd864b651",
+        "4f3d9a7a5165a17cc19888596d6e3926",
+        "3c7b81cc0dedb55b0ba68878c7abeb32"
+      ]
+    },
+    {
+      "label": "baseline",
+      "tool": "calendar_entities.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 4,
+      "n": 96,
+      "p50_ms": 299.877203,
+      "p95_ms": 331.256663,
+      "p99_descriptive_ms": 341.981137,
+      "min_ms": 247.292564,
+      "max_ms": 341.981137,
+      "block_p95_ms": {
+        "0": 331.256663,
+        "1": 341.147958,
+        "2": 321.484597
+      },
+      "errors": 0,
+      "timeouts": 0,
+      "mean_cpu_ms": 293.2291666666667,
+      "max_rss_bytes": 262971392,
+      "serial_service_ops_per_second": 3.3445931372319198,
+      "run": "continue-processes-4",
+      "topology": "processes",
+      "otlp": true,
+      "trace_matches": 96,
+      "mean_stdio_response_bytes": 576124,
+      "distinct_item_hashes": [
+        "15595ffd23c0a8f21585e72c079e7bd33c76c0503d496f885ed2b27f41ba80cf"
+      ],
+      "driver_ops_per_second": 12.187512151925569,
+      "server_mcp_p50_ms": 283.6983,
+      "server_mcp_p95_ms": 312.0833,
+      "operation_p50_ms": 8.8069,
+      "operation_p95_ms": 22.2515,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.13079166666666667,
+        "caldav.query.phase.page_admission": 5.409930208333333
+      },
+      "representative_trace_ids": [
+        "60654565a254d9d17452a03011731c8e",
+        "c7a61bf661dbd9744bc68b60a447e33c",
+        "3a632c3ed6bdff1578eb973e71a3003e"
+      ]
+    },
+    {
+      "label": "candidate",
+      "tool": "calendar_entities.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 4,
+      "n": 96,
+      "p50_ms": 97.451295,
+      "p95_ms": 123.140665,
+      "p99_descriptive_ms": 143.533915,
+      "min_ms": 71.61916,
+      "max_ms": 143.533915,
+      "block_p95_ms": {
+        "0": 123.140665,
+        "1": 121.809215,
+        "2": 127.914217
+      },
+      "errors": 0,
+      "timeouts": 0,
+      "mean_cpu_ms": 80.62500000000004,
+      "max_rss_bytes": 194940928,
+      "serial_service_ops_per_second": 10.299387787149186,
+      "run": "continue-processes-4",
+      "topology": "processes",
+      "otlp": true,
+      "trace_matches": 96,
+      "mean_stdio_response_bytes": 576124,
+      "distinct_item_hashes": [
+        "15595ffd23c0a8f21585e72c079e7bd33c76c0503d496f885ed2b27f41ba80cf"
+      ],
+      "driver_ops_per_second": 31.96784345036974,
+      "server_mcp_p50_ms": 80.4228,
+      "server_mcp_p95_ms": 108.2992,
+      "operation_p50_ms": 9.3763,
+      "operation_p95_ms": 11.8125,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.12847291666666666,
+        "caldav.query.phase.page_admission": 4.0706927083333335
+      },
+      "representative_trace_ids": [
+        "7a953f847ab3a4c5ffec21c4e4af9111",
+        "f0a323c7f0987d5eb328d9baf858c168",
+        "2ed273cde2be5daf36921c053764a5bf"
+      ]
+    },
+    {
+      "label": "baseline",
+      "tool": "calendar_occurrences.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 4,
+      "n": 96,
+      "p50_ms": 448.374098,
+      "p95_ms": 508.532904,
+      "p99_descriptive_ms": 531.871134,
+      "min_ms": 382.241181,
+      "max_ms": 531.871134,
+      "block_p95_ms": {
+        "0": 462.13824,
+        "1": 513.713879,
+        "2": 506.496927
+      },
+      "errors": 0,
+      "timeouts": 0,
+      "mean_cpu_ms": 436.04166666666674,
+      "max_rss_bytes": 335437824,
+      "serial_service_ops_per_second": 2.21860922393149,
+      "run": "continue-processes-4",
+      "topology": "processes",
+      "otlp": true,
+      "trace_matches": 96,
+      "mean_stdio_response_bytes": 742403,
+      "distinct_item_hashes": [
+        "3e933bc895d8c7ea816e7be018ddf32119e347573589f9f6155499cae89b2730"
+      ],
+      "driver_ops_per_second": 8.162863298293308,
+      "server_mcp_p50_ms": 434.695,
+      "server_mcp_p95_ms": 476.3528,
+      "operation_p50_ms": 10.5651,
+      "operation_p95_ms": 18.4565,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.138309375,
+        "caldav.query.phase.page_admission": 5.106035416666667
+      },
+      "representative_trace_ids": [
+        "462381cbe2f395292301633ce8dfe5a7",
+        "d8fa4fba1ea2c1a19e1c0eabbc2dff11",
+        "4e1203fe92242caedb5cd52d447c8043"
+      ]
+    },
+    {
+      "label": "candidate",
+      "tool": "calendar_occurrences.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 4,
+      "n": 96,
+      "p50_ms": 137.000988,
+      "p95_ms": 176.124434,
+      "p99_descriptive_ms": 197.114018,
+      "min_ms": 102.194187,
+      "max_ms": 197.114018,
+      "block_p95_ms": {
+        "0": 174.610548,
+        "1": 180.343538,
+        "2": 173.966745
+      },
+      "errors": 0,
+      "timeouts": 0,
+      "mean_cpu_ms": 106.14583333333333,
+      "max_rss_bytes": 212140032,
+      "serial_service_ops_per_second": 7.365062056423645,
+      "run": "continue-processes-4",
+      "topology": "processes",
+      "otlp": true,
+      "trace_matches": 96,
+      "mean_stdio_response_bytes": 742403,
+      "distinct_item_hashes": [
+        "3e933bc895d8c7ea816e7be018ddf32119e347573589f9f6155499cae89b2730"
+      ],
+      "driver_ops_per_second": 23.099521527627722,
+      "server_mcp_p50_ms": 113.3305,
+      "server_mcp_p95_ms": 161.2318,
+      "operation_p50_ms": 11.4911,
+      "operation_p95_ms": 13.5545,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.13938958333333334,
+        "caldav.query.phase.page_admission": 4.718777083333333
+      },
+      "representative_trace_ids": [
+        "87ab6cfac50bc8cb4e7ed4035f091d10",
+        "270da941a47054a7c5f03302ff8447b6",
+        "f826a6d4c6f350ef172ce769bc98bebc"
+      ]
+    },
+    {
+      "label": "baseline",
+      "tool": "todos.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 4,
+      "n": 96,
+      "p50_ms": 101.46882,
+      "p95_ms": 177.934245,
+      "p99_descriptive_ms": 191.043685,
+      "min_ms": 78.654438,
+      "max_ms": 191.043685,
+      "block_p95_ms": {
+        "0": 178.726459,
+        "1": 177.6837,
+        "2": 180.950262
+      },
+      "errors": 0,
+      "timeouts": 0,
+      "mean_cpu_ms": 137.3958333333333,
+      "max_rss_bytes": 192118784,
+      "serial_service_ops_per_second": 8.763931755856808,
+      "run": "continue-processes-4",
+      "topology": "processes",
+      "otlp": true,
+      "trace_matches": 96,
+      "mean_stdio_response_bytes": 146738,
+      "distinct_item_hashes": [
+        "74f73d492cc638d65e6d20cf9e485fce2ff4e7e97b9f4afba767896f6be14764"
+      ],
+      "driver_ops_per_second": 23.42144521686148,
+      "server_mcp_p50_ms": 98.8345,
+      "server_mcp_p95_ms": 175.8382,
+      "operation_p50_ms": 3.8619,
+      "operation_p95_ms": 16.8374,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.12768854166666666,
+        "caldav.query.phase.page_admission": 4.15415
+      },
+      "representative_trace_ids": [
+        "6e8da19d2106802da8060343d7a384ba",
+        "2e83db930b54fe563507fbc295988135",
+        "2d7b3609946d6b7c5ee87f3821d529f0"
+      ]
+    },
+    {
+      "label": "candidate",
+      "tool": "todos.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 4,
+      "n": 96,
+      "p50_ms": 31.647089,
+      "p95_ms": 95.662214,
+      "p99_descriptive_ms": 97.336694,
+      "min_ms": 23.768787,
+      "max_ms": 97.336694,
+      "block_p95_ms": {
+        "0": 96.945451,
+        "1": 92.375044,
+        "2": 95.662214
+      },
+      "errors": 0,
+      "timeouts": 0,
+      "mean_cpu_ms": 60.31250000000001,
+      "max_rss_bytes": 165675008,
+      "serial_service_ops_per_second": 21.70545999234025,
+      "run": "continue-processes-4",
+      "topology": "processes",
+      "otlp": true,
+      "trace_matches": 96,
+      "mean_stdio_response_bytes": 146738,
+      "distinct_item_hashes": [
+        "74f73d492cc638d65e6d20cf9e485fce2ff4e7e97b9f4afba767896f6be14764"
+      ],
+      "driver_ops_per_second": 41.61370536982929,
+      "server_mcp_p50_ms": 28.8844,
+      "server_mcp_p95_ms": 93.6845,
+      "operation_p50_ms": 4.0967,
+      "operation_p95_ms": 8.5252,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.14069166666666666,
+        "caldav.query.phase.page_admission": 2.826465625
+      },
+      "representative_trace_ids": [
+        "a61a109bc2856f251471059cf589a71b",
+        "0fb079bc6003d1123dafc4f1a1a4a468",
+        "038174ca24760d67f6288ff45aaae89e"
+      ]
+    },
+    {
+      "label": "baseline",
+      "tool": "calendar_entities.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 1,
+      "n": 90,
+      "p50_ms": 71.377022,
+      "p95_ms": 78.122899,
+      "p99_descriptive_ms": 85.117324,
+      "min_ms": 66.650429,
+      "max_ms": 85.117324,
+      "block_p95_ms": {
+        "0": 74.048041,
+        "1": 78.88841,
+        "2": 76.590855
+      },
+      "errors": 0,
+      "timeouts": 0,
+      "mean_cpu_ms": 90.4444444444445,
+      "max_rss_bytes": 193343488,
+      "serial_service_ops_per_second": 13.902080843719732,
+      "run": "otlp-overhead",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 90,
+      "mean_stdio_response_bytes": 576124,
+      "distinct_item_hashes": [
+        "15595ffd23c0a8f21585e72c079e7bd33c76c0503d496f885ed2b27f41ba80cf"
+      ],
+      "driver_ops_per_second": 11.769725028512198,
+      "server_mcp_p50_ms": 65.2939,
+      "server_mcp_p95_ms": 70.4643,
+      "operation_p50_ms": 8.2125,
+      "operation_p95_ms": 11.6108,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.14113555555555554,
+        "caldav.query.phase.page_admission": 3.724298888888889
+      },
+      "representative_trace_ids": [
+        "e2390e41fde301943d36fa61498dd0ad",
+        "f92f0ea6647a19cee8a6c45df9731680",
+        "592d8051da5d1d50b761f2a186bca58a"
+      ]
+    },
+    {
+      "label": "candidate",
+      "tool": "calendar_entities.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 1,
+      "n": 90,
+      "p50_ms": 72.18233,
+      "p95_ms": 76.029622,
+      "p99_descriptive_ms": 78.906016,
+      "min_ms": 67.137538,
+      "max_ms": 78.906016,
+      "block_p95_ms": {
+        "0": 76.76754,
+        "1": 75.713468,
+        "2": 75.804574
+      },
+      "errors": 0,
+      "timeouts": 0,
+      "mean_cpu_ms": 82.22222222222224,
+      "max_rss_bytes": 185425920,
+      "serial_service_ops_per_second": 13.849371986370212,
+      "run": "otlp-overhead",
+      "topology": "single_session",
+      "otlp": false,
+      "trace_matches": 0,
+      "mean_stdio_response_bytes": 576124,
+      "distinct_item_hashes": [
+        "15595ffd23c0a8f21585e72c079e7bd33c76c0503d496f885ed2b27f41ba80cf"
+      ],
+      "driver_ops_per_second": 11.720305751554163
+    },
+    {
+      "label": "baseline",
+      "tool": "calendar_occurrences.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 1,
+      "n": 90,
+      "p50_ms": 99.751093,
+      "p95_ms": 106.189137,
+      "p99_descriptive_ms": 116.954716,
+      "min_ms": 92.288094,
+      "max_ms": 116.954716,
+      "block_p95_ms": {
+        "0": 105.944028,
+        "1": 104.912406,
+        "2": 106.902769
+      },
+      "errors": 0,
+      "timeouts": 0,
+      "mean_cpu_ms": 109.44444444444447,
+      "max_rss_bytes": 206131200,
+      "serial_service_ops_per_second": 9.988185480353556,
+      "run": "otlp-overhead",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 90,
+      "mean_stdio_response_bytes": 742403,
+      "distinct_item_hashes": [
+        "3e933bc895d8c7ea816e7be018ddf32119e347573589f9f6155499cae89b2730"
+      ],
+      "driver_ops_per_second": 8.511159361913785,
+      "server_mcp_p50_ms": 91.9649,
+      "server_mcp_p95_ms": 96.6694,
+      "operation_p50_ms": 10.2645,
+      "operation_p95_ms": 12.7177,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.1431888888888889,
+        "caldav.query.phase.page_admission": 4.549836666666667
+      },
+      "representative_trace_ids": [
+        "3f2896c5b43f5324554721dba43fda15",
+        "94de1dc64064be45364ab5560473e03a",
+        "5237376782ccd1a2d846b75af80e59f2"
+      ]
+    },
+    {
+      "label": "candidate",
+      "tool": "calendar_occurrences.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 1,
+      "n": 90,
+      "p50_ms": 99.02166,
+      "p95_ms": 105.436237,
+      "p99_descriptive_ms": 138.598183,
+      "min_ms": 91.383905,
+      "max_ms": 138.598183,
+      "block_p95_ms": {
+        "0": 102.619285,
+        "1": 99.199779,
+        "2": 120.668756
+      },
+      "errors": 0,
+      "timeouts": 0,
+      "mean_cpu_ms": 103.77777777777777,
+      "max_rss_bytes": 199741440,
+      "serial_service_ops_per_second": 10.065417063516938,
+      "run": "otlp-overhead",
+      "topology": "single_session",
+      "otlp": false,
+      "trace_matches": 0,
+      "mean_stdio_response_bytes": 742403,
+      "distinct_item_hashes": [
+        "3e933bc895d8c7ea816e7be018ddf32119e347573589f9f6155499cae89b2730"
+      ],
+      "driver_ops_per_second": 8.554586146611127
+    },
+    {
+      "label": "baseline",
+      "tool": "todos.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 1,
+      "n": 90,
+      "p50_ms": 88.795634,
+      "p95_ms": 96.605529,
+      "p99_descriptive_ms": 99.011818,
+      "min_ms": 73.160039,
+      "max_ms": 99.011818,
+      "block_p95_ms": {
+        "0": 98.396292,
+        "1": 93.831733,
+        "2": 95.768625
+      },
+      "errors": 0,
+      "timeouts": 0,
+      "mean_cpu_ms": 119.0,
+      "max_rss_bytes": 164466688,
+      "serial_service_ops_per_second": 11.343695170178497,
+      "run": "otlp-overhead",
+      "topology": "single_session",
+      "otlp": true,
+      "trace_matches": 90,
+      "mean_stdio_response_bytes": 146738,
+      "distinct_item_hashes": [
+        "74f73d492cc638d65e6d20cf9e485fce2ff4e7e97b9f4afba767896f6be14764"
+      ],
+      "driver_ops_per_second": 10.888829795559106,
+      "server_mcp_p50_ms": 86.9334,
+      "server_mcp_p95_ms": 93.9738,
+      "operation_p50_ms": 7.2429,
+      "operation_p95_ms": 9.8531,
+      "http_attempt_totals": {},
+      "http_status_totals": {},
+      "retries": 0,
+      "error_spans": 0,
+      "mean_phase_ms": {
+        "caldav.query.phase.snapshot_lookup": 0.14132777777777777,
+        "caldav.query.phase.page_admission": 3.948672222222222
+      },
+      "representative_trace_ids": [
+        "7f7676aea0766ebbdf5c321286d47110",
+        "7cae74bf72d2d05e66c419c69657ae3e",
+        "35542432a630329bd107ab3c14859084"
+      ]
+    },
+    {
+      "label": "candidate",
+      "tool": "todos.query",
+      "mode": "continue",
+      "size": 200,
+      "concurrency": 1,
+      "n": 90,
+      "p50_ms": 80.940744,
+      "p95_ms": 95.66709,
+      "p99_descriptive_ms": 102.930256,
+      "min_ms": 26.362727,
+      "max_ms": 102.930256,
+      "block_p95_ms": {
+        "0": 90.643153,
+        "1": 93.202513,
+        "2": 100.706755
+      },
+      "errors": 0,
+      "timeouts": 0,
+      "mean_cpu_ms": 111.00000000000001,
+      "max_rss_bytes": 162721792,
+      "serial_service_ops_per_second": 12.920489160066559,
+      "run": "otlp-overhead",
+      "topology": "single_session",
+      "otlp": false,
+      "trace_matches": 0,
+      "mean_stdio_response_bytes": 146738,
+      "distinct_item_hashes": [
+        "74f73d492cc638d65e6d20cf9e485fce2ff4e7e97b9f4afba767896f6be14764"
+      ],
+      "driver_ops_per_second": 12.316885164211055
+    }
+  ],
+  "processes": [
+    {
+      "run": "continue-serial",
+      "label": "baseline",
+      "processes": 9,
+      "startup_p50_ms": 444.316957,
+      "startup_p95_ms": 488.115595,
+      "shutdown_max_ms": 56.080431,
+      "assembly_sha256": [
+        "e1244b5028bd678066f5a5457b807ba16de75fa7b8937d075c48190fb337ee81"
+      ],
+      "negotiated_versions": [
+        "2026-07-28"
+      ]
+    },
+    {
+      "run": "continue-serial",
+      "label": "candidate",
+      "processes": 9,
+      "startup_p50_ms": 447.89582,
+      "startup_p95_ms": 474.158994,
+      "shutdown_max_ms": 61.923378,
+      "assembly_sha256": [
+        "1885c568a2460993e464c24b358ceb6f4ee8b102f76f3104bfc9e16af8fc1068"
+      ],
+      "negotiated_versions": [
+        "2026-07-28"
+      ]
+    },
+    {
+      "run": "start-serial-bounded",
+      "label": "baseline",
+      "processes": 54,
+      "startup_p50_ms": 480.760078,
+      "startup_p95_ms": 495.373344,
+      "shutdown_max_ms": 94.962944,
+      "assembly_sha256": [
+        "e1244b5028bd678066f5a5457b807ba16de75fa7b8937d075c48190fb337ee81"
+      ],
+      "negotiated_versions": [
+        "2026-07-28"
+      ]
+    },
+    {
+      "run": "start-serial-bounded",
+      "label": "candidate",
+      "processes": 54,
+      "startup_p50_ms": 477.320006,
+      "startup_p95_ms": 498.870014,
+      "shutdown_max_ms": 63.121621,
+      "assembly_sha256": [
+        "1885c568a2460993e464c24b358ceb6f4ee8b102f76f3104bfc9e16af8fc1068"
+      ],
+      "negotiated_versions": [
+        "2026-07-28"
+      ]
+    },
+    {
+      "run": "continue-single_session-2",
+      "label": "baseline",
+      "processes": 9,
+      "startup_p50_ms": 482.615211,
+      "startup_p95_ms": 636.289237,
+      "shutdown_max_ms": 68.021534,
+      "assembly_sha256": [
+        "e1244b5028bd678066f5a5457b807ba16de75fa7b8937d075c48190fb337ee81"
+      ],
+      "negotiated_versions": [
+        "2026-07-28"
+      ]
+    },
+    {
+      "run": "continue-single_session-2",
+      "label": "candidate",
+      "processes": 9,
+      "startup_p50_ms": 477.353003,
+      "startup_p95_ms": 484.04317,
+      "shutdown_max_ms": 62.153732,
+      "assembly_sha256": [
+        "1885c568a2460993e464c24b358ceb6f4ee8b102f76f3104bfc9e16af8fc1068"
+      ],
+      "negotiated_versions": [
+        "2026-07-28"
+      ]
+    },
+    {
+      "run": "continue-single_session-4",
+      "label": "baseline",
+      "processes": 9,
+      "startup_p50_ms": 476.618556,
+      "startup_p95_ms": 488.511052,
+      "shutdown_max_ms": 84.888338,
+      "assembly_sha256": [
+        "e1244b5028bd678066f5a5457b807ba16de75fa7b8937d075c48190fb337ee81"
+      ],
+      "negotiated_versions": [
+        "2026-07-28"
+      ]
+    },
+    {
+      "run": "continue-single_session-4",
+      "label": "candidate",
+      "processes": 9,
+      "startup_p50_ms": 482.958404,
+      "startup_p95_ms": 488.577582,
+      "shutdown_max_ms": 74.433951,
+      "assembly_sha256": [
+        "1885c568a2460993e464c24b358ceb6f4ee8b102f76f3104bfc9e16af8fc1068"
+      ],
+      "negotiated_versions": [
+        "2026-07-28"
+      ]
+    },
+    {
+      "run": "continue-processes-2",
+      "label": "baseline",
+      "processes": 18,
+      "startup_p50_ms": 483.103237,
+      "startup_p95_ms": 1346.302986,
+      "shutdown_max_ms": 129.124088,
+      "assembly_sha256": [
+        "e1244b5028bd678066f5a5457b807ba16de75fa7b8937d075c48190fb337ee81"
+      ],
+      "negotiated_versions": [
+        "2026-07-28"
+      ]
+    },
+    {
+      "run": "continue-processes-2",
+      "label": "candidate",
+      "processes": 18,
+      "startup_p50_ms": 482.118299,
+      "startup_p95_ms": 658.486045,
+      "shutdown_max_ms": 78.035447,
+      "assembly_sha256": [
+        "1885c568a2460993e464c24b358ceb6f4ee8b102f76f3104bfc9e16af8fc1068"
+      ],
+      "negotiated_versions": [
+        "2026-07-28"
+      ]
+    },
+    {
+      "run": "continue-processes-4",
+      "label": "baseline",
+      "processes": 36,
+      "startup_p50_ms": 652.259663,
+      "startup_p95_ms": 686.459243,
+      "shutdown_max_ms": 89.199583,
+      "assembly_sha256": [
+        "e1244b5028bd678066f5a5457b807ba16de75fa7b8937d075c48190fb337ee81"
+      ],
+      "negotiated_versions": [
+        "2026-07-28"
+      ]
+    },
+    {
+      "run": "continue-processes-4",
+      "label": "candidate",
+      "processes": 36,
+      "startup_p50_ms": 649.887739,
+      "startup_p95_ms": 682.53867,
+      "shutdown_max_ms": 83.738274,
+      "assembly_sha256": [
+        "1885c568a2460993e464c24b358ceb6f4ee8b102f76f3104bfc9e16af8fc1068"
+      ],
+      "negotiated_versions": [
+        "2026-07-28"
+      ]
+    },
+    {
+      "run": "otlp-overhead",
+      "label": "baseline",
+      "processes": 9,
+      "startup_p50_ms": 631.410129,
+      "startup_p95_ms": 664.729571,
+      "shutdown_max_ms": 102.673892,
+      "assembly_sha256": [
+        "1885c568a2460993e464c24b358ceb6f4ee8b102f76f3104bfc9e16af8fc1068"
+      ],
+      "negotiated_versions": [
+        "2026-07-28"
+      ]
+    },
+    {
+      "run": "otlp-overhead",
+      "label": "candidate",
+      "processes": 9,
+      "startup_p50_ms": 537.16746,
+      "startup_p95_ms": 590.955168,
+      "shutdown_max_ms": 38.133702,
+      "assembly_sha256": [
+        "1885c568a2460993e464c24b358ceb6f4ee8b102f76f3104bfc9e16af8fc1068"
+      ],
+      "negotiated_versions": [
+        "2026-07-28"
+      ]
+    }
+  ],
+  "schema_guard": [
+    {
+      "label": "baseline",
+      "n": 100,
+      "payload_sha256": "0928dbadb37cc84a1eb8433de8b0b87cfef25b017fb91f0645341f93490817ac",
+      "median_ms": 244.99835000000002,
+      "median_allocated_bytes": 168909200.0,
+      "gc_collections": {
+        "gen0": 2204,
+        "gen1": 1208,
+        "gen2": 216
+      }
+    },
+    {
+      "label": "candidate",
+      "n": 100,
+      "payload_sha256": "0928dbadb37cc84a1eb8433de8b0b87cfef25b017fb91f0645341f93490817ac",
+      "median_ms": 50.50575,
+      "median_allocated_bytes": 94049464.0,
+      "gc_collections": {
+        "gen0": 1125,
+        "gen1": 0,
+        "gen2": 0
+      }
+    }
+  ],
+  "gates": {
+    "alternate-time-zone.trx": {
+      "total": "11",
+      "executed": "11",
+      "passed": "11",
+      "failed": "0",
+      "error": "0",
+      "timeout": "0",
+      "aborted": "0",
+      "inconclusive": "0",
+      "passedButRunAborted": "0",
+      "notRunnable": "0",
+      "notExecuted": "0",
+      "disconnected": "0",
+      "warning": "0",
+      "completed": "0",
+      "inProgress": "0",
+      "pending": "0"
+    },
+    "main-core.trx": {
+      "total": "2421",
+      "executed": "2421",
+      "passed": "2421",
+      "failed": "0",
+      "error": "0",
+      "timeout": "0",
+      "aborted": "0",
+      "inconclusive": "0",
+      "passedButRunAborted": "0",
+      "notRunnable": "0",
+      "notExecuted": "0",
+      "disconnected": "0",
+      "warning": "0",
+      "completed": "0",
+      "inProgress": "0",
+      "pending": "0"
+    },
+    "main-integration.trx": {
+      "total": "114",
+      "executed": "114",
+      "passed": "114",
+      "failed": "0",
+      "error": "0",
+      "timeout": "0",
+      "aborted": "0",
+      "inconclusive": "0",
+      "passedButRunAborted": "0",
+      "notRunnable": "0",
+      "notExecuted": "0",
+      "disconnected": "0",
+      "warning": "0",
+      "completed": "0",
+      "inProgress": "0",
+      "pending": "0"
+    },
+    "main-mcp.trx": {
+      "total": "1035",
+      "executed": "1035",
+      "passed": "1035",
+      "failed": "0",
+      "error": "0",
+      "timeout": "0",
+      "aborted": "0",
+      "inconclusive": "0",
+      "passedButRunAborted": "0",
+      "notRunnable": "0",
+      "notExecuted": "0",
+      "disconnected": "0",
+      "warning": "0",
+      "completed": "0",
+      "inProgress": "0",
+      "pending": "0"
+    },
+    "strict-preconditions.trx": {
+      "total": "11",
+      "executed": "11",
+      "passed": "11",
+      "failed": "0",
+      "error": "0",
+      "timeout": "0",
+      "aborted": "0",
+      "inconclusive": "0",
+      "passedButRunAborted": "0",
+      "notRunnable": "0",
+      "notExecuted": "0",
+      "disconnected": "0",
+      "warning": "0",
+      "completed": "0",
+      "inProgress": "0",
+      "pending": "0"
+    }
+  },
+  "coverage": {
+    "line-rate": "0.9449209327258108",
+    "branch-rate": "0.8604884337176825",
+    "lines-covered": "21153",
+    "lines-valid": "22386",
+    "branches-covered": "12015",
+    "branches-valid": "13963"
+  },
+  "environment": {
+    "sdk": "10.0.100",
+    "runtime": "10.0.0",
+    "os": "Linux 7.2.2-1-cachyos x64",
+    "cpu": "AMD Ryzen 7 7735HS",
+    "logical_cpus": 16,
+    "ram_gib": 30.59,
+    "docker": "29.7.2 rootless",
+    "container_cpu_limit": 4,
+    "container_memory_bytes": 2147483648,
+    "shared_workstation": true
+  },
+  "images": {
+    "radicale": "ghcr.io/kozea/radicale@sha256:3a0080ea51ac69dcd74e345b9587dc14a8c8af0652046069005749f9a75c5c80",
+    "dashboard": "mcr.microsoft.com/dotnet/aspire-dashboard:13.4.2@sha256:76d05882595dd43e708d6ef3e269d98ca763694c0c822bbe98edc99790eaad1b"
+  },
+  "hermes": {
+    "agent_version": "0.21.0",
+    "source_revision": "b0ab2e16",
+    "model": "openai/gpt-5.6-luna",
+    "provider": "openrouter",
+    "reasoning": "medium",
+    "call_count": 14,
+    "protocol_versions": [
+      "2025-11-25",
+      "2026-07-28"
+    ],
+    "calls": [
+      {
+        "tool": "calendars.list",
+        "cursor_call": false,
+        "continuing": false,
+        "outcome": "success"
+      },
+      {
+        "tool": "calendar_entities.query",
+        "cursor_call": false,
+        "continuing": false,
+        "outcome": "success"
+      },
+      {
+        "tool": "calendar_entities.query",
+        "cursor_call": true,
+        "continuing": false,
+        "outcome": "success"
+      },
+      {
+        "tool": "calendar_occurrences.query",
+        "cursor_call": false,
+        "continuing": false,
+        "outcome": "success"
+      },
+      {
+        "tool": "calendar_occurrences.query",
+        "cursor_call": true,
+        "continuing": false,
+        "outcome": "success"
+      },
+      {
+        "tool": "todos.query",
+        "cursor_call": false,
+        "continuing": false,
+        "outcome": "success"
+      },
+      {
+        "tool": "todos.query",
+        "cursor_call": true,
+        "continuing": false,
+        "outcome": "success"
+      },
+      {
+        "tool": "todos.create",
+        "cursor_call": false,
+        "continuing": false,
+        "outcome": "success"
+      },
+      {
+        "tool": "calendar_resources.get",
+        "cursor_call": false,
+        "continuing": false,
+        "outcome": "success"
+      },
+      {
+        "tool": "todos.patch",
+        "cursor_call": false,
+        "continuing": false,
+        "outcome": "success"
+      },
+      {
+        "tool": "calendar_resources.get",
+        "cursor_call": false,
+        "continuing": false,
+        "outcome": "success"
+      },
+      {
+        "tool": "todos.complete",
+        "cursor_call": false,
+        "continuing": false,
+        "outcome": "success"
+      },
+      {
+        "tool": "calendar_resources.get",
+        "cursor_call": false,
+        "continuing": false,
+        "outcome": "success"
+      },
+      {
+        "tool": "calendar_resources.delete",
+        "cursor_call": false,
+        "continuing": false,
+        "outcome": "input_required"
+      }
+    ],
+    "catalog": [
+      "calendars.list",
+      "calendars.create",
+      "calendars.delete",
+      "calendar_entities.query",
+      "calendar_occurrences.query",
+      "todos.query",
+      "calendar_resources.get",
+      "events.create",
+      "events.patch",
+      "todos.create",
+      "todos.patch",
+      "todos.complete",
+      "calendar_occurrences.add",
+      "calendar_occurrences.exclude",
+      "calendar_occurrences.restore_exclusion",
+      "calendar_occurrences.cancel",
+      "calendar_occurrences.restore_cancellation",
+      "calendar_resources.move",
+      "calendar_resources.delete"
+    ],
+    "command": [
+      "/home/jhow/.local/share/mise/installs/dotnet/10.0.100/dotnet",
+      "/tmp/caldav-perf-20260905/candidate/DotnetAgents.CalDav.Mcp.dll"
+    ],
+    "assembly_sha256": "1885c568a2460993e464c24b358ceb6f4ee8b102f76f3104bfc9e16af8fc1068",
+    "all_calls_mapped": true,
+    "authoritative": {
+      "http_status": 207,
+      "matching_resources": 1,
+      "checks": [
+        {
+          "completed": true,
+          "summary_patched": true
+        }
+      ]
+    },
+    "mrtr": "blocked_in_hermes; completed and cleaned via direct MCP",
+    "server_stderr_bytes": 0,
+    "exit_code": 0
+  },
+  "export_completeness": {
+    "api_total": 124729,
+    "api_returned": 124729,
+    "unique_api_spans": 124729,
+    "unique_zip_spans": 124729,
+    "exact_match": true
+  },
+  "privacy": {
+    "export_files_checked": 633,
+    "credential_and_fixture_sentinels_absent": true,
+    "exception_events_absent": true
+  },
+  "validation": {
+    "build_warnings": 0,
+    "build_errors": 0,
+    "slopwatch_issues": 0,
+    "package_smoke_tests": 1,
+    "package_version": "0.0.0-perf.20260905",
+    "first_suite_failure": "Docker overlay mount device or resource busy before alternate-time-zone fixture could start; full rerun passed"
+  },
+  "functional": {
+    "catalog_count": 23,
+    "tools": [
+      {
+        "tool": "calendar_entities.query",
+        "calls": 7,
+        "outcomes": {
+          "success": 7
+        },
+        "mutation_states": [],
+        "trace_ids": [
+          "f93e3d07a5ec82b8bd234771b0755f9b",
+          "ebddf358b41a1a61295ab4933ff9d1e8",
+          "a47d7d0b3a9b2cffb651a3b56c039507",
+          "c574c5d9cd4bdfcc1f874708cbe4ba41",
+          "24b6dd72440a38f39e64b1ba8a2bdabc",
+          "f18f3cdce053038dd5d65ba15dc35342",
+          "1ae0d38ab7678a37c90efc406e05f210"
+        ],
+        "http_totals": {
+          "PROPFIND": 20,
+          "REPORT": 108
+        }
+      },
+      {
+        "tool": "calendar_occurrences.add",
+        "calls": 1,
+        "outcomes": {
+          "success": 1
+        },
+        "mutation_states": [
+          "committed"
+        ],
+        "trace_ids": [
+          "1c095c5b1abdf461f8a10ffc3e144cce"
+        ],
+        "http_totals": {
+          "PROPFIND": 5,
+          "GET": 2,
+          "PUT": 1
+        }
+      },
+      {
+        "tool": "calendar_occurrences.cancel",
+        "calls": 1,
+        "outcomes": {
+          "success": 1
+        },
+        "mutation_states": [
+          "committed"
+        ],
+        "trace_ids": [
+          "79ad9c3892c155cb65915634edc3922f"
+        ],
+        "http_totals": {
+          "PROPFIND": 5,
+          "GET": 2,
+          "PUT": 1
+        }
+      },
+      {
+        "tool": "calendar_occurrences.exclude",
+        "calls": 1,
+        "outcomes": {
+          "success": 1
+        },
+        "mutation_states": [
+          "committed"
+        ],
+        "trace_ids": [
+          "f9289d61f913903ceed026c1047e5282"
+        ],
+        "http_totals": {
+          "PROPFIND": 6,
+          "GET": 2,
+          "PUT": 1
+        }
+      },
+      {
+        "tool": "calendar_occurrences.query",
+        "calls": 6,
+        "outcomes": {
+          "success": 6
+        },
+        "mutation_states": [],
+        "trace_ids": [
+          "070d9e3644f174408ae5f2b3486a1516",
+          "7a528dfbdf1eab1b6a4f906ff699c94f",
+          "523a6f6c6482a818f4facec21a141358",
+          "44a6060ca34d0bab00dba4cc36dc3e80",
+          "35f26395587b9db94ddb464d829b4e7b",
+          "727a613e7c352ea842d1b5fab36c2ec9"
+        ],
+        "http_totals": {
+          "PROPFIND": 15,
+          "REPORT": 81
+        }
+      },
+      {
+        "tool": "calendar_occurrences.restore_cancellation",
+        "calls": 1,
+        "outcomes": {
+          "success": 1
+        },
+        "mutation_states": [
+          "committed"
+        ],
+        "trace_ids": [
+          "35d6f6f2441be9f7c8d70c3d56612ab0"
+        ],
+        "http_totals": {
+          "PROPFIND": 5,
+          "GET": 2,
+          "PUT": 1
+        }
+      },
+      {
+        "tool": "calendar_occurrences.restore_exclusion",
+        "calls": 1,
+        "outcomes": {
+          "success": 1
+        },
+        "mutation_states": [
+          "committed"
+        ],
+        "trace_ids": [
+          "1c2df11609ea128db0ae241390ccd40a"
+        ],
+        "http_totals": {
+          "PROPFIND": 5,
+          "GET": 2,
+          "PUT": 1
+        }
+      },
+      {
+        "tool": "calendar_resources.delete",
+        "calls": 6,
+        "outcomes": {
+          "input_required": 3,
+          "success": 3
+        },
+        "mutation_states": [
+          "committed"
+        ],
+        "trace_ids": [
+          "e05f9762d49193e6ef0e3102cbc44d59",
+          "f86e4bf79df2b9d9bc9dc29c6eb96f9f",
+          "c8a9b7d172a51a029234b0b53427c013",
+          "b8e69c74d516dfd8522c5122726b0361",
+          "ad04451d211ab6aa92a87b5b8e70674b",
+          "70567a58bf4fa28fc5ad047fc4e2a0cf"
+        ],
+        "http_totals": {
+          "PROPFIND": 30,
+          "GET": 12,
+          "DELETE": 3
+        }
+      },
+      {
+        "tool": "calendar_resources.exact_create",
+        "calls": 2,
+        "outcomes": {
+          "input_required": 1,
+          "success": 1
+        },
+        "mutation_states": [
+          "committed"
+        ],
+        "trace_ids": [
+          "da334faa7f0156487f594e0e4d022c80",
+          "715862e3a1fbd472406622cf1e8df9ae"
+        ],
+        "http_totals": {
+          "PROPFIND": 10,
+          "GET": 3,
+          "PUT": 1
+        }
+      },
+      {
+        "tool": "calendar_resources.exact_get",
+        "calls": 1,
+        "outcomes": {
+          "success": 1
+        },
+        "mutation_states": [],
+        "trace_ids": [
+          "bab639a87fd2d11e70bbce87344a1cbc"
+        ],
+        "http_totals": {
+          "PROPFIND": 5,
+          "GET": 1
+        }
+      },
+      {
+        "tool": "calendar_resources.exact_move",
+        "calls": 2,
+        "outcomes": {
+          "input_required": 1,
+          "success": 1
+        },
+        "mutation_states": [
+          "committed"
+        ],
+        "trace_ids": [
+          "4a9b0df001d1066d2592ceb3c0f22e93",
+          "42b3b464112a34736330aa7e62e828cb"
+        ],
+        "http_totals": {
+          "PROPFIND": 11,
+          "GET": 6,
+          "MOVE": 1
+        }
+      },
+      {
+        "tool": "calendar_resources.exact_replace",
+        "calls": 2,
+        "outcomes": {
+          "input_required": 1,
+          "success": 1
+        },
+        "mutation_states": [
+          "committed"
+        ],
+        "trace_ids": [
+          "7a6993af0dff0592ecabee025da588a6",
+          "c51f24f281b349c8024e01f2dab65a16"
+        ],
+        "http_totals": {
+          "PROPFIND": 15,
+          "GET": 4,
+          "PUT": 1
+        }
+      },
+      {
+        "tool": "calendar_resources.get",
+        "calls": 16,
+        "outcomes": {
+          "success": 16
+        },
+        "mutation_states": [],
+        "trace_ids": [
+          "885f6f9fa2bd1bd9d2660845b35c501a",
+          "de760d0ca543584ade1321a22566239b",
+          "8909c06ca3661887af62fd81c9de4e03",
+          "f68db065f5177bf95008cdf82ce01d95",
+          "08114de6bf885a33da9a51bcafcde222",
+          "03cc107f049d3f3afc2edb312c55dc7a",
+          "842aa23bad577535072f78a629a868bf",
+          "6237dcc201f505b322c9ae5e8ff0494b",
+          "4ffcbf20e141c027be09848e5bfa64a9",
+          "b3c6e81486106f3c1cf41b025d4c6598",
+          "cedeb0a283d7d6fbf108fc635b189979",
+          "b917ef3c5807baab2b50725cbcefd3a4",
+          "1371963aed7dba134032136a36f65c6a",
+          "6aee25ee47778802086228c8f7853fb2",
+          "a37429d0af321975fe2dbc5fd6bd93a6",
+          "01aa6fb664551a7a4a512647a33fbd56"
+        ],
+        "http_totals": {
+          "PROPFIND": 80,
+          "GET": 16
+        }
+      },
+      {
+        "tool": "calendar_resources.move",
+        "calls": 2,
+        "outcomes": {
+          "success": 2
+        },
+        "mutation_states": [
+          "committed"
+        ],
+        "trace_ids": [
+          "ae70d5e62ef60301712402470570a4b4",
+          "b504e100589f3394cb62cd448ca0f6d6"
+        ],
+        "http_totals": {
+          "PROPFIND": 10,
+          "GET": 8,
+          "MOVE": 2
+        }
+      },
+      {
+        "tool": "calendars.create",
+        "calls": 1,
+        "outcomes": {
+          "success": 1
+        },
+        "mutation_states": [
+          "committed"
+        ],
+        "trace_ids": [
+          "bd35e1505e93b748d35e73450af1a71f"
+        ],
+        "http_totals": {
+          "PROPFIND": 11,
+          "MKCALENDAR": 1
+        }
+      },
+      {
+        "tool": "calendars.delete",
+        "calls": 2,
+        "outcomes": {
+          "input_required": 1,
+          "success": 1
+        },
+        "mutation_states": [
+          "committed"
+        ],
+        "trace_ids": [
+          "5be22b51f4532d3bda558991ce05c728",
+          "5ffa3608f8491eff09bee7656b784e11"
+        ],
+        "http_totals": {
+          "PROPFIND": 20,
+          "DELETE": 1
+        }
+      },
+      {
+        "tool": "calendars.list",
+        "calls": 1,
+        "outcomes": {
+          "success": 1
+        },
+        "mutation_states": [],
+        "trace_ids": [
+          "6c96dbd2329e860be6b2252628c0cecc"
+        ],
+        "http_totals": {
+          "PROPFIND": 5
+        }
+      },
+      {
+        "tool": "events.create",
+        "calls": 1,
+        "outcomes": {
+          "success": 1
+        },
+        "mutation_states": [
+          "committed"
+        ],
+        "trace_ids": [
+          "4f6336b585c671857c9f687063d7b1fe"
+        ],
+        "http_totals": {
+          "PROPFIND": 5,
+          "PUT": 1,
+          "GET": 1
+        }
+      },
+      {
+        "tool": "events.patch",
+        "calls": 1,
+        "outcomes": {
+          "success": 1
+        },
+        "mutation_states": [
+          "committed"
+        ],
+        "trace_ids": [
+          "300eb00055b3ed8d1255628d400a836b"
+        ],
+        "http_totals": {
+          "PROPFIND": 5,
+          "GET": 2,
+          "PUT": 1
+        }
+      },
+      {
+        "tool": "todos.complete",
+        "calls": 1,
+        "outcomes": {
+          "success": 1
+        },
+        "mutation_states": [
+          "committed"
+        ],
+        "trace_ids": [
+          "2b9c2a07f0ae208daa19d0836af20eb4"
+        ],
+        "http_totals": {
+          "PROPFIND": 5,
+          "GET": 2,
+          "PUT": 1
+        }
+      },
+      {
+        "tool": "todos.create",
+        "calls": 1,
+        "outcomes": {
+          "success": 1
+        },
+        "mutation_states": [
+          "committed"
+        ],
+        "trace_ids": [
+          "d5792f4e68cdcedcce49aba25ee5292f"
+        ],
+        "http_totals": {
+          "PROPFIND": 5,
+          "PUT": 1,
+          "GET": 1
+        }
+      },
+      {
+        "tool": "todos.patch",
+        "calls": 1,
+        "outcomes": {
+          "success": 1
+        },
+        "mutation_states": [
+          "committed"
+        ],
+        "trace_ids": [
+          "6a97bab52267db3bc43bfcc0194f4246"
+        ],
+        "http_totals": {
+          "PROPFIND": 5,
+          "GET": 2,
+          "PUT": 1
+        }
+      },
+      {
+        "tool": "todos.query",
+        "calls": 7,
+        "outcomes": {
+          "success": 7
+        },
+        "mutation_states": [],
+        "trace_ids": [
+          "35dcbbe26147a4eec8047cec52531005",
+          "fc4d902196af09277958127ec9172ddb",
+          "11b27ec448cc0e9b09bf4eecb8b8c23e",
+          "6b7a8d45ab7e5633dda9fb1f668617a3",
+          "4d4c6fe4a7c52d935111ac89506c3351",
+          "6d761f1e85b3d9c0d86e70131c8f3a67",
+          "29c6e5198878c2242e1e902d680f885c"
+        ],
+        "http_totals": {
+          "PROPFIND": 20,
+          "REPORT": 56
+        }
+      }
+    ],
+    "authoritative_checks": 21
+  },
+  "controls": {
+    "expected_limits": [
+      {
+        "label": "baseline",
+        "code": "limit_exhausted",
+        "store_index": null
+      },
+      {
+        "label": "candidate",
+        "code": "limit_exhausted",
+        "store_index": null
+      },
+      {
+        "label": "baseline",
+        "code": "busy",
+        "store_index": 16
+      },
+      {
+        "label": "candidate",
+        "code": "busy",
+        "store_index": 16
+      }
+    ],
+    "clean_no_request_eof": 6,
+    "collector_unavailable_successes": 150,
+    "scales": [
+      {
+        "label": "baseline",
+        "tool": "calendar_entities.query",
+        "corpus_resources": 1,
+        "elapsed_ms": 568.136404,
+        "outcome": "success"
+      },
+      {
+        "label": "baseline",
+        "tool": "calendar_occurrences.query",
+        "corpus_resources": 1,
+        "elapsed_ms": 237.145948,
+        "outcome": "success"
+      },
+      {
+        "label": "candidate",
+        "tool": "calendar_entities.query",
+        "corpus_resources": 1,
+        "elapsed_ms": 558.390107,
+        "outcome": "success"
+      },
+      {
+        "label": "candidate",
+        "tool": "calendar_occurrences.query",
+        "corpus_resources": 1,
+        "elapsed_ms": 198.070055,
+        "outcome": "success"
+      },
+      {
+        "label": "baseline",
+        "tool": "calendar_entities.query",
+        "corpus_resources": 50,
+        "elapsed_ms": 749.914725,
+        "outcome": "success"
+      },
+      {
+        "label": "baseline",
+        "tool": "calendar_occurrences.query",
+        "corpus_resources": 50,
+        "elapsed_ms": 807.236277,
+        "outcome": "success"
+      },
+      {
+        "label": "candidate",
+        "tool": "calendar_entities.query",
+        "corpus_resources": 50,
+        "elapsed_ms": 690.102319,
+        "outcome": "success"
+      },
+      {
+        "label": "candidate",
+        "tool": "calendar_occurrences.query",
+        "corpus_resources": 50,
+        "elapsed_ms": 494.340153,
+        "outcome": "success"
+      },
+      {
+        "label": "baseline",
+        "tool": "calendar_entities.query",
+        "corpus_resources": 200,
+        "elapsed_ms": 1408.015169,
+        "outcome": "success"
+      },
+      {
+        "label": "baseline",
+        "tool": "calendar_occurrences.query",
+        "corpus_resources": 200,
+        "elapsed_ms": 1309.900492,
+        "outcome": "success"
+      },
+      {
+        "label": "candidate",
+        "tool": "calendar_entities.query",
+        "corpus_resources": 200,
+        "elapsed_ms": 1057.580098,
+        "outcome": "success"
+      },
+      {
+        "label": "candidate",
+        "tool": "calendar_occurrences.query",
+        "corpus_resources": 200,
+        "elapsed_ms": 882.416157,
+        "outcome": "success"
+      },
+      {
+        "label": "candidate",
+        "tool": "calendar_entities.query",
+        "corpus_resources": 600,
+        "elapsed_ms": 1591.885134,
+        "outcome": "success"
+      }
+    ]
+  },
+  "package_sha256": {
+    "dotnet-agents-caldav.0.0.0-perf.20260905.snupkg": "3c9e1eaa5997bbb8aeddcf0b0cfd6e79006319bf2dd2218d0886649326e56c8a",
+    "dotnet-agents-caldav.0.0.0-perf.20260905.nupkg": "3d7bec648f59fddc197c37d8f094a5179a56441e8d67707e2f38c1ef01dd7d14"
+  },
+  "cleanup": {
+    "containers_removed": [
+      "caldav-perf-3f20bb0e-radicale",
+      "caldav-perf-3f20bb0e-dashboard"
+    ],
+    "complete": true,
+    "final_corpus_before_container_removal": {
+      "events": 600,
+      "todos": 600,
+      "archive": 0
+    },
+    "temporary_directories_removed": [
+      "hermes-isolated",
+      "profilers",
+      "package-checkout",
+      "package-metadata",
+      "hermes-run-private.log"
+    ],
+    "retained": "assemblies, profiles, raw measurement artifacts and sanitized evidence",
+    "anonymous_volumes_verified_removed": 1,
+    "owned_containers_verified_absent": true,
+    "temporary_credentials_removed": true
+  }
+}
