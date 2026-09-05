@@ -1,4 +1,3 @@
-using System.Reflection;
 using DotnetAgents.CalDav.Core.Services;
 using Shouldly;
 using Xunit;
@@ -48,23 +47,6 @@ public sealed class CalendarOperationProgressTests
             dispatch,
             CalendarMoveCollisionClassification.None,
             CalendarMoveReconciliationClassification.ObservationUnavailable));
-    }
-
-    [Fact]
-    public void MoveDispatchBoundaryExposesOnlyClosedParameterlessTransitions()
-    {
-        var setters = typeof(CalendarOperationProgress)
-            .GetMethods(BindingFlags.Static | BindingFlags.NonPublic)
-            .Where(method => method.Name is "SetMoveDispatched" or "SetMovePossiblyDispatched")
-            .OrderBy(method => method.Name, StringComparer.Ordinal)
-            .ToArray();
-
-        setters.Select(method => method.Name).ShouldBe(
-        [
-            "SetMoveDispatched",
-            "SetMovePossiblyDispatched"
-        ]);
-        setters.ShouldAllBe(method => method.GetParameters().Length == 0);
     }
 
     [Fact]

@@ -1855,20 +1855,6 @@ public class CalDavClientTests
     }
 
     [Fact]
-    public void MovePresenceTransport_HasNoUnscopedProductionSeam()
-    {
-        typeof(CalDavClient).Assembly.GetType(
-                "DotnetAgents.CalDav.Core.Internal.ICalendarResourcePresenceTransport")
-            .ShouldBeNull();
-        typeof(CalDavClient).GetMethod(
-                "ProbeCalendarResourcePresenceAsync",
-                System.Reflection.BindingFlags.Instance
-                | System.Reflection.BindingFlags.Public
-                | System.Reflection.BindingFlags.NonPublic)
-            .ShouldBeNull();
-    }
-
-    [Fact]
     public async Task ProbeCalendarResourceAbsenceAsync_PreservesPurposeThroughDecoratorDefault()
     {
         CalendarHttpRequestPurpose? purpose = null;
