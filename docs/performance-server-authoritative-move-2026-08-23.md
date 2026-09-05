@@ -364,9 +364,7 @@ the disposable container.
 Issues `#114` and `#115` remove scan work from Semantic and Exact Move while
 preserving their distinct fidelity rules. Global performance evidence
 consolidation remains assigned to issue `#116`. The architectural rationale is
-recorded in [ADR 0006](adr/0006-server-authoritative-semantic-move.md), and the
-canonical requirement mapping is in
-[requirement-to-evidence.md](requirement-to-evidence.md).
+recorded in [ADR 0006](adr/0006-server-authoritative-semantic-move.md).
 
 ## #116 evidence-root disposition and cleanup
 

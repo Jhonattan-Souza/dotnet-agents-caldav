@@ -7,8 +7,9 @@ NuGet package can be installed and used as an MCP server.
 ## Behavioral gates
 
 Pull requests and releases run the Release build, all unit and integration
-tests, the 90% line and 85% branch coverage thresholds, both digest-pinned
-Radicale conformance variants, complete-test-result validation, and Slopwatch.
+tests, the 90% line and 85% branch coverage thresholds, digest-pinned Radicale
+conformance in the baseline, strict-preconditions, and alternate-time-zone
+variants, complete-test-result validation, and Slopwatch.
 The MCP-over-stdio integration suite remains the executable authority for
 protocol behavior. Test names and Markdown row counts are not release inputs.
 
@@ -46,11 +47,3 @@ The NuGet package contains only files with a package-consumer purpose:
 Versioned contracts, schemas, interoperability profiles, compatibility
 matrices, and ADRs remain in the repository. Published release
 history is maintained through GitHub Releases.
-
-## Retired audit gate
-
-The former requirement catalogs and release-evidence maps coupled contract
-versions, Markdown structure, test names, TRX parsing, workflows, and package
-contents. Formal requirement-to-TRX traceability is not a product requirement,
-so those files and their verifier were removed. Behavioral tests and the
-installed-artifact gate remain authoritative.
