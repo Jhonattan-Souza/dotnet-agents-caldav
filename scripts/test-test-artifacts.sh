@@ -91,6 +91,46 @@ expected="$(realpath "$current/main-core.coverage.cobertura.260823000000000.xml"
 [[ "$actual" == "$expected" ]] || { echo "Unexpected Cobertura manifest: $actual" >&2; exit 1; }
 echo "PASS five-artifact manifest"
 
+coverage_directory="$fixture_root/coverage"
+mkdir -p -- "$coverage_directory"
+coverage_verifier="$script_directory/verify-coverage.sh"
+printf '<coverage line-rate="0.90" branch-rate="0.85" />\n' > "$coverage_directory/Cobertura.xml"
+"$coverage_verifier" "$coverage_directory" >/dev/null
+echo "PASS default thresholds accept 90 percent line and 85 percent branch coverage"
+printf "<coverage line-rate='0.90' branch-rate='0.85' />\n" > "$coverage_directory/Cobertura.xml"
+"$coverage_verifier" "$coverage_directory" 0.90 0.85 >/dev/null
+echo "PASS XML single-quoted coverage attributes are accepted"
+expect_rejected "non-finite coverage threshold is rejected" "$coverage_verifier" "$coverage_directory" NaN 0.85
+
+declare -a invalid_coverage=(
+  '<coverage line-rate="0.89999" branch-rate="1" />'
+  '<coverage line-rate="1" branch-rate="0.84999" />'
+  '<coverage line-rate="-0.99" branch-rate="0.99" />'
+  '<coverage line-rate="1.01" branch-rate="1" />'
+  '<coverage line-rate="NaN" branch-rate="1" />'
+  '<coverage line-rate="1" branch-rate="Infinity" />'
+  '<coverage line-rate="99%" branch-rate="1" />'
+  '<coverage line-rate="1" branch-rate="1">'
+  '<coverage><package line-rate="1" branch-rate="1" /></coverage>'
+  '<package line-rate="1" branch-rate="1" />'
+  '<!-- line-rate="1" branch-rate="1" --><coverage line-rate="0" branch-rate="0" />'
+)
+for coverage in "${invalid_coverage[@]}"; do
+  printf '%s\n' "$coverage" > "$coverage_directory/Cobertura.xml"
+  expect_rejected "invalid or below-threshold coverage is rejected: $coverage" \
+    "$coverage_verifier" "$coverage_directory" 0.90 0.85
+done
+
+printf '<coverage line-rate="1" branch-rate="1" />\n' > "$coverage_directory/Cobertura.xml"
+cp -- "$coverage_directory/Cobertura.xml" "$coverage_directory/coverage.cobertura.xml"
+expect_rejected "ambiguous aggregate coverage reports are rejected" "$coverage_verifier" "$coverage_directory"
+rm -- "$coverage_directory/Cobertura.xml"
+"$coverage_verifier" "$coverage_directory" >/dev/null
+echo "PASS alternate root-level Cobertura filename is accepted"
+mkdir -p -- "$coverage_directory/historical"
+mv -- "$coverage_directory/coverage.cobertura.xml" "$coverage_directory/historical/Cobertura.xml"
+expect_rejected "nested coverage cannot replace the aggregate report" "$coverage_verifier" "$coverage_directory"
+
 truncated="$fixture_root/truncated"
 seed_artifacts "$truncated"
 printf '<TestRun>\n' > "$truncated/main-core.trx"
