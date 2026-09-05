@@ -96,6 +96,9 @@ public class McpMetadataTests
         description.ShouldContain("Calendars");
         description.ShouldContain("Events");
         description.ShouldContain("To-dos");
+        description.ShouldContain("free/busy");
+        description.ShouldContain("collection sync");
+        description.ShouldContain("metadata updates");
         description.ShouldNotContain("task management", Case.Insensitive);
     }
 

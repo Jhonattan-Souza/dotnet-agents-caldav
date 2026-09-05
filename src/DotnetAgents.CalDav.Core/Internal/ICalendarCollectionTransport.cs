@@ -18,7 +18,10 @@ internal interface ICalendarCollectionTransport
 
 internal sealed record CalendarCollectionDiscoverySnapshot(
     string HomeSetHref,
-    IReadOnlyList<CalendarDescriptor> Items);
+    IReadOnlyList<CalendarDescriptor> Items)
+{
+    internal IReadOnlyList<string> HomeSetHrefs { get; init; } = [HomeSetHref];
+}
 
 internal sealed record CalendarCollectionCreateDispatchRequest(
     string Href,
@@ -34,6 +37,7 @@ internal enum CalendarCollectionDispatchCode
 {
     Dispatched,
     PossiblyDispatched,
+    SchedulingUnsafe,
     NotFound,
     Conflict,
     UnsupportedCapability,

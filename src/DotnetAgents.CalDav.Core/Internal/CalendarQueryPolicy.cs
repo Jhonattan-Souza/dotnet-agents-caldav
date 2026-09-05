@@ -64,8 +64,8 @@ internal sealed class CalendarQueryPolicy(TimeProvider timeProvider)
         failure = exception switch
         {
             CalendarDiscoveryLimitException limit => CalendarQueryFailures.Limit(
-                calendarLimitMessage,
-                new QueryExecutionLimits(CalendarCount: limit.CalendarCount)),
+                limit.HasCalendarCount ? calendarLimitMessage : limit.Message,
+                limit.HasCalendarCount ? new QueryExecutionLimits(CalendarCount: limit.CalendarCount) : null),
             HttpRequestException http => CalendarQueryFailures.FromHttp(http.StatusCode),
             OperationCanceledException when deadlineCancelled && !callerCancelled =>
                 CalendarQueryFailures.ElapsedLimit(),

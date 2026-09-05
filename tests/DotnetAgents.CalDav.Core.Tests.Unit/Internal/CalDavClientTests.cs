@@ -15,7 +15,7 @@ using Xunit;
 
 namespace DotnetAgents.CalDav.Core.Tests.Unit.Internal;
 
-public class CalDavClientTests
+public partial class CalDavClientTests
 {
     [Fact]
     public async Task GetCalendarResourcesForQueryAsync_ReturnsFiveAuthoritativeResourcesFromOneMultiget()
@@ -2493,6 +2493,12 @@ public class CalDavClientTests
         var handler = new StubHttpMessageHandler(request =>
         {
             requests.Add(request);
+            if (request.Method == HttpMethod.Options)
+            {
+                var options = new HttpResponseMessage(HttpStatusCode.OK);
+                options.Headers.Add("DAV", "1, calendar-access");
+                return options;
+            }
             var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
             response.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromSeconds(3));
             return response;
@@ -2505,8 +2511,9 @@ public class CalDavClientTests
 
         result.Code.ToString().ShouldBe("UpstreamRateLimited");
         result.RetryAfterMilliseconds.ShouldBe(3_000);
-        requests.ShouldHaveSingleItem().Method.ShouldBe(HttpMethod.Delete);
-        requests[0].Headers.GetValues("Depth").ShouldHaveSingleItem().ShouldBe("infinity");
+        requests.Count.ShouldBe(2);
+        requests[1].Method.ShouldBe(HttpMethod.Delete);
+        requests[1].Headers.GetValues("Depth").ShouldHaveSingleItem().ShouldBe("infinity");
     }
 
     #endregion

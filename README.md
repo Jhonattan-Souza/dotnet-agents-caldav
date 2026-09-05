@@ -66,6 +66,10 @@ client-specific commands.
 ### Semantic Calendar tools
 
 - `calendars.list` — Discover the configured Calendar Scope.
+- `calendars.inspect` — Inspect standard Calendar metadata, report and privilege advertisements, storage limits, timezone identifiers, and scheduling evidence.
+- `calendars.patch` — Set or remove Calendar display name and description with one atomic, unconditional metadata update; preserve unaddressed properties.
+- `calendars.free_busy` — Read native server-computed busy intervals for one Calendar and a bounded UTC window without downloading Events.
+- `calendar_resources.changes` — Read an initial inventory or incremental href/ETag changes and removals from view, using session-bound synchronization checkpoints.
 - `calendars.create` — Create an Event-only, To-do-only, or mixed Calendar collection with native `MKCALENDAR`.
 - `calendars.delete` — Confirm and recursively delete one exact Calendar collection, including its resources.
 - `calendar_entities.query` — Start a persisted Event and To-do query across Calendar Scope, or continue its immutable Query Result Snapshot without repeating CalDAV work. A bounded Start requires an explicit caller or configured IANA Temporal Evaluation Context and reports the frozen context on every page.
@@ -125,6 +129,70 @@ Exported spans show the MCP request, `caldav.operation`, the applicable `discove
 The verified interoperability profile is the official Radicale 3.7.8 image pinned in the [Radicale 3.7.8 profile](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/v0.2.4/contracts/0.2.3/radicale-3.7.8-profile.json). Set `CALDAV_INTEROPERABILITY_PROFILE=radicale-3.7.8` only for that runtime. Server-authoritative Semantic and Exact Move fail closed with `unsupported_capability` when the profile is omitted because atomic `If-Match`, `Overwrite: F`, and `CALDAV:no-uid-conflict` enforcement cannot be inferred from stored resources or generic DAV discovery. Other CalDAV servers remain unverified profiles even when capability negotiation allows other operations.
 
 ## Architecture
+
+Native reports use `ICalendarReportModule`; collection metadata uses
+`ICalendarMetadataModule`. Each accepts an exact canonical Calendar href.
+An exact `CALDAV_CALENDAR_HREFS` entry authorizes these operations without
+discovery; otherwise the initial operation discovers the Calendar first.
+Configure that exact entry for a Calendar available only through free/busy
+privileges when metadata discovery cannot authorize it. Report advertisements
+are evidence: the client still attempts a native report when the advertisement
+is absent, and reports an unsupported or forbidden operation as an error.
+
+`calendar_resources.changes` transfers hrefs and ETags without resource bodies.
+Apply the entire returned page before saving its checkpoint; continue while
+`hasMore` is true. Copy its 36-character opaque checkpoint exactly. It binds
+the Calendar and configuration to retained state in the current MCP process.
+Unchanged state reuses its handle; an advancing report preserves earlier
+handles for retry while they remain retained. The session keeps at most 1,024
+states and 8 MiB of serialized state, evicting the least recently used entries
+when either limit is reached. Continuation performs no discovery. On
+`sync_reset_required`, restart with `calendarHref` and rebuild the inventory.
+An observed ETag is not a semantic revision reference, and a removal can mean
+revoked visibility. Query cursors and synchronization checkpoints are separate.
+
+Free/busy uses server permissions and temporal interpretation. It accepts
+whole-second UTC boundaries within 366 days and bounds the response to 5,000
+periods before merging. An empty successful report means no reported busy time;
+a failed report does not. Free/busy and established sync checkpoints use one logical REPORT per call,
+with up to three HTTP attempts under the existing read retry policy, a 4 MiB
+response limit and a 30-second deadline. Initial authorization can add
+discovery requests. Sync accepts at most the requested page size, capped at
+500 entries, and returns no new checkpoint if the server exceeds it.
+
+Initial sync can make one additional REPORT without the optional server limit
+after the standard limit-rejection response. Its checkpoint retains that mode
+for later changes, which still use one REPORT and the same client limits.
+In that mode the entire inventory or delta must fit the requested page size;
+overflow leaves the prior checkpoint usable for a retry with a larger page
+size, up to 500. The MCP does not blindly retry native REPORT 507 responses.
+
+Calendar metadata updates set or remove only the addressed display name and
+description. Description accepts an optional language tag. The server applies
+the property instructions atomically, but the operation is **unconditional**:
+a concurrent edit to an addressed property can be overwritten. The MCP sends
+one PROPPATCH without retries and reads the target back. A committed or
+uncertain error requires inspection before another write.
+
+Participation-bearing creates, updates and deletes require fresh OPTIONS
+evidence that automatic server scheduling is absent. Updates check both stored
+and proposed data, including removed participation fields. Collection deletion
+requires that evidence regardless of its current members. Unknown evidence or
+`calendar-auto-schedule` returns `unsupported_capability` before the write.
+Native Calendar-to-Calendar MOVE retains its scheduling-neutral RFC behavior.
+Invitation/reply delivery remains outside the tool contract.
+
+Discovery follows all advertised Calendar homes and nested ordinary
+collections, stopping at Calendar collections. It fails without partial results
+when its depth, request, byte, home or Calendar limits are exhausted. With
+multiple homes, creation requires an explicit destination below the intended
+home. See the [RFC coverage plan](docs/rfc-coverage-plan-2026-09-05.md) and
+[live observation harness](scripts/observations/rfc-coverage/README.md).
+
+Configure exact Calendar hrefs when unrelated collection branches reject
+discovery. Scoped traversal avoids those branches. For example, unrestricted
+discovery can fail on Nextcloud trash descendants that reject PROPFIND;
+the MCP returns that failure rather than claiming a complete Calendar list.
 
 Calendar Entity, Occurrence, and compact To-do reads use `MCP adapter` → `ICalendarQueryModule` → the single narrow `ICalendarQueryTransport` → `CalDavClient`; unrelated discovery and mutation operations retain the `ICalendarService` path. `ICalendarQueryModule` exposes exactly those three query operations, and `ICalendarService` exposes none. Lossless iCalendar projection and bounded recurrence evaluation stay in Core's iCalendar modules.
 

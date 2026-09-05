@@ -743,6 +743,8 @@ public sealed class CalendarEntityCreateServiceTests
         const string calendarHref = "https://cal.example/events/";
         const string resourceHref = "https://cal.example/events/normalized-event.ics";
         var client = Substitute.For<ICalendarClient>();
+        client.IsStorageOnlyMutationAllowedAsync(Arg.Any<string>(), Arg.Any<ReadOnlyMemory<byte>>(),
+            Arg.Any<ReadOnlyMemory<byte>>(), Arg.Any<CancellationToken>()).Returns(true);
         var sut = CreateService(client, defaultEventName: "Events");
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref, "Events")]);
         CalendarResourceCreateRequest? dispatched = null;
@@ -842,6 +844,8 @@ public sealed class CalendarEntityCreateServiceTests
         const string calendarHref = "https://cal.example/events/";
         const string resourceHref = "https://cal.example/events/rich-event.ics";
         var client = Substitute.For<ICalendarClient>();
+        client.IsStorageOnlyMutationAllowedAsync(Arg.Any<string>(), Arg.Any<ReadOnlyMemory<byte>>(),
+            Arg.Any<ReadOnlyMemory<byte>>(), Arg.Any<CancellationToken>()).Returns(true);
         var sut = CreateService(client, defaultEventName: "Events");
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref, "Events")]);
         CalendarResourceCreateRequest? dispatched = null;
@@ -1626,6 +1630,8 @@ public sealed class CalendarEntityCreateServiceTests
         const string calendarHref = "https://cal.example/todos/";
         const string resourceHref = "https://cal.example/todos/rich-todo.ics";
         var client = Substitute.For<ICalendarClient>();
+        client.IsStorageOnlyMutationAllowedAsync(Arg.Any<string>(), Arg.Any<ReadOnlyMemory<byte>>(),
+            Arg.Any<ReadOnlyMemory<byte>>(), Arg.Any<CancellationToken>()).Returns(true);
         var sut = new CalendarService(
             client,
             Options.Create(new CalDavOptions
@@ -1832,6 +1838,8 @@ public sealed class CalendarEntityCreateServiceTests
         const string calendarHref = "https://cal.example/todos/";
         const string resourceHref = "https://cal.example/todos/normalized-todo.ics";
         var client = Substitute.For<ICalendarClient>();
+        client.IsStorageOnlyMutationAllowedAsync(Arg.Any<string>(), Arg.Any<ReadOnlyMemory<byte>>(),
+            Arg.Any<ReadOnlyMemory<byte>>(), Arg.Any<CancellationToken>()).Returns(true);
         var sut = CreateTodoService(client);
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([TodoCalendar(calendarHref, "Todos")]);
         CalendarResourceCreateRequest? dispatched = null;

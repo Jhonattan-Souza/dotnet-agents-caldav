@@ -135,6 +135,10 @@ internal sealed class CalendarExactResourceEngine(
                 Phase: CalendarExactResourcePhase.CompleteResourceSemantics);
         }
 
+        if (!await CalendarSchedulingSafety.IsAllowedAsync(calendarClient, snapshot.CalendarHref,
+                snapshot.AuthoritativeUtf8, request.AuthoritativeUtf8, cancellationToken).ConfigureAwait(false))
+            return Failure(CalendarExactResourceCode.UnsupportedCapability);
+
         var dispatch = await calendarClient.UpdateCalendarResourceAsync(
             new CalendarResourceUpdateRequest(
                 request.Revision.Href,

@@ -26,10 +26,14 @@ internal sealed class OrderedToolCollection : McpServerPrimitiveCollection<McpSe
         ["calendar_occurrences.restore_cancellation"] = 16,
         ["calendar_resources.move"] = 17,
         ["calendar_resources.delete"] = 18,
-        ["calendar_resources.exact_get"] = 19,
-        ["calendar_resources.exact_create"] = 20,
-        ["calendar_resources.exact_replace"] = 21,
-        ["calendar_resources.exact_move"] = 22
+        ["calendars.inspect"] = 19,
+        ["calendars.patch"] = 20,
+        ["calendars.free_busy"] = 21,
+        ["calendar_resources.changes"] = 22,
+        ["calendar_resources.exact_get"] = 23,
+        ["calendar_resources.exact_create"] = 24,
+        ["calendar_resources.exact_replace"] = 25,
+        ["calendar_resources.exact_move"] = 26
     };
 
     public OrderedToolCollection(IEnumerable<McpServerTool> tools)

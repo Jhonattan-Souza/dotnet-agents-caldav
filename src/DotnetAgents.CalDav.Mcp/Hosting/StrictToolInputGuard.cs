@@ -46,6 +46,8 @@ internal static class StrictToolInputGuard
     {
         return toolName switch
         {
+            "calendars.patch" => RejectProtocol(evidence, mutation: true),
+            "calendars.inspect" or "calendars.free_busy" or "calendar_resources.changes" => RejectProtocol(evidence, mutation: false),
             "calendars.create" or "calendars.delete" => RejectCollection(evidence),
             "calendar_entities.query" => RejectEntity(evidence),
             "calendar_occurrences.query" => RejectOccurrence(evidence),
@@ -64,6 +66,13 @@ internal static class StrictToolInputGuard
             _ => null
         };
     }
+
+    private static CallToolResult? RejectProtocol(StrictToolInputEvidence evidence, bool mutation) =>
+        Reject(evidence, CalendarQueryToolSupport.MaximumArgumentBytes, oversized =>
+            CalendarProtocolToolSupport.Error(new Core.Models.CalendarProtocolException(
+                oversized ? "payload_too_large" : "invalid_input",
+                oversized ? "The Calendar operation arguments exceeded their byte limit." : "The Calendar operation arguments are invalid."),
+                mutation ? Core.Models.CalendarMutationState.NotAttempted : null));
 
     private static CallToolResult? RejectEntity(StrictToolInputEvidence evidence) =>
         Reject(evidence, CalendarQueryToolSupport.MaximumArgumentBytes, CalendarEntityTools.CreateInputGuardError);
@@ -185,6 +194,13 @@ internal static class StrictToolInputGuard
             && !evidence.HasInvalidString)
         {
             var violations = ValidateResourceGetArguments(arguments);
+            if (violations.Count > 0)
+                context.Items[ViolationsKey] = violations;
+        }
+        if (CalendarProtocolInputGuard.Applies(toolName)
+            && !evidence.HasDuplicateProperty && !evidence.HasInvalidString)
+        {
+            var violations = CalendarProtocolInputGuard.Validate(toolName!, arguments);
             if (violations.Count > 0)
                 context.Items[ViolationsKey] = violations;
         }

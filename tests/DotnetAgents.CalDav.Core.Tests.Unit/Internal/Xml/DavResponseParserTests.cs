@@ -8,6 +8,41 @@ namespace DotnetAgents.CalDav.Core.Tests.Unit.Internal.Xml;
 
 public class DavResponseParserTests
 {
+    [Theory]
+    [InlineData("<d:status>HTTP/1.1 403 Forbidden</d:status><d:propstat><d:status>HTTP/1.1 200 OK</d:status><d:prop><d:resourcetype><c:calendar/></d:resourcetype></d:prop></d:propstat>")]
+    [InlineData("<d:propstat><d:prop><d:resourcetype><c:calendar/></d:resourcetype></d:prop></d:propstat>")]
+    [InlineData("<d:propstat><d:status>HTTP/1.1 200 OK</d:status><d:prop><d:resourcetype/><d:resourcetype/></d:prop></d:propstat>")]
+    public void DiscoveryProperties_RejectConflictingOrMissingStatusTruth(string content)
+    {
+        var xml = "<d:multistatus xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\"><d:response><d:href>/cal/</d:href>"
+            + content + "</d:response></d:multistatus>";
+        Should.Throw<System.Xml.XmlException>(() => DavResponseParser.ParseCalendars(xml));
+    }
+
+    [Fact]
+    public void DiscoveryProperties_IgnoreFailedOrNestedEvidenceAndReadAllHomes()
+    {
+        const string xml = """
+            <d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+              <d:response><d:href>/</d:href>
+                <d:propstat><d:status>HTTP/1.1 403 Forbidden</d:status><d:prop>
+                  <d:resourcetype><c:calendar/></d:resourcetype>
+                  <d:current-user-principal><d:href>/forbidden/</d:href></d:current-user-principal>
+                  <c:calendar-home-set><d:href>/forbidden/</d:href></c:calendar-home-set>
+                </d:prop></d:propstat>
+                <d:propstat><d:status>HTTP/1.1 200 OK</d:status><d:prop>
+                  <c:calendar-home-set><d:href>/one/</d:href><d:href>/two/</d:href></c:calendar-home-set>
+                  <x xmlns="example"><d:resourcetype><c:calendar/></d:resourcetype></x>
+                </d:prop></d:propstat>
+              </d:response>
+            </d:multistatus>
+            """;
+
+        DavResponseParser.ParseCalendarHomeSets(xml).ShouldBe(["/one/", "/two/"]);
+        DavResponseParser.ParseCurrentUserPrincipal(xml).ShouldBeNull();
+        DavResponseParser.ParseCalendars(xml).ShouldBeEmpty();
+    }
+
     [Fact]
     public void ParseCalendarResourceHrefs_AcceptsOnlySuccessfulResponseOrGetEtagPropstatAndDeduplicates()
     {

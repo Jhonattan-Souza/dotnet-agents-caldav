@@ -214,6 +214,9 @@ internal sealed class CalendarCreationModule(
     {
         if (!TrySerializeEvent(uid, fields, out var authoritativeUtf8))
             return Failure(CalendarEntityCreateCode.InvalidCalendarData);
+        if (!await CalendarSchedulingSafety.IsAllowedAsync(transport, calendar.Href, default, authoritativeUtf8,
+                cancellationToken).ConfigureAwait(false))
+            return Failure(CalendarEntityCreateCode.UnsupportedCapability);
         var dispatch = await transport.CreateCalendarResourceAsync(
             new CalendarResourceCreateRequest(
                 calendar.Href,
@@ -241,6 +244,9 @@ internal sealed class CalendarCreationModule(
     {
         if (!TrySerializeTodo(uid, fields, out var authoritativeUtf8))
             return Failure(CalendarEntityCreateCode.InvalidCalendarData);
+        if (!await CalendarSchedulingSafety.IsAllowedAsync(transport, calendar.Href, default, authoritativeUtf8,
+                cancellationToken).ConfigureAwait(false))
+            return Failure(CalendarEntityCreateCode.UnsupportedCapability);
         var dispatch = await transport.CreateCalendarResourceAsync(
             new CalendarResourceCreateRequest(
                 calendar.Href,
@@ -564,6 +570,9 @@ internal sealed class CalendarCreationModule(
         var integrityFailure = ValidateReviewedExactCreate(reviewedCreate);
         if (integrityFailure is not null)
             return integrityFailure;
+        if (!await CalendarSchedulingSafety.IsAllowedAsync(transport, reviewedCreate.CalendarHref, default,
+                reviewedCreate.AuthoritativeUtf8, cancellationToken).ConfigureAwait(false))
+            return ExactFailure(CalendarExactResourceCode.UnsupportedCapability);
         var dispatch = await transport.CreateCalendarResourceAsync(
             new CalendarResourceCreateRequest(
                 reviewedCreate.CalendarHref,

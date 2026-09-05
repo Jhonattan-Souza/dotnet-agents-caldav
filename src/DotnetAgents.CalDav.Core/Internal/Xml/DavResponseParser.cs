@@ -19,35 +19,67 @@ internal static class DavResponseParser
     public static IReadOnlyList<CalendarDescriptor> ParseCalendars(string multistatusXml)
     {
         var doc = ParseDocument(multistatusXml);
-        return doc.Descendants(Dav + "response")
+        return ResponseElements(doc)
             .Select(TryParseCalendar)
             .OfType<CalendarDescriptor>()
             .ToList();
     }
 
-    /// <summary>Parses a multistatus response to extract the calendar-home-set URL.</summary>
-    public static string? ParseCalendarHomeSet(string multistatusXml)
+    /// <summary>Parses all successful calendar-home-set hrefs.</summary>
+    public static IReadOnlyList<string> ParseCalendarHomeSets(string multistatusXml) =>
+        ParsePropertyHrefs(multistatusXml, CalDav + "calendar-home-set");
+
+    public static string? ParseCalendarHomeSet(string multistatusXml) =>
+        ParseCalendarHomeSets(multistatusXml).FirstOrDefault();
+
+    /// <summary>Parses successful current-user-principal evidence.</summary>
+    public static string? ParseCurrentUserPrincipal(string multistatusXml) =>
+        ParsePropertyHrefs(multistatusXml, Dav + "current-user-principal") switch
+        {
+            [] => null,
+            [var href] => href,
+            _ => throw new XmlException("A WebDAV response contains conflicting principal hrefs.")
+        };
+
+    private static IReadOnlyList<string> ParsePropertyHrefs(string xml, XName property) =>
+        ResponseElements(ParseDocument(xml))
+            .Select(response => GetSuccessfulProperty(response, property))
+            .OfType<XElement>()
+            .SelectMany(value => value.Elements(Dav + "href"))
+            .Select(href => href.Value.Trim())
+            .Where(href => href.Length > 0)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+    /// <summary>Reads direct collection members without trusting failed property values.</summary>
+    internal static IReadOnlyList<CalendarDiscoveryMember> ParseCollectionMembers(string xml) =>
+        ResponseElements(ParseDocument(xml))
+            .Select(ParseCollectionMember)
+            .OfType<CalendarDiscoveryMember>()
+            .ToArray();
+
+    private static CalendarDiscoveryMember? ParseCollectionMember(XElement response)
     {
-        var doc = ParseDocument(multistatusXml);
-        return doc.Descendants(CalDav + "calendar-home-set")
-            .Descendants(Dav + "href")
-            .FirstOrDefault()?.Value?.Trim();
+        var resourceType = GetSuccessfulProperty(response, Dav + "resourcetype");
+        if (resourceType is null || IsSchedulingCollection(resourceType))
+            return null;
+        var calendar = TryParseCalendar(response);
+        if (calendar is null && resourceType.Element(Dav + "collection") is null)
+            return null;
+        return new(GetRequiredMultigetHref(response), calendar);
     }
 
-    /// <summary>Parses a multistatus response to extract the current-user-principal URL.</summary>
-    public static string? ParseCurrentUserPrincipal(string multistatusXml)
-    {
-        var doc = ParseDocument(multistatusXml);
-        return doc.Descendants(Dav + "current-user-principal")
-            .Descendants(Dav + "href")
-            .FirstOrDefault()?.Value?.Trim();
-    }
+    // RFC 6638 section 2.2 forbids collection children in an Inbox; section 2.1
+    // reserves Outbox child resources for future extensions, not calendar discovery.
+    private static bool IsSchedulingCollection(XElement resourceType) =>
+        resourceType.Element(CalDav + "schedule-inbox") is not null
+        || resourceType.Element(CalDav + "schedule-outbox") is not null;
 
     /// <summary>Parses successful Calendar Object Resource hrefs from a REPORT multistatus.</summary>
     public static IReadOnlyList<string> ParseCalendarResourceHrefs(string multistatusXml)
     {
         var document = ParseDocument(multistatusXml);
-        return document.Descendants(Dav + "response")
+        return ResponseElements(document)
             .Select(TryParseCalendarResourceHref)
             .OfType<string>()
             .Distinct(StringComparer.Ordinal)
@@ -58,7 +90,7 @@ internal static class DavResponseParser
     public static IReadOnlyList<CalendarMultigetResource> ParseCalendarMultigetResources(string multistatusXml)
     {
         var document = ParseDocument(multistatusXml);
-        return document.Descendants(Dav + "response")
+        return ResponseElements(document)
             .Select(ParseCalendarMultigetResource)
             .ToArray();
     }
@@ -197,6 +229,10 @@ internal static class DavResponseParser
         };
     }
 
+    private static IEnumerable<XElement> ResponseElements(XDocument document) =>
+        document.Root?.Name == Dav + "multistatus" ? document.Root.Elements(Dav + "response")
+            : throw new XmlException("A WebDAV response must have a multistatus root.");
+
     private static XDocument ParseDocument(string xml)
     {
         var settings = new XmlReaderSettings
@@ -247,7 +283,7 @@ internal static class DavResponseParser
     }
 
     private static bool IsCalendarCollection(XElement response) =>
-        response.Descendants(Dav + "resourcetype").FirstOrDefault()?.Element(CalDav + "calendar") is not null;
+        GetSuccessfulProperty(response, Dav + "resourcetype")?.Element(CalDav + "calendar") is not null;
 
     private static (string? Name, DisplayNameProvenance Provenance) GetDisplayName(
         string? displayName,
@@ -314,14 +350,17 @@ internal static class DavResponseParser
 
     private static XElement? GetSuccessfulProperty(XElement response, XName propertyName)
     {
-        var propStats = response.Descendants(Dav + "propstat");
-        foreach (var propStat in propStats)
-        {
-            if (IsSuccessfulProperty(propStat, propertyName))
-                return propStat.Element(Dav + "prop")!.Element(propertyName);
-        }
-
-        return null;
+        if (response.Element(Dav + "status") is not null && response.Elements(Dav + "propstat").Any())
+            throw new XmlException("A WebDAV response mixes response and property status truth.");
+        var properties = response.Elements(Dav + "propstat")
+            .Where(propstat => IsSuccessStatus(propstat.Element(Dav + "status")?.Value
+                ?? throw new XmlException("A WebDAV propstat is missing its status.")))
+            .SelectMany(propstat => propstat.Elements(Dav + "prop"))
+            .SelectMany(prop => prop.Elements(propertyName))
+            .ToArray();
+        if (properties.Length > 1)
+            throw new XmlException("A WebDAV response contains duplicate successful property values.");
+        return properties.SingleOrDefault();
     }
 
     private static bool IsSuccessfulProperty(XElement propStat, XName propertyName)
@@ -369,3 +408,5 @@ internal sealed record CalendarMultigetResource(
     int StatusCode,
     string? EntityTag,
     string? CalendarData);
+
+internal sealed record CalendarDiscoveryMember(string Href, CalendarDescriptor? Calendar);

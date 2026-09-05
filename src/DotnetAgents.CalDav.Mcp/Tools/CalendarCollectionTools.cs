@@ -124,8 +124,8 @@ internal sealed class CalendarCollectionTools
             return Error(new(CalendarTelemetryErrorCode.LimitExhausted,
                     CalendarTelemetryErrorCategory.LimitsAndAdmission,
                     CalendarTelemetryErrorPhase.SelectionDiscoveryCapability, false),
-                "The Calendar mutation exceeded its Calendar discovery limit.", CalendarMutationState.NotAttempted,
-                limits: new CalendarCollectionLimits(exception.CalendarCount));
+                exception.Message, CalendarMutationState.NotAttempted,
+                limits: exception.HasCalendarCount ? new CalendarCollectionLimits(exception.CalendarCount) : null);
         }
         catch (CalendarDiscoveryUnsupportedCapabilityException)
         {
@@ -243,8 +243,8 @@ internal sealed class CalendarCollectionTools
             return Error(new(CalendarTelemetryErrorCode.LimitExhausted,
                     CalendarTelemetryErrorCategory.LimitsAndAdmission,
                     CalendarTelemetryErrorPhase.SelectionDiscoveryCapability, false),
-                "The Calendar mutation exceeded its Calendar discovery limit.", CalendarMutationState.NotAttempted,
-                limits: new CalendarCollectionLimits(exception.CalendarCount));
+                exception.Message, CalendarMutationState.NotAttempted,
+                limits: exception.HasCalendarCount ? new CalendarCollectionLimits(exception.CalendarCount) : null);
         }
         catch (CalendarDiscoveryUnsupportedCapabilityException)
         {
@@ -391,7 +391,7 @@ internal sealed class CalendarCollectionTools
 
     private static string Message(CalendarCollectionCreateCode code) => code switch
     {
-        CalendarCollectionCreateCode.InvalidInput => "The Calendar collection create input is invalid.",
+        CalendarCollectionCreateCode.InvalidInput => "The Calendar collection create input is invalid. When multiple Calendar homes are discovered, supply an explicit destinationHref below the intended home.",
         CalendarCollectionCreateCode.OutsideScope => "The Calendar collection target is outside the configured Calendar Scope.",
         CalendarCollectionCreateCode.Conflict => "A Calendar with the requested display name already exists.",
         CalendarCollectionCreateCode.DestinationConflict => "The Calendar collection destination already exists.",

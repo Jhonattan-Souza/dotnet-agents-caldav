@@ -39,6 +39,8 @@ Use a known Calendar name directly where the live schema accepts selection by na
 
 Use `calendars.create` only for a new Calendar collection. Use `calendars.delete` only when the user intends to remove the whole collection and every resource in it; resolve its exact href first and continue the tool's own finite confirmation review. Unless the user asks for a separate preview, do not enumerate every contained resource before that review or list again after an uncommitted attempt. Event or To-do deletion is `calendar_resources.delete`.
 
+Use `calendars.inspect` when standard Calendar metadata, report or privilege evidence matters. An absent advertisement does not prove an operation is unsupported. Use `calendars.patch` for Calendar display name or description changes, with explicit set/remove operations; omitted fields remain unchanged. These metadata writes are unconditional and can overwrite concurrent changes to the addressed properties. When creation finds multiple homes, use an explicit destination under the intended home.
+
 Discovery is complete when the next operation has a schema-valid authorized scope or destination selection without a speculative write.
 
 ## Choose the narrow read
@@ -47,6 +49,12 @@ Discovery is complete when the next operation has a schema-valid authorized scop
 - `todos.query`: compact To-do lists, completion or due filters, and a projection limited to fields needed for the answer. Keep a To-do-list request on this path even when a result is recurring; switch to Occurrences only when the user asks for instances on a schedule. Its completion target can bind a later completion.
 - `calendar_entities.query`: persisted Event or To-do resource snapshots, especially for inspection, search, or revision-bound edits of the containing resource.
 - `calendar_resources.get`: one authoritative snapshot at an already confirmed absolute resource href.
+- `calendars.free_busy`: busy periods for one exact Calendar and a whole-second UTC window, computed by the server without Event details. Preserve busy types; an error never means that the interval is free. If discovery cannot authorize a free/busy-only Calendar, its exact href must be configured in the Calendar allowlist.
+- `calendar_resources.changes`: initial membership or changes since a previous synchronization checkpoint, with hrefs and observational ETags. Use it for change polling; read only changed resources whose content the task needs.
+
+For changes, start with `calendarHref`, then copy the returned 36-character `checkpoint` exactly and pass optional `pageSize`. Apply the entire page before saving its checkpoint and continue while `hasMore` is true. Keep initial inventory separate from incremental changes. A removal means removal from view, including possible revoked access. Checkpoints expire with the MCP session, configuration, or eviction from its bounded state store; `sync_reset_required` requires a fresh initial inventory. Unchanged state reuses the same handle. They are distinct from query cursors and resource revisions. A page error supplies no replacement checkpoint: retain the prior one and follow the reported recovery action.
+
+The server negotiates optional sync limits internally. Some servers require the entire inventory or delta to fit the client's bounded page. When the error identifies page-size overflow, retry with a larger `pageSize` up to 500 while retaining the prior checkpoint; a deadline or byte-limit failure requires its own reported recovery.
 
 Start one query with its complete scope, filters, requested window, and optional page size. Temporal windows are complete pairs: supply both `from` and `to`, and both `dueFrom` and `dueTo`; never send only one endpoint. A bounded window must be non-empty and at most 366 days. Do not invent distant lower or upper bounds for an unbounded search; omit bounds the user did not request when the live schema permits it. For “next N”, use one reasonable horizon of at most 366 days and widen only if the result proves it insufficient. If more requested results are needed, Continue with only `cursor` and optional `pageSize`; copy the opaque cursor byte-for-byte, because changing even one character invalidates it. Repeating Start arguments creates an invalid continuation. Consume one snapshot traversal instead of rerunning the query. On `cursor_expired`, start a fresh query and disclose that the results were reevaluated.
 
@@ -77,6 +85,8 @@ Never synthesize recurrence identity from a displayed time. Read Occurrences to 
 Each call writes at most one Calendar Object Resource. An existing-resource write is ready only when the user-selected target, fresh revision, recurrence scope when applicable, and destination when applicable all refer to the same reviewed intent.
 
 Accept a committed semantic mutation's structured outcome as completion. Do not add a verification read unless the outcome is indeterminate or committed-but-unverified and the user needs reconciliation.
+
+Storage-only writes involving organizer or attendee data require evidence that the target does not perform automatic scheduling. Collection deletion requires the same evidence. If the tool reports `unsupported_capability` for that boundary, report the limitation; stripping participation data or switching to an exact write can itself cause scheduling side effects and cannot bypass the restriction.
 
 ## Continue confirmations faithfully
 

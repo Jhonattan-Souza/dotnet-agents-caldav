@@ -34,7 +34,8 @@ internal static class CalendarTelemetry
 
     internal static string NormalizeToolName(string? toolName) => toolName switch
     {
-        "calendars.list" or "calendars.create" or "calendars.delete" or "calendar_entities.query" or "calendar_occurrences.query"
+        "calendars.list" or "calendars.create" or "calendars.delete" or "calendars.inspect" or "calendars.patch"
+            or "calendars.free_busy" or "calendar_resources.changes" or "calendar_entities.query" or "calendar_occurrences.query"
             or "todos.query" or "calendar_resources.get" or "events.create" or "events.patch"
             or "todos.create" or "todos.patch" or "todos.complete" or "calendar_occurrences.add"
             or "calendar_occurrences.exclude" or "calendar_occurrences.restore_exclusion"
@@ -109,6 +110,7 @@ internal enum CalendarTelemetryErrorCode
     ConcurrencyUnavailable,
     ConfirmationExpired,
     CursorExpired,
+    SyncResetRequired,
     ConfirmationMismatch,
     Conflict,
     DestinationConflict,
@@ -177,7 +179,7 @@ internal static class CalendarTelemetryVocabulary
     private static readonly HashSet<string> ErrorCodes = new(StringComparer.Ordinal)
     {
         "ambiguous", "busy", "committed_but_concurrency_unavailable", "committed_but_unverified",
-        "completion_state_conflict", "concurrency_unavailable", "confirmation_expired", "cursor_expired",
+        "completion_state_conflict", "concurrency_unavailable", "confirmation_expired", "cursor_expired", "sync_reset_required",
         "confirmation_mismatch", "conflict", "destination_conflict", "entity_kind_mismatch",
         "fidelity_failure", "indeterminate", "invalid_calendar_data", "invalid_input",
         "limit_exhausted", "not_found", "opaque_resource", "outside_scope", "payload_too_large",
@@ -219,6 +221,7 @@ internal static class CalendarTelemetryVocabulary
         CalendarTelemetryErrorCode.ConcurrencyUnavailable => "concurrency_unavailable",
         CalendarTelemetryErrorCode.ConfirmationExpired => "confirmation_expired",
         CalendarTelemetryErrorCode.CursorExpired => "cursor_expired",
+        CalendarTelemetryErrorCode.SyncResetRequired => "sync_reset_required",
         CalendarTelemetryErrorCode.ConfirmationMismatch => "confirmation_mismatch",
         CalendarTelemetryErrorCode.Conflict => "conflict",
         CalendarTelemetryErrorCode.DestinationConflict => "destination_conflict",

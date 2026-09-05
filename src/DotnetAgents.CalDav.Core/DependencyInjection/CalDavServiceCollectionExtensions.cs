@@ -85,12 +85,13 @@ public static class CalDavServiceCollectionExtensions
             options.Retry.DisableForUnsafeHttpMethods();
             options.Retry.DisableFor(new HttpMethod("MOVE"));
             options.Retry.DisableFor(new HttpMethod("MKCALENDAR"));
+            options.Retry.DisableFor(new HttpMethod("PROPPATCH"));
             options.Retry.BackoffType = DelayBackoffType.Exponential;
             options.Retry.UseJitter = true;
             options.Retry.Delay = TimeSpan.FromMilliseconds(200);
             var standardShouldHandle = options.Retry.ShouldHandle;
             options.Retry.ShouldHandle = arguments =>
-                IsDefinitiveUnsupportedReport(arguments.Outcome.Result)
+                IsDefinitiveReportFailure(arguments.Outcome.Result)
                     ? PredicateResult.False()
                     : standardShouldHandle(arguments);
 
@@ -194,11 +195,20 @@ public static class CalDavServiceCollectionExtensions
             serviceProvider.GetRequiredService<CalendarTodoQueryContinueExecutor>()));
         services.AddTransient<ICalendarService, CalendarService>();
         services.AddTransient<ICalendarCollectionModule, CalendarCollectionModule>();
+        services.AddTransient<ICalendarMetadataModule, CalendarMetadataModule>();
+        services.AddSingleton<CalendarSyncCheckpointProtector>();
+        services.AddTransient<ICalendarReportModule, CalendarReportModule>();
 
         return services;
     }
 
-    private static bool IsDefinitiveUnsupportedReport(HttpResponseMessage? response) =>
+    private static bool IsDefinitiveReportFailure(HttpResponseMessage? response) =>
         response?.RequestMessage?.Method.Method == "REPORT"
-        && response.StatusCode is HttpStatusCode.MethodNotAllowed or HttpStatusCode.NotImplemented;
+        && (response.StatusCode is HttpStatusCode.MethodNotAllowed or HttpStatusCode.NotImplemented
+            || IsNativeReportLimit(response));
+
+    private static bool IsNativeReportLimit(HttpResponseMessage response) =>
+        response.StatusCode == HttpStatusCode.InsufficientStorage
+        && response.RequestMessage!.Options.TryGetValue(CalDavClient.NativeReportKey, out var nativeReport)
+        && nativeReport;
 }

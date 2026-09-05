@@ -115,9 +115,9 @@ public sealed class CalendarEntityCreateTools
                 CalendarTelemetryErrorCategory.LimitsAndAdmission,
                 CalendarTelemetryErrorPhase.SelectionDiscoveryCapability,
                 false),
-                "The Calendar mutation exceeded its Calendar discovery limit.",
+                exception.Message,
                 CalendarMutationState.NotAttempted,
-                limits: new CalendarEntityCreateLimits(CalendarCount: exception.CalendarCount)).FinalizeResult();
+                limits: exception.HasCalendarCount ? new CalendarEntityCreateLimits(CalendarCount: exception.CalendarCount) : null).FinalizeResult();
         }
         catch (HttpRequestException)
         {

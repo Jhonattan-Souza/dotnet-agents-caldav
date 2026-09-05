@@ -208,7 +208,9 @@ public class CalDavHostBuilderTests
             typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarEntityPatchTools),
             typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarResourceMoveTools),
             typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarResourceDeleteTools),
-            typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarCollectionTools)
+            typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarCollectionTools),
+            typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarMetadataTools),
+            typeof(DotnetAgents.CalDav.Mcp.Tools.CalendarReportTools)
         ]);
 
     }
@@ -528,7 +530,11 @@ public class CalDavHostBuilderTests
             "calendar_occurrences.cancel",
             "calendar_occurrences.restore_cancellation",
             "calendar_resources.move",
-            "calendar_resources.delete"
+            "calendar_resources.delete",
+            "calendars.inspect",
+            "calendars.patch",
+            "calendars.free_busy",
+            "calendar_resources.changes"
         ]);
     }
 
@@ -602,7 +608,7 @@ public class CalDavHostBuilderTests
     }
 
     [Fact]
-    public void BuildHost_AllTwentyToolsMatchCatalogCacheAndAnnotationValues()
+    public void BuildHost_AllToolsMatchCatalogCacheAndAnnotationValues()
     {
         var builder = CalDavHostBuilder.CreateBuilder(exposeExactTools: true);
         builder.Services.ConfigureCalDav(ValidOptions);
@@ -613,7 +619,7 @@ public class CalDavHostBuilderTests
         var catalog = JsonNode.Parse(File.ReadAllText(Path.Combine(
             RepositoryRoot(), "src", "DotnetAgents.CalDav.Mcp", "Contracts", "mcp-tool-catalog.json")))!.AsObject();
 
-        registered.Count.ShouldBe(23);
+        registered.Count.ShouldBe(27);
         foreach (var expected in catalog["tools"]!.AsArray())
         {
             var name = expected!["name"]!.GetValue<string>();

@@ -25,6 +25,14 @@ public interface ICalendarClient
         return await GetCalendarResourceAsync(href, cancellationToken);
     }
 
+    /// <summary>Checks fresh server evidence before a storage-only participation mutation.</summary>
+    Task<bool> IsStorageOnlyMutationAllowedAsync(
+        string calendarHref,
+        ReadOnlyMemory<byte> priorUtf8,
+        ReadOnlyMemory<byte> proposedUtf8,
+        CancellationToken cancellationToken) => Task.FromResult(
+            !Internal.CalendarSchedulingSafety.RequiresCheck(priorUtf8, proposedUtf8));
+
     /// <summary>Conditionally creates one complete Calendar Object Resource without overwriting.</summary>
     Task<CalendarResourceCreateResult> CreateCalendarResourceAsync(
         CalendarResourceCreateRequest request,

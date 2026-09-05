@@ -114,6 +114,50 @@ public sealed class CalDavServiceCollectionExtensionsTests
         meter.Attempts.ShouldBe(1);
     }
 
+    [Theory]
+    [InlineData("PROPPATCH", 1)]
+    [InlineData("REPORT", 3)]
+    public async Task Native_calendar_operations_preserve_write_and_read_attempt_bounds(string method, int attempts)
+    {
+        var handler = new CountingUnavailableHandler();
+        using var provider = BuildProvider(handler);
+        var client = provider.GetRequiredService<CalDavClient>();
+
+        var response = await client.SendProtocolRequestAsync("https://cal.example/events/", method,
+            "<request/>", null, TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(503);
+        handler.RequestCount.ShouldBe(attempts);
+        handler.Methods.ShouldAllBe(value => value.Method == method);
+    }
+
+    [Fact]
+    public async Task Native_report_limit_response_has_one_attempt_before_protocol_negotiation()
+    {
+        var handler = new ReportLimitHandler();
+        using var provider = BuildProvider(handler);
+        var client = provider.GetRequiredService<CalDavClient>();
+
+        var response = await client.SendProtocolRequestAsync("https://cal.example/events/", "REPORT",
+            "<request/>", 0, TestContext.Current.CancellationToken);
+
+        response.StatusCode.ShouldBe(507);
+        handler.RequestCount.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Existing_query_report_keeps_its_configured_read_retry_behavior()
+    {
+        var handler = new ReportLimitHandler();
+        using var provider = BuildProvider(handler);
+        var client = provider.GetRequiredService<CalDavClient>();
+
+        await Should.ThrowAsync<HttpRequestException>(() => client.QueryCandidateHrefsAsync(
+            "https://cal.example/events/", CalendarEntityKind.Event, null, null, TestContext.Current.CancellationToken));
+
+        handler.RequestCount.ShouldBe(3);
+    }
+
     [Fact]
     public async Task AddCalDavCalendars_RetriesTransientCalDavReportAtMostThreeTotalAttempts()
     {
@@ -284,6 +328,21 @@ public sealed class CalDavServiceCollectionExtensionsTests
             RequestCount++;
             Methods.Add(request.Method);
             return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.ServiceUnavailable));
+        }
+    }
+
+    private sealed class ReportLimitHandler : HttpMessageHandler
+    {
+        internal int RequestCount { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            RequestCount++;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.InsufficientStorage)
+            {
+                RequestMessage = request,
+                Content = new StringContent("<d:error xmlns:d=\"DAV:\"><d:number-of-matches-within-limits/></d:error>")
+            });
         }
     }
 
