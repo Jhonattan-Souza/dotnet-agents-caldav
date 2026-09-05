@@ -27,7 +27,9 @@ internal static class CalendarOutputSchemaGuard
             JsonSchema.FromText(CalendarToolContract.GetOutputSchema(name).GetRawText()));
         var evaluation = schema.Evaluate(
             result.StructuredContent.Value,
-            new EvaluationOptions { OutputFormat = OutputFormat.List });
+            // The guard consumes only validity. Detailed evaluation trees are neither
+            // returned nor logged, and retaining them scales with the entire page.
+            new EvaluationOptions { OutputFormat = OutputFormat.Flag });
         if (!evaluation.IsValid)
             throw new InvalidOperationException("A Calendar tool returned output that violates its advertised schema.");
     }
