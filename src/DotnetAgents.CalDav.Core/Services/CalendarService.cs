@@ -41,7 +41,6 @@ internal sealed class CalendarService : ICalendarService
         _discoveryPolicy = new CalendarDiscoveryPolicy(options, logger);
         _operationDiscovery = new CalendarOperationDiscovery(
             new CalendarClientDiscoveryTransport(calendarClient),
-            options,
             _discoveryPolicy.ApplyScope,
             _discoveryPolicy.ResolveDefault);
         _calendarClient = calendarClient;
@@ -266,7 +265,6 @@ internal sealed class CalendarService : ICalendarService
         new CalendarMoveAuthorization(
             new CalendarOperationDiscovery(
                 new CalendarClientDiscoveryTransport(_calendarClient),
-                _options,
                 _discoveryPolicy.ApplyScope,
                 _discoveryPolicy.ResolveDefault),
             _options.Value),

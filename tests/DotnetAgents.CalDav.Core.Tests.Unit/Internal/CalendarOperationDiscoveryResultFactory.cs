@@ -1,4 +1,3 @@
-using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Core.Internal;
 using DotnetAgents.CalDav.Core.Models;
 
@@ -10,13 +9,6 @@ internal static class CalendarOperationDiscoveryResultFactory
         CalendarDiscoveryResult discovery,
         CalendarSelectionResult eventDefault,
         CalendarSelectionResult todoDefault) => new(
-            CalendarDiscoveryKey.Create(
-                new CalDavOptions
-                {
-                    BaseUrl = "https://cal.example/",
-                    Username = "scripted-principal"
-                },
-                CalendarOperationContextGeneration.Create()),
             discovery,
             eventDefault,
             todoDefault);

@@ -1,7 +1,5 @@
-using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Core.Internal;
 using DotnetAgents.CalDav.Core.Models;
-using Microsoft.Extensions.Options;
 using NSubstitute;
 using Shouldly;
 using Xunit;
@@ -21,11 +19,6 @@ public sealed class CalendarOperationDiscoveryTests
         ]);
         var sut = new CalendarOperationDiscovery(
             transport,
-            Options.Create(new CalDavOptions
-            {
-                BaseUrl = "https://cal.example/",
-                Username = "principal"
-            }),
             calendars => new CalendarDiscoveryResult(calendars, []),
             static (kind, discovered, authorized) => CalendarSelectionResult.Success(
                 authorized.Single(calendar => kind == CalendarEntityKind.Event

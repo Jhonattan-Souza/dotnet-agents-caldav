@@ -602,7 +602,6 @@ public sealed class CalendarMoveModuleTests
         };
         var operationDiscovery = new CalendarOperationDiscovery(
             new ScriptedDiscoveryTransport(transport),
-            Microsoft.Extensions.Options.Options.Create(options),
             _ => transport.Discovery.Discovery,
             (kind, _, _) => transport.Discovery.Default(kind));
         return new CalendarMoveModule(

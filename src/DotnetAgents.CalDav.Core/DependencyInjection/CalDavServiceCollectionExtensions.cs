@@ -145,7 +145,6 @@ public static class CalDavServiceCollectionExtensions
             var policy = serviceProvider.GetRequiredService<CalendarDiscoveryPolicy>();
             return new CalendarOperationDiscovery(
                 new CalendarClientDiscoveryTransport(serviceProvider.GetRequiredService<ICalendarClient>()),
-                serviceProvider.GetRequiredService<IOptions<CalDavOptions>>(),
                 policy.ApplyScope,
                 policy.ResolveDefault);
         });
