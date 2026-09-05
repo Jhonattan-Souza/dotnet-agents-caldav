@@ -62,7 +62,7 @@ internal sealed class CalendarMoveModule(
         {
             return Failure(
                 CalendarResourceMoveCode.LimitExhausted,
-                calendarCount: exception.CalendarCount,
+                calendarCount: exception.HasCalendarCount ? exception.CalendarCount : null,
                 phase: failurePhase);
         }
     }

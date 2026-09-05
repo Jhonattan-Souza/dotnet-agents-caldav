@@ -48,8 +48,8 @@ public sealed class CalendarTools
             return Error(
                 new(CalendarTelemetryErrorCode.LimitExhausted, CalendarTelemetryErrorCategory.LimitsAndAdmission,
                     CalendarTelemetryErrorPhase.AdmissionAndPayload, false),
-                "Calendar discovery exceeded the safe item limit.",
-                new CalendarExecutionLimits(exception.CalendarCount));
+                exception.Message,
+                exception.HasCalendarCount ? new CalendarExecutionLimits(exception.CalendarCount) : null);
         }
         catch (HttpRequestException exception)
         {

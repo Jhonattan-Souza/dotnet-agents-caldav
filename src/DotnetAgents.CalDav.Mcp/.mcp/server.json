@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.jhonattan-souza/dotnet-agents-caldav",
-  "description": "CalDAV MCP server for Calendars, Events, To-dos, and revision-bound semantic or exact operations.",
+  "description": "CalDAV MCP for Calendars, Events, To-dos, free/busy, collection sync, and metadata updates.",
   "version": "0.0.0",
   "packages": [
     {

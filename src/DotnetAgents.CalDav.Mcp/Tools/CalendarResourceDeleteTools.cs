@@ -131,9 +131,9 @@ internal sealed class CalendarResourceDeleteTools
                 CalendarTelemetryErrorCategory.LimitsAndAdmission,
                 CalendarTelemetryErrorPhase.SelectionDiscoveryCapability,
                 false),
-                "The Calendar mutation exceeded its Calendar discovery limit.",
+                exception.Message,
                 CalendarMutationState.NotAttempted,
-                limits: new CalendarEntityCreateLimits(CalendarCount: exception.CalendarCount));
+                limits: exception.HasCalendarCount ? new CalendarEntityCreateLimits(CalendarCount: exception.CalendarCount) : null);
         }
         catch (Exception exception) when (exception is not (InputRequiredException or OperationCanceledException))
         {

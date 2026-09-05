@@ -13,6 +13,24 @@ namespace DotnetAgents.CalDav.Core.Tests.Unit.Services;
 public sealed class CalendarCollectionModuleTests
 {
     [Fact]
+    public async Task Create_MultipleHomesRequiresExplicitDestinationAndAcceptsEitherHome()
+    {
+        var transport = new ScriptedTransport("https://cal.example/calendars/user/")
+        {
+            Homes = ["https://cal.example/calendars/user/", "https://cal.example/shared/"]
+        };
+        var module = CreateModule(transport);
+        var omitted = await module.CreateAsync(new("Planning", [CalendarEntityKind.Event]), CancellationToken.None);
+        omitted.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        transport.CreateCount.ShouldBe(0);
+
+        var explicitTarget = await module.CreateAsync(new("Planning", [CalendarEntityKind.Event],
+            "https://cal.example/shared/new/"), CancellationToken.None);
+        explicitTarget.Code.ShouldBe(CalendarCollectionCreateCode.Success);
+        transport.LastCreate!.Href.ShouldBe("https://cal.example/shared/new/");
+    }
+
+    [Fact]
     public async Task Create_MixedCollectionUsesGeneratedHomeSetHrefAndVerifiesDescriptor()
     {
         var transport = new ScriptedTransport("https://cal.example/calendars/user/");
@@ -784,6 +802,7 @@ public sealed class CalendarCollectionModuleTests
     private sealed class ScriptedTransport(string homeSetHref) : ICalendarCollectionTransport
     {
         public List<CalendarDescriptor> Items { get; } = [];
+        public IReadOnlyList<string>? Homes { get; init; }
         public int CreateCount { get; private set; }
         public int DeleteCount { get; private set; }
         public int ResourceEnumerationCount { get; private set; }
@@ -806,7 +825,7 @@ public sealed class CalendarCollectionModuleTests
                 throw FailDiscoveryAfterDispatch;
             if (FailDiscoveryAfterCount is { } count && DiscoveryCount > count)
                 throw new HttpRequestException("reconciliation unavailable");
-            return Task.FromResult(new CalendarCollectionDiscoverySnapshot(homeSetHref, Items.ToArray()));
+            return Task.FromResult(new CalendarCollectionDiscoverySnapshot(homeSetHref, Items.ToArray()) { HomeSetHrefs = Homes ?? [homeSetHref] });
         }
 
         public Task<CalendarCollectionDispatchResult> CreateAsync(

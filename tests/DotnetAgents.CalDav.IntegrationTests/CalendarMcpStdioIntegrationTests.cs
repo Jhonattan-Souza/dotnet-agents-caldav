@@ -65,7 +65,11 @@ public sealed class CalendarMcpStdioIntegrationTests
             "calendar_occurrences.cancel",
             "calendar_occurrences.restore_cancellation",
             "calendar_resources.move",
-            "calendar_resources.delete"
+            "calendar_resources.delete",
+            "calendars.inspect",
+            "calendars.patch",
+            "calendars.free_busy",
+            "calendar_resources.changes"
         ]);
         listedTools.Tools.ShouldNotContain(tool => tool.Name == "calendar_resources.exact_get");
         calendarTool.InputSchema.GetProperty("type").GetString().ShouldBe("object");
@@ -1440,6 +1444,10 @@ public sealed class CalendarMcpStdioIntegrationTests
             "calendar_occurrences.restore_cancellation",
             "calendar_resources.move",
             "calendar_resources.delete",
+            "calendars.inspect",
+            "calendars.patch",
+            "calendars.free_busy",
+            "calendar_resources.changes",
             "calendar_resources.exact_get",
             "calendar_resources.exact_create",
             "calendar_resources.exact_replace",

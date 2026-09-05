@@ -85,8 +85,8 @@ public sealed class CalendarResourceTools
                 new(CalendarTelemetryErrorCode.LimitExhausted,
                     CalendarTelemetryErrorCategory.LimitsAndAdmission,
                     CalendarTelemetryErrorPhase.AdmissionAndPayload, false),
-                "Calendar discovery exceeded the safe item limit.",
-                calendarCount: exception.CalendarCount);
+                exception.Message,
+                calendarCount: exception.HasCalendarCount ? exception.CalendarCount : null);
         }
     }
 

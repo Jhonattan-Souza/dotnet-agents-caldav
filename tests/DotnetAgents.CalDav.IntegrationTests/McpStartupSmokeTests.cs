@@ -71,7 +71,11 @@ public sealed class McpStartupSmokeTests
                 "calendar_occurrences.cancel",
                 "calendar_occurrences.restore_cancellation",
                 "calendar_resources.move",
-                "calendar_resources.delete"
+                "calendar_resources.delete",
+                "calendars.inspect",
+                "calendars.patch",
+                "calendars.free_busy",
+                "calendar_resources.changes"
             ]);
             listedTools.Tools.ShouldNotContain(tool => tool.Name.StartsWith(
                 "calendar_resources.exact_",

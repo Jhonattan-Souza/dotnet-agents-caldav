@@ -35,7 +35,9 @@ internal sealed class CalendarCollectionModule(
             return new(CalendarCollectionCreateCode.Conflict, CalendarMutationState.NotAttempted);
         }
 
-        var target = ResolveCreateTarget(request.DestinationHref, discovery.HomeSetHref);
+        if (string.IsNullOrWhiteSpace(request.DestinationHref) && discovery.HomeSetHrefs.Count != 1)
+            return new(CalendarCollectionCreateCode.InvalidInput, CalendarMutationState.NotAttempted);
+        var target = ResolveCreateTarget(request.DestinationHref, discovery.HomeSetHrefs);
         if (target is null)
         {
             return new(
@@ -242,17 +244,17 @@ internal sealed class CalendarCollectionModule(
             : calendars.Where(calendar => scope.Contains(calendar.Href, StringComparer.Ordinal)).ToArray();
     }
 
-    private string? ResolveCreateTarget(string? requested, string homeSetHref)
+    private string? ResolveCreateTarget(string? requested, IReadOnlyList<string> homeSetHrefs)
     {
         if (string.IsNullOrWhiteSpace(requested))
         {
             if (CalendarDiscoveryPolicy.ParseScope(options.Value.CalendarHrefs).Count > 0)
                 return null;
-            return $"{homeSetHref.TrimEnd('/')}/{Guid.NewGuid():N}/";
+            return homeSetHrefs.Count == 1 ? $"{homeSetHrefs[0].TrimEnd('/')}/{Guid.NewGuid():N}/" : null;
         }
 
         if (!TryCanonicalHref(requested, out var target)
-            || !IsDirectChild(homeSetHref, target))
+            || !homeSetHrefs.Any(home => IsDirectChild(home, target)))
             return null;
         var scope = CalendarDiscoveryPolicy.ParseScope(options.Value.CalendarHrefs);
         return scope.Count == 0 || scope.Contains(target, StringComparer.Ordinal) ? target : null;
@@ -350,6 +352,7 @@ internal sealed class CalendarCollectionModule(
 
     private static CalendarCollectionDeleteResult MapDeleteDispatch(CalendarCollectionDispatchResult result) => result.Code switch
     {
+        CalendarCollectionDispatchCode.SchedulingUnsafe => new(CalendarCollectionDeleteCode.UnsupportedCapability, CalendarMutationState.NotAttempted),
         CalendarCollectionDispatchCode.Conflict => RejectedDelete(CalendarCollectionDeleteCode.Conflict),
         CalendarCollectionDispatchCode.UnsupportedCapability => RejectedDelete(CalendarCollectionDeleteCode.UnsupportedCapability),
         CalendarCollectionDispatchCode.PayloadTooLarge => RejectedDelete(CalendarCollectionDeleteCode.PayloadTooLarge),

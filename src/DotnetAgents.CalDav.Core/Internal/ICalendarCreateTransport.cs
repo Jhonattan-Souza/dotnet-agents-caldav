@@ -17,6 +17,14 @@ internal interface ICalendarCreateTransport
         return await GetCalendarResourceAsync(href, cancellationToken);
     }
 
+    /// <summary>Checks fresh server evidence before a storage-only participation mutation.</summary>
+    Task<bool> IsStorageOnlyMutationAllowedAsync(
+        string calendarHref,
+        ReadOnlyMemory<byte> priorUtf8,
+        ReadOnlyMemory<byte> proposedUtf8,
+        CancellationToken cancellationToken) => Task.FromResult(
+            !CalendarSchedulingSafety.RequiresCheck(priorUtf8, proposedUtf8));
+
     Task<CalendarResourceCreateResult> CreateCalendarResourceAsync(
         CalendarResourceCreateRequest request,
         CancellationToken cancellationToken);
@@ -39,6 +47,11 @@ internal sealed class CalendarClientCreateTransport(
         using var scope = CalendarHttpTelemetry.BeginAbsenceProbe();
         return await client.GetCalendarResourceAsync(href, cancellationToken);
     }
+
+    public Task<bool> IsStorageOnlyMutationAllowedAsync(
+        string calendarHref, ReadOnlyMemory<byte> priorUtf8, ReadOnlyMemory<byte> proposedUtf8,
+        CancellationToken cancellationToken) => client.IsStorageOnlyMutationAllowedAsync(
+            calendarHref, priorUtf8, proposedUtf8, cancellationToken);
 
     public Task<CalendarResourceCreateResult> CreateCalendarResourceAsync(
         CalendarResourceCreateRequest request,

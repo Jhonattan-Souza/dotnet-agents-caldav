@@ -2353,6 +2353,450 @@
               "additionalProperties": true
             }
           }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "arguments",
+            "_meta"
+          ],
+          "properties": {
+            "name": {
+              "const": "calendars.inspect"
+            },
+            "arguments": {
+              "$ref": "#/$defs/calendarInspectInput"
+            },
+            "requestState": {
+              "type": "string",
+              "minLength": 1
+            },
+            "inputResponses": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/mrtrInputResponse"
+              }
+            },
+            "_meta": {
+              "type": "object",
+              "required": [
+                "io.modelcontextprotocol/protocolVersion",
+                "io.modelcontextprotocol/clientCapabilities"
+              ],
+              "properties": {
+                "progressToken": {
+                  "type": "number"
+                },
+                "io.modelcontextprotocol/protocolVersion": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "io.modelcontextprotocol/clientCapabilities": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "elicitation": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "form": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "url": {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      }
+                    }
+                  }
+                },
+                "io.modelcontextprotocol/clientInfo": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "version"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "websiteUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "icons": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    }
+                  }
+                },
+                "io.modelcontextprotocol/logLevel": {
+                  "enum": [
+                    "debug",
+                    "info",
+                    "notice",
+                    "warning",
+                    "error",
+                    "critical",
+                    "alert",
+                    "emergency"
+                  ]
+                }
+              },
+              "additionalProperties": true
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "arguments",
+            "_meta"
+          ],
+          "properties": {
+            "name": {
+              "const": "calendars.patch"
+            },
+            "arguments": {
+              "$ref": "#/$defs/calendarMetadataPatchInput"
+            },
+            "requestState": {
+              "type": "string",
+              "minLength": 1
+            },
+            "inputResponses": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/mrtrInputResponse"
+              }
+            },
+            "_meta": {
+              "type": "object",
+              "required": [
+                "io.modelcontextprotocol/protocolVersion",
+                "io.modelcontextprotocol/clientCapabilities"
+              ],
+              "properties": {
+                "progressToken": {
+                  "type": "number"
+                },
+                "io.modelcontextprotocol/protocolVersion": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "io.modelcontextprotocol/clientCapabilities": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "elicitation": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "form": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "url": {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      }
+                    }
+                  }
+                },
+                "io.modelcontextprotocol/clientInfo": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "version"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "websiteUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "icons": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    }
+                  }
+                },
+                "io.modelcontextprotocol/logLevel": {
+                  "enum": [
+                    "debug",
+                    "info",
+                    "notice",
+                    "warning",
+                    "error",
+                    "critical",
+                    "alert",
+                    "emergency"
+                  ]
+                }
+              },
+              "additionalProperties": true
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "arguments",
+            "_meta"
+          ],
+          "properties": {
+            "name": {
+              "const": "calendars.free_busy"
+            },
+            "arguments": {
+              "$ref": "#/$defs/calendarFreeBusyInput"
+            },
+            "requestState": {
+              "type": "string",
+              "minLength": 1
+            },
+            "inputResponses": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/mrtrInputResponse"
+              }
+            },
+            "_meta": {
+              "type": "object",
+              "required": [
+                "io.modelcontextprotocol/protocolVersion",
+                "io.modelcontextprotocol/clientCapabilities"
+              ],
+              "properties": {
+                "progressToken": {
+                  "type": "number"
+                },
+                "io.modelcontextprotocol/protocolVersion": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "io.modelcontextprotocol/clientCapabilities": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "elicitation": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "form": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "url": {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      }
+                    }
+                  }
+                },
+                "io.modelcontextprotocol/clientInfo": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "version"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "websiteUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "icons": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    }
+                  }
+                },
+                "io.modelcontextprotocol/logLevel": {
+                  "enum": [
+                    "debug",
+                    "info",
+                    "notice",
+                    "warning",
+                    "error",
+                    "critical",
+                    "alert",
+                    "emergency"
+                  ]
+                }
+              },
+              "additionalProperties": true
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "arguments",
+            "_meta"
+          ],
+          "properties": {
+            "name": {
+              "const": "calendar_resources.changes"
+            },
+            "arguments": {
+              "$ref": "#/$defs/calendarResourceChangesInput"
+            },
+            "requestState": {
+              "type": "string",
+              "minLength": 1
+            },
+            "inputResponses": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/mrtrInputResponse"
+              }
+            },
+            "_meta": {
+              "type": "object",
+              "required": [
+                "io.modelcontextprotocol/protocolVersion",
+                "io.modelcontextprotocol/clientCapabilities"
+              ],
+              "properties": {
+                "progressToken": {
+                  "type": "number"
+                },
+                "io.modelcontextprotocol/protocolVersion": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "io.modelcontextprotocol/clientCapabilities": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "elicitation": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "form": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "url": {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      }
+                    }
+                  }
+                },
+                "io.modelcontextprotocol/clientInfo": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "version"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "websiteUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "icons": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    }
+                  }
+                },
+                "io.modelcontextprotocol/logLevel": {
+                  "enum": [
+                    "debug",
+                    "info",
+                    "notice",
+                    "warning",
+                    "error",
+                    "critical",
+                    "alert",
+                    "emergency"
+                  ]
+                }
+              },
+              "additionalProperties": true
+            }
+          }
         }
       ]
     },
@@ -2458,7 +2902,11 @@
     "calendar_occurrences.cancel",
     "calendar_occurrences.restore_cancellation",
     "calendar_resources.move",
-    "calendar_resources.delete"
+    "calendar_resources.delete",
+    "calendars.inspect",
+    "calendars.patch",
+    "calendars.free_busy",
+    "calendar_resources.changes"
   ],
   "exactTools": [
     "calendar_resources.exact_get",
@@ -2846,6 +3294,86 @@
         "openWorldHint": true
       },
       "description": "Confirm and delete one revision-bound Calendar Object Resource."
+    },
+    {
+      "name": "calendars.inspect",
+      "cache": {
+        "ttlMs": 0,
+        "cacheScope": "private"
+      },
+      "inputSchema": {
+        "$ref": "#/$defs/calendarInspectInput"
+      },
+      "outputSchema": {
+        "$ref": "#/$defs/calendarInspectOutcome"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "description": "Inspect one exact Calendar href for standard metadata, advertised reports, privileges, limits and scheduling evidence. Advertisement is evidence, not verified operation support or permission."
+    },
+    {
+      "name": "calendars.patch",
+      "cache": {
+        "ttlMs": 0,
+        "cacheScope": "private"
+      },
+      "inputSchema": {
+        "$ref": "#/$defs/calendarMetadataPatchInput"
+      },
+      "outputSchema": {
+        "$ref": "#/$defs/calendarMetadataPatchOutcome"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "description": "Set or remove display name or description on one exact Calendar href. Omitted properties are preserved. Metadata writes are unconditional: concurrent edits to the same addressed properties can be overwritten. A committed or uncertain failure requires inspection before another write."
+    },
+    {
+      "name": "calendars.free_busy",
+      "cache": {
+        "ttlMs": 0,
+        "cacheScope": "private"
+      },
+      "inputSchema": {
+        "$ref": "#/$defs/calendarFreeBusyInput"
+      },
+      "outputSchema": {
+        "$ref": "#/$defs/calendarFreeBusyOutcome"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "description": "Read server-computed busy periods for one exact absolute calendarHref and a UTC from/to window of at most 366 days, using whole-second YYYY-MM-DDTHH:mm:ssZ values. Uses a native report without downloading Events. Busy types and server temporal authority are retained; failure never means free time. Treat unrecognized busy types as busy."
+    },
+    {
+      "name": "calendar_resources.changes",
+      "cache": {
+        "ttlMs": 0,
+        "cacheScope": "private"
+      },
+      "inputSchema": {
+        "$ref": "#/$defs/calendarResourceChangesInput"
+      },
+      "outputSchema": {
+        "$ref": "#/$defs/calendarResourceChangesOutcome"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "description": "Read one bounded native sync response of changed hrefs and observational ETags or removals from view. Start with exact absolute calendarHref; later calls supply only checkpoint and optional pageSize (1-500, default 100). Initial sync may retry once without optional server limits; its checkpoint retains that mode for later requests. Every accepted response fits pageSize. If the response exceeds pageSize, retry with a larger pageSize up to 500 and the prior checkpoint. Save the returned checkpoint after applying the entire response; continue while hasMore is true, retaining initial mode until inventory completes. Copy the short opaque checkpoint exactly. Checkpoints are bound to this MCP session and configuration and may be evicted from bounded retention; they are distinct from query snapshot cursors. On sync_reset_required, if a checkpoint was copied incorrectly, resend the exact original value; otherwise start with calendarHref and no checkpoint to rebuild inventory."
     },
     {
       "name": "calendar_resources.exact_get",
@@ -3265,10 +3793,17 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["source", "evaluatedUtc"],
+          "required": [
+            "source",
+            "evaluatedUtc"
+          ],
           "properties": {
-            "source": {"$ref": "#/$defs/temporalValue"},
-            "evaluatedUtc": {"$ref": "#/$defs/utcTemporalValue"}
+            "source": {
+              "$ref": "#/$defs/temporalValue"
+            },
+            "evaluatedUtc": {
+              "$ref": "#/$defs/utcTemporalValue"
+            }
           }
         }
       ]
@@ -3881,29 +4416,52 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["kind", "entityRevision"],
+          "required": [
+            "kind",
+            "entityRevision"
+          ],
           "properties": {
-            "kind": {"const": "direct"},
-            "entityRevision": {"$ref": "#/$defs/todoRevisionReference"},
-            "recurrenceIdentity": {"$ref": "#/$defs/todoRecurrenceIdentity"}
+            "kind": {
+              "const": "direct"
+            },
+            "entityRevision": {
+              "$ref": "#/$defs/todoRevisionReference"
+            },
+            "recurrenceIdentity": {
+              "$ref": "#/$defs/todoRecurrenceIdentity"
+            }
           }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["kind", "entityRevision"],
+          "required": [
+            "kind",
+            "entityRevision"
+          ],
           "properties": {
-            "kind": {"const": "occurrence_required"},
-            "entityRevision": {"$ref": "#/$defs/todoRevisionReference"}
+            "kind": {
+              "const": "occurrence_required"
+            },
+            "entityRevision": {
+              "$ref": "#/$defs/todoRevisionReference"
+            }
           }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["kind", "resourceRevision"],
+          "required": [
+            "kind",
+            "resourceRevision"
+          ],
           "properties": {
-            "kind": {"const": "unavailable"},
-            "resourceRevision": {"$ref": "#/$defs/resourceRevision"}
+            "kind": {
+              "const": "unavailable"
+            },
+            "resourceRevision": {
+              "$ref": "#/$defs/resourceRevision"
+            }
           }
         }
       ]
@@ -4089,10 +4647,20 @@
     "openEnumProperty": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["value", "parameters"],
+      "required": [
+        "value",
+        "parameters"
+      ],
       "properties": {
-        "value": { "$ref": "#/$defs/openEnumValue" },
-        "parameters": { "type": "array", "items": { "$ref": "#/$defs/icalParameter" } }
+        "value": {
+          "$ref": "#/$defs/openEnumValue"
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/icalParameter"
+          }
+        }
       }
     },
     "effectiveOpenEnumValue": {
@@ -5005,7 +5573,8 @@
             "fidelity_failure",
             "committed_but_unverified",
             "committed_but_concurrency_unavailable",
-            "indeterminate"
+            "indeterminate",
+            "sync_reset_required"
           ]
         },
         "category": {
@@ -5385,14 +5954,22 @@
           "oneOf": [
             {
               "properties": {
-                "entityKind": { "const": "event" },
-                "fields": { "$ref": "#/$defs/eventOverrideFields" }
+                "entityKind": {
+                  "const": "event"
+                },
+                "fields": {
+                  "$ref": "#/$defs/eventOverrideFields"
+                }
               }
             },
             {
               "properties": {
-                "entityKind": { "const": "todo" },
-                "fields": { "$ref": "#/$defs/todoOverrideFields" }
+                "entityKind": {
+                  "const": "todo"
+                },
+                "fields": {
+                  "$ref": "#/$defs/todoOverrideFields"
+                }
               }
             }
           ]
@@ -5402,25 +5979,74 @@
     "namedComponentInput": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["uid", "parameters"],
+      "required": [
+        "uid",
+        "parameters"
+      ],
       "properties": {
-        "uid": { "type": "string", "minLength": 1 },
-        "name": { "$ref": "#/$defs/textProperty" },
-        "parameters": { "type": "array", "items": { "$ref": "#/$defs/icalParameter" } },
-        "description": { "$ref": "#/$defs/textProperty" },
-        "geo": { "$ref": "#/$defs/geoProperty" },
-        "componentTypes": { "$ref": "#/$defs/textListProperty" },
-        "url": { "$ref": "#/$defs/uriProperty" },
-        "relatedTo": { "type": "array", "items": { "$ref": "#/$defs/relationInput" } },
-        "concepts": { "type": "array", "items": { "$ref": "#/$defs/uriProperty" } },
-        "links": { "type": "array", "items": { "$ref": "#/$defs/namedUri" } },
-        "structuredDataUris": { "type": "array", "items": { "$ref": "#/$defs/uriProperty" } }
+        "uid": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "$ref": "#/$defs/textProperty"
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/icalParameter"
+          }
+        },
+        "description": {
+          "$ref": "#/$defs/textProperty"
+        },
+        "geo": {
+          "$ref": "#/$defs/geoProperty"
+        },
+        "componentTypes": {
+          "$ref": "#/$defs/textListProperty"
+        },
+        "url": {
+          "$ref": "#/$defs/uriProperty"
+        },
+        "relatedTo": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/relationInput"
+          }
+        },
+        "concepts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/uriProperty"
+          }
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/namedUri"
+          }
+        },
+        "structuredDataUris": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/uriProperty"
+          }
+        }
       }
     },
     "resourceComponentInput": {
       "allOf": [
-        { "$ref": "#/$defs/namedComponentInput" },
-        { "not": { "required": ["url"] } },
+        {
+          "$ref": "#/$defs/namedComponentInput"
+        },
+        {
+          "not": {
+            "required": [
+              "url"
+            ]
+          }
+        },
         {
           "properties": {
             "componentTypes": {
@@ -5428,7 +6054,15 @@
                 "value": {
                   "minItems": 1,
                   "maxItems": 1,
-                  "items": { "type": "string", "enum": ["projector", "room", "remote-conference-audio", "remote-conference-video"] }
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "projector",
+                      "room",
+                      "remote-conference-audio",
+                      "remote-conference-video"
+                    ]
+                  }
                 }
               }
             }
@@ -5439,105 +6073,372 @@
     "attendeeInput": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["uri", "parameters"],
+      "required": [
+        "uri",
+        "parameters"
+      ],
       "properties": {
-        "uri": { "type": "string", "format": "uri" },
-        "commonName": { "type": "string" },
-        "role": { "type": "string", "minLength": 1 },
-        "partStat": { "type": "string" },
-        "cutype": { "type": "string" },
-        "rsvp": { "type": "boolean" },
-        "delegatedTo": { "type": "array", "items": { "type": "string", "format": "uri" } },
-        "delegatedFrom": { "type": "array", "items": { "type": "string", "format": "uri" } },
-        "sentBy": { "type": "string", "format": "uri" },
-        "directory": { "type": "string", "format": "uri" },
-        "parameters": { "type": "array", "items": { "$ref": "#/$defs/icalParameter" } }
+        "uri": {
+          "type": "string",
+          "format": "uri"
+        },
+        "commonName": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1
+        },
+        "partStat": {
+          "type": "string"
+        },
+        "cutype": {
+          "type": "string"
+        },
+        "rsvp": {
+          "type": "boolean"
+        },
+        "delegatedTo": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "delegatedFrom": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "sentBy": {
+          "type": "string",
+          "format": "uri"
+        },
+        "directory": {
+          "type": "string",
+          "format": "uri"
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/icalParameter"
+          }
+        }
       }
     },
     "relationInput": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["value", "parameters"],
+      "required": [
+        "value",
+        "parameters"
+      ],
       "properties": {
-        "value": { "type": "string", "minLength": 1 },
-        "relationType": { "type": "string" },
-        "parameters": { "type": "array", "items": { "$ref": "#/$defs/icalParameter" } }
+        "value": {
+          "type": "string",
+          "minLength": 1
+        },
+        "relationType": {
+          "type": "string"
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/icalParameter"
+          }
+        }
       }
     },
     "participantInput": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["uid", "participantType"],
+      "required": [
+        "uid",
+        "participantType"
+      ],
       "properties": {
-        "uid": { "$ref": "#/$defs/textProperty" },
-        "participantType": { "$ref": "#/$defs/textProperty" },
-        "calendarAddress": { "$ref": "#/$defs/uriProperty" },
-        "created": { "$ref": "#/$defs/utcTemporalProperty" },
-        "description": { "$ref": "#/$defs/textProperty" },
-        "timestamp": { "$ref": "#/$defs/utcTemporalProperty" },
-        "geo": { "$ref": "#/$defs/geoProperty" },
-        "lastModified": { "$ref": "#/$defs/utcTemporalProperty" },
-        "priority": { "$ref": "#/$defs/priorityProperty" },
-        "sequence": { "$ref": "#/$defs/nonNegativeIntegerProperty" },
-        "status": { "$ref": "#/$defs/textProperty" },
-        "summary": { "$ref": "#/$defs/textProperty" },
-        "url": { "$ref": "#/$defs/uriProperty" },
-        "attachments": { "type": "array", "items": { "$ref": "#/$defs/namedUri" } },
-        "categories": { "$ref": "#/$defs/textListProperty" },
-        "comments": { "type": "array", "items": { "$ref": "#/$defs/textProperty" } },
-        "contacts": { "type": "array", "items": { "$ref": "#/$defs/textProperty" } },
-        "locations": { "type": "array", "items": { "$ref": "#/$defs/textProperty" } },
-        "requestStatuses": { "type": "array", "items": { "$ref": "#/$defs/requestStatus" } },
-        "relatedTo": { "type": "array", "items": { "$ref": "#/$defs/relationInput" } },
-        "resources": { "type": "array", "items": { "$ref": "#/$defs/textProperty" } },
-        "styledDescriptions": { "type": "array", "items": { "$ref": "#/$defs/textProperty" } },
-        "structuredDataUris": { "type": "array", "items": { "$ref": "#/$defs/uriProperty" } },
-        "locationUris": { "type": "array", "items": { "$ref": "#/$defs/namedComponentInput" } },
-        "resourceUris": { "type": "array", "items": { "$ref": "#/$defs/resourceComponentInput" } }
+        "uid": {
+          "$ref": "#/$defs/textProperty"
+        },
+        "participantType": {
+          "$ref": "#/$defs/textProperty"
+        },
+        "calendarAddress": {
+          "$ref": "#/$defs/uriProperty"
+        },
+        "created": {
+          "$ref": "#/$defs/utcTemporalProperty"
+        },
+        "description": {
+          "$ref": "#/$defs/textProperty"
+        },
+        "timestamp": {
+          "$ref": "#/$defs/utcTemporalProperty"
+        },
+        "geo": {
+          "$ref": "#/$defs/geoProperty"
+        },
+        "lastModified": {
+          "$ref": "#/$defs/utcTemporalProperty"
+        },
+        "priority": {
+          "$ref": "#/$defs/priorityProperty"
+        },
+        "sequence": {
+          "$ref": "#/$defs/nonNegativeIntegerProperty"
+        },
+        "status": {
+          "$ref": "#/$defs/textProperty"
+        },
+        "summary": {
+          "$ref": "#/$defs/textProperty"
+        },
+        "url": {
+          "$ref": "#/$defs/uriProperty"
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/namedUri"
+          }
+        },
+        "categories": {
+          "$ref": "#/$defs/textListProperty"
+        },
+        "comments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/textProperty"
+          }
+        },
+        "contacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/textProperty"
+          }
+        },
+        "locations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/textProperty"
+          }
+        },
+        "requestStatuses": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/requestStatus"
+          }
+        },
+        "relatedTo": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/relationInput"
+          }
+        },
+        "resources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/textProperty"
+          }
+        },
+        "styledDescriptions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/textProperty"
+          }
+        },
+        "structuredDataUris": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/uriProperty"
+          }
+        },
+        "locationUris": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/namedComponentInput"
+          }
+        },
+        "resourceUris": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/resourceComponentInput"
+          }
+        }
       }
     },
     "alarmInput": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["action", "trigger"],
+      "required": [
+        "action",
+        "trigger"
+      ],
       "properties": {
-        "action": { "$ref": "#/$defs/alarmActionInputProperty" },
-        "trigger": { "$ref": "#/$defs/textProperty" },
-        "description": { "$ref": "#/$defs/textProperty" },
-        "repeat": { "$ref": "#/$defs/positiveIntegerProperty" },
-        "duration": { "$ref": "#/$defs/durationProperty" },
-        "summary": { "$ref": "#/$defs/textProperty" },
-        "attendees": { "type": "array", "items": { "$ref": "#/$defs/attendeeInput" } },
-        "attachments": { "type": "array", "items": { "$ref": "#/$defs/namedUri" } },
-        "uid": { "$ref": "#/$defs/textProperty" },
-        "acknowledged": { "$ref": "#/$defs/utcTemporalProperty" },
-        "proximity": { "$ref": "#/$defs/textProperty" },
-        "relatedTo": { "type": "array", "items": { "$ref": "#/$defs/relationInput" } },
-        "proximityLocations": { "type": "array", "items": { "$ref": "#/$defs/namedComponentInput" } }
+        "action": {
+          "$ref": "#/$defs/alarmActionInputProperty"
+        },
+        "trigger": {
+          "$ref": "#/$defs/textProperty"
+        },
+        "description": {
+          "$ref": "#/$defs/textProperty"
+        },
+        "repeat": {
+          "$ref": "#/$defs/positiveIntegerProperty"
+        },
+        "duration": {
+          "$ref": "#/$defs/durationProperty"
+        },
+        "summary": {
+          "$ref": "#/$defs/textProperty"
+        },
+        "attendees": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/attendeeInput"
+          }
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/namedUri"
+          }
+        },
+        "uid": {
+          "$ref": "#/$defs/textProperty"
+        },
+        "acknowledged": {
+          "$ref": "#/$defs/utcTemporalProperty"
+        },
+        "proximity": {
+          "$ref": "#/$defs/textProperty"
+        },
+        "relatedTo": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/relationInput"
+          }
+        },
+        "proximityLocations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/namedComponentInput"
+          }
+        }
       }
     },
     "structuredDataInput": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "organizer": { "$ref": "#/$defs/namedUri" },
-        "attendees": { "type": "array", "items": { "$ref": "#/$defs/attendeeInput" } },
-        "participants": { "type": "array", "items": { "$ref": "#/$defs/participantInput" } },
-        "contacts": { "type": "array", "items": { "$ref": "#/$defs/textProperty" } },
-        "resources": { "type": "array", "items": { "$ref": "#/$defs/textProperty" } },
-        "relatedTo": { "type": "array", "items": { "$ref": "#/$defs/relationInput" } },
-        "requestStatuses": { "type": "array", "items": { "$ref": "#/$defs/requestStatus" } },
-        "alarms": { "type": "array", "items": { "$ref": "#/$defs/alarmInput" } },
-        "attachments": { "type": "array", "items": { "$ref": "#/$defs/namedUri" } },
-        "comments": { "type": "array", "items": { "$ref": "#/$defs/textProperty" } },
-        "styledDescriptions": { "type": "array", "items": { "$ref": "#/$defs/textProperty" } },
-        "images": { "type": "array", "items": { "$ref": "#/$defs/namedUri" } },
-        "conferences": { "type": "array", "items": { "$ref": "#/$defs/namedUri" } },
-        "links": { "type": "array", "items": { "$ref": "#/$defs/namedUri" } },
-        "concepts": { "type": "array", "items": { "$ref": "#/$defs/uriProperty" } },
-        "structuredDataUris": { "type": "array", "items": { "$ref": "#/$defs/uriProperty" } },
-        "locationUris": { "type": "array", "items": { "$ref": "#/$defs/namedComponentInput" } },
-        "resourceUris": { "type": "array", "items": { "$ref": "#/$defs/resourceComponentInput" } }
+        "organizer": {
+          "$ref": "#/$defs/namedUri"
+        },
+        "attendees": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/attendeeInput"
+          }
+        },
+        "participants": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/participantInput"
+          }
+        },
+        "contacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/textProperty"
+          }
+        },
+        "resources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/textProperty"
+          }
+        },
+        "relatedTo": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/relationInput"
+          }
+        },
+        "requestStatuses": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/requestStatus"
+          }
+        },
+        "alarms": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/alarmInput"
+          }
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/namedUri"
+          }
+        },
+        "comments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/textProperty"
+          }
+        },
+        "styledDescriptions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/textProperty"
+          }
+        },
+        "images": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/namedUri"
+          }
+        },
+        "conferences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/namedUri"
+          }
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/namedUri"
+          }
+        },
+        "concepts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/uriProperty"
+          }
+        },
+        "structuredDataUris": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/uriProperty"
+          }
+        },
+        "locationUris": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/namedComponentInput"
+          }
+        },
+        "resourceUris": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/resourceComponentInput"
+          }
+        }
       }
     },
     "attendee": {
@@ -5795,33 +6696,86 @@
     "namedComponent": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["uid", "parameters"],
+      "required": [
+        "uid",
+        "parameters"
+      ],
       "properties": {
-        "uid": { "type": "string", "minLength": 1 },
-        "name": { "$ref": "#/$defs/textProperty" },
-        "parameters": { "type": "array", "items": { "$ref": "#/$defs/icalParameter" } },
-        "description": { "$ref": "#/$defs/textProperty" },
-        "geo": { "$ref": "#/$defs/geoProperty" },
+        "uid": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "$ref": "#/$defs/textProperty"
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/icalParameter"
+          }
+        },
+        "description": {
+          "$ref": "#/$defs/textProperty"
+        },
+        "geo": {
+          "$ref": "#/$defs/geoProperty"
+        },
         "componentTypes": {
           "oneOf": [
-            { "$ref": "#/$defs/textListProperty" },
-            { "$ref": "#/$defs/openEnumProperty" }
+            {
+              "$ref": "#/$defs/textListProperty"
+            },
+            {
+              "$ref": "#/$defs/openEnumProperty"
+            }
           ]
         },
-        "url": { "$ref": "#/$defs/uriProperty" },
-        "relatedTo": { "type": "array", "items": { "$ref": "#/$defs/relation" } },
-        "concepts": { "type": "array", "items": { "$ref": "#/$defs/uriProperty" } },
-        "links": { "type": "array", "items": { "$ref": "#/$defs/namedUri" } },
-        "structuredDataUris": { "type": "array", "items": { "$ref": "#/$defs/uriProperty" } }
+        "url": {
+          "$ref": "#/$defs/uriProperty"
+        },
+        "relatedTo": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/relation"
+          }
+        },
+        "concepts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/uriProperty"
+          }
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/namedUri"
+          }
+        },
+        "structuredDataUris": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/uriProperty"
+          }
+        }
       }
     },
     "resourceComponent": {
       "allOf": [
-        { "$ref": "#/$defs/namedComponent" },
-        { "not": { "required": ["url"] } },
+        {
+          "$ref": "#/$defs/namedComponent"
+        },
+        {
+          "not": {
+            "required": [
+              "url"
+            ]
+          }
+        },
         {
           "properties": {
-            "componentTypes": { "$ref": "#/$defs/openEnumProperty" }
+            "componentTypes": {
+              "$ref": "#/$defs/openEnumProperty"
+            }
           }
         }
       ]
@@ -8625,10 +9579,10 @@
             "integer",
             "float",
             "period",
-          "recur",
-          "binary",
-          "uid",
-          "unknown"
+            "recur",
+            "binary",
+            "uid",
+            "unknown"
           ]
         },
         "rawEncodedValue": {
@@ -9541,7 +10495,9 @@
         "violations": {
           "type": "array",
           "maxItems": 32,
-          "items": { "$ref": "#/$defs/violation" }
+          "items": {
+            "$ref": "#/$defs/violation"
+          }
         },
         "limits": {
           "$ref": "#/$defs/executionLimits"
@@ -9706,6 +10662,846 @@
           "minLength": 1
         }
       }
+    },
+    "calendarProtocolName": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "namespaceUri",
+        "localName"
+      ],
+      "properties": {
+        "namespaceUri": {
+          "type": "string"
+        },
+        "localName": {
+          "type": "string"
+        }
+      }
+    },
+    "calendarPropertyObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "namespaceUri",
+        "localName",
+        "statusCode"
+      ],
+      "properties": {
+        "namespaceUri": {
+          "type": "string"
+        },
+        "localName": {
+          "type": "string"
+        },
+        "statusCode": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 100,
+          "maximum": 599
+        }
+      }
+    },
+    "calendarAdvertisedLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maximumResourceBytes",
+        "maximumInstances",
+        "maximumAttendeesPerInstance",
+        "minimumDateTime",
+        "maximumDateTime"
+      ],
+      "properties": {
+        "maximumResourceBytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "maximumInstances": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "maximumAttendeesPerInstance": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "minimumDateTime": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "maximumDateTime": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "calendarSchedulingObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "statusCode"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "advertised",
+            "not_advertised",
+            "unknown"
+          ]
+        },
+        "statusCode": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 100,
+          "maximum": 599
+        }
+      }
+    },
+    "calendarMetadataSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "calendarHref",
+        "displayName",
+        "description",
+        "descriptionLanguage",
+        "reportSupport",
+        "reports",
+        "privilegeSupport",
+        "privileges",
+        "limits",
+        "timeZoneIds",
+        "properties",
+        "scheduling"
+      ],
+      "properties": {
+        "calendarHref": {
+          "type": "string",
+          "format": "uri",
+          "minLength": 1,
+          "maxLength": 8192,
+          "description": "Exact canonical absolute Calendar href ending in /."
+        },
+        "displayName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "descriptionLanguage": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reportSupport": {
+          "enum": [
+            "available",
+            "unavailable",
+            "unknown"
+          ]
+        },
+        "reports": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/calendarProtocolName"
+          }
+        },
+        "privilegeSupport": {
+          "enum": [
+            "available",
+            "unavailable",
+            "unknown"
+          ]
+        },
+        "privileges": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/calendarProtocolName"
+          }
+        },
+        "limits": {
+          "$ref": "#/$defs/calendarAdvertisedLimits"
+        },
+        "timeZoneIds": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "string"
+          }
+        },
+        "properties": {
+          "type": "array",
+          "maxItems": 11,
+          "items": {
+            "$ref": "#/$defs/calendarPropertyObservation"
+          }
+        },
+        "scheduling": {
+          "$ref": "#/$defs/calendarSchedulingObservation"
+        }
+      }
+    },
+    "calendarInspectInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "calendarHref"
+      ],
+      "properties": {
+        "calendarHref": {
+          "type": "string",
+          "format": "uri",
+          "minLength": 1,
+          "maxLength": 8192,
+          "description": "Exact canonical absolute Calendar href ending in /."
+        }
+      }
+    },
+    "calendarInspectSuccess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcome",
+        "calendarHref",
+        "displayName",
+        "description",
+        "descriptionLanguage",
+        "reportSupport",
+        "reports",
+        "privilegeSupport",
+        "privileges",
+        "limits",
+        "timeZoneIds",
+        "properties",
+        "scheduling"
+      ],
+      "properties": {
+        "outcome": {
+          "const": "success"
+        },
+        "calendarHref": {
+          "type": "string",
+          "format": "uri",
+          "minLength": 1,
+          "maxLength": 8192,
+          "description": "Exact canonical absolute Calendar href ending in /."
+        },
+        "displayName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "descriptionLanguage": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reportSupport": {
+          "enum": [
+            "available",
+            "unavailable",
+            "unknown"
+          ]
+        },
+        "reports": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/calendarProtocolName"
+          }
+        },
+        "privilegeSupport": {
+          "enum": [
+            "available",
+            "unavailable",
+            "unknown"
+          ]
+        },
+        "privileges": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/calendarProtocolName"
+          }
+        },
+        "limits": {
+          "$ref": "#/$defs/calendarAdvertisedLimits"
+        },
+        "timeZoneIds": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "string"
+          }
+        },
+        "properties": {
+          "type": "array",
+          "maxItems": 11,
+          "items": {
+            "$ref": "#/$defs/calendarPropertyObservation"
+          }
+        },
+        "scheduling": {
+          "$ref": "#/$defs/calendarSchedulingObservation"
+        }
+      }
+    },
+    "calendarDisplayNamePatch": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "value"
+          ],
+          "properties": {
+            "operation": {
+              "const": "set"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation"
+          ],
+          "properties": {
+            "operation": {
+              "const": "remove"
+            }
+          }
+        }
+      ]
+    },
+    "calendarDescriptionPatch": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "value"
+          ],
+          "properties": {
+            "operation": {
+              "const": "set"
+            },
+            "value": {
+              "type": "string",
+              "maxLength": 4096
+            },
+            "language": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[A-Za-z]{1,8}(-[A-Za-z0-9]{1,8})*$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation"
+          ],
+          "properties": {
+            "operation": {
+              "const": "remove"
+            }
+          }
+        }
+      ]
+    },
+    "calendarMetadataPatchInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "calendarHref",
+        "patch"
+      ],
+      "properties": {
+        "calendarHref": {
+          "type": "string",
+          "format": "uri",
+          "minLength": 1,
+          "maxLength": 8192,
+          "description": "Exact canonical absolute Calendar href ending in /."
+        },
+        "patch": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [],
+          "properties": {
+            "displayName": {
+              "$ref": "#/$defs/calendarDisplayNamePatch"
+            },
+            "description": {
+              "$ref": "#/$defs/calendarDescriptionPatch"
+            }
+          },
+          "minProperties": 1,
+          "description": "Unconditional replacement of addressed metadata properties. Omitted properties are preserved; same-property concurrent edits can be overwritten."
+        }
+      }
+    },
+    "calendarMetadataPatchSuccess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcome",
+        "calendar",
+        "concurrency",
+        "mutationState"
+      ],
+      "properties": {
+        "outcome": {
+          "const": "success"
+        },
+        "calendar": {
+          "$ref": "#/$defs/calendarMetadataSnapshot"
+        },
+        "concurrency": {
+          "const": "unconditional"
+        },
+        "mutationState": {
+          "const": "committed"
+        }
+      }
+    },
+    "calendarMetadataPatchErrorOutcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "category",
+        "message",
+        "retryable",
+        "phase",
+        "mutationState"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "invalid_input",
+            "invalid_calendar_data",
+            "not_found",
+            "ambiguous",
+            "outside_scope",
+            "entity_kind_mismatch",
+            "unsupported_capability",
+            "opaque_resource",
+            "temporal_unresolved",
+            "recurrence_unevaluable",
+            "conflict",
+            "destination_conflict",
+            "concurrency_unavailable",
+            "completion_state_conflict",
+            "limit_exhausted",
+            "payload_too_large",
+            "busy",
+            "upstream_unauthorized",
+            "upstream_forbidden",
+            "upstream_rate_limited",
+            "upstream_unavailable",
+            "upstream_protocol_error",
+            "confirmation_expired",
+            "cursor_expired",
+            "confirmation_mismatch",
+            "fidelity_failure",
+            "committed_but_unverified",
+            "committed_but_concurrency_unavailable",
+            "indeterminate",
+            "sync_reset_required"
+          ]
+        },
+        "category": {
+          "enum": [
+            "input",
+            "selection",
+            "capabilityAndProjection",
+            "state",
+            "limitsAndAdmission",
+            "upstream",
+            "confirmation",
+            "postWriteTruth"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "phase": {
+          "enum": [
+            "transportAuthorization",
+            "admissionAndPayload",
+            "schemaLexicalDiscriminator",
+            "pagination",
+            "originScopeAuthorization",
+            "selectionDiscoveryCapability",
+            "targetRevision",
+            "completeResourceSemantics",
+            "mrtr",
+            "execution",
+            "postWriteVerificationOrReconciliation"
+          ]
+        },
+        "violations": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/violation"
+          }
+        },
+        "limits": {
+          "$ref": "#/$defs/executionLimits"
+        },
+        "retryAfterMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "authorizedCandidates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/authorizedCandidate"
+          }
+        },
+        "currentSnapshot": {
+          "$ref": "#/$defs/calendarSnapshot"
+        },
+        "mutationState": {
+          "enum": [
+            "not_attempted",
+            "not_committed",
+            "committed",
+            "unknown"
+          ]
+        }
+      }
+    },
+    "calendarFreeBusyInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "calendarHref",
+        "from",
+        "to"
+      ],
+      "properties": {
+        "calendarHref": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 8192,
+          "description": "One exact canonical absolute Calendar href ending in /."
+        },
+        "from": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+          "description": "Inclusive UTC start with whole-second precision."
+        },
+        "to": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+          "description": "Exclusive UTC end, after from and at most 366 days later."
+        }
+      }
+    },
+    "calendarFreeBusySuccess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcome",
+        "calendarHref",
+        "from",
+        "to",
+        "periods",
+        "temporalAuthority",
+        "complete"
+      ],
+      "properties": {
+        "outcome": {
+          "const": "success"
+        },
+        "calendarHref": {
+          "type": "string",
+          "format": "uri"
+        },
+        "from": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "to": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "temporalAuthority": {
+          "const": "server"
+        },
+        "complete": {
+          "const": true
+        },
+        "periods": {
+          "type": "array",
+          "maxItems": 5000,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "from",
+              "to",
+              "busyType"
+            ],
+            "properties": {
+              "from": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "to": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "busyType": {
+                "type": "string",
+                "description": "RFC FBTYPE; unknown server types are preserved."
+              }
+            }
+          }
+        }
+      }
+    },
+    "calendarResourceChangesInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "calendarHref": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 8192,
+          "description": "Exact canonical absolute Calendar href for initial inventory; omit with checkpoint."
+        },
+        "checkpoint": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 36,
+          "description": "Copy the opaque 36-character checkpoint from a prior successful changes call exactly. It requires retained state in this session and configuration; capacity eviction can invalidate it. On sync_reset_required, rebuild inventory using calendarHref without checkpoint."
+        },
+        "pageSize": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500,
+          "default": 100
+        }
+      },
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "calendarHref": {
+              "type": "string"
+            },
+            "pageSize": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "calendarHref"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "checkpoint": {
+              "type": "string"
+            },
+            "pageSize": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "checkpoint"
+          ]
+        }
+      ]
+    },
+    "calendarResourceChangesSuccess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcome",
+        "calendarHref",
+        "mode",
+        "changes",
+        "checkpoint",
+        "hasMore",
+        "checkpointLifetime",
+        "removalMeaning"
+      ],
+      "properties": {
+        "outcome": {
+          "const": "success"
+        },
+        "calendarHref": {
+          "type": "string",
+          "format": "uri"
+        },
+        "mode": {
+          "enum": [
+            "initial",
+            "incremental"
+          ]
+        },
+        "checkpoint": {
+          "type": "string",
+          "minLength": 36,
+          "maxLength": 36
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "checkpointLifetime": {
+          "const": "session",
+          "description": "Valid only in this MCP process and configuration while its state remains in the bounded session store; capacity eviction requires a fresh inventory."
+        },
+        "removalMeaning": {
+          "const": "removed_from_view"
+        },
+        "changes": {
+          "type": "array",
+          "maxItems": 500,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "href",
+              "kind"
+            ],
+            "properties": {
+              "href": {
+                "type": "string",
+                "format": "uri"
+              },
+              "kind": {
+                "enum": [
+                  "changed",
+                  "removed"
+                ]
+              },
+              "etag": {
+                "type": "string",
+                "description": "Observational Entity Tag, present for changed entries only; read a resource snapshot before semantic mutation."
+              }
+            },
+            "oneOf": [
+              {
+                "properties": {
+                  "kind": {
+                    "const": "changed"
+                  }
+                },
+                "required": [
+                  "etag"
+                ]
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "removed"
+                  }
+                },
+                "not": {
+                  "required": [
+                    "etag"
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "calendarInspectOutcome": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/calendarInspectSuccess"
+        },
+        {
+          "$ref": "#/$defs/errorOutcome"
+        }
+      ]
+    },
+    "calendarMetadataPatchOutcome": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/calendarMetadataPatchSuccess"
+        },
+        {
+          "$ref": "#/$defs/calendarMetadataPatchErrorOutcome"
+        }
+      ]
+    },
+    "calendarFreeBusyOutcome": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/calendarFreeBusySuccess"
+        },
+        {
+          "$ref": "#/$defs/errorOutcome"
+        }
+      ]
+    },
+    "calendarResourceChangesOutcome": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/calendarResourceChangesSuccess"
+        },
+        {
+          "$ref": "#/$defs/errorOutcome"
+        }
+      ]
     }
   },
   "duplicatePropertyPolicy": {

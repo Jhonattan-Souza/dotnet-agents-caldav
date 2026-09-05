@@ -24,9 +24,29 @@ public enum CalendarEntityKind
 }
 
 /// <summary>Signals that Calendar discovery exceeded the bounded admission limit.</summary>
-public sealed class CalendarDiscoveryLimitException(int calendarCount) : Exception
+public sealed class CalendarDiscoveryLimitException : Exception
 {
-    public int CalendarCount { get; } = calendarCount;
+    public CalendarDiscoveryLimitException(int calendarCount) : this("calendar_count", calendarCount, 256)
+    {
+    }
+
+    internal CalendarDiscoveryLimitException(string dimension, long observed, long limit)
+        : base($"Calendar discovery exceeded its {dimension} execution limit ({observed} > {limit}).")
+    {
+        Dimension = dimension;
+        Observed = observed;
+        Limit = limit;
+    }
+
+    public string Dimension { get; }
+
+    public long Observed { get; }
+
+    public long Limit { get; }
+
+    public bool HasCalendarCount => Dimension == "calendar_count";
+
+    public int CalendarCount => HasCalendarCount ? (int)Math.Min(Observed, int.MaxValue) : 0;
 }
 
 /// <summary>Signals a CalDAV discovery response that cannot be used safely.</summary>

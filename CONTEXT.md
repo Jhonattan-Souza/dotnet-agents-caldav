@@ -112,6 +112,22 @@ _Avoid_: CalDAV cache, live result set, offset page
 An opaque authenticated position in one Query Result Snapshot whose validity cannot outlive that snapshot.
 _Avoid_: Page number, durable result identifier, CalDAV sync token
 
+**Synchronization Checkpoint**:
+An opaque handle to authenticated session state that binds one Calendar, authorization configuration, and native collection sync token. Its validity requires that state to remain in the bounded session store. A later native report observes changes since that state; it does not replay an immutable query page.
+_Avoid_: Query cursor, durable history, mutation revision
+
+**Resource Change Observation**:
+A changed resource href with its observed Entity Tag, or removal of a href from the caller's view. Removal can result from loss of visibility; the observation does not itself authorize mutation or establish an Entity Kind.
+_Avoid_: Deleted Event, semantic revision, audit log
+
+**Calendar Metadata Patch**:
+Explicit set or remove instructions for Calendar collection properties, applied atomically by PROPPATCH with unconditional concurrency. Unaddressed properties remain unchanged.
+_Avoid_: Revision-bound Semantic Patch, resource replacement
+
+**Server Free/Busy Report**:
+Busy periods computed by the CalDAV server for an exact Calendar and UTC interval, under server access control and temporal interpretation. Busy types remain distinguishable; a failed report gives no free-time evidence.
+_Avoid_: Event snapshot, invitation workflow, complete availability guarantee
+
 **Event**:
 A Calendar Entity representing a scheduled activity or state over a date or time interval.
 

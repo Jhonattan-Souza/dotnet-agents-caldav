@@ -1269,6 +1269,8 @@ public sealed class CalendarEntityPatchMatrixTests
         string observedEntityTag = "\"r2\"")
     {
         var client = Substitute.For<ICalendarClient>();
+        client.IsStorageOnlyMutationAllowedAsync(Arg.Any<string>(), Arg.Any<ReadOnlyMemory<byte>>(),
+            Arg.Any<ReadOnlyMemory<byte>>(), Arg.Any<CancellationToken>()).Returns(true);
         var written = string.Empty;
         var reads = 0;
         var calendarHref = href[..(href.LastIndexOf('/') + 1)];

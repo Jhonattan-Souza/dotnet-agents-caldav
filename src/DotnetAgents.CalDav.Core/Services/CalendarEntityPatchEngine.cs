@@ -218,7 +218,7 @@ internal sealed class CalendarEntityPatchEngine(
                 current.Snapshot,
                 phase: CalendarEntityPatchPhase.AdmissionAndPayload));
         }
-        return new(edit.AuthoritativeUtf8, null);
+        return await GuardPreparedAsync(current.Snapshot, edit.AuthoritativeUtf8, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<CalendarEntityPatchResult> CompleteTodoWithinDeadlineAsync(
@@ -264,6 +264,9 @@ internal sealed class CalendarEntityPatchEngine(
                 current.Snapshot,
                 phase: CalendarEntityPatchPhase.AdmissionAndPayload);
         }
+        var guarded = await GuardPreparedAsync(current.Snapshot, edit.AuthoritativeUtf8, cancellationToken).ConfigureAwait(false);
+        if (guarded.Outcome is not null)
+            return guarded.Outcome;
         return await DispatchAsync(
             request.Snapshot,
             edit.AuthoritativeUtf8,
@@ -320,8 +323,15 @@ internal sealed class CalendarEntityPatchEngine(
                 CalendarEntityPatchCode.PayloadTooLarge,
                 current.Snapshot,
                 phase: CalendarEntityPatchPhase.AdmissionAndPayload));
-        return new(edit.AuthoritativeUtf8, null);
+        return await GuardPreparedAsync(current.Snapshot, edit.AuthoritativeUtf8, cancellationToken).ConfigureAwait(false);
     }
+
+    private async Task<PreparedPatch> GuardPreparedAsync(
+        CalendarResourceSnapshot snapshot, byte[] proposed, CancellationToken cancellationToken) =>
+        await CalendarSchedulingSafety.IsAllowedAsync(calendarClient, snapshot.CalendarHref,
+            snapshot.AuthoritativeUtf8, proposed, cancellationToken).ConfigureAwait(false)
+            ? new(proposed, null)
+            : new(null, Failure(CalendarEntityPatchCode.UnsupportedCapability, snapshot));
 
     private static CalendarEventPatch EventPatch(CalendarTodoPatch patch) => new(
         Summary: patch.Summary,

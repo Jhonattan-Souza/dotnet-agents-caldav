@@ -32,6 +32,10 @@ internal sealed class CalendarResourceDeleteEngine(
         if (validation is not null)
             return validation;
 
+        if (!await CalendarSchedulingSafety.IsAllowedAsync(calendarClient, current.Snapshot.CalendarHref,
+                current.Snapshot.AuthoritativeUtf8, default, cancellationToken).ConfigureAwait(false))
+            return Failure(CalendarResourceDeleteCode.UnsupportedCapability);
+
         var dispatch = await calendarClient.DeleteCalendarResourceAsync(
             new CalendarResourceDeleteRequest(revision.Href, revision.EntityTag),
             cancellationToken);

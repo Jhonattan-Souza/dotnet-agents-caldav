@@ -205,7 +205,7 @@ internal static class CalendarExecutionPolicy
     }
 
     internal static bool IsMutation(string? toolName) => toolName is
-        "calendars.create" or "calendars.delete" or "events.create" or "events.patch" or "todos.create" or "todos.patch" or "todos.complete"
+        "calendars.create" or "calendars.delete" or "calendars.patch" or "events.create" or "events.patch" or "todos.create" or "todos.patch" or "todos.complete"
         or "calendar_occurrences.add" or "calendar_occurrences.exclude"
         or "calendar_occurrences.restore_exclusion" or "calendar_occurrences.cancel"
         or "calendar_occurrences.restore_cancellation" or "calendar_resources.move"

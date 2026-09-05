@@ -2080,6 +2080,8 @@ public sealed class CalendarEntityPatchServiceTests
     private static ICalendarClient ClientReturning(string href, string content, string entityTag = "\"r1\"")
     {
         var client = Substitute.For<ICalendarClient>();
+        client.IsStorageOnlyMutationAllowedAsync(Arg.Any<string>(), Arg.Any<ReadOnlyMemory<byte>>(),
+            Arg.Any<ReadOnlyMemory<byte>>(), Arg.Any<CancellationToken>()).Returns(true);
         client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
             new CalendarDescriptor
             {

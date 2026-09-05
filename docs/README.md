@@ -13,6 +13,7 @@ describes the shipped tool surface. Find behavioral regressions in
 
 ## Design decisions
 
+- [RFC collection operations, discovery, and scheduling boundary](rfc-coverage-plan-2026-09-05.md)
 - [Compact To-do queries](adr/0001-compact-todo-query.md)
 - [Conditional resource creation](adr/0002-authoritative-conditional-create.md)
 - [Calendar creation module](adr/0003-deep-calendar-creation-module.md)
@@ -26,6 +27,7 @@ The reports below record measurements at their stated revisions. Use their
 reproduction instructions to investigate those results; run the current suite
 to establish whether a checkout passes.
 
+- [RFC collection operations and three-server live validation](rfc-coverage-validation-2026-09-05.md)
 - [August 21 load-test baseline](performance-load-test-2026-08-21.md) and
   [August 23 follow-up](performance-load-test-2026-08-23.md)
 - [Discovery reuse](performance-discovery-reuse-2026-08-23.md)
