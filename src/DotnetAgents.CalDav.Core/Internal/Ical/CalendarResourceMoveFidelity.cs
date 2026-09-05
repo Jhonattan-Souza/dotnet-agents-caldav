@@ -169,13 +169,13 @@ internal static class CalendarResourceMoveFidelity
         CalendarParameter parameter,
         string value)
     {
-        if (!CalendarResourceProjector.IsKnownParameterApplicableForFidelity(property, parameter.Name))
+        if (!CalendarResourceProjector.IsKnownParameterApplicable(property, parameter.Name))
             return value;
         var special = CanonicalizeSpecialParameterValue(parameter.Name, value);
         if (special is not null)
             return special;
         if (ExtensibleTokenParameters.Contains(parameter.Name)
-            && CalendarResourceProjector.IsTokenForFidelity(value))
+            && CalendarResourceProjector.IsToken(value))
         {
             return value.ToUpperInvariant();
         }
@@ -210,7 +210,7 @@ internal static class CalendarResourceMoveFidelity
         {
             "DERIVED" or "RSVP" => IsOneOf(value, "TRUE", "FALSE"),
             "ENCODING" => IsOneOf(value, "8BIT", "BASE64"),
-            "LANGUAGE" => CalendarResourceProjector.HasValidLanguageTagForFidelity(value),
+            "LANGUAGE" => CalendarResourceProjector.HasValidLanguageTag(value),
             "RANGE" when property.Name.Equals("RECURRENCE-ID", StringComparison.OrdinalIgnoreCase) =>
                 value.Equals("THISANDFUTURE", StringComparison.OrdinalIgnoreCase),
             "RELATED" when property.Name.Equals("TRIGGER", StringComparison.OrdinalIgnoreCase) =>
@@ -261,7 +261,7 @@ internal static class CalendarResourceMoveFidelity
 
     private static bool IsTokenPropertyValue(string propertyName, string value) =>
         TokenValuedProperties.Contains(propertyName)
-        && CalendarResourceProjector.IsTokenForFidelity(value);
+        && CalendarResourceProjector.IsToken(value);
 
     private static string CanonicalizeTextList(CalendarContentProperty property)
     {

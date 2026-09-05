@@ -386,7 +386,7 @@ internal static class CalendarEntityCreateArgumentParser
                 && TryParseTemporalValue(end, out var parsedEnd)
                 && parsedEnd > parsedStart;
         }
-        return IsPositiveDateTimeDuration(duration!);
+        return CalendarDurationValidator.IsStrictlyPositive(duration!);
     }
 
     private static bool TryParseTemporalValue(CalendarTemporalValue value, out DateTime parsed)
@@ -400,9 +400,6 @@ internal static class CalendarEntityCreateArgumentParser
             DateTimeStyles.None,
             out parsed);
     }
-
-    private static bool IsPositiveDateTimeDuration(string duration)
-        => CalendarDurationValidator.IsStrictlyPositive(duration);
 
     private static bool TryParseEventRecurrenceOverride(
         JsonElement value,
