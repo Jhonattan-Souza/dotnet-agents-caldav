@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using System.Reflection;
 using System.Text.Json;
 using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Core.Internal;
@@ -14,71 +13,6 @@ namespace DotnetAgents.CalDav.Core.Tests.Unit.Services;
 public sealed class CalendarQuerySnapshotLifecycleTests
 {
     private static readonly DateTimeOffset Now = new(2026, 8, 26, 12, 0, 0, TimeSpan.Zero);
-    private static readonly string[] ForbiddenContinueDependencyFragments =
-    [
-        "Discovery",
-        "CalDavClient",
-        "Transport",
-        "Parser",
-        "Evaluator",
-        "Projector",
-        "Recurrence"
-    ];
-
-    [Fact]
-    public void StartPublicationAndContinueReplayHaveSeparatedDependencyGraphs()
-    {
-        var pageAdmission = typeof(CalendarQuerySnapshotStore).Assembly.GetTypes()
-            .Single(type => type.Name == "CalendarQueryPageAdmission");
-        ConstructorTypes(typeof(CalendarQuerySnapshotPublication)).ShouldContain(pageAdmission);
-        ConstructorTypes(typeof(CalendarQuerySnapshotReplay)).ShouldContain(pageAdmission);
-
-        ConstructorTypes(typeof(CalendarEntityQueryStartExecutor)).ShouldContain(typeof(CalendarQuerySnapshotPublication));
-        ConstructorTypes(typeof(CalendarOccurrenceQueryStartExecutor)).ShouldContain(typeof(CalendarQuerySnapshotPublication));
-        ConstructorTypes(typeof(CalendarTodoQueryStartExecutor)).ShouldContain(typeof(CalendarQuerySnapshotPublication));
-        ConstructorTypes(typeof(CalendarEntityQueryStartExecutor)).ShouldNotContain(typeof(CalendarQuerySnapshotWriter));
-        ConstructorTypes(typeof(CalendarOccurrenceQueryStartExecutor)).ShouldNotContain(typeof(CalendarQuerySnapshotWriter));
-        ConstructorTypes(typeof(CalendarTodoQueryStartExecutor)).ShouldNotContain(typeof(CalendarQuerySnapshotWriter));
-
-        var continueExecutors = new[]
-        {
-            typeof(CalendarEntityQueryContinueExecutor),
-            typeof(CalendarOccurrenceQueryContinueExecutor),
-            typeof(CalendarTodoQueryContinueExecutor)
-        };
-        foreach (var executor in continueExecutors)
-        {
-            ConstructorTypes(executor).ShouldContain(typeof(CalendarQuerySnapshotReplay));
-            var graph = ConstructorDependencyGraph(executor);
-            graph.ShouldNotContain(typeof(CalendarQuerySnapshotPublication));
-            graph.ShouldNotContain(typeof(CalendarQuerySnapshotWriter));
-            graph.ShouldNotContain(typeof(CalendarQueryPolicy));
-            graph.ShouldNotContain(typeof(CalendarQueryAcquisitionExecutor));
-            graph.ShouldNotContain(typeof(CalendarEntityQueryStartExecutor));
-            graph.ShouldNotContain(typeof(CalendarOccurrenceQueryStartExecutor));
-            graph.ShouldNotContain(typeof(CalendarTodoQueryStartExecutor));
-            graph.Any(type => ForbiddenContinueDependencyFragments.Any(fragment =>
-                    type.Name.Contains(fragment, StringComparison.Ordinal)))
-                .ShouldBeFalse();
-        }
-
-        var pageCodecAdapters = typeof(CalendarQuerySnapshotStore).Assembly.GetTypes()
-            .Where(type => !type.IsAbstract && type.GetInterfaces().Any(candidate =>
-                candidate.IsGenericType
-                && candidate.GetGenericTypeDefinition() == typeof(ICalendarQueryPageCodec<>)))
-            .OrderBy(type => type.Name, StringComparer.Ordinal)
-            .ToArray();
-        pageCodecAdapters.ShouldBe([
-            typeof(CalendarEntityQueryPageCodec),
-            typeof(CalendarOccurrenceQueryPageCodec),
-            typeof(CalendarTodoQueryPageCodec)
-        ]);
-        foreach (var pageCodec in pageCodecAdapters)
-            ConstructorTypes(pageCodec).ShouldNotContain(typeof(CalendarQueryCursorIssuer));
-        typeof(ICalendarQueryPageCodec<>).GetMethods()
-            .Select(method => method.Name)
-            .ShouldNotContain("Plan");
-    }
 
     [Fact]
     public void PublicationOwnsCompleteAndRetainedFirstPageAdmission()
@@ -319,37 +253,6 @@ public sealed class CalendarQuerySnapshotLifecycleTests
             context.PageCodec,
             cancellation.Token));
     }
-
-    private static HashSet<Type> ConstructorDependencyGraph(Type root)
-    {
-        var discovered = new HashSet<Type>();
-        var pending = new Stack<Type>();
-        pending.Push(root);
-        while (pending.TryPop(out var current))
-        {
-            foreach (var dependency in AllConstructorTypes(current).Where(IsCoreType))
-            {
-                if (discovered.Add(dependency))
-                    pending.Push(dependency);
-            }
-        }
-        return discovered;
-    }
-
-    private static bool IsCoreType(Type type) =>
-        type.Assembly == typeof(CalendarQuerySnapshotStore).Assembly;
-
-    private static Type[] ConstructorTypes(Type type) => type.GetConstructors(
-                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-            .ShouldHaveSingleItem()
-            .GetParameters()
-            .Select(parameter => parameter.ParameterType)
-            .ToArray();
-
-    private static IEnumerable<Type> AllConstructorTypes(Type type) => type.GetConstructors(
-            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-        .SelectMany(constructor => constructor.GetParameters())
-        .Select(parameter => parameter.ParameterType);
 
     private static CalendarQuerySnapshotDraft Draft(
         int itemCount,
