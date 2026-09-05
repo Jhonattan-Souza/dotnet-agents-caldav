@@ -1072,14 +1072,13 @@ public sealed class CalendarMcpRawStdioTests
         public async ValueTask DisposeAsync()
         {
             await _stopping.CancelAsync();
-            _listener.Stop();
+            _listener.Close();
             try
             {
                 await _serve;
             }
             finally
             {
-                _listener.Close();
                 _stopping.Dispose();
             }
         }
@@ -1195,14 +1194,13 @@ public sealed class CalendarMcpRawStdioTests
         public async ValueTask DisposeAsync()
         {
             await _stopping.CancelAsync();
-            _listener.Stop();
+            _listener.Close();
             try
             {
                 await _serve;
             }
             finally
             {
-                _listener.Close();
                 _stopping.Dispose();
             }
         }
@@ -1292,14 +1290,13 @@ public sealed class CalendarMcpRawStdioTests
         public async ValueTask DisposeAsync()
         {
             await _stopping.CancelAsync();
-            _listener.Stop();
+            _listener.Close();
             try
             {
                 await _serve;
             }
             finally
             {
-                _listener.Close();
                 _stopping.Dispose();
             }
         }
