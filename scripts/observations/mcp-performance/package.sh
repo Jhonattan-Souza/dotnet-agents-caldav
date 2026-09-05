@@ -3,15 +3,20 @@ set -euo pipefail
 [[ $# == 1 ]] || { echo 'Usage: package.sh <external-run-directory>' >&2; exit 64; }
 results_directory=$(realpath -- "$1")
 repository_root=$(git rev-parse --show-toplevel)
+case "$results_directory/" in "$repository_root/"*) echo 'Use an external directory' >&2; exit 65;; esac
 package_checkout="$results_directory/package-checkout"
 package_version=0.0.0-perf.20260905
-git diff HEAD --binary -- src > "$results_directory/package-source.patch"
+git diff HEAD --binary > "$results_directory/package-source.patch"
 git clone --shared --no-checkout -- "$repository_root" "$package_checkout"
 git -C "$package_checkout" checkout --detach "$(git rev-parse HEAD)"
 git -C "$package_checkout" remote set-url origin "$(git -C "$repository_root" remote get-url origin)"
 if [[ -s "$results_directory/package-source.patch" ]]; then
   git -C "$package_checkout" apply "$results_directory/package-source.patch"
 fi
+while IFS= read -r -d '' added_path; do
+  mkdir -p -- "$package_checkout/$(dirname -- "$added_path")"
+  cp -a -- "$repository_root/$added_path" "$package_checkout/$added_path"
+done < <(git ls-files --others --exclude-standard -z)
 cd -- "$package_checkout"
 metadata_path="$results_directory/package-metadata/server.json"
 bash scripts/prepare-release-metadata.sh "v$package_version" "$metadata_path"

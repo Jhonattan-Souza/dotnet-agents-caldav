@@ -15,6 +15,17 @@ from telemetry import export
 TOOLS = ['calendar_entities.query', 'calendar_occurrences.query', 'todos.query']
 
 
+def validate_args(args):
+    for name in ['blocks', 'samples', 'cohort_samples']:
+        if getattr(args, name) <= 0:
+            raise ValueError(name.replace('_', '-') + ' must be positive')
+    if args.mode == 'start':
+        if args.samples % args.cohort_samples:
+            raise ValueError('Start samples must be divisible by cohort-samples')
+        if args.topology != 'single_session' or args.concurrency != 1:
+            raise ValueError('Start supports only serial single_session cohorts')
+
+
 def append(path, value):
     with path.open('a') as stream:
         stream.write(json.dumps(value)+'\n')
@@ -167,4 +178,8 @@ if __name__=='__main__':
     p.add_argument('--no-otlp',action='store_true')
     p.add_argument('--compare-otlp',action='store_true',help='Same assembly: baseline OTLP on, candidate OTLP off')
     args=p.parse_args()
+    try:
+        validate_args(args)
+    except ValueError as error:
+        p.error(str(error))
     asyncio.run(run(args))

@@ -32,6 +32,14 @@ token e autenticação por chave na API de exportação. O manifesto privado tem
 modo 0600. Não copie esse manifesto, config do Hermes, logs privados ou chaves
 ao Git.
 
+`prepare.sh` grava `baseline-build.json` e `candidate-build.json` com os SHAs
+reais, estado de alterações locais, hash do patch e dos arquivos novos, antes do
+build. Confere que as fontes não mudaram durante a compilação e associa os hashes
+dos assemblies copiados. `aggregate.py` exige esses manifestos; não infere a
+identidade pelo Git no momento da análise. Os manifestos sobrevivem à limpeza dos
+clones. Execuções históricas anteriores a esse registro mantêm suas evidências
+originais, sem reconstruir retroativamente a identidade a partir do checkout atual.
+
 Seed 20260905: 600 Events e 600 To-dos distribuídos em 180 dias desde
 2026-07-01; 60 recorrentes por tipo, 30 Events date-only e 12 cancelados;
 390 To-dos abertos, 180 completos e 30 cancelados. Arquivo vazio desde o início.
@@ -94,6 +102,9 @@ snapshots/128 MiB/10 minutos. A redução de amostras de Start foi definida ante
 da comparação pelo custo da aquisição integral e da retenção, e reduz a precisão
 do p95. Nenhum limite foi alterado. Startup/discovery MCP e shutdown ficam nos
 arquivos `*-processes.jsonl`, separados das chamadas aquecidas.
+Contagens de blocos, amostras e coortes devem ser positivas. Start exige que
+`--samples` seja divisível por `--cohort-samples` e usa somente coortes seriais
+na topologia `single_session`; argumentos incompatíveis falham antes da execução.
 
 Para concorrência, repita Continue com `--sizes 200 --concurrency 2` e `4`, cada
 qual com `--name` próprio. `--topology single_session` envia chamadas simultâneas
@@ -146,8 +157,16 @@ Depois de qualquer mudança de produto, execute os restores, build Release,
 Não edite o checkout enquanto a suíte observa seu estado. Gate de pacote usa
 metadata versionada temporária com `scripts/prepare-release-metadata.sh` e
 `scripts/verify-release-package.sh`, sem modificar `.mcp/server.json` de origem.
-`package.sh <diretório-externo>` reproduz esse gate num clone local com o patch de
-produto, gerando somente o pacote de teste `0.0.0-perf.20260905`, sem publicação.
+`package.sh <diretório-externo>` reproduz esse gate num clone local com o diff
+completo contra HEAD, incluindo alterações staged e arquivos de build da raiz,
+mais arquivos novos não ignorados. Um checkout limpo usa diretamente seu commit.
+Gera somente o pacote de teste `0.0.0-perf.20260905`, sem publicação. A prova Hermes
+propaga o código de saída do cliente depois de emitir seu resumo diagnóstico.
+
+Execute `python3 scripts/observations/mcp-performance/test_harness.py` para as
+regressões do harness. Elas usam repositórios temporários e executáveis simulados
+para verificar identidade, contagens e tratamento de falhas; não substituem a
+matriz MCP real nem o gate de pacote.
 
 Antes de remover infraestrutura, exporte e verifique 600/600/0. `infra.py down`
 confere a label de propriedade antes de remover seus containers e volumes
