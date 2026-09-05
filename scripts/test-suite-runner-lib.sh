@@ -16,17 +16,6 @@ PY
 
 run_test_suite_manifest_phase() {
   local manifest=$1 phase=$2
-  if [[ $# -eq 3 ]]; then
-    local callback=$3
-    local row project trx prefix filter environment
-    local -a rows
-    mapfile -t rows < <(emit_test_suite_manifest_rows "$manifest" "$phase")
-    for row in "${rows[@]}"; do
-      IFS=$'\x1f' read -r project trx prefix filter environment <<< "$row"
-      "$callback" "$project" "$trx" "$prefix" "$filter" "$environment" </dev/null
-    done
-    return
-  fi
   if [[ $# -ne 4 || ! $3 =~ ^[1-9][0-9]*$ ]]; then
     echo "Usage: run_test_suite_manifest_phase <manifest> <phase> <worker-limit> <callback>" >&2
     return 64
