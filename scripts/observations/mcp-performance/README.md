@@ -116,6 +116,9 @@ arquivos `*-processes.jsonl`, separados das chamadas aquecidas.
 Contagens de blocos, amostras e coortes devem ser positivas. Start exige que
 `--samples` seja divisível por `--cohort-samples` e usa somente coortes seriais
 na topologia `single_session`; argumentos incompatíveis falham antes da execução.
+Cada coorte aceita no máximo 11 medidas, reservando cinco dos 16 snapshots para
+warmup. O limite de bytes pode exigir coortes menores; mantenha o padrão de cinco
+para o corpus documentado, como na comparação original.
 
 Para concorrência, repita Continue com `--sizes 200 --concurrency 2` e `4`, cada
 qual com `--name` próprio. `--topology single_session` envia chamadas simultâneas
@@ -173,6 +176,8 @@ completo contra HEAD, incluindo alterações staged e arquivos de build da raiz,
 mais arquivos novos não ignorados. Um checkout limpo usa diretamente seu commit.
 Gera somente o pacote de teste `0.0.0-perf.20260905`, sem publicação. A prova Hermes
 propaga o código de saída do cliente depois de emitir seu resumo diagnóstico.
+O proxy também propaga o código de saída do MCP e termina de encaminhar stderr
+antes de registrar o encerramento.
 
 Execute `python3 scripts/observations/mcp-performance/test_harness.py` para as
 regressões do harness. Elas usam repositórios temporários e executáveis simulados

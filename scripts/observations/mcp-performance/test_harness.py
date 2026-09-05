@@ -115,6 +115,25 @@ class BuildIdentityTests(unittest.TestCase):
 
 
 class CommandTests(unittest.TestCase):
+    def test_proxy_propagates_child_status_after_forwarding_stderr(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for name in ASSEMBLIES:
+                (root / name).write_bytes(b'test-only placeholder')
+            env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ['PATH'])
+            for code in [0, 17]:
+                with self.subTest(code=code):
+                    executable(root / 'dotnet', "echo 'child diagnostic' >&2\nexit " + str(code))
+                    wire = root / ('wire-' + str(code) + '.jsonl')
+                    result = subprocess.run([sys.executable, str(HARNESS / 'hermes_proxy.py'),
+                        str(root / ASSEMBLIES[0]), str(wire)], env=env, input='', capture_output=True, text=True)
+                    self.assertEqual(code, result.returncode, result.stderr)
+                    self.assertIn('child diagnostic', result.stderr)
+                    rows = [json.loads(line) for line in wire.read_text().splitlines()]
+                    self.assertEqual('exit', rows[-1]['event'])
+                    self.assertEqual(code, rows[-1]['code'])
+                    self.assertTrue(any(row['event'] == 'stderr' and row['bytes'] > 0 for row in rows))
+
     def test_existing_hermes_wire_is_preserved_and_rejected_before_launch(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -135,7 +154,8 @@ class CommandTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             for options in [('--samples', '7'), ('--samples', '1'), ('--samples', '0'),
-                            ('--cohort-samples', '0'), ('--blocks', '-1'), ('--concurrency', '2')]:
+                            ('--cohort-samples', '0'), ('--blocks', '-1'), ('--concurrency', '2'),
+                            ('--cohort-samples', '12', '--samples', '12')]:
                 with self.subTest(options=options):
                     result = subprocess.run([sys.executable, str(HARNESS / 'benchmark.py'), str(root),
                         'baseline.dll', 'candidate.dll', '--name', 'invalid', '--mode', 'start', *options],
@@ -143,6 +163,14 @@ class CommandTests(unittest.TestCase):
                     self.assertEqual(2, result.returncode, result.stderr)
                     self.assertNotIn('Traceback', result.stderr)
                     self.assertEqual([], list(root.iterdir()))
+
+    def test_start_count_boundary_reserves_five_warmup_snapshots(self):
+        args = SimpleNamespace(blocks=1, samples=11, cohort_samples=11, mode='start',
+                               topology='single_session', concurrency=1)
+        benchmark.validate_args(args)
+        args.samples = args.cohort_samples = 12
+        with self.assertRaisesRegex(ValueError, 'at most 11'):
+            benchmark.validate_args(args)
 
     def test_package_uses_clean_commit_or_complete_dirty_candidate(self):
         with tempfile.TemporaryDirectory() as temporary:

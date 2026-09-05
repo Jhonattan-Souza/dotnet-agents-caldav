@@ -59,7 +59,8 @@ def terminate(*_):
 
 signal.signal(signal.SIGTERM,terminate)
 threading.Thread(target=incoming,daemon=True).start()
-threading.Thread(target=errors,daemon=True).start()
+error_thread=threading.Thread(target=errors,daemon=True)
+error_thread.start()
 for line in child.stdout:
     value=json.loads(line)
     request=pending.pop(value.get('id'),None)
@@ -73,4 +74,6 @@ for line in child.stdout:
                     assembly_mapped=str(assembly) in Path(f'/proc/{child.pid}/maps').read_text()))
     sys.stdout.buffer.write(line);sys.stdout.buffer.flush()
 child.wait()
+error_thread.join()
 record(dict(event='exit',code=child.returncode))
+sys.exit(child.returncode)
