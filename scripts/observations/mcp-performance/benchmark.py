@@ -21,6 +21,8 @@ def validate_args(args):
         if getattr(args, name) <= 0:
             raise ValueError(name.replace('_', '-') + ' must be positive')
     if args.mode == 'start':
+        if args.cohort_samples > 11:
+            raise ValueError('Start allows at most 11 cohort-samples plus five warmups within 16 snapshots')
         if args.samples % args.cohort_samples:
             raise ValueError('Start samples must be divisible by cohort-samples')
         if args.topology != 'single_session' or args.concurrency != 1:
