@@ -39,6 +39,11 @@ dos assemblies copiados. `aggregate.py` exige esses manifestos; não infere a
 identidade pelo Git no momento da análise. Os manifestos sobrevivem à limpeza dos
 clones. Execuções históricas anteriores a esse registro mantêm suas evidências
 originais, sem reconstruir retroativamente a identidade a partir do checkout atual.
+Cada manifesto de benchmark associa os argumentos absolutos aos hashes e à fonte
+do build correspondente. Inverter baseline/candidata é erro antes da medição.
+No controle `--compare-otlp`, ambos apontam ao mesmo build e conservam essa
+identidade na agregação. Cada processo precisa corresponder ao seu argumento,
+inclusive ao hash de Core; pertencer ao conjunto dos dois builds não basta.
 
 Seed 20260905: 600 Events e 600 To-dos distribuídos em 180 dias desde
 2026-07-01; 60 recorrentes por tipo, 30 Events date-only e 12 cancelados;
@@ -76,8 +81,10 @@ Exemplo da máquina desta execução:
 python3 scripts/observations/mcp-performance/verify_hermes.py /tmp/caldav-perf-new /tmp/caldav-perf-new/candidate/DotnetAgents.CalDav.Mcp.dll
 ```
 
-O proxy preserva cada byte MCP e registra testemunhas sanitizadas. Não implementa
-MRTR pelo Hermes. O segundo comando verifica COMPLETED no Radicale e completa
+O proxy preserva cada byte MCP e registra testemunhas sanitizadas. Wrapper e proxy
+recusam um wire log existente antes de iniciar o cliente/servidor. Use um diretório
+de evidência novo para outra tentativa. O proxy não implementa MRTR pelo Hermes.
+O segundo comando verifica COMPLETED no Radicale e completa
 a limpeza via cliente direto quando o Hermes parou em input_required. Ele exige
 que a fixture ainda exista; se uma versão futura do Hermes completar o delete,
 adapte a verificação à ausência autoritativa e conserve sua evidência de wire.
@@ -89,6 +96,10 @@ como custo separado, sem alegar tracing da inferência.
 Não rode builds, testes, profiling ou outro benchmark em paralelo. Restaure
 600/600/0 antes de iniciar. Os comandos abaixo alternam baseline/candidato
 entre blocos/coortes e recusam sobrescrever amostras de um nome existente.
+Os hashes dos itens, incluindo sua ordem, são comparados entre baseline e candidata
+por ferramenta/tamanho/bloco, em ambas as topologias. Diferenças interrompem a
+execução depois de preservar a amostra divergente. Falhas e timeouts também ficam
+no JSONL antes da interrupção, sem contar como throughput útil.
 
 ```bash
 python3 scripts/observations/mcp-performance/benchmark.py /tmp/caldav-perf-new /tmp/caldav-perf-new/baseline/DotnetAgents.CalDav.Mcp.dll /tmp/caldav-perf-new/candidate/DotnetAgents.CalDav.Mcp.dll --name continue-serial
@@ -167,6 +178,22 @@ Execute `python3 scripts/observations/mcp-performance/test_harness.py` para as
 regressões do harness. Elas usam repositórios temporários e executáveis simulados
 para verificar identidade, contagens e tratamento de falhas; não substituem a
 matriz MCP real nem o gate de pacote.
+
+Depois dos ensaios de alocação (salvos como `schema-baseline.json` e
+`schema-candidate.json`), dos gates e da exportação `complete` acima, agregue as
+execuções escolhidas explicitamente. `--gates` aponta ao diretório de evidências
+da suíte dentro da raiz da observação (ou a um caminho absoluto):
+
+```bash
+python3 scripts/observations/mcp-performance/aggregate.py /tmp/caldav-perf-new /tmp/caldav-perf-new/results.json --gates gates-final --runs continue-serial start-serial --traces /tmp/caldav-perf-new/complete-traces.json
+```
+
+`--traces` aceita um ou mais arquivos `*-traces.json` produzidos por `telemetry.py`;
+não depende de um nome `final-traces.json` implícito. Exports sobrepostos são
+deduplicados por trace ID somente quando seus dados coincidem. Versões diferentes
+do mesmo trace são rejeitadas; selecione a exportação completa posterior ao
+encerramento da operação. A contagem de matches ainda precisa cobrir todas as
+chamadas medidas com OTLP.
 
 Antes de remover infraestrutura, exporte e verifique 600/600/0. `infra.py down`
 confere a label de propriedade antes de remover seus containers e volumes

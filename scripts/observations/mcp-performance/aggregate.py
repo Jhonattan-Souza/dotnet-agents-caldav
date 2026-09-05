@@ -7,7 +7,7 @@ import math
 from pathlib import Path
 import statistics
 import xml.etree.ElementTree as ET
-from build_manifest import load_builds
+from build_manifest import load_builds, verify_process_inputs
 
 
 def percentile(values,p):
@@ -19,7 +19,9 @@ def lines(path):
     return [json.loads(line) for line in path.read_text().splitlines()]
 
 
-def join_run(root,name,traces):
+def join_run(root,name,traces,builds):
+    processes=lines(root/(name+'-processes.jsonl'))
+    inputs=verify_process_inputs(root,name,processes,builds)
     summaries=json.loads((root/(name+'-summary.json')).read_text())
     samples=[r for r in lines(root/(name+'-samples.jsonl')) if not r['warmup']]
     batch_path=root/(name+'-batches.jsonl')
@@ -68,13 +70,13 @@ def join_run(root,name,traces):
             retries=sum(t['retries'] for t in group),error_spans=sum(t['error_spans'] for t in group),
             mean_phase_ms={k:statistics.mean(v) for k,v in phases.items()},
             representative_trace_ids=[t['trace_id'] for t in sorted(group,key=lambda t:t['outer_ms'])[::max(1,len(group)//3)][:3]])
-    processes=lines(root/(name+'-processes.jsonl'))
     for p in processes:
         assert p['assembly_mapped'] and p['exit_code']==0 and p['stderr_bytes']==0
     startup=[]
     for label in ['baseline','candidate']:
         group=[p for p in processes if p['label']==label]
         startup.append(dict(run=name,label=label,processes=len(group),
+            source=inputs[label]['source'],
             startup_p50_ms=percentile([p['startup_ms'] for p in group],.5),
             startup_p95_ms=percentile([p['startup_ms'] for p in group],.95),
             shutdown_max_ms=max(p['shutdown_ms'] for p in group),
@@ -84,12 +86,23 @@ def join_run(root,name,traces):
     return summaries,startup
 
 
+def load_traces(paths):
+    traces = {}
+    for path in paths:
+        for trace in json.loads(path.read_text()):
+            identity = trace['trace_id']
+            if identity in traces and traces[identity] != trace:
+                raise RuntimeError(f'Conflicting exports for trace {identity}; use completed trace exports')
+            traces[identity] = trace
+    return list(traces.values())
+
+
 def main(a):
     builds=load_builds(a.root)
-    traces=json.loads((a.root/'final-traces.json').read_text())
+    traces=load_traces(a.traces)
     results=[];startup=[]
     for name in a.runs:
-        r,s=join_run(a.root,name,traces);results+=r;startup+=s
+        r,s=join_run(a.root,name,traces,builds);results+=r;startup+=s
     allocation=[]
     for label in ['baseline','candidate']:
         source=json.loads((a.root/('schema-'+label+'.json')).read_text());samples=source['samples']
@@ -101,12 +114,6 @@ def main(a):
     for path in sorted((a.root/a.gates).glob('*.trx')):
         gates[path.name]=ET.parse(path).getroot().find('.//{*}Counters').attrib
     coverage=ET.parse(a.root/a.gates/'coverage-report/Cobertura.xml').getroot().attrib
-    for process in startup:
-        for field,name in [('assembly_sha256','DotnetAgents.CalDav.Mcp.dll'),
-                           ('core_assembly_sha256','DotnetAgents.CalDav.Core.dll')]:
-            known={build['assembly_sha256'][name] for build in builds.values()}
-            if not set(process[field]).issubset(known):
-                raise RuntimeError('Measured process does not match either prepared build')
     result=dict(baseline_sha=builds['baseline']['source']['sha'],
         candidate_sha=builds['candidate']['source']['sha'],
         candidate_is_working_tree=builds['candidate']['source']['dirty'],builds=builds,
@@ -123,4 +130,5 @@ if __name__=='__main__':
     p.add_argument('root',type=Path);p.add_argument('output',type=Path)
     p.add_argument('--gates',default='gates-final')
     p.add_argument('--runs',nargs='+',required=True)
+    p.add_argument('--traces',type=Path,nargs='+',required=True,help='Completed *-traces.json exports from telemetry.py')
     main(p.parse_args())

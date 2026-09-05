@@ -48,6 +48,44 @@ def load_builds(root):
     return builds
 
 
+def benchmark_inputs(builds, baseline, candidate, compare_otlp=False):
+    inputs = {}
+    for label, assembly in [('baseline', baseline), ('candidate', candidate)]:
+        assembly = Path(assembly).resolve()
+        hashes = {'DotnetAgents.CalDav.Mcp.dll': hashlib.sha256(assembly.read_bytes()).hexdigest(),
+                  'DotnetAgents.CalDav.Core.dll': hashlib.sha256(
+                      assembly.with_name('DotnetAgents.CalDav.Core.dll').read_bytes()).hexdigest()}
+        if compare_otlp:
+            matching = [key for key, build in builds.items() if build['assembly_sha256'] == hashes]
+            if not matching:
+                raise RuntimeError('OTLP input does not match a prepared build')
+            prepared_label = 'candidate' if 'candidate' in matching else matching[0]
+        else:
+            prepared_label = label
+            if hashes != builds[label]['assembly_sha256']:
+                raise RuntimeError(f'{label} input does not match its prepared build')
+        inputs[label] = dict(assembly=str(assembly), assembly_sha256=hashes,
+                             source=builds[prepared_label]['source'])
+    if compare_otlp and inputs['baseline']['assembly_sha256'] != inputs['candidate']['assembly_sha256']:
+        raise RuntimeError('OTLP comparison requires the same build for both labels')
+    return inputs
+
+
+def verify_process_inputs(root, name, processes, builds):
+    manifest = json.loads((root / (name + '-manifest.json')).read_text())
+    inputs = benchmark_inputs(builds, manifest['baseline'], manifest['candidate'], manifest['compare_otlp'])
+    if inputs != manifest['build_inputs']:
+        raise RuntimeError('Benchmark input changed since its run manifest was captured')
+    for process in processes:
+        expected = inputs[process['label']]
+        hashes = expected['assembly_sha256']
+        if (process['assembly'] != expected['assembly']
+                or process['sha256'] != hashes['DotnetAgents.CalDav.Mcp.dll']
+                or process['core_sha256'] != hashes['DotnetAgents.CalDav.Core.dll']):
+            raise RuntimeError('Measured process does not match its declared benchmark input')
+    return inputs
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=['capture', 'finalize'])

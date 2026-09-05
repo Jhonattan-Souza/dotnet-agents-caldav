@@ -11,6 +11,7 @@ from pathlib import Path
 import time
 from driver import Client, environment, query
 from telemetry import export
+from build_manifest import load_builds, benchmark_inputs
 
 TOOLS = ['calendar_entities.query', 'calendar_occurrences.query', 'todos.query']
 
@@ -31,7 +32,19 @@ def append(path, value):
         stream.write(json.dumps(value)+'\n')
 
 
-async def cohort(args, label, tool, block, cohort_index):
+def record_sample(args, base, record, warmup, size, references):
+    append(args.root/(args.name+'-samples.jsonl'), dict(base, **record, warmup=warmup, size=size))
+    if record['outcome'] != 'success':
+        raise RuntimeError(f'{base["label"]} {base["tool"]}: {record["outcome"]}')
+    if not warmup:
+        key = (base['tool'], size, base['block'])
+        digest = (record['item_sha256'], record['items'])
+        if key in references and references[key] != digest:
+            raise RuntimeError('Result content/order differs between samples or compared builds')
+        references[key] = digest
+
+
+async def cohort(args, label, tool, block, cohort_index, references):
     state = json.loads((args.root/'infra-private.json').read_text())
     service = f'caldav-perf-{args.name}-{label}-{tool.split(".")[0]}'
     otlp = not args.no_otlp and (not args.compare_otlp or label=='baseline')
@@ -46,10 +59,7 @@ async def cohort(args, label, tool, block, cohort_index):
         if args.mode == 'start':
             for i in range(5+args.cohort_samples):
                 response, record = await client.call(tool, query(tool, args.page_size))
-                append(args.root/(args.name+'-samples.jsonl'), dict(base, **record, warmup=i<5,
-                       size=args.page_size))
-                if record['outcome'] != 'success':
-                    raise RuntimeError(f'{label} {tool}: {record["outcome"]}')
+                record_sample(args,base,record,i<5,args.page_size,references)
         else:
             response, setup = await client.call(tool, query(tool, 1))
             assert setup['outcome']=='success', setup
@@ -60,27 +70,25 @@ async def cohort(args, label, tool, block, cohort_index):
                 for _ in range(20):
                     for _, record in await asyncio.gather(*(client.call(tool, call_args)
                             for _ in range(args.concurrency))):
-                        append(args.root/(args.name+'-samples.jsonl'),dict(base,**record,warmup=True,size=size))
+                        record_sample(args,base,record,True,size,references)
                 reference = None
                 start = time.perf_counter_ns()
                 for offset in range(0,args.samples,args.concurrency):
                     replies = await asyncio.gather(*(client.call(tool,call_args)
                         for _ in range(min(args.concurrency,args.samples-offset))))
                     for response,record in replies:
+                        record_sample(args,base,record,False,size,references)
                         value = response['result']['structuredContent']
                         digest = hashlib.sha256(json.dumps(value,sort_keys=True).encode()).hexdigest()
                         if reference is None:
                             reference = digest
                         assert reference == digest, 'Replay content/order changed'
-                        append(args.root/(args.name+'-samples.jsonl'),dict(base,**record,warmup=False,size=size,
-                               replay_sha256=digest))
-                        assert record['outcome']=='success', record
                 append(args.root/(args.name+'-batches.jsonl'),dict(base,size=size,
                     successful_ops=args.samples, elapsed_ms=(time.perf_counter_ns()-start)/1e6))
     append(args.root/(args.name+'-processes.jsonl'),dict(base,**client.identity))
 
 
-async def process_cohort(args,label,tool,block):
+async def process_cohort(args,label,tool,block,references):
     state=json.loads((args.root/'infra-private.json').read_text())
     service=f'caldav-perf-{args.name}-{label}-{tool.split(".")[0]}'
     clients=[];cursors=[]
@@ -98,12 +106,11 @@ async def process_cohort(args,label,tool,block):
                 return response,dict(record,pid=clients[index].process.pid)
             for _ in range(20):
                 for _,record in await asyncio.gather(*(call(i) for i in range(args.concurrency))):
-                    append(args.root/(args.name+'-samples.jsonl'),dict(base,**record,warmup=True,size=size))
+                    record_sample(args,base,record,True,size,references)
             start=time.perf_counter_ns()
             for offset in range(0,args.samples,args.concurrency):
                 for _,record in await asyncio.gather(*(call(i) for i in range(min(args.concurrency,args.samples-offset)))):
-                    append(args.root/(args.name+'-samples.jsonl'),dict(base,**record,warmup=False,size=size))
-                    assert record['outcome']=='success'
+                    record_sample(args,base,record,False,size,references)
             append(args.root/(args.name+'-batches.jsonl'),dict(base,size=size,successful_ops=args.samples,
                    elapsed_ms=(time.perf_counter_ns()-start)/1e6))
     for c in clients:
@@ -111,6 +118,8 @@ async def process_cohort(args,label,tool,block):
 
 
 async def run(args):
+    args.baseline=args.baseline.resolve()
+    args.candidate=args.candidate.resolve()
     output=args.root/(args.name+'-samples.jsonl')
     if output.exists():
         raise RuntimeError('Use a new run name; never overwrite previous samples')
@@ -118,9 +127,11 @@ async def run(args):
         assert args.baseline.read_bytes()==args.candidate.read_bytes()
         assert args.topology=='single_session'
     manifest={k:str(v) if isinstance(v,Path) else v for k,v in vars(args).items()}
+    manifest['build_inputs']=benchmark_inputs(load_builds(args.root),args.baseline,args.candidate,args.compare_otlp)
     manifest['harness_sha256']={p.name:hashlib.sha256(p.read_bytes()).hexdigest()
                                for p in Path(__file__).parent.glob('*.py')}
     (args.root/(args.name+'-manifest.json')).write_text(json.dumps(manifest,indent=2))
+    references={}
     for block in range(args.blocks):
         for tool in args.tools:
             cohorts = args.samples//args.cohort_samples if args.mode=='start' else 1
@@ -128,9 +139,9 @@ async def run(args):
                 labels = ['baseline','candidate'] if (block+index)%2==0 else ['candidate','baseline']
                 for label in labels:
                     if args.topology=='processes':
-                        await process_cohort(args,label,tool,block)
+                        await process_cohort(args,label,tool,block,references)
                     else:
-                        await cohort(args,label,tool,block,index)
+                        await cohort(args,label,tool,block,index,references)
                 print(json.dumps(dict(run=args.name,block=block,tool=tool,cohort=index,complete=True)),flush=True)
             if not args.no_otlp:
                 export(args.root,args.name+f'-b{block}-'+tool.split('.')[0])

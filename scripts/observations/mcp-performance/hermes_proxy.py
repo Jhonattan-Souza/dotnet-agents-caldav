@@ -14,6 +14,7 @@ from functional import sanitize
 
 assembly=Path(sys.argv[1]).resolve()
 evidence=Path(sys.argv[2])
+evidence.touch(exist_ok=False)
 child=subprocess.Popen([str(Path(shutil.which('dotnet')).resolve()),str(assembly)],
                        stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
 pending={}
