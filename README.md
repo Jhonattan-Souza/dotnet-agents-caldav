@@ -164,5 +164,5 @@ Slopwatch:
 dotnet tool run slopwatch analyze --config .slopwatch/slopwatch.json --fail-on warning
 ```
 
-The behavior gates, final-package smoke test, and package-content policy are documented in [Release validation](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/main/docs/release-process.md). Current specification evidence is linked from the [requirement-to-evidence catalog](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/main/docs/requirement-to-evidence.md).
+The behavior gates, final-package smoke test, and package-content policy are documented in [Release validation](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/main/docs/release-process.md). The [developer documentation](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/main/docs/README.md) links design decisions, behavioral tests, and historical performance reports.
 Published release history and notes are maintained in [GitHub Releases](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/releases).
