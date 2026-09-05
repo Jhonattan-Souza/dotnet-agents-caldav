@@ -495,13 +495,6 @@ apm_modules/
 
 # Project-specific
 .opencode
-docs/*
-!docs/README.md
-!docs/adr/
-!docs/adr/0001-compact-todo-query.md
-!docs/performance-load-test-2026-08-21.md
-!docs/performance-load-test-2026-08-23.md
-!docs/performance-load-test-2026-08-23-results.json
 .docs
 .agents
 skills-lock.json
