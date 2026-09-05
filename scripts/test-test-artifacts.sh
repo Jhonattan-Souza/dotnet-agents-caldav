@@ -249,14 +249,14 @@ open(path, "w", encoding="utf-8").write(json.dumps(document))
 PY
 expect_rejected "manifest cannot replace the closed suite with a tiny project" python3 "$manifest_validator" "$bad_manifest"
 
-declare -a transported_trx=()
+transported_trx="$fixture_root/transported-trx"
 consume_stdin_and_record_trx() {
   local _project=$1 row_trx=$2 _prefix=$3 _filter=$4 _environment=$5
   cat >/dev/null
-  transported_trx+=("$row_trx")
+  printf '%s\n' "$row_trx" >> "$transported_trx"
 }
-run_test_suite_manifest_phase "$manifest" main consume_stdin_and_record_trx
-[[ "${transported_trx[*]}" == "main-core.trx main-mcp.trx main-integration.trx" ]] || {
+run_test_suite_manifest_phase "$manifest" main 1 consume_stdin_and_record_trx
+[[ "$(cat "$transported_trx")" == $'main-core.trx\nmain-mcp.trx\nmain-integration.trx' ]] || {
   echo "A child process consumed a pending manifest row." >&2
   exit 1
 }

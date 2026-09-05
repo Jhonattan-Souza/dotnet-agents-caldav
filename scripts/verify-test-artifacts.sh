@@ -54,17 +54,7 @@ import xml.etree.ElementTree as ET
 manifest_path, artifact_text, phase = sys.argv[1:]
 artifact_directory = pathlib.Path(artifact_text)
 manifest = json.load(open(manifest_path, encoding="utf-8"))
-items = manifest.get("artifacts", [])
-if manifest.get("schemaVersion") != 1 or len(items) != 5:
-    raise SystemExit("Test-suite manifest must contain exactly five schema-v1 artifacts.")
-names = [item.get("name") for item in items]
-trx_names = [item.get("trx") for item in items]
-if len(set(names)) != 5 or len(set(trx_names)) != 5:
-    raise SystemExit("Test-suite manifest names and TRX paths must be unique.")
-if any(pathlib.PurePath(name).name != name or not name.endswith(".trx") for name in trx_names):
-    raise SystemExit("Test-suite manifest TRX paths must be safe basenames.")
-if sum(item.get("phase") == "main" for item in items) != 3 or sum(item.get("phase") == "complete" for item in items) != 2:
-    raise SystemExit("Test-suite manifest must contain three main and two complete artifacts.")
+items = manifest["artifacts"]
 selected = [item for item in items if item["phase"] == "main" or phase == "complete"]
 expected_names = {item["trx"] for item in selected}
 actual_names = {path.name for path in artifact_directory.glob("*.trx")}
