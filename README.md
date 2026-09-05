@@ -130,7 +130,7 @@ Calendar Entity, Occurrence, and compact To-do reads use `MCP adapter` → `ICal
 
 A query Start completes discovery, authoritative retrieval, evaluation, ordering, and projection before returning its first page. Windowed To-do Starts acquire VTODOs once, route non-recurring resources through the Entity lane and recurring resources through the Occurrence lane, then apply one global order. A Continue authenticates its opaque cursor and reads only the bounded process-local Query Result Snapshot. Snapshots expire ten minutes after the first page, are never extended by replay, and are not CalDAV caches or mutation authority.
 
-The discovery coordinator reuses one scoped result within an operation. A new call, including an MRTR continuation, performs fresh discovery. Query Result Snapshots and capability observations have separate lifetimes.
+Operations that need discovery reuse one scoped result for the duration of that operation. A later operation, including an MRTR continuation, acquires its own result. Query Result Snapshots and capability observations have separate lifetimes.
 
 ## Development
 
