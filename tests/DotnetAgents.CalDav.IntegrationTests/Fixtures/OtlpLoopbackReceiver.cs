@@ -58,7 +58,7 @@ internal sealed class OtlpLoopbackReceiver : IAsyncDisposable
     {
         await _shutdown.CancelAsync().ConfigureAwait(false);
         _shutdownSignal.TrySetResult();
-        _listener.Stop();
+        _listener.Close();
         try
         {
             await _pump.ConfigureAwait(false);
@@ -69,7 +69,6 @@ internal sealed class OtlpLoopbackReceiver : IAsyncDisposable
         {
             System.Diagnostics.Debug.Assert(_shutdown.IsCancellationRequested);
         }
-        _listener.Close();
         _requestSignal.Dispose();
         _shutdown.Dispose();
     }

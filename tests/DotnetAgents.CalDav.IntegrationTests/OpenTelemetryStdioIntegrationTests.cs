@@ -1809,7 +1809,7 @@ public sealed class OpenTelemetryStdioIntegrationTests
         public async ValueTask DisposeAsync()
         {
             await _stopping.CancelAsync();
-            _listener.Stop();
+            _listener.Close();
             try
             {
                 await _serve;
@@ -1819,7 +1819,6 @@ public sealed class OpenTelemetryStdioIntegrationTests
             {
                 System.Diagnostics.Debug.Assert(_stopping.IsCancellationRequested);
             }
-            _listener.Close();
             _stopping.Dispose();
         }
 
@@ -1976,7 +1975,7 @@ public sealed class OpenTelemetryStdioIntegrationTests
         public async ValueTask DisposeAsync()
         {
             await _stopping.CancelAsync();
-            _listener.Stop();
+            _listener.Close();
             try
             {
                 await _serve;
@@ -1986,7 +1985,6 @@ public sealed class OpenTelemetryStdioIntegrationTests
             {
                 System.Diagnostics.Debug.Assert(_stopping.IsCancellationRequested);
             }
-            _listener.Close();
             _stopping.Dispose();
         }
 
@@ -2130,7 +2128,7 @@ public sealed class OpenTelemetryStdioIntegrationTests
         public async ValueTask DisposeAsync()
         {
             await _stopping.CancelAsync();
-            _listener.Stop();
+            _listener.Close();
             try
             {
                 await _serve;
@@ -2140,7 +2138,6 @@ public sealed class OpenTelemetryStdioIntegrationTests
             {
                 System.Diagnostics.Debug.Assert(_stopping.IsCancellationRequested);
             }
-            _listener.Close();
             _stopping.Dispose();
         }
 
@@ -2338,7 +2335,7 @@ public sealed class OpenTelemetryStdioIntegrationTests
         {
             _releaseRequest.TrySetResult();
             await _stopping.CancelAsync();
-            _listener.Stop();
+            _listener.Close();
             try
             {
                 await _serve;
@@ -2348,7 +2345,6 @@ public sealed class OpenTelemetryStdioIntegrationTests
             {
                 System.Diagnostics.Debug.Assert(_stopping.IsCancellationRequested);
             }
-            _listener.Close();
             _stopping.Dispose();
         }
 
