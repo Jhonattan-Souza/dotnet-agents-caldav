@@ -4,6 +4,7 @@ set -euo pipefail
 results_directory=$(realpath -m -- "$1")
 baseline_revision=$2
 repository_root=$(git rev-parse --show-toplevel)
+manifest_script="$repository_root/scripts/observations/mcp-performance/build_manifest.py"
 case "$results_directory/" in "$repository_root/"*) echo 'Use an external directory' >&2; exit 65;; esac
 mkdir -- "$results_directory"
 git status --porcelain=v1 > "$results_directory/initial-git-status.txt"
@@ -16,16 +17,20 @@ aspire --version > "$results_directory/aspire-version.txt" 2>&1
 git clone --shared --no-checkout -- "$repository_root" "$results_directory/baseline-checkout"
 git -C "$results_directory/baseline-checkout" checkout --detach "$baseline_revision"
 git -C "$results_directory/baseline-checkout" remote set-url origin "$(git -C "$repository_root" remote get-url origin)"
+python3 "$manifest_script" capture "$results_directory/baseline-checkout" "$results_directory/baseline-build.json"
 (
   cd -- "$results_directory/baseline-checkout"
   dotnet tool restore
   dotnet restore
   dotnet build -c Release --no-restore
 ) > "$results_directory/baseline-build.log" 2>&1
+python3 "$manifest_script" capture "$repository_root" "$results_directory/candidate-build.json"
 dotnet tool restore > "$results_directory/candidate-build.log" 2>&1
 dotnet restore >> "$results_directory/candidate-build.log" 2>&1
 dotnet build -c Release --no-restore >> "$results_directory/candidate-build.log" 2>&1
 mkdir -- "$results_directory/baseline" "$results_directory/candidate"
 cp -a -- "$results_directory/baseline-checkout/src/DotnetAgents.CalDav.Mcp/bin/Release/net10.0/." "$results_directory/baseline/"
 cp -a -- "$repository_root/src/DotnetAgents.CalDav.Mcp/bin/Release/net10.0/." "$results_directory/candidate/"
+python3 "$manifest_script" finalize "$results_directory/baseline-checkout" "$results_directory/baseline-build.json" "$results_directory/baseline"
+python3 "$manifest_script" finalize "$repository_root" "$results_directory/candidate-build.json" "$results_directory/candidate"
 sha256sum "$results_directory/"{baseline,candidate}/DotnetAgents.CalDav.{Core,Mcp}.dll > "$results_directory/assembly-hashes.txt"

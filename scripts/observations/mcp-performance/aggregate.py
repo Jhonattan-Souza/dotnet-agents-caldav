@@ -2,13 +2,12 @@
 """Join measured windows to exported server traces; emit compact, sanitized evidence."""
 import argparse
 import collections
-import hashlib
 import json
 import math
 from pathlib import Path
 import statistics
-import subprocess
 import xml.etree.ElementTree as ET
+from build_manifest import load_builds
 
 
 def percentile(values,p):
@@ -80,11 +79,13 @@ def join_run(root,name,traces):
             startup_p95_ms=percentile([p['startup_ms'] for p in group],.95),
             shutdown_max_ms=max(p['shutdown_ms'] for p in group),
             assembly_sha256=sorted({p['sha256'] for p in group}),
+            core_assembly_sha256=sorted({p['core_sha256'] for p in group}),
             negotiated_versions=sorted({v for p in group for v in p['discovery']['result']['supportedVersions']})))
     return summaries,startup
 
 
 def main(a):
+    builds=load_builds(a.root)
     traces=json.loads((a.root/'final-traces.json').read_text())
     results=[];startup=[]
     for name in a.runs:
@@ -100,9 +101,15 @@ def main(a):
     for path in sorted((a.root/a.gates).glob('*.trx')):
         gates[path.name]=ET.parse(path).getroot().find('.//{*}Counters').attrib
     coverage=ET.parse(a.root/a.gates/'coverage-report/Cobertura.xml').getroot().attrib
-    patch=subprocess.check_output(['git','diff','--','src','tests'])
-    result=dict(baseline_sha=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
-        candidate_is_working_tree=True,product_and_test_patch_sha256=hashlib.sha256(patch).hexdigest(),
+    for process in startup:
+        for field,name in [('assembly_sha256','DotnetAgents.CalDav.Mcp.dll'),
+                           ('core_assembly_sha256','DotnetAgents.CalDav.Core.dll')]:
+            known={build['assembly_sha256'][name] for build in builds.values()}
+            if not set(process[field]).issubset(known):
+                raise RuntimeError('Measured process does not match either prepared build')
+    result=dict(baseline_sha=builds['baseline']['source']['sha'],
+        candidate_sha=builds['candidate']['source']['sha'],
+        candidate_is_working_tree=builds['candidate']['source']['dirty'],builds=builds,
         percentile_estimator='nearest rank ceil(p*n)',p99_is_descriptive_only=True,
         full_evidence_directory=str(a.root),corpus=json.loads((a.root/'corpus.json').read_text()),
         measurements=results,processes=startup,schema_guard=allocation,gates=gates,

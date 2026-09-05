@@ -1,0 +1,168 @@
+#!/usr/bin/env python3
+"""Harness regressions; temporary Git repositories and stub external executables."""
+import contextlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import unittest
+
+from build_manifest import capture, finalize, load_builds, source_identity
+
+HARNESS = Path(__file__).resolve().parent
+ASSEMBLIES = ['DotnetAgents.CalDav.Mcp.dll', 'DotnetAgents.CalDav.Core.dll']
+
+
+def git(repository, *args):
+    return subprocess.check_output(['git', '-C', str(repository), *args], stderr=subprocess.DEVNULL).decode().strip()
+
+
+def repository(root):
+    repo = root / 'repository'
+    repo.mkdir()
+    git(repo, 'init', '--quiet')
+    git(repo, 'config', 'user.name', 'Harness Test')
+    git(repo, 'config', 'user.email', 'harness@example.invalid')
+    git(repo, 'config', 'commit.gpgsign', 'false')
+    git(repo, 'remote', 'add', 'origin', 'https://example.invalid/harness.git')
+    (repo / 'Directory.Packages.props').write_text('original')
+    commit(repo)
+    return repo
+
+
+def commit(repo):
+    git(repo, 'add', '.')
+    git(repo, 'commit', '--quiet', '-m', 'Test fixture')
+
+
+def executable(path, contents):
+    path.write_text('#!/bin/sh\n' + contents + '\n')
+    path.chmod(0o755)
+
+
+class BuildIdentityTests(unittest.TestCase):
+    def test_prepared_revisions_survive_later_commits_and_working_directory_changes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo = repository(root)
+            expected = {}
+            for label in ['baseline', 'candidate']:
+                if label == 'candidate':
+                    (repo / 'Directory.Packages.props').write_text('candidate')
+                    commit(repo)
+                expected[label] = git(repo, 'rev-parse', 'HEAD')
+                manifest = root / (label + '-build.json')
+                capture(repo, manifest)
+                assembly_dir = root / label
+                assembly_dir.mkdir()
+                for name in ASSEMBLIES:
+                    (assembly_dir / name).write_bytes(('test-only-' + label + name).encode())
+                finalize(repo, manifest, assembly_dir)
+            (repo / 'Directory.Packages.props').write_text('later revision')
+            commit(repo)
+            with contextlib.chdir(root):
+                builds = load_builds(root)
+            self.assertNotEqual(expected['baseline'], expected['candidate'])
+            for label in expected:
+                self.assertEqual(expected[label], builds[label]['source']['sha'])
+                self.assertFalse(builds[label]['source']['dirty'])
+            (root / 'candidate' / ASSEMBLIES[0]).write_bytes(b'replaced binary')
+            with self.assertRaisesRegex(RuntimeError, 'differs'):
+                load_builds(root)
+
+    def test_staged_and_untracked_changes_are_captured_and_mid_build_edits_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo = repository(root)
+            clean = source_identity(repo)
+            (repo / 'Directory.Packages.props').write_text('staged dependency change')
+            git(repo, 'add', 'Directory.Packages.props')
+            (repo / 'added.cs').write_text('new source')
+            dirty = source_identity(repo)
+            self.assertTrue(dirty['dirty'])
+            self.assertNotEqual(clean['working_tree_patch_sha256'], dirty['working_tree_patch_sha256'])
+            self.assertIn('added.cs', dirty['untracked_file_sha256'])
+            manifest = root / 'candidate-build.json'
+            capture(repo, manifest)
+            (repo / 'added.cs').write_text('changed during build')
+            with self.assertRaisesRegex(RuntimeError, 'Source changed'):
+                finalize(repo, manifest, root)
+
+
+class CommandTests(unittest.TestCase):
+    def test_invalid_start_counts_fail_before_opening_infrastructure(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for options in [('--samples', '7'), ('--samples', '1'), ('--samples', '0'),
+                            ('--cohort-samples', '0'), ('--blocks', '-1'), ('--concurrency', '2')]:
+                with self.subTest(options=options):
+                    result = subprocess.run([sys.executable, str(HARNESS / 'benchmark.py'), str(root),
+                        'baseline.dll', 'candidate.dll', '--name', 'invalid', '--mode', 'start', *options],
+                        capture_output=True, text=True)
+                    self.assertEqual(2, result.returncode, result.stderr)
+                    self.assertNotIn('Traceback', result.stderr)
+                    self.assertEqual([], list(root.iterdir()))
+
+    def test_package_uses_clean_commit_or_complete_dirty_candidate(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo = repository(root)
+            scripts = repo / 'scripts'
+            scripts.mkdir()
+            for name in ['prepare-release-metadata.sh', 'verify-release-package.sh']:
+                (scripts / name).write_text('exit 0\n')
+            (repo / 'src').mkdir()
+            (repo / 'src' / 'removed.cs').write_text('remove in candidate')
+            commit(repo)
+            bin_dir = root / 'bin'
+            bin_dir.mkdir()
+            executable(bin_dir / 'dotnet', 'exit 0')
+            env = dict(os.environ, PATH=str(bin_dir) + os.pathsep + os.environ['PATH'])
+            for dirty in [False, True]:
+                with self.subTest(dirty=dirty):
+                    if dirty:
+                        (repo / 'Directory.Packages.props').write_text('new dependency version')
+                        git(repo, 'add', 'Directory.Packages.props')
+                        (repo / 'src' / 'added.cs').write_text('untracked source')
+                        (repo / 'src' / 'removed.cs').unlink()
+                    output = root / ('dirty' if dirty else 'clean')
+                    output.mkdir()
+                    result = subprocess.run(['bash', str(HARNESS / 'package.sh'), str(output)],
+                        cwd=repo, env=env, capture_output=True, text=True)
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    clone = output / 'package-checkout'
+                    self.assertEqual((repo / 'Directory.Packages.props').read_bytes(),
+                                     (clone / 'Directory.Packages.props').read_bytes())
+                    self.assertEqual(not dirty, (clone / 'src' / 'removed.cs').exists())
+                    if dirty:
+                        self.assertEqual('untracked source', (clone / 'src' / 'added.cs').read_text())
+
+    def test_hermes_exit_status_reaches_the_shell_after_summary(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / 'source-home'
+            source.mkdir()
+            (source / 'config.yaml').write_text(json.dumps({'model': {'provider': 'openrouter', 'model': 'test'}}))
+            (source / '.env').write_text('OPENROUTER_API_KEY=test-only-placeholder\n')
+            (root / 'infra-private.json').write_text(json.dumps(dict(
+                url='http://127.0.0.1:1', username='test', password='test-only', otlp='http://127.0.0.1:1')))
+            stubs = root / 'stubs'
+            stubs.mkdir()
+            # Replace optional Hermes dependencies; this tests process handling, not the client SDK.
+            (stubs / 'yaml.py').write_text('import json\nsafe_load = json.loads\nsafe_dump = json.dumps\n')
+            (stubs / 'dotenv.py').write_text("def dotenv_values(path): return dict(line.split('=', 1) for line in path.read_text().splitlines())\n")
+            env = dict(os.environ, PATH=str(stubs) + os.pathsep + os.environ['PATH'], PYTHONPATH=str(stubs))
+            for exit_code in [0, 17]:
+                with self.subTest(exit_code=exit_code):
+                    executable(stubs / 'hermes', 'exit ' + str(exit_code))
+                    result = subprocess.run([sys.executable, str(HARNESS / 'hermes.py'), str(root),
+                        str(root / 'candidate.dll'), '--source-home', str(source)],
+                        env=env, capture_output=True, text=True)
+                    self.assertEqual(exit_code, result.returncode, result.stderr)
+                    self.assertEqual(exit_code, json.loads(result.stdout)['exit_code'])
+
+
+if __name__ == '__main__':
+    unittest.main()

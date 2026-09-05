@@ -31,3 +31,4 @@ env['HERMES_HOME']=str(home)
 with (root/'hermes-run-private.log').open('w') as log:
  result=subprocess.run([shutil.which('hermes'),'--ignore-rules','-t','perf','--usage-file',str(root/'hermes-usage.json'),'-z',prompt],cwd=home,env=env,stdout=log,stderr=log,timeout=600)
 print(json.dumps({'exit_code':result.returncode,'wire_evidence_exists':(root/'hermes-wire-sanitized.jsonl').exists()}))
+sys.exit(result.returncode)
