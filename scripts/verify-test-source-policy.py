@@ -19,14 +19,13 @@ DISABLING_OPTION = re.compile(
     r"\b(?:Skip|SkipWhen|SkipUnless|SkipExceptions|SkipTestWithoutData|Explicit)\s*=",
     re.DOTALL,
 )
-RUNTIME_SKIP = re.compile(r"\bAssert\s*\.\s*Skip\s*\(", re.DOTALL)
 NON_NORMATIVE = re.compile(r"\b(?:Quarantin(?:e|ed)|Flaky)", re.IGNORECASE)
 EXPLICIT_ATTRIBUTE = re.compile(
     r"\[\s*(?:global::)?(?:[A-Za-z_][\w]*\.)*Explicit(?:Attribute)?\s*(?:\([^]]*\))?\s*\]",
     re.DOTALL,
 )
-TRAIT_ATTRIBUTE = re.compile(
-    r"(?:^\[\s*|,\s*)(?:global::)?(?:[A-Za-z_][\w]*\.)*Trait(?:Attribute)?\s*\(",
+ATTRIBUTE_CALL = re.compile(
+    r"(?:^\[\s*|,\s*)(?:global::)?(?:[A-Za-z_][\w]*\.)*(?P<name>[A-Za-z_]\w*)\s*\(",
     re.DOTALL,
 )
 TRAIT_NON_NORMATIVE = re.compile(
@@ -124,13 +123,22 @@ def mask_comments_and_literals(source: str, *, mask_literals: bool) -> str:
 def violations(path: pathlib.Path) -> list[str]:
     source = path.read_text(encoding="utf-8")
     code = mask_comments_and_literals(source, mask_literals=True)
-    spans = [(code[start:end], source[start:end]) for start, end in attribute_ranges(code)]
+    uncommented = mask_comments_and_literals(source, mask_literals=False)
+    spans = [(code[start:end], uncommented[start:end]) for start, end in attribute_ranges(code)]
     found: list[str] = []
     if any(DISABLING_OPTION.search(masked) for masked, _ in spans):
         found.append("disabled test attribute option")
+    trait_aliases = re.findall(
+        r"\busing\s+([A-Za-z_]\w*)\s*=\s*(?:global::)?Xunit\.TraitAttribute\s*;",
+        code,
+    )
+    trait_names = {"Trait", "TraitAttribute", *trait_aliases}
+    trait_names.update(alias.removesuffix("Attribute") for alias in trait_aliases)
     trait_is_non_normative = False
     for masked, original in spans:
-        for match in TRAIT_ATTRIBUTE.finditer(masked):
+        for match in ATTRIBUTE_CALL.finditer(masked):
+            if match.group("name") not in trait_names:
+                continue
             closing = masked.find(")", match.end())
             closing = len(masked) if closing < 0 else closing + 1
             if TRAIT_NON_NORMATIVE.search(original[match.start():closing]):
