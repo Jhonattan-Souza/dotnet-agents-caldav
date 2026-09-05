@@ -122,6 +122,56 @@ public sealed class CalendarMetadataModuleTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Patch_without_language_does_not_verify_retained_or_inherited_language(bool inherited)
+    {
+        using var fixture = new Fixture();
+        fixture.Enqueue(207, Metadata("Work", "Old description").ToString());
+        fixture.Enqueue(207, PatchStatus((Cal + "calendar-description", 200)).ToString());
+        var after = Metadata("Work", "New description");
+        var languageScope = inherited ? after : after.Descendants(Cal + "calendar-description").Single();
+        languageScope.SetAttributeValue(XNamespace.Xml + "lang", "en");
+        fixture.Enqueue(207, after.ToString());
+
+        var result = await fixture.Module.PatchAsync(Href,
+            new CalendarMetadataPatch(Description: new CalendarMetadataTextPatch("set", "New description")), CancellationToken.None);
+
+        result.MutationState.ShouldBe(CalendarMutationState.Committed);
+        result.Error!.Code.ShouldBe("committed_but_unverified");
+        result.Calendar!.DescriptionLanguage.ShouldBe("en");
+        XElement.Parse(fixture.Bodies[1]!).DescendantsAndSelf().Attributes(XNamespace.Xml + "lang").ShouldBeEmpty();
+        fixture.Methods.ShouldBe(["PROPFIND", "PROPPATCH", "PROPFIND"]);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Patch_without_language_verifies_undefined_effective_language(bool emptyOverride)
+    {
+        using var fixture = new Fixture();
+        var before = Metadata("Work", "Old description");
+        before.Descendants(Cal + "calendar-description").Single().SetAttributeValue(XNamespace.Xml + "lang", "en");
+        fixture.Enqueue(207, before.ToString());
+        fixture.Enqueue(207, PatchStatus((Cal + "calendar-description", 200)).ToString());
+        var after = Metadata("Work", "New description");
+        if (emptyOverride)
+        {
+            after.SetAttributeValue(XNamespace.Xml + "lang", "en");
+            after.Descendants(Cal + "calendar-description").Single().SetAttributeValue(XNamespace.Xml + "lang", string.Empty);
+        }
+        fixture.Enqueue(207, after.ToString());
+
+        var result = await fixture.Module.PatchAsync(Href,
+            new CalendarMetadataPatch(Description: new CalendarMetadataTextPatch("set", "New description")), CancellationToken.None);
+
+        result.MutationState.ShouldBe(CalendarMutationState.Committed);
+        result.Error.ShouldBeNull();
+        result.Calendar!.DescriptionLanguage.ShouldBeNull();
+        fixture.Methods.ShouldBe(["PROPFIND", "PROPPATCH", "PROPFIND"]);
+    }
+
+    [Theory]
     [InlineData(403, 424, "not_committed", "upstream_forbidden", 2)]
     [InlineData(200, 403, "unknown", "indeterminate", 3)]
     [InlineData(202, 200, "unknown", "indeterminate", 3)]

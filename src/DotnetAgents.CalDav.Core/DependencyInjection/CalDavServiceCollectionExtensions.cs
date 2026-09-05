@@ -94,6 +94,11 @@ public static class CalDavServiceCollectionExtensions
                 IsDefinitiveReportFailure(arguments.Outcome.Result)
                     ? PredicateResult.False()
                     : standardShouldHandle(arguments);
+            var standardCircuitShouldHandle = options.CircuitBreaker.ShouldHandle;
+            options.CircuitBreaker.ShouldHandle = arguments =>
+                IsNativeReportLimit(arguments.Outcome.Result)
+                    ? PredicateResult.False()
+                    : standardCircuitShouldHandle(arguments);
 
             // Circuit breaker is configured with a high minimum throughput (default 100) which
             // effectively disables it for low-volume CalDAV clients. This is intentional —
@@ -207,8 +212,9 @@ public static class CalDavServiceCollectionExtensions
         && (response.StatusCode is HttpStatusCode.MethodNotAllowed or HttpStatusCode.NotImplemented
             || IsNativeReportLimit(response));
 
-    private static bool IsNativeReportLimit(HttpResponseMessage response) =>
-        response.StatusCode == HttpStatusCode.InsufficientStorage
+    private static bool IsNativeReportLimit(HttpResponseMessage? response) =>
+        response?.RequestMessage?.Method.Method == "REPORT"
+        && response.StatusCode == HttpStatusCode.InsufficientStorage
         && response.RequestMessage!.Options.TryGetValue(CalDavClient.NativeReportKey, out var nativeReport)
         && nativeReport;
 }

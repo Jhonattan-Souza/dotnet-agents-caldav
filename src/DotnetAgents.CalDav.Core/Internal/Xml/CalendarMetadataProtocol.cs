@@ -151,8 +151,12 @@ internal static class CalendarMetadataProtocol
         return names;
     }
 
-    private static string? Language(XElement? property) => property?.AncestorsAndSelf()
-        .Select(element => element.Attribute(XNamespace.Xml + "lang")?.Value).FirstOrDefault(value => value is not null);
+    internal static string? Language(XElement? property)
+    {
+        var language = property?.AncestorsAndSelf()
+            .Select(element => element.Attribute(XNamespace.Xml + "lang")?.Value).FirstOrDefault(value => value is not null);
+        return string.IsNullOrEmpty(language) ? null : language;
+    }
 
     private static long? Integer(IReadOnlyDictionary<XName, CalendarMetadataProperty> properties, XName name)
     {

@@ -120,10 +120,7 @@ internal static partial class CalendarMetadataPatchProtocol
             return observed.StatusCode == 404;
         if (observed.StatusCode != 200 || observed.Element.Elements().Any() || observed.Element.Value != expected.Value)
             return false;
-        var language = observed.Element.AncestorsAndSelf()
-            .Select(element => element.Attribute(XNamespace.Xml + "lang")?.Value)
-            .FirstOrDefault(value => value is not null);
-        return expected.Language is null || string.Equals(language, expected.Language, StringComparison.OrdinalIgnoreCase);
+        return string.Equals(CalendarMetadataProtocol.Language(observed.Element), expected.Language, StringComparison.OrdinalIgnoreCase);
     }
 
     private static IEnumerable<KeyValuePair<XName, CalendarMetadataTextPatch>> Changes(CalendarMetadataPatch patch)

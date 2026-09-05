@@ -88,6 +88,10 @@ adopts:
   contradictory, or missing evidence fails without issuing a new checkpoint.
   A property-level ETag 404 is not a removal. Distinguish top-level 507 failure
   from a collection-self 507 in a successful multistatus report.
+- A collection-self 507 in a successful sync multistatus is the required
+  pagination signal under RFC 6578 §3.6. Its recommended error element may be
+  absent. Reject malformed or recognized contradictory error conditions;
+  ignore unknown XML extensions as required by RFC 4918 §§14.5 and 17.
 - A truncated sync page needs an advancing token. Checkpoints retain the
   authorized Calendar and configuration binding, avoiding discovery on later
   calls. ETags in a change report are observations, not semantic revisions.
@@ -96,9 +100,13 @@ adopts:
   response bytes and all HTTP retry attempts.
 - A single logical REPORT can take up to three HTTP attempts under the
   existing read resilience policy, with native 507 treated as definitive.
+  Native 507 is excluded from both retries and circuit-breaker failure counts,
+  so repeated initial limit negotiation cannot block unrelated operations.
   PROPPATCH has one write attempt.
 - Contradictory PROPPATCH status truth remains uncertain. A mismatching readback
   after acknowledged commit remains committed-but-unverified.
+  Verification compares the complete text/language value: omitting description
+  language requires undefined effective language, including inherited XML scope.
 - Successful, well-formed OPTIONS evidence is required for the scheduling
   guard. A server/product name cannot establish absence of scheduling.
 - Exact configured Calendar hrefs authorize read-free/busy-only access without

@@ -5,6 +5,8 @@ using DotnetAgents.CalDav.Core.Internal;
 using DotnetAgents.CalDav.Core.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http;
+using Microsoft.Extensions.Http.Resilience;
+using Polly.CircuitBreaker;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Diagnostics;
@@ -146,6 +148,81 @@ public sealed class CalDavServiceCollectionExtensionsTests
     }
 
     [Fact]
+    public async Task Persistent_native_report_negotiation_does_not_trip_the_shared_circuit_breaker()
+    {
+        var handler = new PersistentReportHandler(HttpStatusCode.InsufficientStorage, negotiate: true);
+        using var provider = BuildProvider(handler);
+        var client = provider.GetRequiredService<CalDavClient>();
+        var minimumThroughput = new HttpStandardResilienceOptions().CircuitBreaker.MinimumThroughput;
+
+        // Each logical negotiation produces one native 507 followed by one successful response.
+        // Reusing the client for twice the breaker minimum detects accumulated false failures.
+        for (var negotiation = 0; negotiation < minimumThroughput; negotiation++)
+        {
+            var limited = await client.SendProtocolRequestAsync("https://cal.example/events/", "REPORT",
+                "<request/>", 0, TestContext.Current.CancellationToken);
+            limited.StatusCode.ShouldBe(507);
+            var accepted = await client.SendProtocolRequestAsync("https://cal.example/events/", "REPORT",
+                "<request/>", 0, TestContext.Current.CancellationToken);
+            accepted.StatusCode.ShouldBe(200);
+        }
+        var read = await client.GetCalendarResourceAsync("https://cal.example/events/unrelated.ics",
+            TestContext.Current.CancellationToken);
+
+        read.Code.ShouldBe(CalendarResourceReadCode.Success);
+        handler.ReportCount.ShouldBe(minimumThroughput * 2);
+        handler.RequestCount.ShouldBe(minimumThroughput * 2 + 1);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.ServiceUnavailable, true)]
+    [InlineData(HttpStatusCode.InsufficientStorage, false)]
+    public async Task Persistent_transient_failures_still_trip_the_shared_circuit_breaker(
+        HttpStatusCode status, bool native)
+    {
+        var handler = new PersistentReportHandler(status, negotiate: false);
+        using var provider = BuildProvider(handler, immediateRetries: true);
+        var client = provider.GetRequiredService<CalDavClient>();
+        var minimumThroughput = new HttpStandardResilienceOptions().CircuitBreaker.MinimumThroughput;
+        var opened = false;
+        for (var request = 0; request < minimumThroughput; request++)
+        {
+            try
+            {
+                await SendTransientReportAsync(client, native);
+            }
+            catch (HttpRequestException)
+            {
+                native.ShouldBeFalse("Only legacy queries throw after exhausting unsuccessful HTTP retries.");
+            }
+            catch (BrokenCircuitException)
+            {
+                opened = true;
+                break;
+            }
+        }
+
+        opened.ShouldBeTrue();
+        handler.RequestCount.ShouldBe(minimumThroughput);
+        await Should.ThrowAsync<BrokenCircuitException>(() => client.GetCalendarResourceAsync(
+            "https://cal.example/events/unrelated.ics", TestContext.Current.CancellationToken));
+        handler.RequestCount.ShouldBe(minimumThroughput);
+    }
+
+    private static async Task SendTransientReportAsync(CalDavClient client, bool native)
+    {
+        if (native)
+        {
+            var response = await client.SendProtocolRequestAsync("https://cal.example/events/", "REPORT",
+                "<request/>", 0, TestContext.Current.CancellationToken);
+            response.StatusCode.ShouldBe(503);
+            return;
+        }
+        await client.QueryCandidateHrefsAsync("https://cal.example/events/", CalendarEntityKind.Event,
+            null, null, TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
     public async Task Existing_query_report_keeps_its_configured_read_retry_behavior()
     {
         var handler = new ReportLimitHandler();
@@ -279,7 +356,8 @@ public sealed class CalDavServiceCollectionExtensionsTests
         await Should.ThrowAsync<OperationCanceledException>(() => pending);
     }
 
-    private static ServiceProvider BuildProvider(HttpMessageHandler handler, TimeProvider? timeProvider = null)
+    private static ServiceProvider BuildProvider(
+        HttpMessageHandler handler, TimeProvider? timeProvider = null, bool immediateRetries = false)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -291,6 +369,14 @@ public sealed class CalDavServiceCollectionExtensionsTests
         });
         if (timeProvider is not null)
             services.AddSingleton(timeProvider);
+        if (immediateRetries)
+        {
+            services.ConfigureAll<HttpStandardResilienceOptions>(options =>
+            {
+                options.Retry.Delay = TimeSpan.Zero;
+                options.Retry.UseJitter = false;
+            });
+        }
         services.AddHttpClient<CalDavClient>().ConfigurePrimaryHttpMessageHandler(() => handler);
         return services.BuildServiceProvider();
     }
@@ -342,6 +428,35 @@ public sealed class CalDavServiceCollectionExtensionsTests
             {
                 RequestMessage = request,
                 Content = new StringContent("<d:error xmlns:d=\"DAV:\"><d:number-of-matches-within-limits/></d:error>")
+            });
+        }
+    }
+
+    private sealed class PersistentReportHandler(HttpStatusCode failure, bool negotiate) : HttpMessageHandler
+    {
+        internal int RequestCount { get; private set; }
+        internal int ReportCount { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            RequestCount++;
+            if (request.Method.Method == "REPORT")
+            {
+                ReportCount++;
+                var status = negotiate && ReportCount % 2 == 0 ? HttpStatusCode.OK : failure;
+                return Task.FromResult(new HttpResponseMessage(status)
+                {
+                    RequestMessage = request,
+                    Content = new StringContent(status == HttpStatusCode.InsufficientStorage
+                        ? "<d:error xmlns:d=\"DAV:\"><d:number-of-matches-within-limits/></d:error>"
+                        : "<d:multistatus xmlns:d=\"DAV:\"/>")
+                });
+            }
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                RequestMessage = request,
+                Headers = { ETag = new EntityTagHeaderValue("\"r1\"") },
+                Content = new ByteArrayContent("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n"u8.ToArray())
             });
         }
     }

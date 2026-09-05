@@ -11,6 +11,8 @@ public class CalendarSyncReportParserTests
 {
     private const string CalendarHref = "https://cal.example/calendars/user/events/";
     private const string MemberPath = "/calendars/user/events/a.ics";
+    private const string TruncationStatus = "<d:status>HTTP/1.1 507 Insufficient Storage</d:status>";
+    private const string TruncationError = "<d:error><d:number-of-matches-within-limits/></d:error>";
 
     [Fact]
     public void ReturnsChangedMetadataAndOnlyResponseLevelRemovals()
@@ -29,11 +31,13 @@ public class CalendarSyncReportParserTests
         page.SyncToken.ShouldBe("urn:sync:next");
     }
 
-    [Fact]
-    public void NativeSelf507AndAdvancingTokenAllowContinuation()
+    [Theory]
+    [InlineData("")]
+    [InlineData(TruncationError)]
+    public void NativeSelf507AndAdvancingTokenAllowContinuation(string error)
     {
         var page = Parse(Wrap(Changed(MemberPath) + Response(CalendarHref,
-            "<d:status>HTTP/1.1 507 Insufficient Storage</d:status><d:error><d:number-of-matches-within-limits/></d:error>")), pageSize: 1);
+            TruncationStatus + error)), pageSize: 1);
 
         page.HasMore.ShouldBeTrue();
         page.Changes.Count.ShouldBe(1);
@@ -46,7 +50,8 @@ public class CalendarSyncReportParserTests
         foreach (var responses in new[]
         {
             Changed(MemberPath),
-            Response(CalendarHref, "<d:status>HTTP/1.1 507 Insufficient Storage</d:status>")
+            Response(CalendarHref, TruncationStatus),
+            Response(CalendarHref, TruncationStatus + TruncationError)
         })
             Should.Throw<CalendarProtocolException>(() => Parse(Wrap(responses), priorToken: "urn:sync:next"))
                 .Code.ShouldBe("upstream_protocol_error");
@@ -57,6 +62,50 @@ public class CalendarSyncReportParserTests
     {
         var content = Wrap(Changed(MemberPath) + Changed("b.ics"));
         Should.Throw<CalendarProtocolException>(() => Parse(content, pageSize: 1)).Code.ShouldBe("limit_exhausted");
+    }
+
+    [Theory]
+    [InlineData("<d:error/>")]
+    [InlineData("<d:error>failure</d:error>")]
+    [InlineData("<d:error>failure<x:diagnostic xmlns:x='urn:other'/></d:error>")]
+    [InlineData("<d:error><d:valid-sync-token/></d:error>")]
+    [InlineData("<d:error><d:supported-report/></d:error>")]
+    [InlineData("<d:error><d:sync-traversal-supported/></d:error>")]
+    [InlineData("<d:error><d:need-privileges/></d:error>")]
+    [InlineData("<d:error><d:quota-not-exceeded/></d:error>")]
+    [InlineData("<d:error><d:sufficient-disk-space/></d:error>")]
+    [InlineData("<d:error><d:number-of-matches-within-limits>quota failure</d:number-of-matches-within-limits></d:error>")]
+    [InlineData("<d:error><d:number-of-matches-within-limits> </d:number-of-matches-within-limits></d:error>")]
+    [InlineData("<d:error><d:number-of-matches-within-limits/><d:number-of-matches-within-limits/></d:error>")]
+    [InlineData("<d:error><d:number-of-matches-within-limits/><d:quota-not-exceeded/></d:error>")]
+    [InlineData("<d:error><d:number-of-matches-within-limits/></d:error><d:error><d:number-of-matches-within-limits/></d:error>")]
+    public void MalformedOrContradictoryCollection507FailsDespiteChangesAndAnAdvancingToken(string error)
+    {
+        var body = Wrap(Changed(MemberPath) + Response(CalendarHref, TruncationStatus + error), "urn:sync:advanced");
+
+        Should.Throw<CalendarProtocolException>(() => Parse(body, priorToken: "urn:sync:prior", pageSize: 1))
+            .Code.ShouldBe("upstream_protocol_error");
+    }
+
+    [Theory]
+    [InlineData("<d:error>\n <d:number-of-matches-within-limits/>\n <x:message xmlns:x='urn:diagnostic'>Report was limited.</x:message>\n</d:error>")]
+    [InlineData("<d:error><d:unknown-condition/></d:error>")]
+    [InlineData("<d:error><x:number-of-matches-within-limits xmlns:x='urn:other'/></d:error>")]
+    [InlineData("<d:error><x:quota-not-exceeded xmlns:x='urn:other'/></d:error>")]
+    [InlineData("<d:error><d:wrapper><d:number-of-matches-within-limits/></d:wrapper></d:error>")]
+    [InlineData("<d:error><x:wrapper xmlns:x='urn:other'><d:quota-not-exceeded/></x:wrapper></d:error>")]
+    [InlineData("<x:error xmlns:x='urn:other'><d:quota-not-exceeded/></x:error>")]
+    [InlineData("<d:error><d:number-of-matches-within-limits><d:quota-not-exceeded/></d:number-of-matches-within-limits></d:error>")]
+    [InlineData("<d:error><d:number-of-matches-within-limits><x:diagnostic xmlns:x='urn:other'>limited</x:diagnostic></d:number-of-matches-within-limits></d:error>")]
+    public void Self507IgnoresUnknownExtensionsWithoutRequiringTheOptionalMarker(string error)
+    {
+        var body = Wrap(Changed(MemberPath) + Response(CalendarHref, TruncationStatus + error), "urn:sync:advanced");
+
+        var page = Parse(body, priorToken: "urn:sync:prior", pageSize: 1);
+
+        page.HasMore.ShouldBeTrue();
+        page.Changes.Count.ShouldBe(1);
+        page.SyncToken.ShouldBe("urn:sync:advanced");
     }
 
     [Fact]
@@ -167,7 +216,7 @@ public class CalendarSyncReportParserTests
     }
 
     [Fact]
-    public void RejectsAnyCollectionSelfResponseExceptSingle507()
+    public void RejectsCollectionSelfResponsesWithoutUnambiguousTruncation()
     {
         foreach (var response in new[]
         {
