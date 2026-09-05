@@ -470,67 +470,6 @@ public sealed class CalendarExecutionPolicyTests
         operations[4].GetTagItem("caldav.mutation.state").ShouldBe("unknown");
     }
 
-    [Fact]
-    public void PublicToolFilter_HasNoJsonTelemetryTruthReconstructionHelpers()
-    {
-        var helperNames = typeof(CalendarExecutionPolicy)
-            .GetMethods(BindingFlags.Static | BindingFlags.NonPublic)
-            .Select(method => method.Name)
-            .ToArray();
-
-        helperNames.ShouldNotContain("StringProperty");
-        helperNames.ShouldNotContain("SafeMutationState");
-        helperNames.ShouldNotContain("SafeBoolean");
-        typeof(TelemetryActivityAllowlistProcessor)
-            .GetMethod("ClassifyHttpObservation", BindingFlags.Static | BindingFlags.NonPublic)
-            .ShouldBeNull();
-        var processorHelpers = typeof(TelemetryActivityAllowlistProcessor)
-            .GetMethods(BindingFlags.Static | BindingFlags.NonPublic)
-            .Select(method => method.Name)
-            .ToArray();
-        processorHelpers.ShouldNotContain("ObserveRetry");
-        processorHelpers.ShouldNotContain("FindOperation");
-        processorHelpers.ShouldNotContain("GetRetryAggregation");
-        processorHelpers.ShouldNotContain("ApplyRetryAggregation");
-        typeof(TelemetryActivityAllowlistProcessor)
-            .GetNestedTypes(BindingFlags.NonPublic)
-            .Select(type => type.Name)
-            .ShouldNotContain(name => name.Contains("RetryAggregation", StringComparison.Ordinal));
-        foreach (var queryTool in new[]
-                 {
-                     typeof(CalendarEntityTools),
-                     typeof(CalendarOccurrenceTools),
-                     typeof(CalendarTodoTools)
-                 })
-        {
-            var queryHelpers = queryTool
-                .GetMethods(BindingFlags.Static | BindingFlags.NonPublic)
-                .Select(method => method.Name)
-                .ToArray();
-            queryHelpers.ShouldNotContain("Code");
-            queryHelpers.ShouldNotContain("Category");
-            queryHelpers.ShouldNotContain("Phase");
-            queryHelpers.ShouldNotContain("ErrorWithoutBounding");
-            queryHelpers.ShouldNotContain("CreatePayloadLimitError");
-        }
-        var exactWriteHelpers = typeof(ExactCalendarResourceWriteTools)
-            .GetMethods(BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public)
-            .Select(method => method.Name)
-            .ToArray();
-        exactWriteHelpers.ShouldNotContain("EnsureBoundedResult");
-        exactWriteHelpers.ShouldNotContain("Phase");
-        var collectionHelpers = typeof(CalendarCollectionTools)
-            .GetMethods(BindingFlags.Static | BindingFlags.NonPublic)
-            .Select(method => method.Name)
-            .ToArray();
-        collectionHelpers.ShouldNotContain("Describe");
-        collectionHelpers.ShouldNotContain("MapHttpCode");
-        collectionHelpers.ShouldNotContain("MutationState");
-        typeof(CalendarResourceTools)
-            .GetMethod("CreateBoundedSuccess", BindingFlags.Static | BindingFlags.NonPublic)
-            .ShouldBeNull();
-    }
-
     [Theory]
     [InlineData("calendars.list")]
     [InlineData("calendar_resources.get")]

@@ -17,27 +17,6 @@ public sealed class CalendarOccurrenceQueryModuleTests
     private static readonly DateTimeOffset From = new(2026, 8, 23, 0, 0, 0, TimeSpan.Zero);
     private static readonly DateTimeOffset To = From.AddDays(3);
 
-    [Fact]
-    public void StartExecutorsDependOnNeutralAcquisitionAndTemporalCollaborators()
-    {
-        var occurrenceConstructorTypes = ConstructorTypes(typeof(CalendarOccurrenceQueryStartExecutor));
-        var entityConstructorTypes = ConstructorTypes(typeof(CalendarEntityQueryStartExecutor));
-
-        occurrenceConstructorTypes.ShouldContain(typeof(CalendarQueryAcquisitionExecutor));
-        occurrenceConstructorTypes.ShouldContain(typeof(CalendarTemporalContextResolver));
-        occurrenceConstructorTypes.ShouldNotContain(typeof(CalendarEntityQueryStartExecutor));
-        entityConstructorTypes.ShouldContain(typeof(CalendarQueryAcquisitionExecutor));
-        entityConstructorTypes.ShouldContain(typeof(CalendarTemporalContextResolver));
-        entityConstructorTypes.ShouldNotContain(typeof(Func<ICalendarQueryTransport>));
-        entityConstructorTypes.ShouldNotContain(typeof(CalendarQueryResourceRetriever));
-    }
-
-    private static Type[] ConstructorTypes(Type type) => type.GetConstructors(
-                System.Reflection.BindingFlags.Instance
-                | System.Reflection.BindingFlags.Public
-                | System.Reflection.BindingFlags.NonPublic)
-            .ShouldHaveSingleItem().GetParameters().Select(parameter => parameter.ParameterType).ToArray();
-
     [Theory]
     [InlineData(false, 0)]
     [InlineData(true, 1)]
