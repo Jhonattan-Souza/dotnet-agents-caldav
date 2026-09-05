@@ -14,7 +14,6 @@ internal sealed class CalendarService : ICalendarService
     private readonly ICalendarClient _calendarClient;
     private readonly CalendarOperationDiscovery _operationDiscovery;
     private readonly IOptions<CalDavOptions> _options;
-    private readonly ILogger<CalendarService> _logger;
     private readonly TimeProvider _timeProvider;
     private readonly ICalendarEntityIdentityGenerator _identityGenerator;
     private readonly CalendarDiscoveryPolicy _discoveryPolicy;
@@ -35,7 +34,6 @@ internal sealed class CalendarService : ICalendarService
         ICalendarEntityIdentityGenerator identityGenerator)
     {
         _options = options;
-        _logger = logger;
         _timeProvider = timeProvider;
         _identityGenerator = identityGenerator;
         _discoveryPolicy = new CalendarDiscoveryPolicy(options, logger);
@@ -258,7 +256,7 @@ internal sealed class CalendarService : ICalendarService
         _calendarClient,
         _options.Value,
         _timeProvider,
-        ApplyScope);
+        _discoveryPolicy.ApplyScope);
 
     private CalendarExactMoveModule ExactMoveModule() => new(
         new CalendarClientMoveTransport(_calendarClient),
@@ -333,7 +331,4 @@ internal sealed class CalendarService : ICalendarService
     private static bool HasEncodedPathSeparator(Uri uri) =>
         uri.AbsolutePath.Contains("%2F", StringComparison.OrdinalIgnoreCase)
         || uri.AbsolutePath.Contains("%5C", StringComparison.OrdinalIgnoreCase);
-
-    private CalendarDiscoveryResult ApplyScope(IReadOnlyList<CalendarDescriptor> discovered) =>
-        _discoveryPolicy.ApplyScope(discovered);
 }

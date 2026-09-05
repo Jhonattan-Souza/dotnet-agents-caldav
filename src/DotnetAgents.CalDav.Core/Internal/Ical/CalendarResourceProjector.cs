@@ -223,14 +223,6 @@ internal static class CalendarResourceProjector
     internal static bool HasValidRegisteredPropertyGrammar(CalendarContentProperty property) =>
         !HasInvalidRegisteredGrammar(property);
 
-    internal static bool HasValidLanguageTagForFidelity(string value) => HasValidLanguageTag(value);
-
-    internal static bool IsKnownParameterApplicableForFidelity(
-        CalendarContentProperty property,
-        string parameterName) => IsKnownParameterApplicable(property, parameterName);
-
-    internal static bool IsTokenForFidelity(string value) => IsToken(value);
-
     private static bool HasValidExactPropertyShape(IReadOnlyList<CalendarContentProperty> properties) =>
         !HasRepeatedExactSingleton(properties)
         && HasValidStyledDescriptionCardinality(properties)
@@ -864,7 +856,7 @@ internal static class CalendarResourceProjector
         return values.Length == 1 ? values[0] : null;
     }
 
-    private static bool IsToken(string value) => value.Length > 0
+    internal static bool IsToken(string value) => value.Length > 0
         && value.All(character => character is >= 'A' and <= 'Z'
             or >= 'a' and <= 'z'
             or >= '0' and <= '9'
@@ -1233,7 +1225,7 @@ internal static class CalendarResourceProjector
         || !int.TryParse(parameter.Values[0], NumberStyles.None, CultureInfo.InvariantCulture, out var order)
         || order < 1;
 
-    private static bool IsKnownParameterApplicable(CalendarContentProperty property, string parameterName) =>
+    internal static bool IsKnownParameterApplicable(CalendarContentProperty property, string parameterName) =>
         parameterName.ToUpperInvariant() switch
         {
             "RSVP" or "CUTYPE" or "DELEGATED-FROM" or "DELEGATED-TO" or "MEMBER" or "PARTSTAT"
@@ -1286,7 +1278,7 @@ internal static class CalendarResourceProjector
         "zh-min", "zh-min-nan", "zh-xiang"
     };
 
-    private static bool HasValidLanguageTag(string value)
+    internal static bool HasValidLanguageTag(string value)
     {
         if (GrandfatheredLanguageTags.Contains(value))
             return true;
