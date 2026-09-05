@@ -413,6 +413,11 @@ policy_ok="$fixture_root/policy-ok"
 mkdir -p -- "$policy_ok/bin" "$policy_ok/obj"
 printf '%s\n' '// [Fact(Skip = "comment")]' 'var text = "Flaky Assert.Skip()";' 'var raw = """[Theory(SkipWhen = true)]""";' '[Fact] public void Passes() { }' > "$policy_ok/Ok.cs"
 printf '%s\n' '[Fact(Skip = "ignored output")]' > "$policy_ok/bin/Ignored.cs"
+printf '%s\n' \
+  'using Category = Xunit.TraitAttribute;' \
+  '[Trait("Category", "Unit" /* "Flaky" */)] [Fact] public void A() {}' \
+  '[Category("Category", "Unit" /* "Quarantined" */)] [Fact] public void B() {}' \
+  > "$policy_ok/Traits.cs"
 python3 "$source_policy" "$policy_ok"
 echo "PASS source policy ignores comments, literals, bin, and obj"
 
@@ -439,6 +444,9 @@ declare -a disabled_sources=(
   $'[Trait("Category", "Flaky")] [Fact] public void A() {}'
   $'[global::Xunit.TraitAttribute("Category", "Quarantined")] [Fact] public void A() {}'
   $'[Fact, Trait("Category", "Flaky")] public void A() {}'
+  $'using Category = Xunit.TraitAttribute; [Category("Category", "Flaky")] [Fact] public void A() {}'
+  $'using Category = global::Xunit.TraitAttribute; [Fact, Category("Category", "Quarantined")] public void A() {}'
+  $'using CategoryAttribute = Xunit.TraitAttribute; [Category("Category", "Flaky")] [Fact] public void A() {}'
   $'sealed class ConditionalFactAttribute : Xunit.FactAttribute { public ConditionalFactAttribute() { Skip = "reason"; } } [ConditionalFact] public void A() {}'
   $'using BaseFact = Xunit.FactAttribute; sealed class ConditionalFactAttribute : BaseFact { } [ConditionalFact] public void A() {}'
   $'[Fact] public void Quarantined_case() {}'
