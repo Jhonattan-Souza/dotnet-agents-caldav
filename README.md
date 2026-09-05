@@ -13,7 +13,7 @@ Add this MCP server to VS Code, Claude Desktop, Cursor, or any MCP client:
   "mcpServers": {
     "caldav-calendars": {
       "command": "dnx",
-      "args": ["--yes", "dotnet-agents-caldav@0.2.3"],
+      "args": ["--yes", "dotnet-agents-caldav@0.2.4"],
       "env": {
         "CALDAV_URL": "https://caldav.example.com",
         "CALDAV_USERNAME": "user",
@@ -85,7 +85,7 @@ client-specific commands.
 - `calendar_resources.move` — Move one reviewed resource with exact `If-Match`, `Overwrite: F`, server-authoritative UID collision truth, and bounded bilateral reconciliation; requires a verified interoperability profile.
 - `calendar_resources.delete` — Delete an entire resource from an explicitly supplied revision reference (href, UID, kind, and exact strong ETag) after MCP MRTR review and confirmation; success requires verified absence.
 
-The default semantic catalog contains exactly these 19 tools in the order shown. It has no legacy task aliases or compatibility mode.
+The default semantic catalog contains these 19 tools in the order shown.
 
 ### Exact Calendar resource tools
 
@@ -98,7 +98,7 @@ The four exact tools are enabled with `CALDAV_EXPOSE_EXACT_TOOLS=true`; this fla
 
 ## Optional OpenTelemetry observability
 
-Telemetry is disabled by default: the process registers no exporter and makes no collector connection unless `OTEL_EXPORTER_OTLP_ENDPOINT` is non-empty and `OTEL_SDK_DISABLED` is not `true`. The MCP SDK and .NET runtime provide MCP and outbound HTTP signals; this server adds the in-process provider/export pipeline, CalDAV operation and aggregate-phase spans, correlated safe logs, and an export allowlist. It does not add Aspire libraries, an AppHost, health endpoints, console/file exporters, or a hosted backend. Each OTLP export call is capped at 250 milliseconds so an accepting but unresponsive collector cannot hold the stdio child process past its shutdown bound.
+To enable telemetry, set `OTEL_EXPORTER_OTLP_ENDPOINT` and leave `OTEL_SDK_DISABLED` unset or `false`. The server exports MCP and outbound HTTP signals, CalDAV operation and phase spans, and correlated logs through an allowlist. Each OTLP export call has a 250-millisecond limit to bound shutdown time if the collector stops responding.
 
 For local troubleshooting, run the standalone Aspire Dashboard on loopback only:
 
@@ -122,17 +122,15 @@ Exported spans show the MCP request, `caldav.operation`, the applicable `discove
 
 ## Supported servers
 
-The verified interoperability profile is the official Radicale 3.7.8 image pinned in the [Radicale 3.7.8 profile](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/v0.2.3/contracts/0.2.3/radicale-3.7.8-profile.json). Set `CALDAV_INTEROPERABILITY_PROFILE=radicale-3.7.8` only for that runtime. Server-authoritative Semantic and Exact Move fail closed with `unsupported_capability` when the profile is omitted because atomic `If-Match`, `Overwrite: F`, and `CALDAV:no-uid-conflict` enforcement cannot be inferred from stored resources or generic DAV discovery. No collection-scan compatibility fallback is provided. Other CalDAV servers remain unverified profiles even when capability negotiation allows other operations.
+The verified interoperability profile is the official Radicale 3.7.8 image pinned in the [Radicale 3.7.8 profile](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/v0.2.4/contracts/0.2.3/radicale-3.7.8-profile.json). Set `CALDAV_INTEROPERABILITY_PROFILE=radicale-3.7.8` only for that runtime. Server-authoritative Semantic and Exact Move fail closed with `unsupported_capability` when the profile is omitted because atomic `If-Match`, `Overwrite: F`, and `CALDAV:no-uid-conflict` enforcement cannot be inferred from stored resources or generic DAV discovery. Other CalDAV servers remain unverified profiles even when capability negotiation allows other operations.
 
 ## Architecture
-
-Layered design:
 
 Calendar Entity, Occurrence, and compact To-do reads use `MCP adapter` → `ICalendarQueryModule` → the single narrow `ICalendarQueryTransport` → `CalDavClient`; unrelated discovery and mutation operations retain the `ICalendarService` path. `ICalendarQueryModule` exposes exactly those three query operations, and `ICalendarService` exposes none. Lossless iCalendar projection and bounded recurrence evaluation stay in Core's iCalendar modules.
 
 A query Start completes discovery, authoritative retrieval, evaluation, ordering, and projection before returning its first page. Windowed To-do Starts acquire VTODOs once, route non-recurring resources through the Entity lane and recurring resources through the Occurrence lane, then apply one global order. A Continue authenticates its opaque cursor and reads only the bounded process-local Query Result Snapshot. Snapshots expire ten minutes after the first page, are never extended by replay, and are not CalDAV caches or mutation authority.
 
-Each MCP tool call owns one immutable, authorization-bound discovery coordinator. Same-key source, destination, query, and reconciliation consumers share its complete in-scope result; a new call, including an MRTR continuation, performs fresh discovery. This is an operation-local lifetime only: credentials, resource snapshots, query results, Entity Tags, and process-lifetime Capability State are never retained in the discovery result, and there is no process-wide or TTL discovery cache.
+The discovery coordinator reuses one scoped result within an operation. A new call, including an MRTR continuation, performs fresh discovery. Query Result Snapshots and capability observations have separate lifetimes.
 
 ## Development
 

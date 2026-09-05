@@ -1,8 +1,7 @@
 # Release validation
 
-The release pipeline answers two questions before an artifact can leave the
-job: whether the implementation behaves correctly, and whether the exact
-NuGet package can be installed and used as an MCP server.
+Use the checks below to validate behavior and the final NuGet package before
+publication.
 
 ## Behavioral gates
 
@@ -10,12 +9,20 @@ Pull requests and releases run the Release build, all unit and integration
 tests, the 90% line and 85% branch coverage thresholds, digest-pinned Radicale
 conformance in the baseline, strict-preconditions, and alternate-time-zone
 variants, complete-test-result validation, and Slopwatch.
-The MCP-over-stdio integration suite remains the executable authority for
-protocol behavior. Test names and Markdown row counts are not release inputs.
+Run them from the repository root:
 
-`scripts/verify-test-results.sh` rejects unsuccessful TRX results and disabled,
-quarantined, or flaky tests. It does not map individual tests to requirement
-documents.
+```bash
+dotnet tool restore
+dotnet restore
+dotnet build -c Release --no-restore
+bash scripts/run-test-suite.sh
+dotnet tool run slopwatch analyze --config .slopwatch/slopwatch.json --fail-on warning
+```
+
+The runner uses `scripts/verify-test-artifacts.sh` to check the manifest's TRX
+results and coverage files. At the end of the suite it also runs
+`scripts/verify-test-source-policy.py` to reject disabled, quarantined, or flaky
+tests. The MCP-over-stdio integration tests exercise protocol behavior.
 
 ## Final-package gate
 
