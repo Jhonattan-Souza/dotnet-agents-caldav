@@ -6,8 +6,6 @@
   <PropertyGroup Label="SharedVersions">
     <McpSdkVersion>2.2.0</McpSdkVersion>
     <IcalNetVersion>5.2.3</IcalNetVersion>
-    <AutoFixtureVersion>5.0.0-rc.1</AutoFixtureVersion>
-    <TestContainersVersion>4.11.0</TestContainersVersion>
     <MicrosoftExtensionsVersion>10.0.11</MicrosoftExtensionsVersion>
   </PropertyGroup>
   <!-- MCP SDK -->
@@ -17,7 +15,6 @@
     <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.18.0" />
     <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.18.0" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.18.0" />
-    <PackageVersion Include="SSH.NET" Version="2026.0.0" />
   </ItemGroup>
   <!-- Core Dependencies -->
   <ItemGroup Label="Core">
@@ -25,7 +22,6 @@
     <PackageVersion Include="Microsoft.Extensions.Http" Version="$(MicrosoftExtensionsVersion)" />
     <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.9.0" />
     <PackageVersion Include="Microsoft.Extensions.Options" Version="$(MicrosoftExtensionsVersion)" />
-    <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="$(MicrosoftExtensionsVersion)" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="$(MicrosoftExtensionsVersion)" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="$(MicrosoftExtensionsVersion)" />
   </ItemGroup>
@@ -41,12 +37,7 @@
     <PackageVersion Include="xunit.v3" Version="4.0.0" />
     <PackageVersion Include="NSubstitute" Version="6.2.0" />
     <PackageVersion Include="NSubstitute.Analyzers.CSharp" Version="1.0.17" />
-    <PackageVersion Include="AutoFixture" Version="$(AutoFixtureVersion)" />
-    <PackageVersion Include="AutoFixture.AutoNSubstitute" Version="$(AutoFixtureVersion)" />
     <PackageVersion Include="Shouldly" Version="4.3.0" />
-    <PackageVersion Include="Verify.XunitV3" Version="31.28.0" />
-    <PackageVersion Include="RichardSzalay.MockHttp" Version="7.1.0" />
-    <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="$(MicrosoftExtensionsVersion)" />
   </ItemGroup>
   <!-- Integration Testing -->
   <ItemGroup Label="Integration Testing">

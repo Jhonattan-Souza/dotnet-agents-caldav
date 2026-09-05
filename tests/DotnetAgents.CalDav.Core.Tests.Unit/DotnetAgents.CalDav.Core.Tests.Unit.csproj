@@ -14,8 +14,6 @@
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="NSubstitute.Analyzers.CSharp" />
-    <PackageReference Include="AutoFixture" />
-    <PackageReference Include="AutoFixture.AutoNSubstitute" />
     <PackageReference Include="Shouldly" />
   </ItemGroup>
 
