@@ -1,48 +1,49 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-TEST_RESULTS_PATH="${1:-coverage-report}"
-LINE_THRESHOLD="${2:-0.90}"
-BRANCH_THRESHOLD="${3:-0.90}"
+python3 - "${1:-coverage-report}" "${2:-0.90}" "${3:-0.85}" <<'PY'
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
+import sys
+import xml.etree.ElementTree as ET
 
-COBERTURA_FILE=$(find "$TEST_RESULTS_PATH" \( -name "coverage.cobertura.xml" -o -name "Cobertura.xml" \) -print -quit)
 
-if [ -z "$COBERTURA_FILE" ]; then
-  echo "::error::No Cobertura coverage file found in $TEST_RESULTS_PATH"
-  exit 1
-fi
+def rate(value, label):
+    try:
+        number = Decimal(value)
+    except (InvalidOperation, TypeError, ValueError):
+        raise ValueError(f"{label} must be a number between 0 and 1.") from None
+    if not number.is_finite() or not 0 <= number <= 1:
+        raise ValueError(f"{label} must be a finite number between 0 and 1.")
+    return number
 
-echo "Using coverage file: $COBERTURA_FILE"
 
-LINE_RATE=$(grep -m1 -oP 'line-rate="[^"]*"' "$COBERTURA_FILE" | grep -oP '[\d.]+')
-BRANCH_RATE=$(grep -m1 -oP 'branch-rate="[^"]*"' "$COBERTURA_FILE" | grep -oP '[\d.]+')
+try:
+    directory = Path(sys.argv[1])
+    reports = [directory / name for name in ("coverage.cobertura.xml", "Cobertura.xml")
+               if (directory / name).is_file()]
+    if len(reports) != 1:
+        raise ValueError(f"Expected exactly one root-level Cobertura report in {directory}, found {len(reports)}.")
+    report = reports[0]
+    root = ET.parse(report).getroot()
+    if root.tag != "coverage":
+        raise ValueError(f"Expected a Cobertura coverage root in {report}.")
+    line = rate(root.get("line-rate"), "Line coverage")
+    branch = rate(root.get("branch-rate"), "Branch coverage")
+    line_threshold = rate(sys.argv[2], "Line threshold")
+    branch_threshold = rate(sys.argv[3], "Branch threshold")
+except (OSError, ET.ParseError, ValueError) as error:
+    print(f"::error::{error}", file=sys.stderr)
+    raise SystemExit(1) from None
 
-if [ -z "$LINE_RATE" ] || [ -z "$BRANCH_RATE" ]; then
-  echo "::error::Failed to parse coverage rates from $COBERTURA_FILE"
-  exit 1
-fi
-
-LINE_PCT=$(awk "BEGIN {printf \"%.1f\", $LINE_RATE * 100}")
-BRANCH_PCT=$(awk "BEGIN {printf \"%.1f\", $BRANCH_RATE * 100}")
-
-echo "Line coverage: ${LINE_PCT}%, Branch coverage: ${BRANCH_PCT}%"
-
-FAILED=false
-
-LINE_THRESHOLD_PCT=$(awk "BEGIN {printf \"%.1f\", $LINE_THRESHOLD * 100}")
-if awk "BEGIN {exit !($LINE_RATE < $LINE_THRESHOLD)}"; then
-  echo "::error::Line coverage ${LINE_PCT}% is below threshold ${LINE_THRESHOLD_PCT}%"
-  FAILED=true
-fi
-
-BRANCH_THRESHOLD_PCT=$(awk "BEGIN {printf \"%.1f\", $BRANCH_THRESHOLD * 100}")
-if awk "BEGIN {exit !($BRANCH_RATE < $BRANCH_THRESHOLD)}"; then
-  echo "::error::Branch coverage ${BRANCH_PCT}% is below threshold ${BRANCH_THRESHOLD_PCT}%"
-  FAILED=true
-fi
-
-if [ "$FAILED" = true ]; then
-  exit 1
-fi
-
-echo "Coverage thresholds met."
+print(f"Using coverage file: {report}")
+print(f"Line coverage: {line:.1%}, Branch coverage: {branch:.1%}")
+failed = False
+for label, actual, threshold in (("Line", line, line_threshold), ("Branch", branch, branch_threshold)):
+    if actual < threshold:
+        print(f"::error::{label} coverage {actual:.1%} is below threshold {threshold:.1%}")
+        failed = True
+if failed:
+    raise SystemExit(1)
+print("Coverage thresholds met.")
+PY
