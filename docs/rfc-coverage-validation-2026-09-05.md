@@ -21,11 +21,17 @@ used generated credentials, isolated calendars, and temporary containers.
 | Nextcloud 34.0.3 | `nextcloud:34.0.3-apache@sha256:b97df9e0e1ee3c8c6cc009cb3f12ddce915d624d543b3bb93882025fe323a407` |
 | Aspire dashboard 13.4.2 | `mcr.microsoft.com/dotnet/aspire-dashboard:13.4.2@sha256:76d05882595dd43e708d6ef3e269d98ca763694c0c822bbe98edc99790eaad1b` |
 
-Final candidate SHA-256 identities:
+Compact-checkpoint candidate SHA-256 identities used for the recorded runs:
 
 - MCP: `d83a82a6d23610e31dd146495ae04939769bd047ca3d3d973b16b84466bbe405`
 - Core: `0bc03d31439b425c9e913e1b9b901a51253922bae9aa82b6ce2c660eef754f98`
 - Product/build input snapshot (175 files): `0d15c5eed46bfb92c9615066747fab73631fa38d357782c7f67adf9724f1f458`
+
+Final review-fix build SHA-256 identities:
+
+- MCP: `2941b2680db6ac303ce95beac9fa7717d7e7add1e95cb1851e208c285916b25c`
+- Core: `a70abb338521b83d8773cc329fcedccbf58297ce098a7c66f247d7cc05d0d976`
+- Product/build input snapshot (175 files): `1158bf2d4861c75f0afdbe57e6d68147cd97b24f787e86e11394464a51a9725c`
 
 The Radicale lane enabled its existing verified Move profile. Baikal and
 Nextcloud left the profile unset. Nextcloud used exact configured Calendar
@@ -35,11 +41,11 @@ calendar-creation rate limit. Server limits were left at their defaults.
 ## Automated gates
 
 - Clean, nonincremental Release build: zero warnings and errors.
-- Full suite: Core 2,701; MCP 1,083; integration 113; strict-preconditions 11;
-  alternate-time-zone 11. All 3,919 passed; zero skipped tests.
+- Full suite: Core 2,739; MCP 1,083; integration 113; strict-preconditions 11;
+  alternate-time-zone 11. All 3,957 passed; zero skipped tests.
 - Aggregate coverage: 94.5% line and 85.9% branch; both required gates passed.
 - Slopwatch: zero issues, including the method-complexity gate.
-- Package `0.0.0-rfcvalidation.2`: verified NuGet and symbols archives, matching
+- Package `0.0.0-rfcvalidation.4`: verified NuGet and symbols archives, matching
   root/tool MCP metadata, exact bundled skill, local tool install, and one
   passing package smoke test. Source metadata versions remain `0.0.0`.
 - Bundled skill validation, Python harness compilation, and `git diff --check`
@@ -51,6 +57,29 @@ in VFREEBUSY. Later reviews covered sync-limit negotiation, retry scope and the
 Hermes-compatible input schema. The final review reported no findings. The
 compact store also passed a separate eight-worker, 4,096-state concurrency/replay
 probe without exceeding its limits.
+
+The first PR CI run exposed an empty reconciliation catch that the local lint
+run had missed. The same source produced the warning outside the Codex worktree.
+The handler now explicitly returns the existing reconciliation outcome, and a
+clean source copy was used for full Slopwatch validation. Automatic Codex review
+also prompted complete effective-language readback, rejection of conflicting
+sync truncation errors, and exclusion of native 507 from circuit-breaker
+failure counts.
+The compact-checkpoint build's performance and Hermes observations retain
+their earlier source identity. Final functional checks used the review-fix build.
+
+That final build passed another 198 live calls, matched to 198 Aspire operation
+traces and 1,153 spans. Each runtime completed 29 metadata/report calls and a
+checkpoint restart rejection. Nextcloud completed 100 initial syncs with exactly
+200 REPORTs, then successful inspection and resource readback. The earlier build
+failed on initial sync 51 and blocked those unrelated reads while a direct
+backend GET still returned 200. Baikal completed three one-item continuation
+pages without gaps or duplicates, then an empty poll and a larger replay of the
+original checkpoint. All 175 product inputs stayed unchanged during the final
+runs, every MCP process exited cleanly, and seeded fixture counts were restored.
+These were functional regression runs during build/test activity; they add no
+latency claims. Independent review found no remaining issues and its separate
+23-case parser probe included Baikal's recorded response.
 
 ## Every catalog operation
 
@@ -132,6 +161,14 @@ the same checkpoint with `pageSize: 100` returned all three; the following poll
 was empty. A server that cannot paginate an inventory or delta larger than 500
 entries therefore cannot return it through this bounded tool.
 
+Baikal returned a collection-self 507 without a `DAV:error` element when
+paginating a three-change delta. [RFC 6578 §3.6](https://www.rfc-editor.org/rfc/rfc6578.html#section-3.6)
+requires clients to handle that status but only recommends the error element.
+The client accepts its absence after validating the whole page and advancing
+token. Supplied malformed or recognized contradictory errors still fail
+without a new checkpoint. Unknown extensions retain the handling required by
+[RFC 4918 §§14.5 and 17](https://www.rfc-editor.org/rfc/rfc4918.html#section-14.5).
+
 Nextcloud's trash hierarchy contains a collection whose Depth 1 PROPFIND
 returns 501. Unrestricted discovery reports that failure; exact configured
 Calendar scope prunes unrelated branches and passed the successful lane.
@@ -205,7 +242,7 @@ is the MCP process working set; it does not measure server or Aspire memory.
 ## Real Hermes usage
 
 Hermes used its existing `openai/gpt-5.6-luna` model through OpenRouter, with
-medium reasoning, an isolated home, and the final published MCP. The user's
+medium reasoning, an isolated home, and the compact-checkpoint MCP build. The user's
 source configuration stayed unchanged. Copied provider credentials were removed
 on exit; only generated fixture resources were mutated.
 

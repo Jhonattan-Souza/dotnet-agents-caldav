@@ -77,17 +77,21 @@ public partial class CalendarReportModuleTests
         fixture.Handler.Requests.Count.ShouldBe(1);
     }
 
-    [Fact]
-    public async Task NativeInitialTruncationRetainsModeAndNoChangeCheckpointBecomesIncremental()
+    [Theory]
+    [InlineData("")]
+    [InlineData(SyncTruncationError)]
+    public async Task NativeInitialTruncationCompletesAndKeepsPriorCheckpointReplayable(string error)
     {
         using var fixture = new Fixture();
-        fixture.Add(207, SyncResponse("urn:sync:one", Changed("a.ics") + Self507()));
+        fixture.Add(207, SyncResponse("urn:sync:one", Changed("a.ics") + Self507(error)));
         fixture.Add(207, SyncResponse("urn:sync:two", Changed("b.ics")));
         fixture.Add(207, SyncResponse("urn:sync:two", string.Empty));
+        fixture.Add(207, SyncResponse("urn:sync:two", Changed("b.ics")));
 
         var first = await fixture.Module.ChangesAsync(new CalendarResourceChangesRequest.Start(CalendarHref, 1), CancellationToken.None);
         var second = await fixture.Module.ChangesAsync(new CalendarResourceChangesRequest.Continue(first.Checkpoint, 1), CancellationToken.None);
         var third = await fixture.Module.ChangesAsync(new CalendarResourceChangesRequest.Continue(second.Checkpoint), CancellationToken.None);
+        var replay = await fixture.Module.ChangesAsync(new CalendarResourceChangesRequest.Continue(first.Checkpoint, 1), CancellationToken.None);
 
         first.Mode.ShouldBe("initial");
         first.HasMore.ShouldBeTrue();
@@ -97,11 +101,16 @@ public partial class CalendarReportModuleTests
         third.Changes.ShouldBeEmpty();
         third.CheckpointLifetime.ShouldBe("session");
         third.RemovalMeaning.ShouldBe("removed_from_view");
-        fixture.Handler.Requests.Count.ShouldBe(3);
+        replay.Mode.ShouldBe("initial");
+        replay.HasMore.ShouldBeFalse();
+        replay.Changes.ShouldBe(second.Changes);
+        replay.Checkpoint.ShouldBe(second.Checkpoint);
+        fixture.Handler.Requests.Count.ShouldBe(4);
         var reports = fixture.Handler.Requests.Select(request => XDocument.Parse(request.Body).Root!).ToArray();
         reports[0].Element(Dav + "sync-token")!.Value.ShouldBeEmpty();
         reports[1].Element(Dav + "sync-token")!.Value.ShouldBe("urn:sync:one");
         reports[2].Element(Dav + "sync-token")!.Value.ShouldBe("urn:sync:two");
+        reports[3].Element(Dav + "sync-token")!.Value.ShouldBe("urn:sync:one");
         reports[0].Element(Dav + "limit")!.Element(Dav + "nresults")!.Value.ShouldBe("1");
         reports.ShouldAllBe(report => report.Element(Dav + "sync-level")!.Value == "1");
         fixture.Handler.Requests.ShouldAllBe(request => request.Depth == "0" && request.Method == "REPORT");
@@ -297,7 +306,10 @@ public partial class CalendarReportModuleTests
     private static string Changed(string href) => "<d:response><d:href>/cal/" + href + "</d:href><d:propstat><d:prop><d:getetag>&quot;r1&quot;</d:getetag>"
         + "</d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>";
 
-    private static string Self507() => "<d:response><d:href>/cal/</d:href><d:status>HTTP/1.1 507 Insufficient Storage</d:status></d:response>";
+    private const string SyncTruncationError = "<d:error><d:number-of-matches-within-limits/></d:error>";
+
+    private static string Self507(string error = SyncTruncationError) => "<d:response><d:href>/cal/</d:href>"
+        + "<d:status>HTTP/1.1 507 Insufficient Storage</d:status>" + error + "</d:response>";
 
     private sealed class Fixture : IDisposable
     {

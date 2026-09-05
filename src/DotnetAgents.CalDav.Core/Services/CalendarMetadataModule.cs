@@ -59,15 +59,23 @@ internal sealed class CalendarMetadataModule(CalDavClient client) : ICalendarMet
         CancellationToken cancellationToken)
     {
         CalendarOperationProgress.SetPhase(CalendarOperationPhase.Reconcile);
-        CalendarMetadataObservation? observed = null;
+        CalendarMetadataObservation observed;
         try
         {
             observed = await ReadAsync(href, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception) when (IsUncertainFailure(exception))
         {
-            // Preserve acknowledged commit or ambiguous dispatch independently of readback.
+            return ReconcileObservation(patch, dispatch, null);
         }
+        return ReconcileObservation(patch, dispatch, observed);
+    }
+
+    private static CalendarMetadataPatchResult ReconcileObservation(
+        CalendarMetadataPatch patch,
+        CalendarMetadataPatchDispatch dispatch,
+        CalendarMetadataObservation? observed)
+    {
         if (dispatch.State == CalendarMutationState.Unknown)
             return new(dispatch.State, observed?.Snapshot, dispatch.Error);
         if (observed is null || !CalendarMetadataPatchProtocol.Matches(patch, observed))

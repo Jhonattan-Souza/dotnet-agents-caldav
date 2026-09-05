@@ -94,10 +94,37 @@ internal static class CalendarSyncReportParser
 
     private static bool ReadTruncation(XElement response)
     {
-        if (response.Elements(Dav + "propstat").Any() || ReadResponseStatus(response) != 507)
+        if (response.Elements(Dav + "propstat").Any() || ReadResponseStatus(response) != 507
+            || !HasValidTruncationError(response))
             throw InvalidResponse();
         return true;
     }
+
+    private static bool HasValidTruncationError(XElement response)
+    {
+        // RFC 6578 makes the self-507 mandatory and its error marker optional.
+        // RFC 4918 requires ignoring unknown conditions and extension subtrees.
+        var errors = response.Elements(Dav + "error").Take(2).ToArray();
+        if (errors.Length == 0)
+            return true;
+        if (errors.Length != 1)
+            return false;
+        var error = errors[0];
+        if (!error.HasElements || error.Nodes().OfType<XText>().Any(text => !string.IsNullOrWhiteSpace(text.Value))
+            || error.Elements().Any(IsContradictoryCondition))
+            return false;
+        var markers = error.Elements(Dav + "number-of-matches-within-limits").Take(2).ToArray();
+        return markers.Length switch
+        {
+            0 => true,
+            1 => !markers[0].Nodes().OfType<XText>().Any(text => text.Value.Length > 0),
+            _ => false
+        };
+    }
+
+    private static bool IsContradictoryCondition(XElement condition) => condition.Name.Namespace == Dav
+        && condition.Name.LocalName is "valid-sync-token" or "supported-report" or "sync-traversal-supported"
+            or "need-privileges" or "quota-not-exceeded" or "sufficient-disk-space";
 
     private static void AddChange(
         List<CalendarResourceChange> changes,

@@ -59,17 +59,47 @@ public partial class CalendarReportModuleTests
         fixture.Handler.Requests.Skip(1).ShouldAllBe(request => !HasSyncLimit(request));
     }
 
-    [Fact]
-    public async Task EmbeddedSelf507NeverTriggersOptionalLimitNegotiation()
+    [Theory]
+    [InlineData("")]
+    [InlineData(SyncTruncationError)]
+    public async Task EmbeddedSelf507NeverTriggersOptionalLimitNegotiation(string error)
     {
         using var fixture = new Fixture();
-        fixture.Add(207, SyncResponse("urn:sync:one", Changed("a.ics") + Self507()));
+        fixture.Add(207, SyncResponse("urn:sync:one", Changed("a.ics") + Self507(error)));
 
         var page = await fixture.Module.ChangesAsync(new CalendarResourceChangesRequest.Start(CalendarHref, 1), CancellationToken.None);
 
         page.HasMore.ShouldBeTrue();
         fixture.Handler.Requests.Count.ShouldBe(1);
         fixture.Protector.Unprotect(page.Checkpoint, fixture.Protector.ConfigurationBinding(fixture.Options)).OmitLimit.ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData("<d:error/>")]
+    [InlineData("<d:error><d:quota-not-exceeded/></d:error>")]
+    [InlineData("<d:error><d:number-of-matches-within-limits>quota failure</d:number-of-matches-within-limits></d:error>")]
+    [InlineData("<d:error><d:number-of-matches-within-limits/><d:number-of-matches-within-limits/></d:error>")]
+    [InlineData("<d:error><d:sufficient-disk-space/></d:error>")]
+    public async Task MalformedOrContradictorySelf507CannotPublishCheckpointOrLosePriorRetryState(string errorBody)
+    {
+        using var fixture = new Fixture();
+        fixture.Add(207, SyncResponse("urn:sync:prior", string.Empty));
+        fixture.Add(207, SyncResponse("urn:sync:advanced", Changed("a.ics") + Self507(errorBody)));
+        fixture.Add(207, SyncResponse("urn:sync:advanced", Changed("a.ics") + Self507(string.Empty)));
+        var prior = await fixture.Module.ChangesAsync(new CalendarResourceChangesRequest.Start(CalendarHref, 1), CancellationToken.None);
+
+        var error = await Should.ThrowAsync<CalendarProtocolException>(() => fixture.Module.ChangesAsync(
+            new CalendarResourceChangesRequest.Continue(prior.Checkpoint, 1), CancellationToken.None));
+
+        error.Code.ShouldBe("upstream_protocol_error");
+        fixture.Protector.RetainedCheckpointCount.ShouldBe(1);
+        fixture.Handler.Requests.Count.ShouldBe(2);
+        var retried = await fixture.Module.ChangesAsync(new CalendarResourceChangesRequest.Continue(prior.Checkpoint, 1), CancellationToken.None);
+        retried.HasMore.ShouldBeTrue();
+        retried.Changes.Single().Href.ShouldBe(CalendarHref + "a.ics");
+        fixture.Protector.RetainedCheckpointCount.ShouldBe(2);
+        SyncRequestToken(fixture.Handler.Requests[1]).ShouldBe("urn:sync:prior");
+        SyncRequestToken(fixture.Handler.Requests[2]).ShouldBe("urn:sync:prior");
     }
 
     [Theory]
