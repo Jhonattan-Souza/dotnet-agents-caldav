@@ -22,7 +22,7 @@ public sealed class SemanticMoveWorkEvidenceTests(ITestOutputHelper output)
     [InlineData(1)]
     [InlineData(50)]
     [InlineData(600)]
-    public async Task SameHttpCorpusObservesBaselineScanAndChangedConstantWork(int destinationCardinality)
+    public async Task MoveUsesConstantHttpWorkRegardlessOfDestinationSize(int destinationCardinality)
     {
         using var handler = new ObservationHandler(destinationCardinality);
         var options = new CalDavOptions
@@ -30,11 +30,9 @@ public sealed class SemanticMoveWorkEvidenceTests(ITestOutputHelper output)
             BaseUrl = ObservationHandler.CalendarHomeHref,
             Username = "user",
             Password = "secret",
-            CalendarHrefs = $"{ObservationHandler.SourceCalendarHref},{ObservationHandler.DestinationCalendarHref}"
+            CalendarHrefs = $"{ObservationHandler.SourceCalendarHref},{ObservationHandler.DestinationCalendarHref}",
+            InteroperabilityProfile = "radicale-3.7.8"
         };
-        var profileProperty = typeof(CalDavOptions).GetProperty("InteroperabilityProfile");
-        profileProperty?.SetValue(options, "radicale-3.7.8");
-        var evidenceMode = ResolveEvidenceMode(Environment.GetEnvironmentVariable("CALDAV_MOVE_EVIDENCE_MODE"));
         using var httpClient = new HttpClient(handler);
         var client = new CalDavClient(
             httpClient,
@@ -66,37 +64,16 @@ public sealed class SemanticMoveWorkEvidenceTests(ITestOutputHelper output)
         handler.SourceGetCount.ShouldBe(2);
         handler.DestinationGetCount.ShouldBe(2);
         handler.MoveCount.ShouldBe(1);
-        if (evidenceMode == "legacy-scan")
-        {
-            handler.ReportCount.ShouldBe(2);
-            handler.UnrelatedGetCount.ShouldBe(destinationCardinality);
-            handler.GetCount.ShouldBe(destinationCardinality + 4);
-            handler.RequestCount.ShouldBe(destinationCardinality + 9);
-        }
-        else
-        {
-            handler.ReportCount.ShouldBe(0);
-            handler.UnrelatedGetCount.ShouldBe(0);
-            handler.GetCount.ShouldBe(4);
-            handler.RequestCount.ShouldBe(7);
-        }
+        handler.ReportCount.ShouldBe(0);
+        handler.UnrelatedGetCount.ShouldBe(0);
+        handler.GetCount.ShouldBe(4);
+        handler.RequestCount.ShouldBe(7);
         output.WriteLine(
-            $"semantic-move-observation implementation={evidenceMode} "
+            "semantic-move-observation implementation=server-authoritative "
             + $"destination_resources={destinationCardinality} duration_ms={elapsed.TotalMilliseconds:F3} "
             + $"requests={handler.RequestCount} propfind={handler.PropFindCount} report={handler.ReportCount} "
             + $"get={handler.GetCount} unrelated_get={handler.UnrelatedGetCount} move={handler.MoveCount}");
     }
-
-    [Fact]
-    public void EvidenceModeRejectsUnknownValues() => Should.Throw<ArgumentException>(() =>
-        ResolveEvidenceMode("unknown"));
-
-    private static string ResolveEvidenceMode(string? configured) => configured switch
-    {
-        null or "" => "server-authoritative",
-        "legacy-scan" or "server-authoritative" => configured,
-        _ => throw new ArgumentException("CALDAV_MOVE_EVIDENCE_MODE is not recognized.", nameof(configured))
-    };
 
     private sealed class ObservationHandler : HttpMessageHandler
     {

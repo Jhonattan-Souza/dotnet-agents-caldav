@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
-using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -28,7 +27,6 @@ public sealed class ExactMoveMrtrRadicaleSizeEvidenceTests(
     [Fact]
     public async Task PinnedRadicaleObservesExactMoveMrtrWorkAtOneFiftyAndSixHundredResources()
     {
-        var mode = ResolveEvidenceMode(Environment.GetEnvironmentVariable("CALDAV_MOVE_EVIDENCE_MODE"));
         using var probe = CreateProbeClient();
         var sourceCalendar = new Uri(fixture.BaseUrl + "/conformance/exact-move-mrtr-source/", UriKind.Absolute);
         var destinationCalendar = new Uri(
@@ -81,32 +79,15 @@ public sealed class ExactMoveMrtrRadicaleSizeEvidenceTests(
                     $"{sourceCalendar.AbsoluteUri},{destinationCalendar.AbsoluteUri}",
                     wire,
                     request,
-                    mode,
                     TestContext.Current.CancellationToken);
 
                 var elapsed = Stopwatch.GetElapsedTime(started);
-                Property(result, "Code").ToString().ShouldBe("Success");
-                Property(result, "MutationState").ToString().ShouldBe("Committed");
-                var snapshot = Property(result, "Snapshot");
-                var observedContent = (ReadOnlyMemory<byte>)Property(snapshot, "AuthoritativeUtf8");
+                result.Code.ShouldBe(CalendarExactResourceCode.Success);
+                result.MutationState.ShouldBe(CalendarMutationState.Committed);
+                var snapshot = result.Snapshot.ShouldNotBeNull();
+                var observedContent = snapshot.AuthoritativeUtf8;
                 observedContent.Span.SequenceEqual(source.AuthoritativeUtf8.Span).ShouldBeTrue();
-                wire.PropFindCount.ShouldBe(10);
-                wire.SourceGetCount.ShouldBe(mode == "legacy-scan" ? 4 : 3);
-                wire.DestinationGetCount.ShouldBe(mode == "legacy-scan" ? 4 : 3);
-                wire.MoveCount.ShouldBe(1);
-                wire.MultigetCount.ShouldBe(0);
-                if (mode == "legacy-scan")
-                {
-                    wire.ReportCount.ShouldBe(6);
-                    wire.UnrelatedGetCount.ShouldBe(destinationCardinality * 3);
-                    wire.RequestCount.ShouldBe((destinationCardinality * 3) + 25);
-                }
-                else
-                {
-                    wire.ReportCount.ShouldBe(0);
-                    wire.UnrelatedGetCount.ShouldBe(0);
-                    wire.RequestCount.ShouldBe(17);
-                }
+                AssertConstantWorkTrace(wire);
                 foreach (var index in new[] { 0, destinationCardinality / 2, destinationCardinality - 1 }.Distinct())
                 {
                     var observed = await SendAsync(
@@ -116,8 +97,8 @@ public sealed class ExactMoveMrtrRadicaleSizeEvidenceTests(
                     observed.Status.ShouldBe(HttpStatusCode.OK);
                     observed.EntityTag.ShouldNotBeNull();
                 }
-                var movedHref = new Uri((string)Property(snapshot, "ResourceHref"), UriKind.Absolute);
-                var movedEntityTag = (string)Property(snapshot, "EntityTag");
+                var movedHref = new Uri(snapshot.ResourceHref, UriKind.Absolute);
+                var movedEntityTag = snapshot.EntityTag;
                 (await SendAsync(
                     probe,
                     HttpMethod.Delete,
@@ -128,7 +109,7 @@ public sealed class ExactMoveMrtrRadicaleSizeEvidenceTests(
                 {
                     Evidence = "CAL-EVIDENCE-013",
                     Operation = "exact-move-mrtr",
-                    Implementation = mode,
+                    Implementation = "server-authoritative",
                     DestinationResources = destinationCardinality,
                     DurationMilliseconds = elapsed.TotalMilliseconds,
                     Requests = wire.RequestCount,
@@ -154,8 +135,7 @@ public sealed class ExactMoveMrtrRadicaleSizeEvidenceTests(
                     probe,
                     sourceCalendar,
                     destinationCalendar,
-                    destinationCardinality,
-                    mode);
+                    destinationCardinality);
             }
         }
         finally
@@ -173,16 +153,11 @@ public sealed class ExactMoveMrtrRadicaleSizeEvidenceTests(
         }
     }
 
-    [Fact]
-    public void EvidenceModeRejectsUnknownValues() => Should.Throw<ArgumentException>(() =>
-        ResolveEvidenceMode("unknown"));
-
     private async Task ObserveOpaqueOversizedCorpusAsync(
         HttpClient probe,
         Uri sourceCalendar,
         Uri destinationCalendar,
-        int destinationCardinality,
-        string mode)
+        int destinationCardinality)
     {
         var ordinaryHref = new Uri(destinationCalendar, "unrelated-0.ics");
         var ordinary = await SendAsync(probe, HttpMethod.Get, ordinaryHref);
@@ -221,28 +196,18 @@ public sealed class ExactMoveMrtrRadicaleSizeEvidenceTests(
         string? movedEntityTag = null;
         try
         {
-            var result = await ExecuteOpaqueOversizedScenarioAsync(
+            var result = await ExecuteTwoRoundMrtrAsync(
                 fixture.BaseUrl,
                 $"{sourceCalendar.AbsoluteUri},{destinationCalendar.AbsoluteUri}",
                 wire,
                 request,
-                mode,
                 TestContext.Current.CancellationToken);
             var elapsed = Stopwatch.GetElapsedTime(started);
-            if (mode == "server-authoritative")
-            {
-                Property(result, "Code").ToString().ShouldBe("Success");
-                Property(result, "MutationState").ToString().ShouldBe("Committed");
-                movedEntityTag = (string)Property(Property(result, "Snapshot"), "EntityTag");
-                AssertChangedOpaqueOversizedTrace(wire);
-            }
-            else
-            {
-                Property(result, "Code").ToString().ShouldBe("PayloadTooLarge");
-                Property(result, "MutationState").ToString().ShouldBe("NotAttempted");
-                AssertLegacyOpaqueOversizedTrace(wire);
-            }
-            WriteOpaqueOversizedObservation(mode, destinationCardinality, elapsed, wire);
+            result.Code.ShouldBe(CalendarExactResourceCode.Success);
+            result.MutationState.ShouldBe(CalendarMutationState.Committed);
+            movedEntityTag = result.Snapshot.ShouldNotBeNull().EntityTag;
+            AssertConstantWorkTrace(wire);
+            WriteOpaqueOversizedObservation(destinationCardinality, elapsed, wire);
         }
         finally
         {
@@ -282,33 +247,6 @@ public sealed class ExactMoveMrtrRadicaleSizeEvidenceTests(
         }
     }
 
-    private static async Task<object> ExecuteOpaqueOversizedScenarioAsync(
-        string baseUrl,
-        string calendarHrefs,
-        ExactMoveTraceFilter wire,
-        CalendarExactMoveRequest request,
-        string mode,
-        CancellationToken cancellationToken)
-    {
-        await using var initialProvider = CreateProvider(baseUrl, calendarHrefs, wire);
-        var initialReview = await InvokeAsync(
-            initialProvider.GetRequiredService<ICalendarService>(),
-            "ReviewExactMoveResourceAsync",
-            request,
-            cancellationToken);
-        if (mode == "legacy-scan")
-            return Property(initialReview, "Outcome");
-        OptionalProperty(initialReview, "Outcome").ShouldBeNull();
-        await using var confirmedProvider = CreateProvider(baseUrl, calendarHrefs, wire);
-        var binding = Property(initialReview, "Binding");
-        return await InvokeAsync(
-            confirmedProvider.GetRequiredService<ICalendarService>(),
-            "ExecuteConfirmedExactMoveResourceAsync",
-            request,
-            binding,
-            cancellationToken);
-    }
-
     private static async Task AssertServerAcceptedOpaqueGrammarAsync(
         HttpClient probe,
         Uri sourceCalendar,
@@ -340,7 +278,7 @@ public sealed class ExactMoveMrtrRadicaleSizeEvidenceTests(
         }
     }
 
-    private static void AssertChangedOpaqueOversizedTrace(ExactMoveTraceFilter wire)
+    private static void AssertConstantWorkTrace(ExactMoveTraceFilter wire)
     {
         wire.PropFindCount.ShouldBe(10);
         wire.ReportCount.ShouldBe(0);
@@ -352,20 +290,7 @@ public sealed class ExactMoveMrtrRadicaleSizeEvidenceTests(
         wire.RequestCount.ShouldBe(17);
     }
 
-    private static void AssertLegacyOpaqueOversizedTrace(ExactMoveTraceFilter wire)
-    {
-        wire.PropFindCount.ShouldBe(5);
-        wire.ReportCount.ShouldBe(2);
-        wire.MultigetCount.ShouldBe(0);
-        wire.SourceGetCount.ShouldBe(1);
-        wire.DestinationGetCount.ShouldBe(1);
-        wire.UnrelatedGetCount.ShouldBe(1);
-        wire.MoveCount.ShouldBe(0);
-        wire.RequestCount.ShouldBe(10);
-    }
-
     private void WriteOpaqueOversizedObservation(
-        string mode,
         int destinationCardinality,
         TimeSpan elapsed,
         ExactMoveTraceFilter wire) => output.WriteLine(JsonSerializer.Serialize(new
@@ -373,7 +298,7 @@ public sealed class ExactMoveMrtrRadicaleSizeEvidenceTests(
             Evidence = "CAL-EVIDENCE-013",
             Operation = "exact-move-mrtr",
             Corpus = "opaque-oversized",
-            Implementation = mode,
+            Implementation = "server-authoritative",
             DestinationResources = destinationCardinality,
             DurationMilliseconds = elapsed.TotalMilliseconds,
             Requests = wire.RequestCount,
@@ -396,54 +321,23 @@ public sealed class ExactMoveMrtrRadicaleSizeEvidenceTests(
             fixture.Runtime.RuntimeTimeZone
         }));
 
-    private static async Task<object> ExecuteTwoRoundMrtrAsync(
+    private static async Task<CalendarExactResourceResult> ExecuteTwoRoundMrtrAsync(
         string baseUrl,
         string calendarHrefs,
         ExactMoveTraceFilter wire,
         CalendarExactMoveRequest request,
-        string mode,
         CancellationToken cancellationToken)
     {
         await using var initialProvider = CreateProvider(baseUrl, calendarHrefs, wire);
-        var initialReview = await InvokeAsync(
-            initialProvider.GetRequiredService<ICalendarService>(),
-            "ReviewExactMoveResourceAsync",
-            request,
-            cancellationToken);
-        OptionalProperty(initialReview, "Outcome").ShouldBeNull();
+        var initialReview = await initialProvider.GetRequiredService<ICalendarService>()
+            .ReviewExactMoveResourceAsync(request, cancellationToken);
+        initialReview.Outcome.ShouldBeNull();
+        var binding = initialReview.Binding.ShouldNotBeNull();
+        binding.SourceIntentDigest.Length.ShouldBe(SHA256.HashSizeInBytes);
 
         await using var confirmedProvider = CreateProvider(baseUrl, calendarHrefs, wire);
-        var confirmedService = confirmedProvider.GetRequiredService<ICalendarService>();
-        if (mode == "server-authoritative")
-        {
-            var binding = Property(initialReview, "Binding");
-            var digest = (ReadOnlyMemory<byte>)Property(binding, "SourceIntentDigest");
-            digest.Length.ShouldBe(SHA256.HashSizeInBytes);
-            return await InvokeAsync(
-                confirmedService,
-                "ExecuteConfirmedExactMoveResourceAsync",
-                request,
-                binding,
-                cancellationToken);
-        }
-
-        var initialDigest = (ReadOnlyMemory<byte>)Property(initialReview, "IntentDigest");
-        initialDigest.Length.ShouldBe(SHA256.HashSizeInBytes);
-        Property(initialReview, "BindingRevision").ShouldNotBeNull();
-        var confirmedReview = await InvokeAsync(
-            confirmedService,
-            "ReviewExactMoveResourceAsync",
-            request,
-            cancellationToken);
-        OptionalProperty(confirmedReview, "Outcome").ShouldBeNull();
-        var confirmedDigest = (ReadOnlyMemory<byte>)Property(confirmedReview, "IntentDigest");
-        confirmedDigest.Length.ShouldBe(SHA256.HashSizeInBytes);
-        CryptographicOperations.FixedTimeEquals(initialDigest.Span, confirmedDigest.Span).ShouldBeTrue();
-        return await InvokeAsync(
-            confirmedService,
-            "ExactMoveResourceAsync",
-            request,
-            cancellationToken);
+        return await confirmedProvider.GetRequiredService<ICalendarService>()
+            .ExecuteConfirmedExactMoveResourceAsync(request, binding, cancellationToken);
     }
 
     private static ServiceProvider CreateProvider(
@@ -459,7 +353,7 @@ public sealed class ExactMoveMrtrRadicaleSizeEvidenceTests(
             options.CalendarHrefs = calendarHrefs;
             options.Username = RadicaleConformanceFixture.Username;
             options.Password = RadicaleConformanceFixture.Password;
-            options.GetType().GetProperty("InteroperabilityProfile")?.SetValue(options, "radicale-3.7.8");
+            options.InteroperabilityProfile = "radicale-3.7.8";
         });
         services.AddSingleton<IHttpMessageHandlerBuilderFilter>(wire);
         return services.BuildServiceProvider();
@@ -564,32 +458,6 @@ public sealed class ExactMoveMrtrRadicaleSizeEvidenceTests(
         + "DTSTART:20260824T120000Z\r\nX-EVIDENCE-PADDING:"
         + new string('x', paddingLength)
         + "\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
-
-    private static async Task<object> InvokeAsync(object target, string methodName, params object[] arguments)
-    {
-        var method = target.GetType().GetMethods(BindingFlags.Instance | BindingFlags.Public)
-            .SingleOrDefault(candidate => candidate.Name == methodName
-                && candidate.GetParameters().Length == arguments.Length);
-        if (method is null)
-            throw new InvalidOperationException($"{methodName} must exist for the selected evidence mode.");
-        if (method.Invoke(target, arguments) is not Task task)
-            throw new InvalidOperationException($"{methodName} must return Task.");
-        await task;
-        return Property(task, "Result");
-    }
-
-    private static object Property(object target, string propertyName) =>
-        OptionalProperty(target, propertyName).ShouldNotBeNull($"{propertyName} must be present.");
-
-    private static object? OptionalProperty(object target, string propertyName) =>
-        target.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public)?.GetValue(target);
-
-    private static string ResolveEvidenceMode(string? configured) => configured switch
-    {
-        null or "" => "server-authoritative",
-        "legacy-scan" or "server-authoritative" => configured,
-        _ => throw new ArgumentException("CALDAV_MOVE_EVIDENCE_MODE is not recognized.", nameof(configured))
-    };
 
     private sealed record SeededResource(Uri Href, string EntityTag, ReadOnlyMemory<byte> AuthoritativeUtf8);
 

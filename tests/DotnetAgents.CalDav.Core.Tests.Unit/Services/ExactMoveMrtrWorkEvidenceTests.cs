@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
-using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using DotnetAgents.CalDav.Core.Abstractions;
@@ -24,65 +23,28 @@ public sealed class ExactMoveMrtrWorkEvidenceTests(ITestOutputHelper output)
     [InlineData(1)]
     [InlineData(50)]
     [InlineData(600)]
-    public async Task SameHttpCorpusObservesLegacyThreePreparationsAndChangedTwoRoundConstantWork(
+    public async Task ConfirmedMoveUsesTwoRoundsOfConstantHttpWork(
         int destinationCardinality)
     {
         using var handler = new ObservationHandler(destinationCardinality);
         using var httpClient = new HttpClient(handler);
-        var options = new CalDavOptions
-        {
-            BaseUrl = ObservationHandler.CalendarHomeHref,
-            Username = "user",
-            Password = "secret",
-            CalendarHrefs = $"{ObservationHandler.SourceCalendarHref},{ObservationHandler.DestinationCalendarHref}"
-        };
-        options.GetType().GetProperty("InteroperabilityProfile")?.SetValue(options, "radicale-3.7.8");
-        var mode = ResolveEvidenceMode(Environment.GetEnvironmentVariable("CALDAV_MOVE_EVIDENCE_MODE"));
-        ICalendarService CreateService() => new CalendarService(
-            new CalDavClient(
-                httpClient,
-                Options.Create(options),
-                Substitute.For<ILogger<CalDavClient>>()),
-            Options.Create(options),
-            Substitute.For<ILogger<CalendarService>>(),
-            TimeProvider.System,
-            Substitute.For<ICalendarEntityIdentityGenerator>());
-        var request = new CalendarExactMoveRequest(
-            new CalendarResourceRevisionReference(
-                ObservationHandler.SourceHref,
-                ObservationHandler.EntityUid,
-                CalendarEntityKind.Todo,
-                "\"r1\""),
-            ObservationHandler.DestinationHref);
+        var options = OptionsForEvidence();
+        ICalendarService CreateService() => CreateEvidenceService(httpClient, options);
+        var request = ExactMoveRequest();
         var started = Stopwatch.GetTimestamp();
 
-        var result = await ExecuteTwoRoundMrtrAsync(CreateService, request, mode, CancellationToken.None);
+        var result = await ExecuteTwoRoundMrtrAsync(CreateService, request, CancellationToken.None);
 
         var elapsed = Stopwatch.GetElapsedTime(started);
-        Property(result, "Code").ToString().ShouldBe("Success");
-        Property(result, "MutationState").ToString().ShouldBe("Committed");
-        var snapshot = Property(result, "Snapshot");
-        ((ReadOnlyMemory<byte>)Property(snapshot, "AuthoritativeUtf8")).Span
+        result.Code.ShouldBe(CalendarExactResourceCode.Success);
+        result.MutationState.ShouldBe(CalendarMutationState.Committed);
+        var snapshot = result.Snapshot.ShouldNotBeNull();
+        snapshot.AuthoritativeUtf8.Span
             .SequenceEqual(ObservationHandler.SourceContent)
             .ShouldBeTrue();
-        handler.PropFindCount.ShouldBe(4);
-        handler.SourceGetCount.ShouldBe(mode == "legacy-scan" ? 4 : 3);
-        handler.DestinationGetCount.ShouldBe(mode == "legacy-scan" ? 4 : 3);
-        handler.MoveCount.ShouldBe(1);
-        if (mode == "legacy-scan")
-        {
-            handler.ReportCount.ShouldBe(6);
-            handler.UnrelatedGetCount.ShouldBe(destinationCardinality * 3);
-            handler.RequestCount.ShouldBe((destinationCardinality * 3) + 19);
-        }
-        else
-        {
-            handler.ReportCount.ShouldBe(0);
-            handler.UnrelatedGetCount.ShouldBe(0);
-            handler.RequestCount.ShouldBe(11);
-        }
+        AssertConstantWorkTrace(handler);
         output.WriteLine(
-            $"exact-move-mrtr-observation implementation={mode} "
+            "exact-move-mrtr-observation implementation=server-authoritative "
             + $"destination_resources={destinationCardinality} duration_ms={elapsed.TotalMilliseconds:F3} "
             + $"requests={handler.RequestCount} propfind={handler.PropFindCount} report={handler.ReportCount} "
             + $"source_get={handler.SourceGetCount} destination_get={handler.DestinationGetCount} "
@@ -99,160 +61,60 @@ public sealed class ExactMoveMrtrWorkEvidenceTests(ITestOutputHelper output)
     [InlineData(1, "weak-etag")]
     [InlineData(50, "weak-etag")]
     [InlineData(600, "weak-etag")]
-    public async Task UnrelatedResourceShapeCannotAddChangedRevisionReads(
+    public async Task UnrelatedResourceShapeDoesNotAddRevisionReads(
         int destinationCardinality,
         string unrelatedShape)
     {
         using var handler = new ObservationHandler(destinationCardinality, unrelatedShape);
         using var httpClient = new HttpClient(handler);
         var options = OptionsForEvidence();
-        var mode = ResolveEvidenceMode(Environment.GetEnvironmentVariable("CALDAV_MOVE_EVIDENCE_MODE"));
         ICalendarService CreateService() => CreateEvidenceService(httpClient, options);
         var request = ExactMoveRequest();
 
-        var result = await ExecuteShapeScenarioAsync(
-            CreateService,
-            request,
-            mode,
-            unrelatedShape,
-            CancellationToken.None);
+        var result = await ExecuteTwoRoundMrtrAsync(CreateService, request, CancellationToken.None);
 
-        if (mode == "server-authoritative" || unrelatedShape == "opaque")
-        {
-            Property(result, "Code").ToString().ShouldBe("Success");
-            Property(result, "MutationState").ToString().ShouldBe("Committed");
-        }
-        else
-        {
-            Property(result, "Code").ToString().ShouldBe(
-                unrelatedShape == "oversized" ? "PayloadTooLarge" : "ConcurrencyUnavailable");
-            Property(result, "MutationState").ToString().ShouldBe("NotAttempted");
-        }
-        AssertShapeTrace(handler, mode, unrelatedShape, destinationCardinality);
+        result.Code.ShouldBe(CalendarExactResourceCode.Success);
+        result.MutationState.ShouldBe(CalendarMutationState.Committed);
+        AssertConstantWorkTrace(handler);
         output.WriteLine(
-            $"exact-move-mrtr-shape implementation={mode} shape={unrelatedShape} "
+            $"exact-move-mrtr-shape implementation=server-authoritative shape={unrelatedShape} "
             + $"destination_resources={destinationCardinality} requests={handler.RequestCount} "
             + $"propfind={handler.PropFindCount} report={handler.ReportCount} "
             + $"source_get={handler.SourceGetCount} destination_get={handler.DestinationGetCount} "
             + $"unrelated_get={handler.UnrelatedGetCount} move={handler.MoveCount}");
     }
 
-    [Fact]
-    public void EvidenceModeRejectsUnknownValues() => Should.Throw<ArgumentException>(() =>
-        ResolveEvidenceMode("unknown"));
-
-    private static async Task<object> ExecuteTwoRoundMrtrAsync(
+    private static async Task<CalendarExactResourceResult> ExecuteTwoRoundMrtrAsync(
         Func<ICalendarService> createService,
         CalendarExactMoveRequest request,
-        string mode,
         CancellationToken cancellationToken)
     {
-        var initialReview = await InvokeAsync(
-            createService(),
-            "ReviewExactMoveResourceAsync",
-            request,
-            cancellationToken);
-        OptionalProperty(initialReview, "Outcome").ShouldBeNull();
-
-        if (mode == "server-authoritative")
-        {
-            var binding = Property(initialReview, "Binding");
-            var digest = (ReadOnlyMemory<byte>)Property(binding, "SourceIntentDigest");
-            digest.Length.ShouldBe(SHA256.HashSizeInBytes);
-            return await InvokeAsync(
-                createService(),
-                "ExecuteConfirmedExactMoveResourceAsync",
-                request,
-                binding,
-                cancellationToken);
-        }
-
-        var initialDigest = (ReadOnlyMemory<byte>)Property(initialReview, "IntentDigest");
-        initialDigest.Length.ShouldBe(SHA256.HashSizeInBytes);
-        Property(initialReview, "BindingRevision").ShouldNotBeNull();
-        var confirmedService = createService();
-        var confirmedReview = await InvokeAsync(
-            confirmedService,
-            "ReviewExactMoveResourceAsync",
-            request,
-            cancellationToken);
-        OptionalProperty(confirmedReview, "Outcome").ShouldBeNull();
-        var confirmedDigest = (ReadOnlyMemory<byte>)Property(confirmedReview, "IntentDigest");
-        confirmedDigest.Length.ShouldBe(SHA256.HashSizeInBytes);
-        CryptographicOperations.FixedTimeEquals(initialDigest.Span, confirmedDigest.Span).ShouldBeTrue();
-        return await InvokeAsync(
-            confirmedService,
-            "ExactMoveResourceAsync",
-            request,
-            cancellationToken);
+        var initialReview = await createService().ReviewExactMoveResourceAsync(request, cancellationToken);
+        initialReview.Outcome.ShouldBeNull();
+        var binding = initialReview.Binding.ShouldNotBeNull();
+        binding.SourceIntentDigest.Length.ShouldBe(SHA256.HashSizeInBytes);
+        return await createService().ExecuteConfirmedExactMoveResourceAsync(request, binding, cancellationToken);
     }
 
-    private static async Task<object> ExecuteShapeScenarioAsync(
-        Func<ICalendarService> createService,
-        CalendarExactMoveRequest request,
-        string mode,
-        string unrelatedShape,
-        CancellationToken cancellationToken)
+    private static void AssertConstantWorkTrace(ObservationHandler handler)
     {
-        if (mode == "server-authoritative" || unrelatedShape == "opaque")
-            return await ExecuteTwoRoundMrtrAsync(createService, request, mode, cancellationToken);
-        var review = await InvokeAsync(
-            createService(),
-            "ReviewExactMoveResourceAsync",
-            request,
-            cancellationToken);
-        return Property(review, "Outcome");
+        handler.PropFindCount.ShouldBe(4);
+        handler.ReportCount.ShouldBe(0);
+        handler.SourceGetCount.ShouldBe(3);
+        handler.DestinationGetCount.ShouldBe(3);
+        handler.UnrelatedGetCount.ShouldBe(0);
+        handler.MoveCount.ShouldBe(1);
+        handler.RequestCount.ShouldBe(11);
     }
 
-    private static void AssertShapeTrace(
-        ObservationHandler handler,
-        string mode,
-        string unrelatedShape,
-        int destinationCardinality)
+    private static CalDavOptions OptionsForEvidence() => new()
     {
-        if (mode == "server-authoritative")
-        {
-            handler.PropFindCount.ShouldBe(4);
-            handler.ReportCount.ShouldBe(0);
-            handler.SourceGetCount.ShouldBe(3);
-            handler.DestinationGetCount.ShouldBe(3);
-            handler.UnrelatedGetCount.ShouldBe(0);
-            handler.MoveCount.ShouldBe(1);
-            handler.RequestCount.ShouldBe(11);
-            return;
-        }
-        if (unrelatedShape == "opaque")
-        {
-            handler.PropFindCount.ShouldBe(4);
-            handler.ReportCount.ShouldBe(6);
-            handler.SourceGetCount.ShouldBe(4);
-            handler.DestinationGetCount.ShouldBe(4);
-            handler.UnrelatedGetCount.ShouldBe(destinationCardinality * 3);
-            handler.MoveCount.ShouldBe(1);
-            handler.RequestCount.ShouldBe((destinationCardinality * 3) + 19);
-            return;
-        }
-        handler.PropFindCount.ShouldBe(2);
-        handler.ReportCount.ShouldBe(2);
-        handler.SourceGetCount.ShouldBe(1);
-        handler.DestinationGetCount.ShouldBe(1);
-        handler.UnrelatedGetCount.ShouldBe(1);
-        handler.MoveCount.ShouldBe(0);
-        handler.RequestCount.ShouldBe(7);
-    }
-
-    private static CalDavOptions OptionsForEvidence()
-    {
-        var options = new CalDavOptions
-        {
-            BaseUrl = ObservationHandler.CalendarHomeHref,
-            Username = "user",
-            Password = "secret",
-            CalendarHrefs = $"{ObservationHandler.SourceCalendarHref},{ObservationHandler.DestinationCalendarHref}"
-        };
-        options.GetType().GetProperty("InteroperabilityProfile")?.SetValue(options, "radicale-3.7.8");
-        return options;
-    }
+        BaseUrl = ObservationHandler.CalendarHomeHref,
+        Username = "user",
+        Password = "secret",
+        CalendarHrefs = $"{ObservationHandler.SourceCalendarHref},{ObservationHandler.DestinationCalendarHref}",
+        InteroperabilityProfile = "radicale-3.7.8"
+    };
 
     private static ICalendarService CreateEvidenceService(HttpClient httpClient, CalDavOptions options) =>
         new CalendarService(
@@ -272,32 +134,6 @@ public sealed class ExactMoveMrtrWorkEvidenceTests(ITestOutputHelper output)
             CalendarEntityKind.Todo,
             "\"r1\""),
         ObservationHandler.DestinationHref);
-
-    private static async Task<object> InvokeAsync(object target, string methodName, params object[] arguments)
-    {
-        var method = target.GetType().GetMethods(BindingFlags.Instance | BindingFlags.Public)
-            .SingleOrDefault(candidate => candidate.Name == methodName
-                && candidate.GetParameters().Length == arguments.Length);
-        if (method is null)
-            throw new InvalidOperationException($"{methodName} must exist for the selected evidence mode.");
-        if (method.Invoke(target, arguments) is not Task task)
-            throw new InvalidOperationException($"{methodName} must return Task.");
-        await task;
-        return Property(task, "Result");
-    }
-
-    private static object Property(object target, string propertyName) =>
-        OptionalProperty(target, propertyName).ShouldNotBeNull($"{propertyName} must be present.");
-
-    private static object? OptionalProperty(object target, string propertyName) =>
-        target.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public)?.GetValue(target);
-
-    private static string ResolveEvidenceMode(string? configured) => configured switch
-    {
-        null or "" => "server-authoritative",
-        "legacy-scan" or "server-authoritative" => configured,
-        _ => throw new ArgumentException("CALDAV_MOVE_EVIDENCE_MODE is not recognized.", nameof(configured))
-    };
 
     private sealed class ObservationHandler : HttpMessageHandler
     {
