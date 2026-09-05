@@ -81,24 +81,14 @@ public sealed class SemanticMoveRadicaleSizeEvidenceTests(
                 var elapsed = Stopwatch.GetElapsedTime(started);
                 result.Code.ShouldBe(CalendarResourceMoveCode.Success);
                 result.MutationState.ShouldBe(CalendarMutationState.Committed);
-                var mode = ResolveEvidenceMode(Environment.GetEnvironmentVariable("CALDAV_MOVE_EVIDENCE_MODE"));
                 wire.PropFindCount.ShouldBe(5);
                 wire.SourceGetCount.ShouldBe(2);
                 wire.DestinationGetCount.ShouldBe(2);
                 wire.MoveCount.ShouldBe(1);
                 wire.MultigetCount.ShouldBe(0);
-                if (mode == "legacy-scan")
-                {
-                    wire.ReportCount.ShouldBe(2);
-                    wire.UnrelatedGetCount.ShouldBe(destinationCardinality);
-                    wire.RequestCount.ShouldBe(destinationCardinality + 12);
-                }
-                else
-                {
-                    wire.ReportCount.ShouldBe(0);
-                    wire.UnrelatedGetCount.ShouldBe(0);
-                    wire.RequestCount.ShouldBe(10);
-                }
+                wire.ReportCount.ShouldBe(0);
+                wire.UnrelatedGetCount.ShouldBe(0);
+                wire.RequestCount.ShouldBe(10);
                 foreach (var index in new[] { 0, destinationCardinality / 2, destinationCardinality - 1 }.Distinct())
                 {
                     var observed = await SendAsync(
@@ -118,7 +108,7 @@ public sealed class SemanticMoveRadicaleSizeEvidenceTests(
                 output.WriteLine(JsonSerializer.Serialize(new
                 {
                     Evidence = "CAL-EVIDENCE-013",
-                    Implementation = mode,
+                    Implementation = "server-authoritative",
                     DestinationResources = destinationCardinality,
                     DurationMilliseconds = elapsed.TotalMilliseconds,
                     Requests = wire.RequestCount,
@@ -170,7 +160,7 @@ public sealed class SemanticMoveRadicaleSizeEvidenceTests(
             options.CalendarHrefs = calendarHrefs;
             options.Username = RadicaleConformanceFixture.Username;
             options.Password = RadicaleConformanceFixture.Password;
-            options.GetType().GetProperty("InteroperabilityProfile")?.SetValue(options, "radicale-3.7.8");
+            options.InteroperabilityProfile = "radicale-3.7.8";
         });
         services.AddSingleton<IHttpMessageHandlerBuilderFilter>(wire);
         return services.BuildServiceProvider();
@@ -270,13 +260,6 @@ public sealed class SemanticMoveRadicaleSizeEvidenceTests(
         $"BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Move Evidence//EN\r\nBEGIN:VTODO\r\n"
         + $"UID:unrelated-{index}\r\nDTSTAMP:20260823T120000Z\r\nSUMMARY:unrelated {index}\r\n"
         + $"X-PRIVATE-{index}:opaque-value-{index}\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
-
-    private static string ResolveEvidenceMode(string? configured) => configured switch
-    {
-        null or "" => "server-authoritative",
-        "legacy-scan" or "server-authoritative" => configured,
-        _ => throw new ArgumentException("CALDAV_MOVE_EVIDENCE_MODE is not recognized.", nameof(configured))
-    };
 
     private sealed record SeededResource(Uri Href, string EntityTag);
 
