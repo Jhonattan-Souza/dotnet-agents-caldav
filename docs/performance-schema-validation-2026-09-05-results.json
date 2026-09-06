@@ -1254,7 +1254,7 @@
       },
       "errors": 0,
       "timeouts": 0,
-      "mean_cpu_ms": 425.93333333333334,
+      "mean_cpu_ms": null,
       "max_rss_bytes": 378900480,
       "serial_service_ops_per_second": 3.230835086342127,
       "run": "continue-single_session-2",
@@ -1282,7 +1282,9 @@
         "b4a419245b1a708f97d5d40a61ac01cc",
         "bfa884ec90edc8490b01e3644580b4ea",
         "37148baec8136b9bdea8d5565bb7b807"
-      ]
+      ],
+      "mean_overlapping_process_cpu_delta_ms": 425.93333333333334,
+      "cpu_measurement_scope": "Not attributable per operation: historical deltas overlap within the shared process"
     },
     {
       "label": "candidate",
@@ -1303,7 +1305,7 @@
       },
       "errors": 0,
       "timeouts": 0,
-      "mean_cpu_ms": 128.20000000000002,
+      "mean_cpu_ms": null,
       "max_rss_bytes": 264343552,
       "serial_service_ops_per_second": 14.449620918385596,
       "run": "continue-single_session-2",
@@ -1331,7 +1333,9 @@
         "63041f8acaa5810ee5a6fdb1618b0bd1",
         "64c6fdaa8bcc05a42d463eae21eebfd7",
         "dc18a7c9f404b78e7d6f242c7d1f68df"
-      ]
+      ],
+      "mean_overlapping_process_cpu_delta_ms": 128.20000000000002,
+      "cpu_measurement_scope": "Not attributable per operation: historical deltas overlap within the shared process"
     },
     {
       "label": "baseline",
@@ -1352,7 +1356,7 @@
       },
       "errors": 0,
       "timeouts": 0,
-      "mean_cpu_ms": 641.2666666666667,
+      "mean_cpu_ms": null,
       "max_rss_bytes": 493948928,
       "serial_service_ops_per_second": 2.1318098751581473,
       "run": "continue-single_session-2",
@@ -1380,7 +1384,9 @@
         "55f8784a5a658a61f2d7fd40c107edf0",
         "17f85816d071e1258d8ef3f042bd99d0",
         "c17bfdae99cc2b2f5d315f25430dc52e"
-      ]
+      ],
+      "mean_overlapping_process_cpu_delta_ms": 641.2666666666667,
+      "cpu_measurement_scope": "Not attributable per operation: historical deltas overlap within the shared process"
     },
     {
       "label": "candidate",
@@ -1401,7 +1407,7 @@
       },
       "errors": 0,
       "timeouts": 0,
-      "mean_cpu_ms": 169.4,
+      "mean_cpu_ms": null,
       "max_rss_bytes": 230866944,
       "serial_service_ops_per_second": 10.208006415640023,
       "run": "continue-single_session-2",
@@ -1429,7 +1435,9 @@
         "c65ffbf0830572f4a28033002d43d687",
         "15ac955338c6cd448183f6952d966b05",
         "a8a1b699527f3bb80478e676ae6d1cff"
-      ]
+      ],
+      "mean_overlapping_process_cpu_delta_ms": 169.4,
+      "cpu_measurement_scope": "Not attributable per operation: historical deltas overlap within the shared process"
     },
     {
       "label": "baseline",
@@ -1450,7 +1458,7 @@
       },
       "errors": 0,
       "timeouts": 0,
-      "mean_cpu_ms": 202.4666666666667,
+      "mean_cpu_ms": null,
       "max_rss_bytes": 226578432,
       "serial_service_ops_per_second": 8.320564746754398,
       "run": "continue-single_session-2",
@@ -1478,7 +1486,9 @@
         "b0102b2a6f0958a6dd780e6754baad3c",
         "dc46976163233726d23a236bc29e1b60",
         "72fd814c54ba78041d13dee97a11901f"
-      ]
+      ],
+      "mean_overlapping_process_cpu_delta_ms": 202.4666666666667,
+      "cpu_measurement_scope": "Not attributable per operation: historical deltas overlap within the shared process"
     },
     {
       "label": "candidate",
@@ -1499,7 +1509,7 @@
       },
       "errors": 0,
       "timeouts": 0,
-      "mean_cpu_ms": 137.2,
+      "mean_cpu_ms": null,
       "max_rss_bytes": 172294144,
       "serial_service_ops_per_second": 16.092943025222453,
       "run": "continue-single_session-2",
@@ -1527,7 +1537,9 @@
         "77c2288b5bd6127a2f5777e993c61d9d",
         "c027df318c6019bc6d6c0eb64cd4b77c",
         "1be6d053965b09c50654433caf1450b3"
-      ]
+      ],
+      "mean_overlapping_process_cpu_delta_ms": 137.2,
+      "cpu_measurement_scope": "Not attributable per operation: historical deltas overlap within the shared process"
     },
     {
       "label": "baseline",
@@ -1548,7 +1560,7 @@
       },
       "errors": 0,
       "timeouts": 0,
-      "mean_cpu_ms": 901.0666666666667,
+      "mean_cpu_ms": null,
       "max_rss_bytes": 592134144,
       "serial_service_ops_per_second": 1.8740775347506011,
       "run": "continue-single_session-4",
@@ -1576,7 +1588,9 @@
         "203a60f8bc2820c3fab63a85f82e8571",
         "615ec53ec3c8bfa2886a9338cea26ba8",
         "1a491d2f5d74bbe8603c1a66d6f6a723"
-      ]
+      ],
+      "mean_overlapping_process_cpu_delta_ms": 901.0666666666667,
+      "cpu_measurement_scope": "Not attributable per operation: historical deltas overlap within the shared process"
     },
     {
       "label": "candidate",
@@ -1597,7 +1611,7 @@
       },
       "errors": 0,
       "timeouts": 0,
-      "mean_cpu_ms": 266.2666666666666,
+      "mean_cpu_ms": null,
       "max_rss_bytes": 328912896,
       "serial_service_ops_per_second": 9.929632373634869,
       "run": "continue-single_session-4",
@@ -1625,7 +1639,9 @@
         "450008fecd1bb350adf5dd33f5121c48",
         "4835124c9eb9ac6c8f87a697a3f49295",
         "f0b8472691194250d6e82c92e884e786"
-      ]
+      ],
+      "mean_overlapping_process_cpu_delta_ms": 266.2666666666666,
+      "cpu_measurement_scope": "Not attributable per operation: historical deltas overlap within the shared process"
     },
     {
       "label": "baseline",
@@ -1646,7 +1662,7 @@
       },
       "errors": 0,
       "timeouts": 0,
-      "mean_cpu_ms": 1366.0666666666662,
+      "mean_cpu_ms": null,
       "max_rss_bytes": 840560640,
       "serial_service_ops_per_second": 1.2363262156937107,
       "run": "continue-single_session-4",
@@ -1674,7 +1690,9 @@
         "433e2b54448b2057f3ff06bc626096bd",
         "8134992e7dd0dd9ca7b7c640a8f2a008",
         "6f4ecdc37a9d6cc62531871143c23636"
-      ]
+      ],
+      "mean_overlapping_process_cpu_delta_ms": 1366.0666666666662,
+      "cpu_measurement_scope": "Not attributable per operation: historical deltas overlap within the shared process"
     },
     {
       "label": "candidate",
@@ -1695,7 +1713,7 @@
       },
       "errors": 0,
       "timeouts": 0,
-      "mean_cpu_ms": 354.99999999999994,
+      "mean_cpu_ms": null,
       "max_rss_bytes": 345075712,
       "serial_service_ops_per_second": 6.863236818296969,
       "run": "continue-single_session-4",
@@ -1723,7 +1741,9 @@
         "f91343d169ea25f7e7656ba84f9af6a9",
         "18b99ef7adc0e2d93172ecabba340369",
         "715cb719f6a4550b8c0dd61de8b40bda"
-      ]
+      ],
+      "mean_overlapping_process_cpu_delta_ms": 354.99999999999994,
+      "cpu_measurement_scope": "Not attributable per operation: historical deltas overlap within the shared process"
     },
     {
       "label": "baseline",
@@ -1744,7 +1764,7 @@
       },
       "errors": 0,
       "timeouts": 0,
-      "mean_cpu_ms": 412.7000000000001,
+      "mean_cpu_ms": null,
       "max_rss_bytes": 293519360,
       "serial_service_ops_per_second": 4.8768281660650485,
       "run": "continue-single_session-4",
@@ -1772,7 +1792,9 @@
         "d037ea7794ce6f5e5d1a5d2ac4c8d12e",
         "4f251543b678b48fa355e77c580bd90c",
         "9aec4df9f1cf5110ca2dea29daa5cffa"
-      ]
+      ],
+      "mean_overlapping_process_cpu_delta_ms": 412.7000000000001,
+      "cpu_measurement_scope": "Not attributable per operation: historical deltas overlap within the shared process"
     },
     {
       "label": "candidate",
@@ -1793,7 +1815,7 @@
       },
       "errors": 0,
       "timeouts": 0,
-      "mean_cpu_ms": 308.7999999999999,
+      "mean_cpu_ms": null,
       "max_rss_bytes": 181047296,
       "serial_service_ops_per_second": 11.780635705075888,
       "run": "continue-single_session-4",
@@ -1821,7 +1843,9 @@
         "b3e6bbd1a0b40fd8b5ef048419f42151",
         "323c3b37ad2320d63356ab6bdd92bca3",
         "e8a53e4cab013f1f58669a34aea5542e"
-      ]
+      ],
+      "mean_overlapping_process_cpu_delta_ms": 308.7999999999999,
+      "cpu_measurement_scope": "Not attributable per operation: historical deltas overlap within the shared process"
     },
     {
       "label": "baseline",
@@ -3744,5 +3768,9 @@
     "anonymous_volumes_verified_removed": 1,
     "owned_containers_verified_absent": true,
     "temporary_credentials_removed": true
+  },
+  "measurement_limitations": {
+    "historical_shared_process_cpu": "Concurrent single_session CPU windows overlap. Original means are retained as mean_overlapping_process_cpu_delta_ms; mean_cpu_ms is null because those deltas cannot be attributed per operation.",
+    "historical_corpus_verification": "The original run checked collection counts and compared measured page hashes between builds; it did not persist the seed ETag map needed to detect every same-count corpus edit. Later harness verification does not retroactively strengthen that evidence."
   }
 }

@@ -61,8 +61,16 @@ mas estes números não são um SLA de produção.
 Seed determinístico 20260905: 600 VEVENTs, 600 VTODOs, arquivo vazio; distribuição
 histórica de datas/recorrências/estados; janela 2026-07-01 a 2026-12-31 UTC,
 America/Sao_Paulo. PROPFIND Depth:1 com ETags confirmou 600/600/0 antes da comparação.
-O corpus completo voltou ao mesmo estado após cada passagem funcional. Build,
+As contagens voltaram a 600/600/0 após cada passagem funcional. Build,
 seeding, mutações de preparação e restauração ficaram fora das chamadas medidas.
+
+A verificação histórica do seed conferiu as contagens 600/600/0; não conservou
+um mapa de ETags para detectar edição de um recurso que mantivesse a contagem.
+As mutações funcionais usaram fixtures separadas e os hashes das páginas medidas
+coincidiram entre builds, mas isso não constitui uma verificação de integridade
+de todos os recursos do corpus. O harness corrigido passa a comparar caminhos e
+ETags fortes com os retornados na criação do seed; essa garantia não é atribuída
+retroativamente à execução histórica.
 
 MCP moderno negocia `2026-07-28` por `server/discover`; o driver verifica versão e
 capabilities e descobre tools/list. Os pilotos tentaram initialize legado e
@@ -91,6 +99,14 @@ os JSONL de lotes incluem throughput do driver com suas verificações. CPU de
 `/proc` tem resolução de 10 ms; RSS/HWM são observações do processo. Bytes medidos
 são bytes JSON-RPC stdio, não bytes HTTP. A allowlist atual não exporta bytes de
 corpos CalDAV, e essa ausência não foi preenchida com estimativas.
+
+Correção de interpretação de CPU: nas séries históricas `single_session` com
+concorrência 2/4, os deltas do processo foram coletados em intervalos sobrepostos
+e incluem trabalho das outras chamadas. Não medem CPU por operação. O JSON
+estruturado conserva esses números como `mean_overlapping_process_cpu_delta_ms`
+e marca `mean_cpu_ms` como `null` nessas células. Os ganhos de CPU apresentados
+nas tabelas seriais abaixo usam chamadas sem sobreposição e continuam aplicáveis.
+As amostras brutas permanecem preservadas fora do Git.
 
 ## Continue serial: resultados completos
 

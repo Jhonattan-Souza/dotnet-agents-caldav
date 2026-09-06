@@ -12,6 +12,7 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
+import urllib.parse
 import xml.etree.ElementTree as ET
 
 RADICALE = 'ghcr.io/kozea/radicale@sha256:3a0080ea51ac69dcd74e345b9587dc14a8c8af0652046069005749f9a75c5c80'
@@ -34,20 +35,21 @@ def request(state, method, path, body=None, headers=None):
         return error.code, error.read(), dict(error.headers)
 
 
-def up(root):
-    root.mkdir(parents=True, exist_ok=True)
-    path = root / 'infra-private.json'
-    if path.exists():
-        raise RuntimeError('Infrastructure manifest already exists; use its owned resources or clean first.')
-    run = 'caldav-perf-' + secrets.token_hex(4)
-    state = dict(run=run, username='perftest', password=secrets.token_hex(16),
-                 api_key=secrets.token_hex(24), containers=[])
-    def save():
-        path.write_text(json.dumps(state, indent=2))
-        path.chmod(0o600)
-    save()
-    config = root / 'radicale-config'
+def save_private_state(path,state):
+    descriptor=os.open(path,os.O_WRONLY | os.O_CREAT | os.O_TRUNC,0o600)
+    with os.fdopen(descriptor,'w') as stream:
+        os.fchmod(stream.fileno(),0o600)
+        json.dump(state,stream,indent=2)
+
+
+def radicale_config(root,state):
+    # The pinned image runs as its own non-root user. Protect the host parent,
+    # while allowing that user to read the inner directory mounted at /config.
+    private=root/'radicale-private'
+    private.mkdir(mode=0o700)
+    config=private/'config'
     config.mkdir()
+    config.chmod(0o755)
     (config / 'config').write_text('''[server]
 hosts = 0.0.0.0:5232
 [auth]
@@ -64,6 +66,23 @@ type = internal
 level = warning
 ''')
     (config / 'users').write_text(state['username'] + ':' + state['password'])
+    for name in ['config','users']:
+        (config/name).chmod(0o644)
+    return config
+
+
+def up(root):
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / 'infra-private.json'
+    if path.exists():
+        raise RuntimeError('Infrastructure manifest already exists; use its owned resources or clean first.')
+    run = 'caldav-perf-' + secrets.token_hex(4)
+    state = dict(run=run, username='perftest', password=secrets.token_hex(16),
+                 api_key=secrets.token_hex(24), containers=[],config_directory='radicale-private')
+    def save():
+        save_private_state(path,state)
+    save()
+    config=radicale_config(root,state)
     for suffix, image, ports, extra in [
         ('radicale', RADICALE, ['127.0.0.1::5232'], ['--env', 'TZ=UTC', '--mount',
          f'type=bind,source={config},target=/config,readonly']),
@@ -134,6 +153,7 @@ def seed(root, count):
     principal = '/' + state['username'] + '/'
     assert request(state, 'MKCOL', principal)[0] in (201, 405)
     digest = hashlib.sha256()
+    expected={}
     for name, kind, n in [('events', 'VEVENT', count), ('todos', 'VTODO', count), ('archive', 'VTODO', 0)]:
         path = principal + name + '/'
         body = f'''<D:mkcol xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"><D:set><D:prop>
@@ -141,12 +161,21 @@ def seed(root, count):
 <C:supported-calendar-component-set><C:comp name="{kind}"/></C:supported-calendar-component-set>
 </D:prop></D:set></D:mkcol>'''
         assert request(state, 'MKCOL', path, body)[0] == 201
+        expected[name]={}
         for i in range(n):
             data = resource(kind, i)
             digest.update(data.encode())
-            assert request(state, 'PUT', path + f'{i:04d}.ics', data,
-                           {'Content-Type': 'text/calendar', 'If-None-Match': '*'})[0] == 201
+            href=path+f'{i:04d}.ics'
+            status,_,headers=request(state,'PUT',href,data,
+                                     {'Content-Type':'text/calendar','If-None-Match':'*'})
+            assert status==201
+            etag={key.lower():value for key,value in headers.items()}.get('etag')
+            if not etag or etag.startswith('W/'):
+                raise RuntimeError('Seed PUT did not return a strong ETag')
+            expected[name][href]=etag
         print(f'Seeded {name}: {n}', flush=True)
+    state['corpus_etags']=expected
+    save_private_state(root/'infra-private.json',state)
     counts = verify(state)
     assert counts == {'events': count, 'todos': count, 'archive': 0}, counts
     (root / 'corpus.json').write_text(json.dumps(dict(seed=20260905, resources=counts,
@@ -155,19 +184,33 @@ def seed(root, count):
 
 
 def verify(state):
+    if 'corpus_etags' not in state:
+        raise RuntimeError('Seed ETag manifest is missing; prepare a fresh seeded run')
     result = {}
     for name in ['events', 'todos', 'archive']:
         body = '<D:propfind xmlns:D="DAV:"><D:prop><D:getetag/></D:prop></D:propfind>'
         status, data, _ = request(state, 'PROPFIND', f"/{state['username']}/{name}/", body, {'Depth':'1'})
         assert status == 207
-        result[name] = sum(1 for x in ET.fromstring(data).findall('{DAV:}response')
-                           if x.findtext('{DAV:}href', '').endswith('.ics'))
+        observed={}
+        for response in ET.fromstring(data).findall('{DAV:}response'):
+            href=urllib.parse.unquote(urllib.parse.urlsplit(response.findtext('{DAV:}href','')).path)
+            if href.endswith('/'):
+                continue
+            if not href or href in observed:
+                raise RuntimeError('Invalid or duplicate href in corpus verification')
+            observed[href]=response.findtext('.//{DAV:}getetag')
+        if observed!=state['corpus_etags'][name]:
+            raise RuntimeError(f'Seed corpus content or membership changed in {name}')
+        result[name]=len(observed)
     return result
 
 
 def down(root):
     path = root / 'infra-private.json'
     state = json.loads(path.read_text())
+    config_directory=state.get('config_directory','radicale-config')
+    if config_directory not in ['radicale-private','radicale-config']:
+        raise RuntimeError('Unknown owned configuration directory')
     for name in reversed(state['containers']):
         if not docker('ps', '-aq', '--filter', 'name=^/' + name + '$'):
             continue
@@ -176,7 +219,8 @@ def down(root):
         docker('rm', '-fv', name)
     path.unlink()
     import shutil
-    shutil.rmtree(root / 'radicale-config')
+    if (root/config_directory).exists():
+        shutil.rmtree(root/config_directory)
     (root / 'cleanup.json').write_text(json.dumps(dict(containers_removed=state['containers'], complete=True)))
 
 
