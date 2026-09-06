@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Transparent stdio witness for Hermes; never changes MCP bytes or confirmations."""
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -11,9 +10,13 @@ import sys
 import threading
 import time
 from functional import sanitize
+from build_manifest import prepared_input
 
 assembly=Path(sys.argv[1]).resolve()
 evidence=Path(sys.argv[2])
+if evidence.exists():
+    raise FileExistsError('Hermes wire evidence already exists')
+build_input=prepared_input(Path(sys.argv[3]),assembly)
 evidence.touch(exist_ok=False)
 child=subprocess.Popen([str(Path(shutil.which('dotnet')).resolve()),str(assembly)],
                        stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
@@ -26,8 +29,8 @@ def record(value):
         out.write(json.dumps(dict(timestamp_ns=time.time_ns(),pid=child.pid,**value))+'\n')
 
 
-record(dict(event='launch',assembly=str(assembly),sha256=hashlib.sha256(assembly.read_bytes()).hexdigest(),
-            core_sha256=hashlib.sha256(assembly.with_name('DotnetAgents.CalDav.Core.dll').read_bytes()).hexdigest()))
+record(dict(event='launch',**build_input,sha256=build_input['assembly_sha256']['DotnetAgents.CalDav.Mcp.dll'],
+            core_sha256=build_input['assembly_sha256']['DotnetAgents.CalDav.Core.dll']))
 
 
 def incoming():

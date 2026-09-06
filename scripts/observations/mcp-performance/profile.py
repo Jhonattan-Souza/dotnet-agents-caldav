@@ -6,6 +6,7 @@ from contextlib import suppress
 import json
 from pathlib import Path
 from driver import Client,environment,query
+from build_manifest import prepared_input
 
 
 def save_record(path,records,record,warmup):
@@ -50,6 +51,8 @@ async def capture(a,client,cursor,records,samples):
 
 
 async def run(a):
+    build_input=prepared_input(a.root,a.assembly,a.build)
+    a.assembly=Path(build_input['assembly'])
     suffixes=['-profile-samples.json','-profile-process.json','-profile.log','.nettrace','-counters.json']
     if any((a.root/(a.name+suffix)).exists() for suffix in suffixes):
         raise RuntimeError('Use a new profile name; preserve previous attempts')
@@ -71,12 +74,13 @@ async def run(a):
     finally:
         if hasattr(client,'identity'):
             (a.root/(a.name+'-profile-process.json')).write_text(json.dumps(
-                dict(client.identity,profile_completed=completed),indent=2))
+                dict(client.identity,profile_completed=completed,build_input=build_input),indent=2))
 
 
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('root',type=Path);p.add_argument('assembly',type=Path);p.add_argument('profilers',type=Path)
     p.add_argument('--name',required=True);p.add_argument('--tool',default='calendar_occurrences.query')
+    p.add_argument('--build',choices=['baseline','candidate'],default='candidate')
     p.add_argument('--mode',choices=['start','continue'],default='continue')
     asyncio.run(run(p.parse_args()))

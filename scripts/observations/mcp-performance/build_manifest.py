@@ -90,6 +90,19 @@ def load_builds(root):
     return builds
 
 
+def prepared_input(root, assembly, label='candidate'):
+    if label not in ['baseline','candidate']:
+        raise ValueError('Select the baseline or candidate prepared build')
+    build=json.loads((root/(label+'-build.json')).read_text())
+    assembly=Path(assembly).resolve()
+    closure=runtime_files(assembly)
+    hashes={name:closure[name] for name in build['assembly_sha256']}
+    if hashes!=build['assembly_sha256'] or closure!=build['runtime_files_sha256']:
+        raise RuntimeError(f'{label} input does not match its prepared build')
+    return dict(label=label,assembly=str(assembly),assembly_sha256=hashes,
+                runtime_files_sha256=closure,source=build['source'])
+
+
 def benchmark_inputs(builds, baseline, candidate, compare_otlp=False):
     inputs = {}
     for label, assembly in [('baseline', baseline), ('candidate', candidate)]:
