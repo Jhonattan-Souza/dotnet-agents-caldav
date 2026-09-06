@@ -51,6 +51,11 @@ do build correspondente. Inverter baseline/candidata é erro antes da medição.
 No controle `--compare-otlp`, ambos apontam ao mesmo build e conservam essa
 identidade na agregação. Cada processo precisa corresponder ao seu argumento,
 inclusive ao hash de Core; pertencer ao conjunto dos dois builds não basta.
+Os manifestos verificam também os assets declarados em `.deps.json` e os hashes
+de todo o diretório de execução copiado, incluindo dependências, assets por RID,
+deps e runtimeconfig. O driver registra esse conjunto para cada processo. Mantenha
+esses diretórios imutáveis; trocar uma dependência como JsonSchema.Net invalida a
+identidade mesmo quando MCP e Core não mudaram.
 
 Seed 20260905: 600 Events e 600 To-dos distribuídos em 180 dias desde
 2026-07-01; 60 recorrentes por tipo, 30 Events date-only e 12 cancelados;
@@ -62,6 +67,10 @@ forte, salvo no manifesto privado. `verify` compara caminhos e ETags completos:
 editar ou substituir um recurso mantendo a contagem também falha. `corpus.json`
 registra contagens e hash das entradas determinísticas. Seeding e limpeza ficam
 fora da medida.
+`seed --count N` permite corpus personalizados. As expectativas de restauração e
+limpeza vêm de `corpus.json`. As matrizes funcional e de limites exigem ao menos
+dois To-dos semeados; o padrão de 600 mantém a matriz completa de paginação. Em
+corpus menores, a matriz funcional continua apenas páginas que tenham cursor.
 
 ## Matriz funcional e clientes
 
@@ -170,6 +179,14 @@ programa usa reflexão para chamar o guard original em cada assembly sobre o
 mesmo JSON, após 20 aquecimentos e com 100 amostras. Não mede transporte.
 A agregação exige o hash de assembly correspondente ao build de cada observação,
 além de ferramenta e payload idênticos entre baseline e candidata.
+O observador também registra os hashes dos arquivos de runtime e rejeita mudanças
+durante a coleta; esses hashes devem corresponder ao manifesto do build.
+
+`profile.py --mode start` usa cinco warmups e cinco Starts capturados por processo,
+abaixo da coorte que esgotou os bytes do store no piloto. Cada chamada é registrada
+e verificada, inclusive nos warmups; `busy`, timeout ou outro erro interrompe o
+perfil. Os collectors são encerrados em caso de falha, e o registro do processo
+fica marcado como incompleto. Use um nome novo para cada perfil.
 
 O exportador usa a API suportada do Dashboard e exige
 `returnedCount == totalCount`; não aceita truncamento silencioso. O Dashboard
@@ -204,6 +221,11 @@ Depois dos ensaios de alocação (salvos como `schema-baseline.json` e
 `schema-candidate.json`), dos gates e da exportação `complete` acima, agregue as
 execuções escolhidas explicitamente. `--gates` aponta ao diretório de evidências
 da suíte dentro da raiz da observação (ou a um caminho absoluto):
+
+A agregação executa `verify-test-artifacts.sh` na fase `complete`, incluindo o
+manifesto das variantes estrita e de fuso alternativo, e `verify-coverage.sh`
+com os limiares 90%/85%. Diretórios parciais, contadores malsucedidos e cobertura
+insuficiente são rejeitados antes da emissão do resultado.
 
 ```bash
 python3 scripts/observations/mcp-performance/aggregate.py /tmp/caldav-perf-new /tmp/caldav-perf-new/results.json --gates gates-final --runs continue-serial start-serial --traces /tmp/caldav-perf-new/complete-traces.json

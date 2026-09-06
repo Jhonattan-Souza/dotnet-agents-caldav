@@ -28,6 +28,33 @@ def capture(repository, manifest):
         json.dump(dict(source=source_identity(repository)), stream, indent=2)
 
 
+def runtime_files(assembly):
+    assembly=Path(assembly).resolve()
+    directory=assembly.parent
+    deps_path=assembly.with_suffix('.deps.json')
+    deps=json.loads(deps_path.read_text())
+    assembly.with_suffix('.runtimeconfig.json').read_bytes()
+    target=deps['targets'][deps['runtimeTarget']['name']]
+    for library in target.values():
+        for group in ['runtime','native','resources','runtimeTargets']:
+            for asset,metadata in library.get(group,{}).items():
+                relative=Path(asset)
+                if relative.name=='_._':
+                    continue
+                if group=='runtimeTargets':
+                    candidates=[directory/relative]
+                elif group=='resources':
+                    candidates=[directory/metadata['locale']/relative.name]
+                else:
+                    candidates=[directory/relative,directory/relative.name]
+                if not any(path.is_file() for path in candidates):
+                    raise RuntimeError(f'Missing app-local runtime dependency: {asset}')
+    # Hash the entire immutable copied output, including deps/runtimeconfig and
+    # RID assets, so changed or added files cannot alter resolution unnoticed.
+    return {path.relative_to(directory).as_posix():hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in sorted(directory.rglob('*')) if path.is_file()}
+
+
 def finalize(repository, manifest, assemblies):
     record = json.loads(manifest.read_text())
     if record['source'] != source_identity(repository):
@@ -35,6 +62,7 @@ def finalize(repository, manifest, assemblies):
     record['assembly_sha256'] = {
         name: hashlib.sha256((assemblies / name).read_bytes()).hexdigest()
         for name in ['DotnetAgents.CalDav.Mcp.dll', 'DotnetAgents.CalDav.Core.dll']}
+    record['runtime_files_sha256']=runtime_files(assemblies/'DotnetAgents.CalDav.Mcp.dll')
     manifest.write_text(json.dumps(record, indent=2))
 
 
@@ -42,6 +70,8 @@ def load_builds(root):
     builds = {label: json.loads((root / (label + '-build.json')).read_text())
               for label in ['baseline', 'candidate']}
     for label, build in builds.items():
+        if runtime_files(root/label/'DotnetAgents.CalDav.Mcp.dll')!=build['runtime_files_sha256']:
+            raise RuntimeError(f'{label} runtime dependency set differs from its prepared build manifest')
         for name, digest in build['assembly_sha256'].items():
             if hashlib.sha256((root / label / name).read_bytes()).hexdigest() != digest:
                 raise RuntimeError(f'{label} assembly differs from its prepared build manifest')
@@ -55,16 +85,19 @@ def benchmark_inputs(builds, baseline, candidate, compare_otlp=False):
         hashes = {'DotnetAgents.CalDav.Mcp.dll': hashlib.sha256(assembly.read_bytes()).hexdigest(),
                   'DotnetAgents.CalDav.Core.dll': hashlib.sha256(
                       assembly.with_name('DotnetAgents.CalDav.Core.dll').read_bytes()).hexdigest()}
+        closure=runtime_files(assembly)
         if compare_otlp:
-            matching = [key for key, build in builds.items() if build['assembly_sha256'] == hashes]
+            matching = [key for key, build in builds.items() if build['assembly_sha256'] == hashes
+                        and build['runtime_files_sha256']==closure]
             if not matching:
                 raise RuntimeError('OTLP input does not match a prepared build')
             prepared_label = 'candidate' if 'candidate' in matching else matching[0]
         else:
             prepared_label = label
-            if hashes != builds[label]['assembly_sha256']:
+            if hashes != builds[label]['assembly_sha256'] or closure!=builds[label]['runtime_files_sha256']:
                 raise RuntimeError(f'{label} input does not match its prepared build')
         inputs[label] = dict(assembly=str(assembly), assembly_sha256=hashes,
+                             runtime_files_sha256=closure,
                              source=builds[prepared_label]['source'])
     if compare_otlp and inputs['baseline']['assembly_sha256'] != inputs['candidate']['assembly_sha256']:
         raise RuntimeError('OTLP comparison requires the same build for both labels')
@@ -81,7 +114,8 @@ def verify_process_inputs(root, name, processes, builds):
         hashes = expected['assembly_sha256']
         if (process['assembly'] != expected['assembly']
                 or process['sha256'] != hashes['DotnetAgents.CalDav.Mcp.dll']
-                or process['core_sha256'] != hashes['DotnetAgents.CalDav.Core.dll']):
+                or process['core_sha256'] != hashes['DotnetAgents.CalDav.Core.dll']
+                or process['runtime_files_sha256']!=expected['runtime_files_sha256']):
             raise RuntimeError('Measured process does not match its declared benchmark input')
     return inputs
 

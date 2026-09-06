@@ -6,10 +6,13 @@ import json
 from pathlib import Path
 import shutil
 from driver import Client, environment, query
-from infra import request, resource, verify
+from infra import request, resource, verify, expected_counts
 
 
 async def run(root,baseline,candidate):
+    expected=expected_counts(root)
+    if expected['todos']<2:
+        raise RuntimeError('The limit matrix requires at least two seeded todos; cleanup supports any seed count')
     state=json.loads((root/'infra-private.json').read_text());records=[]
     def remember(value):
         records.append(value)
@@ -55,13 +58,13 @@ async def run(root,baseline,candidate):
                         _,record=await c.call(tool,args)
                         assert record['outcome']=='success'
                         remember(dict(record,label=label,corpus_resources=count,scale=True))
-        # Existing 600-event collection supplies the next scale without reseeding it.
+        # Include the requested seeded collection size without reseeding it.
         async with Client(candidate,environment(state,'caldav-perf-limits')) as c:
             args=query('calendar_entities.query',200)
             args.update(scope=dict(mode='selected',calendar=dict(by='href',href=state['url']+'/perftest/events/')),
                         entityKinds=['event'])
             _,record=await c.call('calendar_entities.query',args)
-            remember(dict(record,corpus_resources=600,scale=True,label='candidate'))
+            remember(dict(record,corpus_resources=expected['events'],scale=True,label='candidate'))
         over=resource('VEVENT',10000).replace('RRULE:FREQ=WEEKLY;COUNT=20','RRULE:FREQ=MINUTELY;COUNT=6000')
         assert request(state,'PUT',path+'over-limit.ics',over,{'Content-Type':'text/calendar'})[0]==201
         for label,assembly in [('baseline',baseline),('candidate',candidate)]:
@@ -84,7 +87,7 @@ async def run(root,baseline,candidate):
                 code=response['result']['structuredContent'].get('code')
                 assert record['outcome']=='success' if index<16 else code=='busy'
                 remember(dict(record,label=label,store_index=index,expected_limit=index==16,code=code))
-    assert verify(state)==dict(events=600,todos=600,archive=0)
+    assert verify(state)==expected
     (root/'edges.json').write_text(json.dumps(records,indent=2))
     print('Read controls, scales, limits, EOF and collector failure passed',flush=True)
 

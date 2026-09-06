@@ -15,9 +15,11 @@ import xml.etree.ElementTree as ET
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from build_manifest import capture, finalize, load_builds, source_identity, benchmark_inputs, verify_process_inputs
-from aggregate import load_traces, schema_observations
-from infra import radicale_config, save_private_state, verify
+from build_manifest import capture, finalize, load_builds, source_identity, benchmark_inputs, verify_process_inputs, runtime_files
+from aggregate import load_traces, schema_observations, validate_gates
+from infra import radicale_config, save_private_state, verify, expected_counts
+import cleanup as cleanup_module
+import profile as profiling
 import benchmark
 import driver
 
@@ -52,6 +54,15 @@ def executable(path, contents):
     path.chmod(0o755)
 
 
+def runtime_fixture(directory,label):
+    names=ASSEMBLIES+['Example.Dependency.dll']
+    for name in names:
+        (directory/name).write_bytes(('test-only-'+label+name).encode())
+    deps=dict(runtimeTarget=dict(name='test'),targets={'test':{'app':{'runtime':{name:{} for name in names}}}})
+    (directory/'DotnetAgents.CalDav.Mcp.deps.json').write_text(json.dumps(deps))
+    (directory/'DotnetAgents.CalDav.Mcp.runtimeconfig.json').write_text('{}')
+
+
 class BuildIdentityTests(unittest.TestCase):
     def test_prepared_revisions_survive_later_commits_and_working_directory_changes(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -67,8 +78,7 @@ class BuildIdentityTests(unittest.TestCase):
                 capture(repo, manifest)
                 assembly_dir = root / label
                 assembly_dir.mkdir()
-                for name in ASSEMBLIES:
-                    (assembly_dir / name).write_bytes(('test-only-' + label + name).encode())
+                runtime_fixture(assembly_dir,label)
                 finalize(repo, manifest, assembly_dir)
             (repo / 'Directory.Packages.props').write_text('later revision')
             commit(repo)
@@ -84,6 +94,7 @@ class BuildIdentityTests(unittest.TestCase):
             manifest = dict(baseline=str(baseline), candidate=str(candidate), compare_otlp=False, build_inputs=inputs)
             (root / 'paired-manifest.json').write_text(json.dumps(manifest))
             processes = [dict(label=label, assembly=value['assembly'],
+                runtime_files_sha256=value['runtime_files_sha256'],
                 sha256=value['assembly_sha256'][ASSEMBLIES[0]], core_sha256=value['assembly_sha256'][ASSEMBLIES[1]])
                 for label, value in inputs.items()]
             verify_process_inputs(root, 'paired', processes, builds)
@@ -95,6 +106,17 @@ class BuildIdentityTests(unittest.TestCase):
             otlp = benchmark_inputs(builds, candidate, candidate, compare_otlp=True)
             self.assertEqual(expected['candidate'], otlp['baseline']['source']['sha'])
             self.assertEqual(otlp['baseline'], otlp['candidate'])
+            dependency=root/'candidate'/'Example.Dependency.dll'
+            original=dependency.read_bytes()
+            dependency.write_bytes(b'stale dependency with unchanged first-party assemblies')
+            with self.assertRaisesRegex(RuntimeError,'dependency set differs'):
+                load_builds(root)
+            with self.assertRaisesRegex(RuntimeError,'prepared build'):
+                benchmark_inputs(builds,baseline,candidate)
+            dependency.unlink()
+            with self.assertRaisesRegex(RuntimeError,'Missing app-local runtime dependency'):
+                runtime_files(candidate)
+            dependency.write_bytes(original)
             (root / 'candidate' / ASSEMBLIES[0]).write_bytes(b'replaced binary')
             with self.assertRaisesRegex(RuntimeError, 'differs'):
                 load_builds(root)
@@ -240,15 +262,17 @@ class EvidenceTests(unittest.TestCase):
     def test_schema_observations_require_correct_build_and_identical_workload(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary)
-            builds={label:dict(assembly_sha256={ASSEMBLIES[0]:label}) for label in ['baseline','candidate']}
+            builds={label:dict(assembly_sha256={ASSEMBLIES[0]:label},runtime_files_sha256={'dependency':label})
+                    for label in ['baseline','candidate']}
             sources={label:dict(assemblySha256=label,tool='todos.query',payloadSha256='same-payload',
+                runtimeFilesSha256=builds[label]['runtime_files_sha256'],
                 samples=[dict(elapsedMilliseconds=1,allocatedBytes=100,gen0=0,gen1=0,gen2=0)])
                 for label in builds}
             for label,source in sources.items():
                 (root/('schema-'+label+'.json')).write_text(json.dumps(source))
             self.assertEqual(2,len(schema_observations(root,builds)))
             for field,value in [('assemblySha256','baseline'),('tool','calendar_entities.query'),
-                                ('payloadSha256','different-payload')]:
+                                ('payloadSha256','different-payload'),('runtimeFilesSha256',{'dependency':'stale'})]:
                 with self.subTest(field=field):
                     (root/'schema-candidate.json').write_text(json.dumps(dict(sources['candidate'],**{field:value})))
                     with self.assertRaises(RuntimeError):
@@ -323,6 +347,88 @@ class EvidenceTests(unittest.TestCase):
                         self.assertTrue(rows[-1]['timed_out'])
 
 
+class ProfileTests(unittest.IsolatedAsyncioTestCase):
+    async def test_start_profiles_bound_calls_and_retain_failures(self):
+        for variation in ['success','busy','collector-start-failure']:
+            with self.subTest(variation=variation), tempfile.TemporaryDirectory() as temporary:
+                root=Path(temporary)
+                (root/'infra-private.json').write_text(json.dumps(dict(
+                    url='http://127.0.0.1:1',username='test',password='test',otlp='http://127.0.0.1:1')))
+                clients=[];collectors=[]
+                class FakeClient:
+                    def __init__(self,*args):
+                        self.calls=0;self.closed=False;self.identity={};self.process=SimpleNamespace(pid=1)
+                        clients.append(self)
+                    async def __aenter__(self): return self
+                    async def __aexit__(self,*args): self.closed=True
+                    async def call(self,*args):
+                        self.calls+=1
+                        outcome='busy' if variation=='busy' and self.calls==8 else 'success'
+                        return dict(result=dict(structuredContent=dict(pagination=dict(nextCursor='cursor')))),dict(outcome=outcome)
+                class Collector:
+                    returncode=None
+                    def terminate(self): self.returncode=-15
+                    def kill(self): self.returncode=-9
+                    async def wait(self):
+                        if self.returncode is None: self.returncode=0
+                        return self.returncode
+                async def spawn(*args,**kwargs):
+                    if variation=='collector-start-failure' and collectors: raise OSError('collector unavailable')
+                    process=Collector();collectors.append(process);return process
+                args=SimpleNamespace(root=root,assembly=root/'server.dll',profilers=root,name='capture',
+                                     mode='start',tool='calendar_occurrences.query')
+                with patch.object(profiling,'Client',FakeClient), patch.object(profiling.asyncio,'create_subprocess_exec',side_effect=spawn):
+                    if variation=='success':
+                        await profiling.run(args)
+                    else:
+                        with self.assertRaises((RuntimeError,OSError)):
+                            await profiling.run(args)
+                records=json.loads((root/'capture-profile-samples.json').read_text())
+                identity=json.loads((root/'capture-profile-process.json').read_text())
+                self.assertTrue(clients[0].closed)
+                self.assertTrue(all(p.returncode is not None for p in collectors))
+                self.assertEqual(variation=='success',identity['profile_completed'])
+                if variation=='success':
+                    self.assertEqual(10,clients[0].calls)
+                    self.assertEqual(5,sum(not r['warmup'] for r in records))
+                elif variation=='busy':
+                    self.assertEqual('busy',records[-1]['outcome'])
+
+
+class GateEvidenceTests(unittest.TestCase):
+    def test_complete_gates_are_required_before_aggregation(self):
+        manifest=json.loads((HARNESS.parents[1]/'test-suite-manifest.json').read_text())
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            for item in manifest['artifacts']:
+                trx=ET.Element('TestRun')
+                results=ET.SubElement(trx,'Results')
+                ET.SubElement(results,'UnitTestResult',executionId='execution',testId='test',testName='test',outcome='Passed')
+                definition=ET.SubElement(ET.SubElement(trx,'TestDefinitions'),'UnitTest',id='test')
+                ET.SubElement(definition,'TestMethod',className=item.get('requiredResult',{}).get('className','Synthetic.Tests'))
+                ET.SubElement(ET.SubElement(trx,'TestEntries'),'TestEntry',executionId='execution',testId='test')
+                ET.SubElement(ET.SubElement(trx,'ResultSummary',outcome='Completed'),'Counters',total='1',executed='1',passed='1')
+                (root/item['trx']).write_bytes(ET.tostring(trx))
+                if 'coveragePrefix' in item:
+                    for form in ['cobertura','opencover']:
+                        (root/(item['coveragePrefix']+'.coverage.'+form+'.test.xml')).write_text('<coverage/>')
+            coverage=root/'coverage-report';coverage.mkdir()
+            (coverage/'Cobertura.xml').write_text('<coverage line-rate="1" branch-rate="1"/>')
+            validate_gates(root)
+            strict=root/'strict-preconditions.trx';saved=strict.read_bytes();strict.unlink()
+            with self.assertRaises(RuntimeError): validate_gates(root)
+            strict.write_bytes(saved)
+            core=root/'main-core.trx';original=core.read_bytes()
+            for counter in ['failed','notExecuted','warning']:
+                with self.subTest(counter=counter):
+                    trx=ET.fromstring(original);trx.find('.//Counters').set(counter,'1')
+                    core.write_bytes(ET.tostring(trx))
+                    with self.assertRaises(RuntimeError): validate_gates(root)
+            core.write_bytes(original)
+            (coverage/'Cobertura.xml').write_text('<coverage line-rate="0.1" branch-rate="1"/>')
+            with self.assertRaises(RuntimeError): validate_gates(root)
+
+
 class StartupCleanupTests(unittest.IsolatedAsyncioTestCase):
     async def test_failed_negotiation_reaps_the_child_and_reader_tasks(self):
         for kind,error in [('legacy',AssertionError),('malformed',TypeError),
@@ -360,6 +466,21 @@ else:
 
 
 class InfrastructureTests(unittest.TestCase):
+    def test_cleanup_accepts_the_custom_seed_manifest(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);counts=dict(events=2,todos=2,archive=0)
+            (root/'corpus.json').write_text(json.dumps(dict(resources=counts)))
+            (root/'infra-private.json').write_text('{}')
+            (root/'hermes-isolated').mkdir()
+            def remove_owned(path):
+                (path/'infra-private.json').unlink()
+                (path/'cleanup.json').write_text(json.dumps(dict(complete=True)))
+            self.assertEqual(counts,expected_counts(root))
+            with patch.object(cleanup_module,'verify',return_value=counts),patch.object(cleanup_module,'down',side_effect=remove_owned):
+                cleanup_module.cleanup(root)
+            self.assertFalse((root/'hermes-isolated').exists())
+            self.assertEqual(counts,json.loads((root/'cleanup.json').read_text())['final_corpus_before_container_removal'])
+
     def test_private_host_parent_protects_nonroot_container_credentials(self):
         for mask in [0o022,0o077]:
             with self.subTest(umask=mask), tempfile.TemporaryDirectory() as temporary:

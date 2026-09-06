@@ -4,13 +4,13 @@ import argparse
 import json
 from pathlib import Path
 import shutil
-from infra import down,verify
+from infra import down,verify,expected_counts
 
 
 def cleanup(root):
     state=json.loads((root/'infra-private.json').read_text())
     counts=verify(state)
-    if counts!=dict(events=600,todos=600,archive=0):
+    if counts!=expected_counts(root):
         raise RuntimeError(f'Unexpected final corpus: {counts}; inspect owned fixtures before cleanup')
     down(root)
     removed=[]

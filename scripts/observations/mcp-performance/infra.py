@@ -149,6 +149,8 @@ def resource(kind, index):
 
 
 def seed(root, count):
+    if count<0:
+        raise ValueError('Seed count cannot be negative')
     state = json.loads((root / 'infra-private.json').read_text())
     principal = '/' + state['username'] + '/'
     assert request(state, 'MKCOL', principal)[0] in (201, 405)
@@ -203,6 +205,14 @@ def verify(state):
             raise RuntimeError(f'Seed corpus content or membership changed in {name}')
         result[name]=len(observed)
     return result
+
+
+def expected_counts(root):
+    counts=json.loads((root/'corpus.json').read_text())['resources']
+    if (set(counts)!={'events','todos','archive'}
+            or any(type(value) is not int or value<0 for value in counts.values())):
+        raise RuntimeError('Invalid seeded corpus counts')
+    return counts
 
 
 def down(root):

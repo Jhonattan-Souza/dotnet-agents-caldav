@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import shutil
 import time
+from build_manifest import runtime_files
 
 PROTOCOL = '2026-07-28'
 REQUEST_TIMEOUT_SECONDS = 45
@@ -87,6 +88,7 @@ class Client:
         self.identity = dict(pid=self.process.pid, assembly=str(self.assembly),
             sha256=hashlib.sha256(self.assembly.read_bytes()).hexdigest(),
             core_sha256=hashlib.sha256(self.assembly.with_name('DotnetAgents.CalDav.Core.dll').read_bytes()).hexdigest(),
+            runtime_files_sha256=runtime_files(self.assembly),
             command=Path(f'/proc/{self.process.pid}/cmdline').read_bytes().decode().split('\0')[:-1],
             startup_ms=self.startup_ms, discovery=self.initialized)
         # Linux maps verifies the runtime actually loaded this assembly.

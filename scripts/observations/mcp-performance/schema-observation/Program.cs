@@ -8,6 +8,11 @@ using System.Text.Json;
 // dependencies and invoke its unmodified internal guard on a real MCP result.
 var directory = Path.GetFullPath(args[0]);
 var payload = File.ReadAllBytes(args[1]);
+Dictionary<string, string> RuntimeFiles() => Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories)
+    .OrderBy(path => path, StringComparer.Ordinal)
+    .ToDictionary(path => Path.GetRelativePath(directory, path).Replace(Path.DirectorySeparatorChar, '/'),
+        path => Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(path))), StringComparer.Ordinal);
+var runtimeFiles = RuntimeFiles();
 AssemblyLoadContext.Default.Resolving += (_, name) =>
     AssemblyLoadContext.Default.LoadFromAssemblyPath(Path.Combine(directory, name.Name + ".dll"));
 var assemblyPath = Path.Combine(directory, "DotnetAgents.CalDav.Mcp.dll");
@@ -40,10 +45,13 @@ for (var i = 0; i < 100; i++)
         gen2 = GC.CollectionCount(2) - gen2
     });
 }
+if (!runtimeFiles.SequenceEqual(RuntimeFiles()))
+    throw new InvalidOperationException("Runtime files changed during schema observation.");
 Console.WriteLine(JsonSerializer.Serialize(new
 {
     runtime = Environment.Version.ToString(),
     assemblySha256 = Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(assemblyPath))),
+    runtimeFilesSha256 = runtimeFiles,
     payloadSha256 = Convert.ToHexStringLower(SHA256.HashData(payload)),
     tool = args[2],
     boundary = "CalendarOutputSchemaGuard.Validate via reflection; no transport; current-thread allocations",
