@@ -31,6 +31,10 @@ do checkout. Ambos recebem limites de 4 CPUs/2 GiB. Dashboard conserva login por
 token e autenticação por chave na API de exportação. O manifesto privado tem
 modo 0600. Não copie esse manifesto, config do Hermes, logs privados ou chaves
 ao Git.
+O arquivo de credenciais fica sob `radicale-private/`, criado com modo 0700.
+Somente o diretório interno é montado no container, com os arquivos legíveis pelo
+usuário não-root da imagem. O diretório privado do host bloqueia acesso de outros
+usuários locais, inclusive quando o umask é 022.
 
 `prepare.sh` grava `baseline-build.json` e `candidate-build.json` com os SHAs
 reais, estado de alterações locais, hash do patch e dos arquivos novos, antes do
@@ -50,8 +54,11 @@ Seed 20260905: 600 Events e 600 To-dos distribuídos em 180 dias desde
 390 To-dos abertos, 180 completos e 30 cancelados. Arquivo vazio desde o início.
 Janela fixa: 2026-07-01 a 2026-12-31 UTC; contexto America/Sao_Paulo; CalDAV usa
 URL raiz, sem encurtar discovery pela URL do principal. PROPFIND Depth:1 com
-ETags verifica os recursos persistidos. `corpus.json` registra contagens e hash
-das entradas determinísticas. Seeding e limpeza ficam fora da medida.
+ETags verifica os recursos persistidos. Cada PUT do seed precisa retornar um ETag
+forte, salvo no manifesto privado. `verify` compara caminhos e ETags completos:
+editar ou substituir um recurso mantendo a contagem também falha. `corpus.json`
+registra contagens e hash das entradas determinísticas. Seeding e limpeza ficam
+fora da medida.
 
 ## Matriz funcional e clientes
 
@@ -130,11 +137,15 @@ como se fosse outra. Os aquecimentos concorrentes usam 20 rodadas na carga escol
 `--compare-otlp` exige o mesmo assembly nos dois argumentos: a etiqueta baseline
 usa OTLP e a candidata o desabilita, alternando a ordem entre blocos. Use
 `--sizes 200 --samples 30 --name otlp-overhead`. `--no-otlp` desabilita ambos.
+As duas flags são mutuamente exclusivas.
 p50/p95 usam nearest rank, `ceil(p*N)`; p99 é
 apenas descritivo. Os JSONL retêm aquecimentos, medidas, falhas, CPU do processo,
 RSS/HWM, bytes stdio e hashes de itens. CPU de `/proc` tem resolução de 10 ms
 nesta máquina. `*-batches.jsonl` fornece tempo de lote e throughput efetivo;
 o inverso da latência média só representa capacidade serial de serviço.
+Em `single_session` com concorrência maior que um, CPU por chamada e sua média
+ficam `null`: os intervalos simultâneos incluem CPU das outras chamadas. A medição
+por delta do processo é usada somente sem chamadas sobrepostas no mesmo filho.
 
 ## Profiling e exportação
 
@@ -154,6 +165,8 @@ exportadas pelo produto. Para a comparação síncrona de alocação, copie
 uma página estruturada real de MCP salva localmente e nome da ferramenta. O
 programa usa reflexão para chamar o guard original em cada assembly sobre o
 mesmo JSON, após 20 aquecimentos e com 100 amostras. Não mede transporte.
+A agregação exige o hash de assembly correspondente ao build de cada observação,
+além de ferramenta e payload idênticos entre baseline e candidata.
 
 O exportador usa a API suportada do Dashboard e exige
 `returnedCount == totalCount`; não aceita truncamento silencioso. O Dashboard

@@ -97,19 +97,32 @@ def load_traces(paths):
     return list(traces.values())
 
 
+def schema_observations(root,builds):
+    allocation=[]
+    expected_workload=None
+    for label in ['baseline','candidate']:
+        source=json.loads((root/('schema-'+label+'.json')).read_text());samples=source['samples']
+        if source['assemblySha256']!=builds[label]['assembly_sha256']['DotnetAgents.CalDav.Mcp.dll']:
+            raise RuntimeError(f'{label} schema observation does not match its prepared build')
+        workload=(source['tool'],source['payloadSha256'])
+        if expected_workload is not None and workload!=expected_workload:
+            raise RuntimeError('Schema observations require the same tool and payload')
+        expected_workload=workload
+        allocation.append(dict(label=label,n=len(samples),payload_sha256=source['payloadSha256'],
+            tool=source['tool'],assembly_sha256=source['assemblySha256'],
+            median_ms=statistics.median(s['elapsedMilliseconds'] for s in samples),
+            median_allocated_bytes=statistics.median(s['allocatedBytes'] for s in samples),
+            gc_collections={g:sum(s[g] for s in samples) for g in ['gen0','gen1','gen2']}))
+    return allocation
+
+
 def main(a):
     builds=load_builds(a.root)
     traces=load_traces(a.traces)
     results=[];startup=[]
     for name in a.runs:
         r,s=join_run(a.root,name,traces,builds);results+=r;startup+=s
-    allocation=[]
-    for label in ['baseline','candidate']:
-        source=json.loads((a.root/('schema-'+label+'.json')).read_text());samples=source['samples']
-        allocation.append(dict(label=label,n=len(samples),payload_sha256=source['payloadSha256'],
-            median_ms=statistics.median(s['elapsedMilliseconds'] for s in samples),
-            median_allocated_bytes=statistics.median(s['allocatedBytes'] for s in samples),
-            gc_collections={g:sum(s[g] for s in samples) for g in ['gen0','gen1','gen2']}))
+    allocation=schema_observations(a.root,builds)
     gates={}
     for path in sorted((a.root/a.gates).glob('*.trx')):
         gates[path.name]=ET.parse(path).getroot().find('.//{*}Counters').attrib

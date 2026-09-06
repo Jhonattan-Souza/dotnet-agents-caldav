@@ -17,6 +17,8 @@ TOOLS = ['calendar_entities.query', 'calendar_occurrences.query', 'todos.query']
 
 
 def validate_args(args):
+    if args.compare_otlp and args.no_otlp:
+        raise ValueError('compare-otlp and no-otlp are mutually exclusive')
     for name in ['blocks', 'samples', 'cohort_samples']:
         if getattr(args, name) <= 0:
             raise ValueError(name.replace('_', '-') + ' must be positive')
@@ -35,6 +37,12 @@ def append(path, value):
 
 
 def record_sample(args, base, record, warmup, size, references):
+    record=dict(record)
+    if base['topology']=='single_session' and base['concurrency']>1:
+        record['cpu_ms']=None
+        record['cpu_measurement_scope']='unavailable: overlapping calls share the process'
+    else:
+        record['cpu_measurement_scope']='process delta for one nonoverlapping request'
     append(args.root/(args.name+'-samples.jsonl'), dict(base, **record, warmup=warmup, size=size))
     if record['outcome'] != 'success':
         raise RuntimeError(f'{base["label"]} {base["tool"]}: {record["outcome"]}')
@@ -167,7 +175,9 @@ def summarize(root,name):
             min_ms=times[0],max_ms=times[-1],block_p95_ms=block_p95,
             errors=sum(r['is_error'] or r['outcome']!='success' for r in rows),
             timeouts=sum(r.get('timed_out',False) for r in rows),
-            mean_cpu_ms=sum(r['cpu_ms'] for r in rows)/len(rows),
+            mean_cpu_ms=(sum(r['cpu_ms'] for r in rows)/len(rows)
+                         if all(r['cpu_ms'] is not None for r in rows) else None),
+            cpu_measurement_scope=rows[0]['cpu_measurement_scope'],
             max_rss_bytes=max(r['rss_bytes'] for r in rows),
             serial_service_ops_per_second=len(rows)*1000/sum(times)))
     (root/(name+'-summary.json')).write_text(json.dumps(result,indent=2))

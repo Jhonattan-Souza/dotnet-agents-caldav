@@ -10,11 +10,14 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import stat
+import xml.etree.ElementTree as ET
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from build_manifest import capture, finalize, load_builds, source_identity, benchmark_inputs, verify_process_inputs
-from aggregate import load_traces
+from aggregate import load_traces, schema_observations
+from infra import radicale_config, save_private_state, verify
 import benchmark
 
 HARNESS = Path(__file__).resolve().parent
@@ -155,7 +158,8 @@ class CommandTests(unittest.TestCase):
             root = Path(temporary)
             for options in [('--samples', '7'), ('--samples', '1'), ('--samples', '0'),
                             ('--cohort-samples', '0'), ('--blocks', '-1'), ('--concurrency', '2'),
-                            ('--cohort-samples', '12', '--samples', '12')]:
+                            ('--cohort-samples', '12', '--samples', '12'),
+                            ('--compare-otlp', '--no-otlp')]:
                 with self.subTest(options=options):
                     result = subprocess.run([sys.executable, str(HARNESS / 'benchmark.py'), str(root),
                         'baseline.dll', 'candidate.dll', '--name', 'invalid', '--mode', 'start', *options],
@@ -166,7 +170,7 @@ class CommandTests(unittest.TestCase):
 
     def test_start_count_boundary_reserves_five_warmup_snapshots(self):
         args = SimpleNamespace(blocks=1, samples=11, cohort_samples=11, mode='start',
-                               topology='single_session', concurrency=1)
+                               topology='single_session', concurrency=1, compare_otlp=False, no_otlp=False)
         benchmark.validate_args(args)
         args.samples = args.cohort_samples = 12
         with self.assertRaisesRegex(ValueError, 'at most 11'):
@@ -232,6 +236,23 @@ class CommandTests(unittest.TestCase):
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_schema_observations_require_correct_build_and_identical_workload(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            builds={label:dict(assembly_sha256={ASSEMBLIES[0]:label}) for label in ['baseline','candidate']}
+            sources={label:dict(assemblySha256=label,tool='todos.query',payloadSha256='same-payload',
+                samples=[dict(elapsedMilliseconds=1,allocatedBytes=100,gen0=0,gen1=0,gen2=0)])
+                for label in builds}
+            for label,source in sources.items():
+                (root/('schema-'+label+'.json')).write_text(json.dumps(source))
+            self.assertEqual(2,len(schema_observations(root,builds)))
+            for field,value in [('assemblySha256','baseline'),('tool','calendar_entities.query'),
+                                ('payloadSha256','different-payload')]:
+                with self.subTest(field=field):
+                    (root/'schema-candidate.json').write_text(json.dumps(dict(sources['candidate'],**{field:value})))
+                    with self.assertRaises(RuntimeError):
+                        schema_observations(root,builds)
+
     def test_named_trace_exports_merge_without_silent_conflicts(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -285,6 +306,13 @@ class EvidenceTests(unittest.TestCase):
                         if variation == 'equal':
                             asyncio.run(benchmark.run(args))
                             self.assertTrue((root/'check-summary.json').exists())
+                            summaries=json.loads((root/'check-summary.json').read_text())
+                            for summary in summaries:
+                                if topology=='single_session':
+                                    self.assertIsNone(summary['mean_cpu_ms'])
+                                    self.assertIn('overlapping',summary['cpu_measurement_scope'])
+                                else:
+                                    self.assertEqual(0,summary['mean_cpu_ms'])
                         else:
                             with self.assertRaisesRegex(RuntimeError, 'content/order|client_timeout'):
                                 asyncio.run(benchmark.run(args))
@@ -292,6 +320,50 @@ class EvidenceTests(unittest.TestCase):
                     self.assertTrue(any(row['label'] == 'candidate' for row in rows))
                     if variation == 'timeout':
                         self.assertTrue(rows[-1]['timed_out'])
+
+
+class InfrastructureTests(unittest.TestCase):
+    def test_private_host_parent_protects_nonroot_container_credentials(self):
+        for mask in [0o022,0o077]:
+            with self.subTest(umask=mask), tempfile.TemporaryDirectory() as temporary:
+                root=Path(temporary)
+                previous=os.umask(mask)
+                try:
+                    state=dict(username='test',password='test-only')
+                    config=radicale_config(root,state)
+                    manifest=root/'infra-private.json'
+                    save_private_state(manifest,state)
+                finally:
+                    os.umask(previous)
+                self.assertEqual(0o700,stat.S_IMODE(config.parent.stat().st_mode))
+                self.assertEqual(0o600,stat.S_IMODE(manifest.stat().st_mode))
+                self.assertEqual(0o755,stat.S_IMODE(config.stat().st_mode))
+                self.assertEqual(0o644,stat.S_IMODE((config/'users').stat().st_mode))
+
+    def test_corpus_verification_rejects_same_count_content_and_membership_changes(self):
+        state=dict(username='test',corpus_etags={
+            'events':{'/test/events/0000.ics':'"event-seed"'},
+            'todos':{'/test/todos/0000.ics':'"todo-seed"'},'archive':{}})
+        observed={name:dict(values) for name,values in state['corpus_etags'].items()}
+        def response(state,method,path,*args):
+            name=path.rstrip('/').split('/')[-1]
+            xml=ET.Element('{DAV:}multistatus')
+            for href,etag in {path:None,**observed[name]}.items():
+                item=ET.SubElement(xml,'{DAV:}response')
+                ET.SubElement(item,'{DAV:}href').text=href
+                if etag:
+                    ET.SubElement(ET.SubElement(item,'{DAV:}prop'),'{DAV:}getetag').text=etag
+            return 207,ET.tostring(xml),{}
+        with patch('infra.request',side_effect=response):
+            self.assertEqual(dict(events=1,todos=1,archive=0),verify(state))
+            observed['events']['/test/events/0000.ics']='"edited-content"'
+            with self.assertRaisesRegex(RuntimeError,'content or membership changed'):
+                verify(state)
+            observed['events']={'/test/events/replacement.ics':'"event-seed"'}
+            with self.assertRaisesRegex(RuntimeError,'content or membership changed'):
+                verify(state)
+            with self.assertRaisesRegex(RuntimeError,'manifest is missing'):
+                verify(dict(username='test'))
 
 
 if __name__ == '__main__':
