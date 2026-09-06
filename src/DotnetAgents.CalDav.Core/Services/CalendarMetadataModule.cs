@@ -1,3 +1,6 @@
+using Polly.CircuitBreaker;
+using Polly.RateLimiting;
+using Polly.Timeout;
 using System.Text;
 using System.Xml;
 using DotnetAgents.CalDav.Core.Abstractions;
@@ -30,7 +33,7 @@ internal sealed class CalendarMetadataModule(CalDavClient client) : ICalendarMet
         var body = CalendarMetadataPatchProtocol.Body(patch);
         CalendarOperationProgress.SetPhase(CalendarOperationPhase.Fetch);
         var dispatch = await DispatchAsync(href, patch, body, cancellationToken).ConfigureAwait(false);
-        if (dispatch.State == CalendarMutationState.NotCommitted)
+        if (dispatch.State is CalendarMutationState.NotCommitted or CalendarMutationState.NotAttempted)
             return new(dispatch.State, Error: dispatch.Error);
         return await ReconcileAsync(href, patch, dispatch, cancellationToken).ConfigureAwait(false);
     }
@@ -45,6 +48,13 @@ internal sealed class CalendarMetadataModule(CalDavClient client) : ICalendarMet
         {
             var response = await client.SendProtocolRequestAsync(href, "PROPPATCH", body, null, cancellationToken).ConfigureAwait(false);
             return CalendarMetadataPatchProtocol.ReadDispatch(href, patch, response);
+        }
+        catch (Exception exception) when (exception is BrokenCircuitException or RateLimiterRejectedException)
+        {
+            // These strategies reject before the HTTP attempt. PROPPATCH is never retried,
+            // so no earlier attempt in this invocation can have reached the server.
+            return new(CalendarMutationState.NotAttempted,
+                new CalendarProtocolException("upstream_unavailable", "The property update was not dispatched because the Calendar transport is temporarily unavailable.", true));
         }
         catch (Exception exception) when (IsUncertainFailure(exception))
         {
@@ -124,8 +134,10 @@ internal sealed class CalendarMetadataModule(CalDavClient client) : ICalendarMet
 
     private static bool IsOptionalOptionsFailure(Exception exception, CancellationToken cancellationToken) =>
         exception is HttpRequestException or IOException or TimeoutException or CalendarProtocolException
+            or TimeoutRejectedException or BrokenCircuitException or RateLimiterRejectedException
         || exception is OperationCanceledException && !cancellationToken.IsCancellationRequested;
 
     private static bool IsUncertainFailure(Exception exception) => exception is HttpRequestException or IOException
-        or TimeoutException or OperationCanceledException or CalendarProtocolException or XmlException;
+        or TimeoutException or OperationCanceledException or CalendarProtocolException or XmlException
+        or TimeoutRejectedException or BrokenCircuitException or RateLimiterRejectedException;
 }

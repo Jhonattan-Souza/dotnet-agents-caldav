@@ -43,6 +43,48 @@ public class CalendarSyncReportParserTests
         page.Changes.Count.ShouldBe(1);
     }
 
+    [Theory]
+    [InlineData("/calendars/user/events")]
+    [InlineData("https://cal.example/calendars/user/events")]
+    [InlineData("https://CAL.EXAMPLE:443/calendars/user/events")]
+    public void SlashlessCollectionIdentityRetainsNativePagination(string href)
+    {
+        var page = Parse(Wrap(Changed(MemberPath) + Response(href, TruncationStatus)), pageSize: 1);
+
+        page.HasMore.ShouldBeTrue();
+        page.Changes.Single().Href.ShouldBe(CalendarHref + "a.ics");
+        page.SyncToken.ShouldBe("urn:sync:next");
+    }
+
+    [Theory]
+    [InlineData(CalendarHref, "/calendars/user/events")]
+    [InlineData("/calendars/user/events", CalendarHref)]
+    public void SlashlessAndSlashedSelfResponsesAreOneDuplicateIdentity(string firstHref, string secondHref)
+    {
+        var body = Wrap(Response(firstHref, TruncationStatus) + Response(secondHref, TruncationStatus));
+
+        Should.Throw<CalendarProtocolException>(() => Parse(body)).Code.ShouldBe("upstream_protocol_error");
+    }
+
+    [Theory]
+    [InlineData("/calendars/user/events-other")]
+    [InlineData("/calendars/user/events.ics")]
+    [InlineData("/calendars/user/events//")]
+    [InlineData("/calendars/user/Events")]
+    [InlineData("https://other.example/calendars/user/events")]
+    [InlineData("http://cal.example/calendars/user/events")]
+    [InlineData("https://cal.example:8443/calendars/user/events")]
+    [InlineData("https://user:secret@cal.example/calendars/user/events")]
+    [InlineData("/calendars/user/events?query=1")]
+    [InlineData("/calendars/user/events#fragment")]
+    [InlineData("/calendars/user/%2E/events")]
+    [InlineData("/calendars/user%2Fevents")]
+    public void SlashNormalizationCannotAuthorizeAnotherTruncationIdentity(string href)
+    {
+        Should.Throw<CalendarProtocolException>(() => Parse(Wrap(Response(href, TruncationStatus))))
+            .Code.ShouldBe("upstream_protocol_error");
+    }
+
     [Fact]
     public void UnchangedReportMayReuseItsTokenButChangedOrTruncatedReportCannot()
     {
@@ -215,13 +257,16 @@ public class CalendarSyncReportParserTests
         Parse(Wrap(member + extension)).Changes.Count.ShouldBe(1);
     }
 
-    [Fact]
-    public void RejectsCollectionSelfResponsesWithoutUnambiguousTruncation()
+    [Theory]
+    [InlineData(CalendarHref)]
+    [InlineData("/calendars/user/events")]
+    public void RejectsCollectionSelfResponsesWithoutUnambiguousTruncation(string href)
     {
         foreach (var response in new[]
         {
-            Changed(CalendarHref), Response(CalendarHref, "<d:status>HTTP/1.1 200 OK</d:status>"),
-            Response(CalendarHref, "<d:status>HTTP/1.1 507 Insufficient Storage</d:status><d:propstat/>")
+            Changed(href), Response(href, "<d:status>HTTP/1.1 200 OK</d:status>"),
+            Response(href, "<d:status>HTTP/1.1 404 Not Found</d:status>"),
+            Response(href, "<d:status>HTTP/1.1 507 Insufficient Storage</d:status><d:propstat/>")
         })
             Should.Throw<CalendarProtocolException>(() => Parse(Wrap(response))).Code.ShouldBe("upstream_protocol_error");
     }

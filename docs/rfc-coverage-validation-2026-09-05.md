@@ -27,11 +27,17 @@ Compact-checkpoint candidate SHA-256 identities used for the recorded runs:
 - Core: `0bc03d31439b425c9e913e1b9b901a51253922bae9aa82b6ce2c660eef754f98`
 - Product/build input snapshot (175 files): `0d15c5eed46bfb92c9615066747fab73631fa38d357782c7f67adf9724f1f458`
 
-Final review-fix build SHA-256 identities:
+First review-fix build SHA-256 identities:
 
 - MCP: `2941b2680db6ac303ce95beac9fa7717d7e7add1e95cb1851e208c285916b25c`
 - Core: `a70abb338521b83d8773cc329fcedccbf58297ce098a7c66f247d7cc05d0d976`
 - Product/build input snapshot (175 files): `1158bf2d4861c75f0afdbe57e6d68147cd97b24f787e86e11394464a51a9725c`
+
+Second review-fix build SHA-256 identities:
+
+- MCP: `360c2be61709841c933bb31bb44ac2db5e4277fa7a5ec7b96f21aa62dff0fc57`
+- Core: `dde37de2588295ef6bf1e9ae44f4f2a02dc801971f3b42e8c7da3745c7aa69f8`
+- Product/build input snapshot (175 files): `581c9ab682a10b263eed12c03e1b838e648602ac41240dc52b88d30a66748940`
 
 The Radicale lane enabled its existing verified Move profile. Baikal and
 Nextcloud left the profile unset. Nextcloud used exact configured Calendar
@@ -41,11 +47,11 @@ calendar-creation rate limit. Server limits were left at their defaults.
 ## Automated gates
 
 - Clean, nonincremental Release build: zero warnings and errors.
-- Full suite: Core 2,739; MCP 1,083; integration 113; strict-preconditions 11;
-  alternate-time-zone 11. All 3,957 passed; zero skipped tests.
-- Aggregate coverage: 94.5% line and 85.9% branch; both required gates passed.
+- Full suite: Core 2,842; MCP 1,092; integration 113; strict-preconditions 11;
+  alternate-time-zone 11. All 4,069 passed; zero skipped tests.
+- Aggregate coverage: 94.6% line and 86.1% branch; both required gates passed.
 - Slopwatch: zero issues, including the method-complexity gate.
-- Package `0.0.0-rfcvalidation.4`: verified NuGet and symbols archives, matching
+- Package `0.0.0-rfcvalidation.5`: verified NuGet and symbols archives, matching
   root/tool MCP metadata, exact bundled skill, local tool install, and one
   passing package smoke test. Source metadata versions remain `0.0.0`.
 - Bundled skill validation, Python harness compilation, and `git diff --check`
@@ -66,9 +72,9 @@ also prompted complete effective-language readback, rejection of conflicting
 sync truncation errors, and exclusion of native 507 from circuit-breaker
 failure counts.
 The compact-checkpoint build's performance and Hermes observations retain
-their earlier source identity. Final functional checks used the review-fix build.
+their earlier source identity. Later checks identify their review-fix build.
 
-That final build passed another 198 live calls, matched to 198 Aspire operation
+The first review-fix build passed another 198 live calls, matched to 198 Aspire operation
 traces and 1,153 spans. Each runtime completed 29 metadata/report calls and a
 checkpoint restart rejection. Nextcloud completed 100 initial syncs with exactly
 200 REPORTs, then successful inspection and resource readback. The earlier build
@@ -78,8 +84,37 @@ pages without gaps or duplicates, then an empty poll and a larger replay of the
 original checkpoint. All 175 product inputs stayed unchanged during the final
 runs, every MCP process exited cleanly, and seeded fixture counts were restored.
 These were functional regression runs during build/test activity; they add no
-latency claims. Independent review found no remaining issues and its separate
-23-case parser probe included Baikal's recorded response.
+latency claims. Its separate independent 23-case parser probe included Baikal's
+recorded response.
+
+The second code review identified grouped participation names, escaped timezone
+identifiers, misplaced free/busy data, slashless collection identities, and
+unhandled resilience exceptions. The corrections keep scheduling checks aligned
+with accepted stored resources, decode validated TZID TEXT once, reject misplaced
+availability evidence, and normalize only the authorized collection's omitted
+trailing slash. Read tools return typed transient errors for timeout, circuit,
+and queue rejection. A write timeout remains indeterminate; a request rejected
+before dispatch is not attempted; failed readback after acknowledgement preserves
+the committed-but-unverified outcome. The independent before/after probe passed
+all 38 cases on the corrected product assemblies; the prior build failed 32.
+
+That build passed 142 further functional/fault calls, plus four comparisons
+using an earlier build; all 146 calls matched Aspire traces. Native grouped URN
+attendees on Baikal and Nextcloud remained editable Event projections, but
+patch and confirmed delete reached fresh OPTIONS checks and stopped before
+writes. Grouped mailto resources projected as opaque; Exact inputs retained
+their existing stricter wire validation. Those earlier rejections were not
+counted as proof of the scheduling check.
+
+Separate loopback fault injection forwarded a metadata write, verified the
+backend's acknowledgement, and held the response beyond the 10-second attempt
+timeout. The corrected MCP returned `indeterminate`/`unknown`, with one write
+and no replay. Injecting 100 HTTP 503 responses opened the actual circuit:
+read tools then returned typed errors, and metadata patch was `not_attempted`
+without HTTP dispatch. Synthetic free/busy, timezone and href responses checked
+the parser fixes through MCP; they are labelled as fault injection, not native
+server compatibility. Queue rejection has unit and independent-probe coverage;
+it was not injected live. All fixture counts were restored.
 
 ## Every catalog operation
 
@@ -176,9 +211,10 @@ There is no vendor-specific trash-name exception.
 
 ## Performance observations
 
-The eight initial measurement runs covered 933 calls. After the compact
-checkpoint refinement, six affected sync runs added 186 calls: **1,119 measured
-performance calls**, each matched to Aspire, with zero transport retries.
+The eight initial measurement runs covered 933 calls. Six compact-checkpoint
+sync runs added 186, and three direct runs on the second review-fix build added
+237: **1,356 measured performance calls**, each matched to Aspire, with zero
+transport retries. The latest 237 calls produced 1,216 matched spans.
 Runs were sequential; builds, the test suite and Hermes inference were kept
 outside the timing windows.
 
@@ -191,26 +227,24 @@ Aspire attempt counts. Separate direct runs used one fresh process per operation
 and 15 repeated calls. First-call measurements exclude MCP startup and protocol
 initialization; the records include both first-call and repeated-call results.
 
-The table gives direct p50 / p95 milliseconds at 100 resources with explicit
-Calendar scope, 15 repeated calls per cell. Non-sync rows use the build before
-compact handles; those implementations were unchanged. Sync rows use the final
-compact build. Every run has separate source and assembly identities in the
-machine-readable evidence.
+The table gives direct p50 / p95 milliseconds on the second review-fix build
+at 100 resources with explicit Calendar scope, 15 repeated calls per cell.
+Earlier measurements remain in the machine-readable evidence with their
+separate source and assembly identities.
 
 | Operation | Radicale | Baikal | Nextcloud |
 | --- | ---: | ---: | ---: |
-| Inspect | 6.98 / 9.62 | 8.53 / 11.39 | 33.83 / 48.14 |
-| Metadata patch | 12.51 / 16.28 | 19.72 / 23.24 | 57.16 / 69.67 |
-| Free/busy | 65.61 / 70.34 (rejected) | 25.52 / 43.78 | 29.84 / 600.26 |
-| Initial sync | 39.46 / 49.38 | 17.17 / 41.93 | 45.51 / 56.42 |
-| Unchanged sync | 16.40 / 19.36 | 4.66 / 6.69 | 16.82 / 18.00 |
+| Inspect | 6.90 / 8.86 | 8.83 / 16.55 | 33.84 / 41.91 |
+| Metadata patch | 13.91 / 16.26 | 21.49 / 28.39 | 59.68 / 61.62 |
+| Free/busy | 65.71 / 70.10 (rejected) | 29.70 / 43.77 | 29.93 / 606.13 |
+| Initial sync | 40.52 / 45.89 | 17.75 / 42.33 | 44.91 / 60.80 |
+| Unchanged sync | 16.02 / 18.76 | 4.80 / 6.43 | 16.99 / 17.73 |
 
 Radicale free/busy timing measures rejection of malformed content. Nextcloud
-free/busy included one 600.26 ms first repeated call with 410 ms of MCP process
-CPU; the other 14 repeats took 28.83–36.59 ms. That sample remains in the stated
+free/busy included one 606.13 ms first repeated call. That sample remains in the stated
 p95. These are local observations with small sample sizes, not latency guarantees.
 
-At 500 resources, final sync measurements were:
+At 500 resources, the compact build's measurements before the PR review fixes were:
 
 | Runtime | Initial p50 / p95 ms | Unchanged p50 / p95 ms | HTTP attempts: initial / unchanged |
 | --- | ---: | ---: | ---: |
@@ -218,7 +252,7 @@ At 500 resources, final sync measurements were:
 | Baikal | 66.32 / 88.78 | 5.13 / 6.68 | 1 / 1 |
 | Nextcloud | 96.64 / 122.68 | 16.96 / 17.74 | 2 / 1 |
 
-All final initial reports returned exactly the seeded 100 or 500 resources;
+All measured initial reports returned exactly the seeded 100 or 500 resources;
 all unchanged reports returned zero changes. Radicale server work grows with
 collection size even for an unchanged poll. A fixed client request count does
 not imply fixed server computation.

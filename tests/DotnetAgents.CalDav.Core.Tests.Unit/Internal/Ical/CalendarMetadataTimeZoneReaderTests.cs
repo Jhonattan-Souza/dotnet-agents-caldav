@@ -18,6 +18,58 @@ public sealed class CalendarMetadataTimeZoneReaderTests
     }
 
     [Theory]
+    [InlineData(@"Custom\,Zone", "Custom,Zone")]
+    [InlineData(@"Custom\;Zone", "Custom;Zone")]
+    [InlineData(@"Custom\\Zone", "Custom\\Zone")]
+    [InlineData(@"Custom\\", "Custom\\")]
+    [InlineData(@"Custom\nZone", "Custom\nZone")]
+    [InlineData(@"Custom\NZone", "Custom\nZone")]
+    [InlineData(@"Custom\\nZone", "Custom\\nZone")]
+    [InlineData("Custom\\\r\n ,Zone", "Custom,Zone")]
+    [InlineData("Custom:Zone \"São Paulo\"", "Custom:Zone \"São Paulo\"")]
+    [InlineData("Custom\tZone", "Custom\tZone")]
+    public void Read_decodes_text_identifier_once_after_unfolding(string encoded, string expected)
+    {
+        var input = Zone.Replace("Custom/Zone", encoded, StringComparison.Ordinal);
+
+        CalendarMetadataTimeZoneReader.Read(input, CancellationToken.None).ShouldBe([expected]);
+    }
+
+    [Theory]
+    [InlineData("TZID;VALUE=TEXT")]
+    [InlineData("tzid;value=tExT")]
+    [InlineData("group.TzId;X-CUSTOM=opaque")]
+    public void Read_preserves_text_identity_with_explicit_or_extended_property_headers(string header)
+    {
+        var input = Zone.Replace("TZID:Custom/Zone", header + @":Custom\,Zone", StringComparison.Ordinal);
+
+        CalendarMetadataTimeZoneReader.Read(input, CancellationToken.None).ShouldBe(["Custom,Zone"]);
+    }
+
+    [Theory]
+    [InlineData(@"TZID:Custom\qZone")]
+    [InlineData(@"TZID:Custom\")]
+    [InlineData(@"TZID:Custom\:Zone")]
+    [InlineData("TZID:Custom,Zone")]
+    [InlineData("TZID:Custom;Zone")]
+    [InlineData("TZID:Custom\u007fZone")]
+    [InlineData("TZID:Custom\u0001Zone")]
+    [InlineData(@"TZID: \n ")]
+    [InlineData("TZID;VALUE=URI:urn:zone:custom")]
+    [InlineData("TZID;VALUE=TEXT;VALUE=TEXT:Custom/Zone")]
+    [InlineData("TZID;VALUE=URI;VALUE=TEXT:Custom/Zone")]
+    [InlineData("TZID;VALUE=URI,TEXT:Custom/Zone")]
+    [InlineData("TZID;VALUE=TEXT,TEXT:Custom/Zone")]
+    [InlineData("TZID:Custom/Zone\r\ngroup.tzid:Custom/Zone")]
+    public void Read_rejects_malformed_or_ambiguous_text_identity(string property)
+    {
+        var input = Zone.Replace("TZID:Custom/Zone", property, StringComparison.Ordinal);
+
+        Should.Throw<CalendarProtocolException>(() => CalendarMetadataTimeZoneReader.Read(input, CancellationToken.None))
+            .Code.ShouldBe("upstream_protocol_error");
+    }
+
+    [Theory]
     [InlineData(300)]
     [InlineData(1200)]
     public void Read_rejects_deep_embedded_components_before_constructing_calendar_paths(int depth)

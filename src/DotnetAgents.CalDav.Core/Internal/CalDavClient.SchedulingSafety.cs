@@ -1,3 +1,6 @@
+using Polly.CircuitBreaker;
+using Polly.RateLimiting;
+using Polly.Timeout;
 using DotnetAgents.CalDav.Core.Models;
 
 namespace DotnetAgents.CalDav.Core.Internal;
@@ -27,7 +30,7 @@ internal sealed partial class CalDavClient
             return false;
         }
         catch (Exception exception) when (exception is HttpRequestException or IOException or TimeoutException
-            or CalendarProtocolException)
+            or CalendarProtocolException or TimeoutRejectedException or BrokenCircuitException or RateLimiterRejectedException)
         {
             return false;
         }

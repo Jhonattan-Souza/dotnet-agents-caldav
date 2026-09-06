@@ -46,6 +46,71 @@ public sealed class CalendarSchedulingMutationTests
         await client.DidNotReceive().DeleteCalendarResourceAsync(Arg.Any<CalendarResourceDeleteRequest>(), Arg.Any<CancellationToken>());
     }
 
+    [Theory]
+    [InlineData("patch")]
+    [InlineData("delete")]
+    public async Task GroupedParticipationCannotBypassSemanticMutationSchedulingChecks(string operation)
+    {
+        var client = Client();
+        // A non-mailto attendee is accepted through the existing lossless semantic
+        // projection. Grouped mailto fields are already opaque to its Ical.Net corroboration.
+        var prior = Resource(true, "group.ATTENDEE", "urn:uuid:owner");
+        CalendarResourceSnapshotFactory.Create(CalendarHref, Href, "\"r1\"", prior)
+            .Projection.Kind.ShouldBe(CalendarResourceProjectionKind.Event);
+        client.GetCalendarResourceAsync(Href, Arg.Any<CancellationToken>()).Returns(
+            CalendarResourceRead.Success(Href, "\"r1\"", prior));
+        var revision = new CalendarResourceRevisionReference(Href, "guarded", CalendarEntityKind.Event, "\"r1\"");
+        var service = Service(client);
+        if (operation == "patch")
+        {
+            var result = await service.PatchEventAsync(new(revision, new("master"),
+                new CalendarEventPatch(Summary: new(CalendarScalarPatchOperation.Set, "Updated"))), CancellationToken.None);
+            result.Code.ShouldBe(CalendarEntityPatchCode.UnsupportedCapability);
+            result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        }
+        else
+        {
+            var result = await service.DeleteResourceAsync(revision, CancellationToken.None);
+            result.Code.ShouldBe(CalendarResourceDeleteCode.UnsupportedCapability);
+            result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        }
+
+        await client.Received(1).IsStorageOnlyMutationAllowedAsync(CalendarHref,
+            Arg.Is<ReadOnlyMemory<byte>>(value => MatchesContent(value, prior)),
+            Arg.Any<ReadOnlyMemory<byte>>(), Arg.Any<CancellationToken>());
+        await client.DidNotReceive().UpdateCalendarResourceAsync(Arg.Any<CalendarResourceUpdateRequest>(), Arg.Any<CancellationToken>());
+        await client.DidNotReceive().DeleteCalendarResourceAsync(Arg.Any<CalendarResourceDeleteRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("exact_create", false)]
+    [InlineData("exact_replace", false)]
+    [InlineData("exact_replace", true)]
+    public async Task ExactGroupedParticipationIsRejectedByExistingWireValidationBeforeAnyWrite(string operation, bool groupedPrior)
+    {
+        var client = Client();
+        var grouped = Resource(true, "group.ATTENDEE", "urn:uuid:owner");
+        var ordinary = Resource(false);
+        client.GetCalendarResourceAsync(Href, Arg.Any<CancellationToken>()).Returns(operation == "exact_create"
+            ? new CalendarResourceRead(CalendarResourceReadCode.NotFound)
+            : CalendarResourceRead.Success(Href, "\"r1\"", groupedPrior ? grouped : ordinary));
+        var service = Service(client);
+        var result = operation == "exact_create"
+            ? await service.ExactCreateResourceAsync(new CalendarExactCreateRequest(Href, grouped), CancellationToken.None)
+            : await service.ExactReplaceResourceAsync(new(
+                new CalendarResourceRevisionReference(Href, "guarded", CalendarEntityKind.Event, "\"r1\""),
+                groupedPrior ? ordinary : grouped), CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarExactResourceCode.InvalidCalendarData);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        await client.DidNotReceive().IsStorageOnlyMutationAllowedAsync(Arg.Any<string>(),
+            Arg.Any<ReadOnlyMemory<byte>>(), Arg.Any<ReadOnlyMemory<byte>>(), Arg.Any<CancellationToken>());
+        await client.DidNotReceive().CreateCalendarResourceAsync(Arg.Any<CalendarResourceCreateRequest>(), Arg.Any<CancellationToken>());
+        await client.DidNotReceive().UpdateCalendarResourceAsync(Arg.Any<CalendarResourceUpdateRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    private static bool MatchesContent(ReadOnlyMemory<byte> value, byte[] expected) => value.Span.SequenceEqual(expected);
+
     [Fact]
     public async Task SemanticCreate_RejectsParticipationWithoutSchedulingEvidence()
     {
@@ -79,9 +144,9 @@ public sealed class CalendarSchedulingMutationTests
         Options.Create(new CalDavOptions { BaseUrl = "https://cal.example/" }),
         Substitute.For<ILogger<CalendarService>>());
 
-    private static byte[] Resource(bool participating) => Encoding.UTF8.GetBytes(
+    private static byte[] Resource(bool participating, string propertyName = "ORGANIZER", string address = "mailto:owner@example.com") => Encoding.UTF8.GetBytes(
         "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Guard Tests//EN\r\nBEGIN:VEVENT\r\nUID:guarded\r\n"
         + "DTSTAMP:20260905T100000Z\r\nDTSTART:20260906T100000Z\r\n"
-        + (participating ? "ORGANIZER:mailto:owner@example.com\r\n" : string.Empty)
+        + (participating ? propertyName + ":" + address + "\r\n" : string.Empty)
         + "END:VEVENT\r\nEND:VCALENDAR\r\n");
 }

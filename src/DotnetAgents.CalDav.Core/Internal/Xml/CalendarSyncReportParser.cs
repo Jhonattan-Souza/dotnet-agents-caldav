@@ -71,7 +71,7 @@ internal static class CalendarSyncReportParser
         var calendar = new Uri(calendarHref, UriKind.Absolute);
         if (!Uri.TryCreate(calendar, raw, out var uri) || !HasSafeIdentity(uri, calendar))
             throw InvalidResponse();
-        if (uri.AbsoluteUri == calendarHref)
+        if (IsCollectionSelf(uri, calendarHref))
             return calendarHref;
         if (!uri.AbsolutePath.StartsWith(calendar.AbsolutePath, StringComparison.Ordinal))
             throw InvalidResponse();
@@ -80,6 +80,10 @@ internal static class CalendarSyncReportParser
             throw InvalidResponse();
         return uri.AbsoluteUri;
     }
+
+    private static bool IsCollectionSelf(Uri uri, string calendarHref) => uri.AbsoluteUri == calendarHref
+        || calendarHref.EndsWith('/')
+            && uri.AbsoluteUri.AsSpan().SequenceEqual(calendarHref.AsSpan(0, calendarHref.Length - 1));
 
     private static bool HasEncodedSeparator(string value) => value.Contains("%2e", StringComparison.OrdinalIgnoreCase)
         || value.Contains("%2f", StringComparison.OrdinalIgnoreCase)

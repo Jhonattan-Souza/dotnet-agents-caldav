@@ -49,12 +49,21 @@ internal static class CalendarSchedulingSafety
                     continue;
                 break;
             }
-            if (length < name.Length)
-                name[length] = ToUpperAscii(value);
-            length++;
+            length = AppendPropertyNameByte(value, name, length);
             position++;
         }
         return length;
+    }
+
+    private static int AppendPropertyNameByte(byte value, Span<byte> name, int length)
+    {
+        // CalendarContentDocument accepts an optional group prefix and identifies the
+        // property by the suffix after the dot. Keep the same identity when screening writes.
+        if (value == (byte)'.')
+            return 0;
+        if (length < name.Length)
+            name[length] = ToUpperAscii(value);
+        return length + 1;
     }
 
     private static bool SkipNameFold(ReadOnlySpan<byte> bytes, ref int position)

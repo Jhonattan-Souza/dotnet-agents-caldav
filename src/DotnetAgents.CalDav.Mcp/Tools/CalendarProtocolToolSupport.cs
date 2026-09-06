@@ -1,3 +1,6 @@
+using Polly.CircuitBreaker;
+using Polly.RateLimiting;
+using Polly.Timeout;
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -78,6 +81,7 @@ internal static class CalendarProtocolToolSupport
         exception is CalendarProtocolException or HttpRequestException or XmlException or IOException
             or TimeoutException or CalendarDiscoveryLimitException or CalendarDiscoveryProtocolException
             or CalendarDiscoveryUnsupportedCapabilityException
+            or TimeoutRejectedException or BrokenCircuitException or RateLimiterRejectedException
         || exception is OperationCanceledException && !cancellationToken.IsCancellationRequested;
 
     internal static CalendarProtocolException MapException(Exception exception) => exception switch

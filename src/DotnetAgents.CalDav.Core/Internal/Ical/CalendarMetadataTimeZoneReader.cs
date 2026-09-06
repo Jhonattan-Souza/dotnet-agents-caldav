@@ -19,12 +19,40 @@ internal static class CalendarMetadataTimeZoneReader
         cancellationToken.ThrowIfCancellationRequested();
         var document = CalendarContentDocument.Parse(Encoding.UTF8.GetBytes(unfolded));
         ValidateComponents(document);
-        var identifiers = document.Properties.Where(property => property.Name == "TZID"
-            && property.ComponentPath.Count == 2 && property.ComponentPath[1].Name == "VTIMEZONE").ToArray();
-        if (identifiers.Length != 1 || string.IsNullOrWhiteSpace(identifiers[0].RawEncodedValue))
+        var identifiers = document.Properties.Where(property => property.Name.Equals("TZID", StringComparison.OrdinalIgnoreCase)
+            && property.ComponentPath.Count == 2 && property.ComponentPath[1].Name == "VTIMEZONE").Take(2).ToArray();
+        if (identifiers.Length != 1)
             throw Invalid();
+        var identifier = ReadIdentifier(identifiers[0]);
         cancellationToken.ThrowIfCancellationRequested();
-        return [identifiers[0].RawEncodedValue];
+        return [identifier];
+    }
+
+    private static string ReadIdentifier(CalendarContentProperty property)
+    {
+        var valueParameters = property.Parameters.Where(parameter => parameter.Name.Equals("VALUE", StringComparison.OrdinalIgnoreCase)).Take(2).ToArray();
+        if (property.ValueType != CalendarPropertyValueType.Text || valueParameters.Length > 1
+            || valueParameters.Any(parameter => parameter.Values.Count != 1))
+            throw Invalid();
+        ValidateIdentifierText(property.RawEncodedValue);
+        var identifier = CalendarContentDocument.DecodeText(property.RawEncodedValue);
+        return string.IsNullOrWhiteSpace(identifier) ? throw Invalid() : identifier;
+    }
+
+    private static void ValidateIdentifierText(string value)
+    {
+        // Validate RFC 5545 TEXT before decoding: the shared decoder also serves
+        // lossless projection paths and does not reject unknown escape sequences.
+        for (var index = 0; index < value.Length; index++)
+        {
+            if (value[index] == '\\')
+            {
+                if (++index >= value.Length || value[index] is not ('\\' or ';' or ',' or 'N' or 'n'))
+                    throw Invalid();
+            }
+            else if (value[index] is ';' or ',' or '\u007f' || value[index] < ' ' && value[index] != '\t')
+                throw Invalid();
+        }
     }
 
     private static string Unfold(string value, CancellationToken cancellationToken)

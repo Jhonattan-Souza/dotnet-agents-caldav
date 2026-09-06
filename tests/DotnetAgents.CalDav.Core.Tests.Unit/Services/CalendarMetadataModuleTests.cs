@@ -2,6 +2,13 @@ using System.Net;
 using System.Text;
 using System.Xml.Linq;
 using DotnetAgents.CalDav.Core.Configuration;
+using DotnetAgents.CalDav.Core.Abstractions;
+using DotnetAgents.CalDav.Core.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Http.Resilience;
+using Polly.CircuitBreaker;
+using Polly.RateLimiting;
+using Polly.Timeout;
 using DotnetAgents.CalDav.Core.Internal;
 using DotnetAgents.CalDav.Core.Internal.Xml;
 using DotnetAgents.CalDav.Core.Models;
@@ -263,6 +270,163 @@ public sealed class CalendarMetadataModuleTests
         fixture.Methods.ShouldBe(["PROPFIND", "PROPPATCH", "PROPFIND"]);
     }
 
+    [Theory]
+    [InlineData("timeout")]
+    [InlineData("circuit")]
+    [InlineData("limiter")]
+    public async Task Inspect_optional_options_resilience_failures_keep_metadata_and_unknown_scheduling(string failure)
+    {
+        using var fixture = new Fixture();
+        fixture.Enqueue(207, Metadata("Work", null).ToString());
+        fixture.EnqueueFailure(ResilienceFailure(failure));
+
+        var result = await fixture.Module.InspectAsync(Href, CancellationToken.None);
+
+        result.DisplayName.ShouldBe("Work");
+        result.Scheduling.ShouldBe(new CalendarSchedulingObservation("unknown", null));
+        fixture.Methods.ShouldBe(["PROPFIND", "OPTIONS"]);
+    }
+
+    [Theory]
+    [InlineData("timeout", false)]
+    [InlineData("circuit", false)]
+    [InlineData("limiter", false)]
+    [InlineData("timeout", true)]
+    [InlineData("circuit", true)]
+    [InlineData("limiter", true)]
+    public async Task Patch_reconciliation_resilience_failure_preserves_prior_mutation_truth(string failure, bool acknowledged)
+    {
+        using var fixture = new Fixture();
+        fixture.Enqueue(207, Metadata("Old", "Old").ToString());
+        if (acknowledged)
+            fixture.Enqueue(207, PatchStatus((Dav + "displayname", 200), (Cal + "calendar-description", 200)).ToString());
+        else
+            fixture.EnqueueFailure(new TimeoutRejectedException("private dispatch details"));
+        fixture.EnqueueFailure(ResilienceFailure(failure));
+
+        var result = await fixture.Module.PatchAsync(Href, BothPatch(), CancellationToken.None);
+
+        result.MutationState.ShouldBe(acknowledged ? CalendarMutationState.Committed : CalendarMutationState.Unknown);
+        result.Error!.Code.ShouldBe(acknowledged ? "committed_but_unverified" : "indeterminate");
+        result.Error.Retryable.ShouldBeFalse();
+        fixture.Methods.ShouldBe(["PROPFIND", "PROPPATCH", "PROPFIND"]);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Patch_actual_pipeline_open_circuit_distinguishes_dispatch_denial_from_failed_readback(bool acknowledged)
+    {
+        using var fixture = new Fixture();
+        var control = new CircuitBreakerManualControl();
+        fixture.Enqueue(207, Metadata("Old", "Old").ToString());
+        if (acknowledged)
+            fixture.Enqueue(207, PatchStatus((Dav + "displayname", 200), (Cal + "calendar-description", 200)).ToString());
+        fixture.AfterResponse = async (request, token) =>
+        {
+            if (request.Method.Method == (acknowledged ? "PROPPATCH" : "PROPFIND"))
+                await control.IsolateAsync(token);
+        };
+        using var provider = ResilientProvider(fixture, options => options.CircuitBreaker.ManualControl = control);
+
+        var result = await provider.GetRequiredService<ICalendarMetadataModule>().PatchAsync(Href, BothPatch(), CancellationToken.None);
+
+        result.MutationState.ShouldBe(acknowledged ? CalendarMutationState.Committed : CalendarMutationState.NotAttempted);
+        result.Error!.Code.ShouldBe(acknowledged ? "committed_but_unverified" : "upstream_unavailable");
+        result.Error.Retryable.ShouldBe(!acknowledged);
+        fixture.Methods.ShouldBe(acknowledged ? ["PROPFIND", "PROPPATCH"] : ["PROPFIND"]);
+    }
+
+    [Fact]
+    public async Task Patch_actual_attempt_timeout_retains_unknown_even_when_readback_matches()
+    {
+        using var fixture = new Fixture();
+        fixture.Enqueue(207, Metadata("Old", "Old").ToString());
+        fixture.Enqueue(207, PatchStatus((Dav + "displayname", 200), (Cal + "calendar-description", 200)).ToString());
+        fixture.Enqueue(207, Metadata("New", "Changed").ToString());
+        fixture.AfterResponse = async (request, token) =>
+        {
+            if (request.Method.Method == "PROPPATCH")
+                await new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously).Task.WaitAsync(token);
+        };
+        using var provider = ResilientProvider(fixture, options => options.AttemptTimeout.Timeout = TimeSpan.FromMilliseconds(100));
+
+        var result = await provider.GetRequiredService<ICalendarMetadataModule>().PatchAsync(Href, BothPatch(), CancellationToken.None);
+
+        result.MutationState.ShouldBe(CalendarMutationState.Unknown);
+        result.Error!.Code.ShouldBe("indeterminate");
+        result.Error.Retryable.ShouldBeFalse();
+        result.Calendar!.DisplayName.ShouldBe("New");
+        fixture.Methods.ShouldBe(["PROPFIND", "PROPPATCH", "PROPFIND"]);
+    }
+
+    [Fact]
+    public async Task Patch_limiter_denial_is_not_attempted_and_does_not_reconcile()
+    {
+        using var fixture = new Fixture();
+        fixture.Enqueue(207, Metadata("Old", "Old").ToString());
+        fixture.EnqueueFailure(new RateLimiterRejectedException("private limiter details"));
+
+        var result = await fixture.Module.PatchAsync(Href, BothPatch(), CancellationToken.None);
+
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        result.Error!.Code.ShouldBe("upstream_unavailable");
+        result.Error.Retryable.ShouldBeTrue();
+        fixture.Methods.ShouldBe(["PROPFIND", "PROPPATCH"]);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Patch_cancellation_after_dispatch_preserves_unknown_or_acknowledged_commit(bool acknowledged)
+    {
+        using var fixture = new Fixture();
+        using var cancellation = new CancellationTokenSource();
+        fixture.Enqueue(207, Metadata("Old", "Old").ToString());
+        fixture.Enqueue(207, PatchStatus((Dav + "displayname", 200), (Cal + "calendar-description", 200)).ToString());
+        if (acknowledged)
+            fixture.Enqueue(207, Metadata("New", "Changed").ToString());
+        fixture.AfterResponse = (request, _) =>
+        {
+            if (!acknowledged && request.Method.Method == "PROPPATCH"
+                || acknowledged && fixture.Methods.Count == 3)
+            {
+                cancellation.Cancel();
+                throw new OperationCanceledException(cancellation.Token);
+            }
+            return Task.CompletedTask;
+        };
+
+        var result = await fixture.Module.PatchAsync(Href, BothPatch(), cancellation.Token);
+
+        result.MutationState.ShouldBe(acknowledged ? CalendarMutationState.Committed : CalendarMutationState.Unknown);
+        result.Error!.Code.ShouldBe(acknowledged ? "committed_but_unverified" : "indeterminate");
+        fixture.Methods.ShouldBe(acknowledged ? ["PROPFIND", "PROPPATCH", "PROPFIND"] : ["PROPFIND", "PROPPATCH"]);
+    }
+
+    private static Exception ResilienceFailure(string failure) => failure switch
+    {
+        "timeout" => new TimeoutRejectedException("private timeout details"),
+        "circuit" => new BrokenCircuitException("private circuit details"),
+        _ => new RateLimiterRejectedException("private limiter details")
+    };
+
+    private static ServiceProvider ResilientProvider(Fixture fixture, Action<HttpStandardResilienceOptions> configure)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddCalDavCalendars(options =>
+        {
+            options.BaseUrl = "https://cal.example/";
+            options.Username = "user";
+            options.Password = "password";
+            options.CalendarHrefs = Href;
+        });
+        services.ConfigureAll(configure);
+        services.AddHttpClient<CalDavClient>().ConfigurePrimaryHttpMessageHandler(() => fixture);
+        return services.BuildServiceProvider();
+    }
+
     [Fact]
     public async Task Patch_recognizes_collection_href_without_slash_and_successful_no_content_property_status()
     {
@@ -402,6 +566,7 @@ public sealed class CalendarMetadataModuleTests
         public readonly List<string?> Bodies = [];
         public readonly List<string?> Depths = [];
         public CalendarMetadataModule Module { get; }
+        public Func<HttpRequestMessage, CancellationToken, Task>? AfterResponse { get; set; }
 
         public Fixture()
         {
@@ -430,11 +595,14 @@ public sealed class CalendarMetadataModuleTests
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             Methods.Add(request.Method.Method);
             Bodies.Add(request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken));
             Depths.Add(request.Headers.TryGetValues("Depth", out var depth) ? depth.Single() : null);
             var response = _responses.Dequeue()();
             response.RequestMessage = request;
+            if (AfterResponse is not null)
+                await AfterResponse(request, cancellationToken);
             return response;
         }
 

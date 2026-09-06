@@ -5,6 +5,9 @@ using DotnetAgents.CalDav.Core.Models;
 using DotnetAgents.CalDav.Mcp.Hosting;
 using DotnetAgents.CalDav.Mcp.Tools;
 using NSubstitute;
+using Polly.CircuitBreaker;
+using Polly.RateLimiting;
+using Polly.Timeout;
 using Shouldly;
 using Xunit;
 
@@ -96,6 +99,53 @@ public sealed class CalendarMetadataToolsTests
         result.StructuredContent.Value.GetRawText().ShouldNotContain("private upstream detail");
         CalendarOutputSchemaGuard.Validate("calendars.inspect", result);
     }
+
+    [Theory]
+    [InlineData("timeout")]
+    [InlineData("circuit")]
+    [InlineData("limiter")]
+    public async Task Inspect_resilience_failure_is_an_actionable_tool_error(string failure)
+    {
+        var module = Substitute.For<ICalendarMetadataModule>();
+        module.InspectAsync(Href, Arg.Any<CancellationToken>()).Returns(
+            Task.FromException<CalendarMetadataSnapshot>(ResilienceFailure(failure)));
+
+        var result = await new CalendarMetadataTools(module).InspectAsync(Href, CancellationToken.None);
+
+        result.IsError.ShouldBe(true);
+        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("upstream_unavailable");
+        result.StructuredContent.Value.GetProperty("retryable").GetBoolean().ShouldBeTrue();
+        result.StructuredContent.Value.GetRawText().ShouldNotContain("private");
+        result.StructuredContent.Value.TryGetProperty("calendar", out _).ShouldBeFalse();
+        CalendarOutputSchemaGuard.Validate("calendars.inspect", result);
+    }
+
+    [Theory]
+    [InlineData("timeout")]
+    [InlineData("circuit")]
+    [InlineData("limiter")]
+    public async Task Patch_preflight_resilience_failure_retains_not_attempted(string failure)
+    {
+        var module = Substitute.For<ICalendarMetadataModule>();
+        module.PatchAsync(Href, Arg.Any<CalendarMetadataPatch>(), Arg.Any<CancellationToken>()).Returns(
+            Task.FromException<CalendarMetadataPatchResult>(ResilienceFailure(failure)));
+
+        var result = await new CalendarMetadataTools(module).PatchAsync(Href,
+            new CalendarMetadataPatch(new CalendarMetadataTextPatch("set", "Work")), CancellationToken.None);
+
+        result.IsError.ShouldBe(true);
+        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("upstream_unavailable");
+        result.StructuredContent.Value.GetProperty("mutationState").GetString().ShouldBe("not_attempted");
+        result.StructuredContent.Value.GetProperty("retryable").GetBoolean().ShouldBeTrue();
+        CalendarOutputSchemaGuard.Validate("calendars.patch", result);
+    }
+
+    private static Exception ResilienceFailure(string failure) => failure switch
+    {
+        "timeout" => new TimeoutRejectedException("private timeout details"),
+        "circuit" => new BrokenCircuitException("private circuit details"),
+        _ => new RateLimiterRejectedException("private limiter details")
+    };
 
     [Fact]
     public async Task Caller_cancellation_propagates_without_upstream_failure()
