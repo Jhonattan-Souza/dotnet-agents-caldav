@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Persistent JSON-RPC stdio driver. Measurements exclude fixture setup and inference."""
 import asyncio
+from contextlib import suppress
 import hashlib
 import json
 import os
@@ -9,6 +10,8 @@ import shutil
 import time
 
 PROTOCOL = '2026-07-28'
+REQUEST_TIMEOUT_SECONDS = 45
+SHUTDOWN_TIMEOUT_SECONDS = 5
 CAPABILITIES = {'elicitation': {'form': {}}}
 WINDOW = {'from': {'kind': 'utcDateTime', 'value': '2026-07-01T00:00:00Z'},
           'to': {'kind': 'utcDateTime', 'value': '2026-12-31T00:00:00Z'}}
@@ -56,6 +59,27 @@ class Client:
             stderr=asyncio.subprocess.PIPE, env=self.env, limit=16*1024*1024)
         self.reader = asyncio.create_task(self.read())
         self.stderr = asyncio.create_task(self.process.stderr.read())
+        try:
+            return await self.initialize(start)
+        except BaseException:
+            await asyncio.shield(self.abort_startup())
+            raise
+
+    async def abort_startup(self):
+        self.process.stdin.close()
+        try:
+            await asyncio.wait_for(self.process.wait(), SHUTDOWN_TIMEOUT_SECONDS)
+        except TimeoutError:
+            with suppress(ProcessLookupError):
+                self.process.kill()
+            await self.process.wait()
+        finally:
+            for task in [self.reader, self.stderr]:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(self.reader, self.stderr, return_exceptions=True)
+
+    async def initialize(self, start):
         self.initialized = await self.request('server/discover', {})
         assert PROTOCOL in self.initialized['result']['supportedVersions'], self.initialized
         assert 'tools' in self.initialized['result']['capabilities']
@@ -107,7 +131,7 @@ class Client:
         self.process.stdin.write((json.dumps(dict(jsonrpc='2.0', id=sequence, method=method, params=params))+'\n').encode())
         await self.process.stdin.drain()
         try:
-            return await asyncio.wait_for(future, 45)
+            return await asyncio.wait_for(future, REQUEST_TIMEOUT_SECONDS)
         finally:
             del self.pending[sequence]
 
@@ -149,7 +173,7 @@ class Client:
         start = time.perf_counter_ns()
         self.process.stdin.close()
         try:
-            await asyncio.wait_for(self.process.wait(), 5)
+            await asyncio.wait_for(self.process.wait(), SHUTDOWN_TIMEOUT_SECONDS)
         except TimeoutError:
             self.process.kill()
             await self.process.wait()
