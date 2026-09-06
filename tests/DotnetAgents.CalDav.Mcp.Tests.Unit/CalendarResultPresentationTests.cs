@@ -14,6 +14,20 @@ namespace DotnetAgents.CalDav.Mcp.Tests.Unit;
 
 public sealed class CalendarResultPresentationTests
 {
+    [Fact]
+    public void NativeProtocolAdaptersUseCompleteCompatibilityText()
+    {
+        AssertEquivalent(CalendarProtocolToolSupport.Success(new { checkpoint = "opaque", changes = new[] { "href" } }));
+        AssertEquivalent(CalendarProtocolToolSupport.Error(new CalendarProtocolException("invalid_input", "Correct the input.")));
+        var overflow = CalendarProtocolToolSupport.Success(new
+        {
+            mutationState = "committed", calendar = new { description = new string('x', 3 * 1024 * 1024) }
+        }, CalendarMutationState.Committed);
+        AssertEquivalent(overflow);
+        overflow.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("payload_too_large");
+        overflow.StructuredContent.Value.GetProperty("mutationState").GetString().ShouldBe("committed");
+    }
+
     [Theory]
     [InlineData("success")]
     [InlineData("no_change")]
