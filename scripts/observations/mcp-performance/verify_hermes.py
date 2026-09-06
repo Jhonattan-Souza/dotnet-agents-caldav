@@ -9,9 +9,12 @@ import xml.etree.ElementTree as ET
 from driver import Client,environment
 from functional import Functional
 from infra import request,verify,expected_counts
+from build_manifest import prepared_input
 
 
 async def run(root,assembly):
+    build_input=prepared_input(root,assembly)
+    assembly=Path(build_input['assembly'])
     state=json.loads((root/'infra-private.json').read_text())
     uid='hermes-perf-20260905-integration'
     body=f'''<C:calendar-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"><D:prop>
@@ -33,7 +36,7 @@ async def run(root,assembly):
         assert snapshot['entityRevision']['entityUid']==uid
         await f.call('calendar_resources.delete',dict(revision=snapshot['entityRevision']))
         f.authoritative(href,absent=True)
-    (output/'process.json').write_text(json.dumps(c.identity,indent=2))
+    (output/'process.json').write_text(json.dumps(dict(c.identity,build_input=build_input),indent=2))
     assert verify(state)==expected_counts(root)
 
 

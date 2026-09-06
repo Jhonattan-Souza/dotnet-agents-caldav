@@ -9,6 +9,7 @@ import secrets
 import urllib.parse
 from driver import Client, environment, query
 from infra import request, resource, verify, expected_counts
+from build_manifest import prepared_input
 
 SAFE_STRINGS = {'outcome','code','category','phase','state','mutationState','resultType','kind','entityKind',
                 'resultKind','completionState','mode','source','timeZone','operation','field','action',
@@ -197,6 +198,8 @@ class Functional:
 
 
 async def run(root,assembly):
+    build_input=prepared_input(root,assembly)
+    assembly=Path(build_input['assembly'])
     if expected_counts(root)['todos']<2:
         raise RuntimeError('The functional matrix requires at least two seeded todos; cleanup supports any seed count')
     state=json.loads((root/'infra-private.json').read_text())
@@ -208,7 +211,7 @@ async def run(root,assembly):
             for href in f.owned:
                 status,_,_=request(state,'DELETE',urllib.parse.urlparse(href).path)
                 assert status in (200,204,404)
-    (root/'functional-process.json').write_text(json.dumps(client.identity,indent=2))
+    (root/'functional-process.json').write_text(json.dumps(dict(client.identity,build_input=build_input),indent=2))
 
 
 if __name__=='__main__':

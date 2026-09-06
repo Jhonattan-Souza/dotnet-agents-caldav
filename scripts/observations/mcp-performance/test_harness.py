@@ -15,7 +15,7 @@ import xml.etree.ElementTree as ET
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from build_manifest import capture, finalize, load_builds, source_identity, benchmark_inputs, verify_process_inputs, runtime_files
+from build_manifest import capture, finalize, load_builds, source_identity, benchmark_inputs, verify_process_inputs, runtime_files, prepared_input
 from aggregate import load_traces, schema_observations, validate_gates
 from infra import radicale_config, save_private_state, verify, expected_counts
 import cleanup as cleanup_module
@@ -65,6 +65,13 @@ def runtime_fixture(directory,label):
     deps=dict(runtimeTarget=dict(name='test'),targets={'test':{'app':{'runtime':{name:{} for name in names}}}})
     (directory/'DotnetAgents.CalDav.Mcp.deps.json').write_text(json.dumps(deps))
     (directory/'DotnetAgents.CalDav.Mcp.runtimeconfig.json').write_text('{}')
+
+
+def prepared_fixture(root):
+    repo=repository(root)
+    for label in ['baseline','candidate']:
+        directory=root/label;directory.mkdir();runtime_fixture(directory,label)
+        manifest=root/(label+'-build.json');capture(repo,manifest);finalize(repo,manifest,directory)
 
 
 class BuildIdentityTests(unittest.TestCase):
@@ -159,6 +166,35 @@ class BuildIdentityTests(unittest.TestCase):
 
 
 class CommandTests(unittest.TestCase):
+    def test_single_build_commands_reject_wrong_inputs_before_fixture_or_client_access(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);prepared_fixture(root)
+            stubs=root/'stubs';stubs.mkdir()
+            (stubs/'yaml.py').write_text('')
+            (stubs/'dotenv.py').write_text('def dotenv_values(path): return {}\n')
+            candidate=root/'candidate'/ASSEMBLIES[0]
+            good=prepared_input(root,candidate)
+            self.assertEqual('candidate',good['label'])
+            self.assertEqual('baseline',prepared_input(root,root/'baseline'/ASSEMBLIES[0],'baseline')['label'])
+            for variation in ['baseline','stale-dependency']:
+                assembly=root/'baseline'/ASSEMBLIES[0] if variation=='baseline' else candidate
+                if variation=='stale-dependency':
+                    (candidate.parent/'Example.Dependency.dll').write_text('replaced after preparation')
+                for script,arguments in [
+                    ('functional.py',[str(root),str(assembly)]),
+                    ('hermes.py',[str(root),str(assembly)]),
+                    ('hermes_proxy.py',[str(assembly),str(root/'wire.jsonl'),str(root)]),
+                    ('verify_hermes.py',[str(root),str(assembly)]),
+                    ('driver.py',[str(root),str(assembly)]),
+                    ('profile.py',[str(root),str(assembly),str(root),'--name','rejected'])]:
+                    with self.subTest(variation=variation,script=script):
+                        before=set(root.iterdir())
+                        result=subprocess.run([sys.executable,str(HARNESS/script),*arguments],
+                            env=dict(os.environ,PYTHONPATH=str(stubs)),capture_output=True,text=True)
+                        self.assertNotEqual(0,result.returncode)
+                        self.assertIn('candidate input does not match its prepared build',result.stderr)
+                        self.assertEqual(before,set(root.iterdir()))
+
     def test_otlp_process_control_is_rejected_even_with_python_optimization(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary)
@@ -191,21 +227,22 @@ class CommandTests(unittest.TestCase):
     def test_proxy_propagates_child_status_after_forwarding_stderr(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            for name in ASSEMBLIES:
-                (root / name).write_bytes(b'test-only placeholder')
+            prepared_fixture(root)
             env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ['PATH'])
             for code in [0, 17]:
                 with self.subTest(code=code):
                     executable(root / 'dotnet', "echo 'child diagnostic' >&2\nexit " + str(code))
                     wire = root / ('wire-' + str(code) + '.jsonl')
                     result = subprocess.run([sys.executable, str(HARNESS / 'hermes_proxy.py'),
-                        str(root / ASSEMBLIES[0]), str(wire)], env=env, input='', capture_output=True, text=True)
+                        str(root/'candidate'/ASSEMBLIES[0]), str(wire),str(root)], env=env, input='', capture_output=True, text=True)
                     self.assertEqual(code, result.returncode, result.stderr)
                     self.assertIn('child diagnostic', result.stderr)
                     rows = [json.loads(line) for line in wire.read_text().splitlines()]
                     self.assertEqual('exit', rows[-1]['event'])
                     self.assertEqual(code, rows[-1]['code'])
                     self.assertTrue(any(row['event'] == 'stderr' and row['bytes'] > 0 for row in rows))
+                    self.assertEqual(prepared_input(root,root/'candidate'/ASSEMBLIES[0])['runtime_files_sha256'],
+                                     rows[0]['runtime_files_sha256'])
 
     def test_existing_hermes_wire_is_preserved_and_rejected_before_launch(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -301,6 +338,7 @@ class CommandTests(unittest.TestCase):
     def test_hermes_exit_status_reaches_the_shell_after_summary(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
+            prepared_fixture(root)
             source = root / 'source-home'
             source.mkdir()
             (source / 'config.yaml').write_text(json.dumps({'model': {'provider': 'openrouter', 'model': 'test',
@@ -319,7 +357,7 @@ class CommandTests(unittest.TestCase):
                 with self.subTest(exit_code=exit_code):
                     executable(stubs / 'hermes', 'exit ' + str(exit_code))
                     result = subprocess.run([sys.executable, str(HARNESS / 'hermes.py'), str(root),
-                        str(root / 'candidate.dll'), '--source-home', str(source)],
+                        str(root/'candidate'/ASSEMBLIES[0]), '--source-home', str(source)],
                         env=env, capture_output=True, text=True)
                     self.assertEqual(exit_code, result.returncode, result.stderr)
                     self.assertEqual(exit_code, json.loads(result.stdout)['exit_code'])
@@ -327,6 +365,9 @@ class CommandTests(unittest.TestCase):
                     self.assertEqual({'provider':'openrouter','model':'test'},json.loads(sanitized.read_text())['model'])
                     self.assertNotIn('secret-marker',sanitized.read_text())
                     self.assertEqual(0o600,stat.S_IMODE(sanitized.stat().st_mode))
+                    self.assertEqual(prepared_input(root,root/'candidate'/ASSEMBLIES[0]),
+                                     json.loads((root/'hermes-build.json').read_text()))
+                    self.assertEqual(str(root),json.loads(sanitized.read_text())['mcp_args'][-1])
 
 
 class EvidenceTests(unittest.TestCase):
@@ -447,9 +488,10 @@ class ProfileTests(unittest.IsolatedAsyncioTestCase):
                 async def spawn(*args,**kwargs):
                     if variation=='collector-start-failure' and collectors: raise OSError('collector unavailable')
                     process=Collector();collectors.append(process);return process
-                args=SimpleNamespace(root=root,assembly=root/'server.dll',profilers=root,name='capture',
+                args=SimpleNamespace(root=root,assembly=root/'server.dll',profilers=root,name='capture',build='candidate',
                                      mode='start',tool='calendar_occurrences.query')
-                with patch.object(profiling,'Client',FakeClient), patch.object(profiling.asyncio,'create_subprocess_exec',side_effect=spawn):
+                with patch.object(profiling,'Client',FakeClient), patch.object(profiling.asyncio,'create_subprocess_exec',side_effect=spawn), \
+                     patch.object(profiling,'prepared_input',return_value=dict(assembly=str(args.assembly),label='candidate')):
                     if variation=='success':
                         await profiling.run(args)
                     else:

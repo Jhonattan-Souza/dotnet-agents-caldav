@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 import shutil
 import time
-from build_manifest import runtime_files
+from build_manifest import runtime_files, prepared_input
 
 PROTOCOL = '2026-07-28'
 REQUEST_TIMEOUT_SECONDS = 45
@@ -199,7 +199,9 @@ def query(tool, size=5, bounded=True):
     return args
 
 
-async def pilot(root, assembly):
+async def pilot(root, assembly, build='candidate'):
+    build_input=prepared_input(root,assembly,build)
+    assembly=Path(build_input['assembly'])
     state = json.loads((root/'infra-private.json').read_text())
     records = []
     for tool in ['calendar_entities.query','calendar_occurrences.query','todos.query']:
@@ -218,7 +220,7 @@ async def pilot(root, assembly):
                     _, record = await client.call(tool, dict(cursor=cursor,pageSize=size))
                     records.append(dict(record, size=size, phase='continue'))
                     print(json.dumps(records[-1]), flush=True)
-            (root/('pilot-process-'+tool+'.json')).write_text(json.dumps(client.identity,indent=2))
+            (root/('pilot-process-'+tool+'.json')).write_text(json.dumps(dict(client.identity,build_input=build_input),indent=2))
     (root/'pilot.json').write_text(json.dumps(records,indent=2))
 
 
@@ -227,5 +229,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('root', type=Path)
     parser.add_argument('assembly', type=Path)
+    parser.add_argument('--build',choices=['baseline','candidate'],default='candidate')
     args = parser.parse_args()
-    asyncio.run(pilot(args.root,args.assembly))
+    asyncio.run(pilot(args.root,args.assembly,args.build))

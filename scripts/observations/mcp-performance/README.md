@@ -83,7 +83,8 @@ python3 scripts/observations/mcp-performance/edges.py /tmp/caldav-perf-new /tmp/
 ```
 
 `functional.py` percorre o catálogo vivo completo com exact habilitado somente
-no filho correspondente. Inclui queries limitadas e não limitadas quando
+no filho correspondente. Antes de acessar as fixtures, ele exige que o assembly
+e todas as dependências correspondam a `candidate-build.json`. Inclui queries limitadas e não limitadas quando
 permitidas, Start/Continue 1/5/200, recursos, criação/patch/conclusão, cinco
 mutações de recorrência, Move vazio/populado, exact create/replace/move e deletes
 de recurso/calendário por MRTR. Releitura HTTP verifica mutações e ausência.
@@ -107,6 +108,8 @@ python3 scripts/observations/mcp-performance/verify_hermes.py /tmp/caldav-perf-n
 ```
 
 O proxy preserva cada byte MCP e registra testemunhas sanitizadas. Wrapper e proxy
+validam a candidata preparada antes de iniciar o cliente/servidor; o proxy registra
+a fonte e os hashes de todas as dependências. A verificação direta usa a mesma checagem. Ambos
 recusam um wire log existente antes de iniciar o cliente/servidor. Use um diretório
 de evidência novo para outra tentativa. O proxy não implementa MRTR pelo Hermes.
 O segundo comando verifica COMPLETED no Radicale e completa
@@ -170,12 +173,14 @@ por delta do processo é usada somente sem chamadas sobrepostas no mesmo filho.
 ```bash
 dotnet tool install dotnet-counters --tool-path /tmp/caldav-perf-new/profilers
 dotnet tool install dotnet-trace --tool-path /tmp/caldav-perf-new/profilers
-python3 scripts/observations/mcp-performance/profile.py /tmp/caldav-perf-new /tmp/caldav-perf-new/baseline/DotnetAgents.CalDav.Mcp.dll /tmp/caldav-perf-new/profilers --name baseline-profile
+python3 scripts/observations/mcp-performance/profile.py /tmp/caldav-perf-new /tmp/caldav-perf-new/baseline/DotnetAgents.CalDav.Mcp.dll /tmp/caldav-perf-new/profilers --build baseline --name baseline-profile
 python3 scripts/observations/mcp-performance/telemetry.py /tmp/caldav-perf-new complete --zip
 ```
 
 Consulte `dotnet-trace list-profiles`, `collect --help`, `dotnet-counters collect
 --help`, `aspire export --help` e `aspire otel spans --help` na versão instalada.
+Piloto e profiling validam a candidata por padrão; `--build baseline` seleciona
+o manifesto da baseline, e essa identidade fica registrada com o processo.
 EventPipe `dotnet-sampled-thread-time` inclui esperas; seus percentuais não são
 percentuais de CPU. Runtime counters são coleta externa, não métricas já
 exportadas pelo produto. Para a comparação síncrona de alocação, copie
