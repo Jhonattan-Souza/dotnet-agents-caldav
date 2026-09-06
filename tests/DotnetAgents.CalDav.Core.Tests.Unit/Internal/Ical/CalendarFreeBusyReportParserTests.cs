@@ -117,6 +117,40 @@ public class CalendarFreeBusyReportParserTests
         Should.Throw<CalendarProtocolException>(() => Parse(response)).Code.ShouldBe("upstream_protocol_error");
     }
 
+    [Theory]
+    [InlineData("FREEBUSY:20260905T010000Z/PT1H")]
+    [InlineData("DTSTART:20260905T010000Z")]
+    [InlineData("DTEND:20260905T020000Z")]
+    [InlineData("FBTYPE:BUSY")]
+    [InlineData("RRULE:FREQ=DAILY;COUNT=3")]
+    [InlineData("RDATE:20260905T010000Z")]
+    [InlineData("EXDATE:20260905T010000Z")]
+    [InlineData("group.freebusy:20260905T010000Z/PT1H")]
+    [InlineData("group.dtstart:20260905T010000Z")]
+    [InlineData("group.dtend:20260905T020000Z")]
+    [InlineData("group.fbtype:BUSY")]
+    [InlineData("group.rrule:FREQ=DAILY;COUNT=3")]
+    [InlineData("group.rdate:20260905T010000Z")]
+    [InlineData("group.exdate:20260905T010000Z")]
+    public void MisplacedCalendarAvailabilityCannotBecomeEmptyOrPartialSuccess(string property)
+    {
+        foreach (var periods in new[] { string.Empty, "FREEBUSY:20260905T030000Z/PT1H" })
+        {
+            var response = Wrap(periods).Replace("BEGIN:VFREEBUSY", property + "\nBEGIN:VFREEBUSY", StringComparison.Ordinal);
+
+            Should.Throw<CalendarProtocolException>(() => Parse(response)).Code.ShouldBe("upstream_protocol_error");
+        }
+    }
+
+    [Fact]
+    public void UnknownCalendarAndBusyComponentExtensionsDoNotInvalidateNativePeriods()
+    {
+        var response = Wrap("X-FREEBUSY:opaque extension\nFREEBUSY:20260905T010000Z/PT1H")
+            .Replace("BEGIN:VFREEBUSY", "X-FBTYPE:opaque extension\nBEGIN:VFREEBUSY", StringComparison.Ordinal);
+
+        Parse(response).ShouldBe(new[] { new CalendarBusyPeriod("2026-09-05T01:00:00Z", "2026-09-05T02:00:00Z", "BUSY") });
+    }
+
     [Fact]
     public void RejectsObservedMultiComponentNativeReportWithPerComponentBusyTypes()
     {

@@ -1,6 +1,10 @@
 using System.Net;
 using System.Text;
 using DotnetAgents.CalDav.Core.Internal;
+using DotnetAgents.CalDav.Core.Internal.Ical;
+using Polly.CircuitBreaker;
+using Polly.RateLimiting;
+using Polly.Timeout;
 using Shouldly;
 using Xunit;
 
@@ -94,6 +98,9 @@ public partial class CalDavClientTests
     [InlineData("io")]
     [InlineData("timeout")]
     [InlineData("cancellation")]
+    [InlineData("polly_timeout")]
+    [InlineData("circuit")]
+    [InlineData("limiter")]
     public async Task SchedulingSafety_TransportFailureIsNotSchedulingAbsence(string failure)
     {
         var handler = new StubHttpMessageHandler(_ => throw failure switch
@@ -101,12 +108,74 @@ public partial class CalDavClientTests
             "http" => new HttpRequestException("collector-free transport failure"),
             "io" => new IOException("transport failure"),
             "timeout" => new TimeoutException(),
+            "polly_timeout" => new TimeoutRejectedException(),
+            "circuit" => new BrokenCircuitException(),
+            "limiter" => new RateLimiterRejectedException(),
             _ => new OperationCanceledException()
         });
         var sut = CreateSut(handler);
         var data = Encoding.UTF8.GetBytes("ORGANIZER:mailto:x\r\n");
         (await sut.IsStorageOnlyMutationAllowedAsync("https://example.com/calendar/", data, default,
             CancellationToken.None)).ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData("group.ATTENDEE")]
+    [InlineData("group.ORGANIZER")]
+    public async Task SchedulingSafety_GroupedPriorAndProposedDataBothRequireFreshOptions(string property)
+    {
+        var requests = new List<HttpRequestMessage>();
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            requests.Add(request);
+            var response = new HttpResponseMessage(HttpStatusCode.OK);
+            response.Headers.Add("DAV", "1, calendar-access, calendar-auto-schedule");
+            return response;
+        });
+        var client = CreateSut(handler);
+        var data = Encoding.UTF8.GetBytes("BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\n" + property
+            + ":mailto:owner@example.com\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n");
+
+        (await client.IsStorageOnlyMutationAllowedAsync("https://example.com/calendar/", data, default,
+            CancellationToken.None)).ShouldBeFalse();
+        (await client.IsStorageOnlyMutationAllowedAsync("https://example.com/calendar/", default, data,
+            CancellationToken.None)).ShouldBeFalse();
+        requests.Count.ShouldBe(2);
+        requests.ShouldAllBe(request => request.Method == HttpMethod.Options);
+    }
+
+    [Theory]
+    [InlineData("group.ATTENDEE:mailto:x", "ATTENDEE")]
+    [InlineData("GROUP.organizer;CN=Person:mailto:x", "ORGANIZER")]
+    [InlineData("very-long-group-prefix.ATTENDEE:mailto:x", "ATTENDEE")]
+    [InlineData("gro\r\n up.ORGANIZER:mailto:x", "ORGANIZER")]
+    [InlineData("group.ATTE\n\tNDEE:mailto:x", "ATTENDEE")]
+    [InlineData("group\r\n .orga\r\n nizer:mailto:x", "ORGANIZER")]
+    public void SchedulingSafety_UsesTheAuthoritativeParsersGroupedPropertyIdentity(string property, string identity)
+    {
+        var data = Encoding.UTF8.GetBytes("BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\n" + property + "\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n");
+        CalendarContentDocument.Parse(data).Properties.ShouldContain(value => value.Name.Equals(identity, StringComparison.OrdinalIgnoreCase));
+        CalendarSchedulingSafety.HasParticipation(data).ShouldBeTrue();
+    }
+
+    [Theory]
+    [InlineData("SUMMARY:group.ATTENDEE:mailto:x")]
+    [InlineData("SUMMARY;X-REF=\"group.ORGANIZER:mailto:x\":text")]
+    [InlineData("SUMMARY:meeting\r\n group.ATTENDEE:mailto:x")]
+    [InlineData("group.SUMMARY:ORGANIZER:mailto:x")]
+    [InlineData("ATTENDEE.SUMMARY:text")]
+    public void SchedulingSafety_DoesNotConfuseGroupsParametersOrValuesWithParticipation(string property)
+    {
+        var data = Encoding.UTF8.GetBytes("BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\n" + property + "\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n");
+        CalendarContentDocument.Parse(data).Properties.ShouldContain(value => value.Name == "SUMMARY");
+        CalendarSchedulingSafety.HasParticipation(data).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void SchedulingSafety_CalendarParserRejectsBareCarriageReturnBeforeAnUnscannableProperty()
+    {
+        var data = Encoding.UTF8.GetBytes("BEGIN:VCALENDAR\rBEGIN:VEVENT\rgroup.ATTENDEE:mailto:x\rEND:VEVENT\rEND:VCALENDAR\r");
+        Should.Throw<FormatException>(() => CalendarContentDocument.Parse(data));
     }
 
     [Theory]

@@ -59,6 +59,25 @@ public partial class CalendarReportModuleTests
         fixture.Handler.Requests[0].Method.ShouldBe("REPORT");
     }
 
+    [Theory]
+    [InlineData("FREEBUSY")]
+    [InlineData("group.freebusy")]
+    public async Task MisplacedNativePeriodsCannotReturnCompleteEmptyAvailability(string propertyName)
+    {
+        using var fixture = new Fixture();
+        var body = BusyResponse().Replace("FREEBUSY:20260905T010000Z/PT1H", string.Empty, StringComparison.Ordinal)
+            .Replace("BEGIN:VFREEBUSY", propertyName + ":20260905T010000Z/PT1H\r\nBEGIN:VFREEBUSY", StringComparison.Ordinal);
+        fixture.Add(200, body, "text/calendar");
+
+        var error = await Should.ThrowAsync<CalendarProtocolException>(() => fixture.Module.FreeBusyAsync(
+            new(CalendarHref, From, From.AddDays(1)), CancellationToken.None));
+
+        error.Code.ShouldBe("upstream_protocol_error");
+        error.Message.ShouldContain("availability cannot be inferred");
+        fixture.Handler.Requests.Count.ShouldBe(1);
+        fixture.Handler.Requests[0].Method.ShouldBe("REPORT");
+    }
+
     [Fact]
     public async Task FreeBusyWithoutComponentBoundsStillReturnsTheExactRequestedWindow()
     {
@@ -78,12 +97,17 @@ public partial class CalendarReportModuleTests
     }
 
     [Theory]
-    [InlineData("")]
-    [InlineData(SyncTruncationError)]
-    public async Task NativeInitialTruncationCompletesAndKeepsPriorCheckpointReplayable(string error)
+    [InlineData("", "/cal/")]
+    [InlineData(SyncTruncationError, "/cal/")]
+    [InlineData("", "/cal")]
+    [InlineData(SyncTruncationError, "/cal")]
+    [InlineData("", "https://cal.example/cal")]
+    [InlineData(SyncTruncationError, "https://cal.example/cal")]
+    public async Task NativeInitialTruncationCompletesAndKeepsPriorCheckpointReplayable(string error, string selfHref)
     {
         using var fixture = new Fixture();
-        fixture.Add(207, SyncResponse("urn:sync:one", Changed("a.ics") + Self507(error)));
+        var truncated = Self507(error).Replace("<d:href>/cal/</d:href>", $"<d:href>{selfHref}</d:href>", StringComparison.Ordinal);
+        fixture.Add(207, SyncResponse("urn:sync:one", Changed("a.ics") + truncated));
         fixture.Add(207, SyncResponse("urn:sync:two", Changed("b.ics")));
         fixture.Add(207, SyncResponse("urn:sync:two", string.Empty));
         fixture.Add(207, SyncResponse("urn:sync:two", Changed("b.ics")));
@@ -113,7 +137,7 @@ public partial class CalendarReportModuleTests
         reports[3].Element(Dav + "sync-token")!.Value.ShouldBe("urn:sync:one");
         reports[0].Element(Dav + "limit")!.Element(Dav + "nresults")!.Value.ShouldBe("1");
         reports.ShouldAllBe(report => report.Element(Dav + "sync-level")!.Value == "1");
-        fixture.Handler.Requests.ShouldAllBe(request => request.Depth == "0" && request.Method == "REPORT");
+        fixture.Handler.Requests.ShouldAllBe(request => request.Depth == "0" && request.Method == "REPORT" && request.Href == CalendarHref);
         reports.ShouldAllBe(report => report.Element(Dav + "prop")!.Elements().Single().Name == Dav + "getetag");
     }
 

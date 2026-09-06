@@ -3,6 +3,10 @@ using System.Text.Json;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Models;
 using DotnetAgents.CalDav.Mcp.Tools;
+using DotnetAgents.CalDav.Mcp.Hosting;
+using Polly.CircuitBreaker;
+using Polly.RateLimiting;
+using Polly.Timeout;
 using ModelContextProtocol.Protocol;
 using NSubstitute;
 using Shouldly;
@@ -139,6 +143,43 @@ public class CalendarReportToolsTests
         ErrorCode(result).ShouldBe(code);
         result.StructuredContent!.Value.TryGetProperty("periods", out _).ShouldBeFalse();
         result.StructuredContent.Value.GetRawText().ShouldNotContain("secret upstream details");
+    }
+
+    [Theory]
+    [InlineData("timeout")]
+    [InlineData("circuit")]
+    [InlineData("limiter")]
+    public async Task ResilienceFailuresReturnTypedErrorsWithoutAvailabilityOrCheckpoint(string failure)
+    {
+        var exception = failure switch
+        {
+            "timeout" => (Exception)new TimeoutRejectedException("private timeout details"),
+            "circuit" => new BrokenCircuitException("private circuit details"),
+            _ => new RateLimiterRejectedException("private limiter details")
+        };
+        var module = Substitute.For<ICalendarReportModule>();
+        module.FreeBusyAsync(Arg.Any<CalendarFreeBusyRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<CalendarFreeBusyResult>(exception));
+        module.ChangesAsync(Arg.Any<CalendarResourceChangesRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<CalendarResourceChangesResult>(exception));
+        var tools = new CalendarReportTools(module);
+
+        var busy = await tools.FreeBusyRawAsync(Arguments("""
+            {"calendarHref":"https://cal.example/cal/","from":"2026-09-05T00:00:00Z","to":"2026-09-06T00:00:00Z"}
+            """), CancellationToken.None);
+        var changes = await tools.ChangesRawAsync(Arguments("{\"calendarHref\":\"https://cal.example/cal/\"}"), CancellationToken.None);
+
+        foreach (var result in new[] { busy, changes })
+        {
+            ErrorCode(result).ShouldBe("upstream_unavailable");
+            result.StructuredContent!.Value.GetProperty("retryable").GetBoolean().ShouldBeTrue();
+            result.StructuredContent.Value.TryGetProperty("periods", out _).ShouldBeFalse();
+            result.StructuredContent.Value.TryGetProperty("changes", out _).ShouldBeFalse();
+            result.StructuredContent.Value.TryGetProperty("checkpoint", out _).ShouldBeFalse();
+            result.StructuredContent.Value.GetRawText().ShouldNotContain("private");
+        }
+        CalendarOutputSchemaGuard.Validate("calendars.free_busy", busy);
+        CalendarOutputSchemaGuard.Validate("calendar_resources.changes", changes);
     }
 
     [Fact]

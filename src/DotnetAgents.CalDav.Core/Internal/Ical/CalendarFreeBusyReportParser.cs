@@ -15,6 +15,10 @@ internal static class CalendarFreeBusyReportParser
     {
         "FBTYPE", "RRULE", "RDATE", "EXDATE"
     }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+    private static readonly FrozenSet<string> ScopedReportProperties = new[]
+    {
+        "FREEBUSY", "DTSTART", "DTEND"
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
     internal static IReadOnlyList<CalendarBusyPeriod> Parse(
         byte[] body,
@@ -28,8 +32,8 @@ internal static class CalendarFreeBusyReportParser
             ValidateStructureBudget(content, cancellationToken);
             var document = CalendarContentDocument.Parse(content);
             ValidateComponents(document);
+            ValidateReportProperties(document.Properties);
             var properties = document.Properties.Where(property => property.ComponentPath.Count == 2).ToArray();
-            ValidateReportProperties(properties);
             ValidateBounds(properties);
             return Merge(ReadPeriods(properties, from, to, cancellationToken));
         }
@@ -101,7 +105,10 @@ internal static class CalendarFreeBusyReportParser
         // component. Recurrence properties are prohibited by RFC 5545 section
         // 3.6.4: the server must expand them into FREEBUSY periods. Ignoring any
         // of these representations could turn busy time into an empty report.
-        if (properties.Any(property => ProhibitedReportProperties.Contains(property.Name)))
+        // RFC 5545 section 3.6 places busy periods and their bounds inside
+        // VFREEBUSY, so validate their scope before filtering calendar properties.
+        if (properties.Any(property => ProhibitedReportProperties.Contains(property.Name)
+                || property.ComponentPath.Count != 2 && ScopedReportProperties.Contains(property.Name)))
             throw InvalidResponse();
     }
 
