@@ -19,6 +19,7 @@ from build_manifest import capture, finalize, load_builds, source_identity, benc
 from aggregate import load_traces, schema_observations
 from infra import radicale_config, save_private_state, verify
 import benchmark
+import driver
 
 HARNESS = Path(__file__).resolve().parent
 ASSEMBLIES = ['DotnetAgents.CalDav.Mcp.dll', 'DotnetAgents.CalDav.Core.dll']
@@ -320,6 +321,42 @@ class EvidenceTests(unittest.TestCase):
                     self.assertTrue(any(row['label'] == 'candidate' for row in rows))
                     if variation == 'timeout':
                         self.assertTrue(rows[-1]['timed_out'])
+
+
+class StartupCleanupTests(unittest.IsolatedAsyncioTestCase):
+    async def test_failed_negotiation_reaps_the_child_and_reader_tasks(self):
+        for kind,error in [('legacy',AssertionError),('malformed',TypeError),
+                           ('timeout',TimeoutError),('cancelled',asyncio.CancelledError)]:
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as temporary:
+                root=Path(temporary)
+                server=root/'dotnet'
+                server.write_text('#!'+sys.executable+'\n'+'''import json, pathlib, sys, time
+kind=pathlib.Path(sys.argv[1]).stem
+if kind in ('timeout','cancelled'):
+    time.sleep(60)
+else:
+    for line in sys.stdin:
+        request=json.loads(line)
+        result=[] if kind=='malformed' else {'supportedVersions':['legacy'], 'capabilities':{'tools':{}}}
+        print(json.dumps({'jsonrpc':'2.0','id':request['id'],'result':result}),flush=True)
+''')
+                server.chmod(0o755)
+                client=driver.Client(root/(kind+'.dll'),dict(os.environ))
+                timeout=0.1 if kind=='timeout' else 45
+                with patch.object(driver.shutil,'which',return_value=str(server)), \
+                        patch.object(driver,'REQUEST_TIMEOUT_SECONDS',timeout), \
+                        patch.object(driver,'SHUTDOWN_TIMEOUT_SECONDS',0.1):
+                    task=asyncio.create_task(client.__aenter__())
+                    if kind=='cancelled':
+                        while not hasattr(client,'reader'):
+                            await asyncio.sleep(0.001)
+                        task.cancel()
+                    with self.assertRaises(error):
+                        await task
+                self.assertIsNotNone(client.process.returncode)
+                self.assertTrue(client.reader.done())
+                self.assertTrue(client.stderr.done())
+                self.assertEqual({},client.pending)
 
 
 class InfrastructureTests(unittest.TestCase):

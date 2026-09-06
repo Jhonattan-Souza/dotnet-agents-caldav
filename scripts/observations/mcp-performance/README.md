@@ -10,6 +10,9 @@ legado. O driver verifica `supportedVersions`, capabilities, catálogo e o
 assembly mapeado pelo processo Linux. `_meta` acompanha cada request. Todos os
 Continues conservam o processo original. MRTR conserva `requestState` e envia
 `inputResponses` na segunda chamada; confirmação nunca entra em `arguments`.
+Falha ou cancelamento durante a negociação fecha stdin, aguarda o filho e o mata
+se exceder o encerramento de cinco segundos. As tarefas de leitura são encerradas
+antes de propagar a falha original.
 
 ## Preparação
 
