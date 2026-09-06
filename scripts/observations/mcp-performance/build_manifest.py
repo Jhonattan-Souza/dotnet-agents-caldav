@@ -99,7 +99,8 @@ def benchmark_inputs(builds, baseline, candidate, compare_otlp=False):
         inputs[label] = dict(assembly=str(assembly), assembly_sha256=hashes,
                              runtime_files_sha256=closure,
                              source=builds[prepared_label]['source'])
-    if compare_otlp and inputs['baseline']['assembly_sha256'] != inputs['candidate']['assembly_sha256']:
+    if compare_otlp and (inputs['baseline']['assembly_sha256'] != inputs['candidate']['assembly_sha256']
+                         or inputs['baseline']['runtime_files_sha256'] != inputs['candidate']['runtime_files_sha256']):
         raise RuntimeError('OTLP comparison requires the same build for both labels')
     return inputs
 

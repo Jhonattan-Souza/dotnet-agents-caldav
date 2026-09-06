@@ -22,6 +22,9 @@ import cleanup as cleanup_module
 import profile as profiling
 import benchmark
 import driver
+import gates
+from functional import verify_occurrence_fixture
+from edges import record_scale
 
 HARNESS = Path(__file__).resolve().parent
 ASSEMBLIES = ['DotnetAgents.CalDav.Mcp.dll', 'DotnetAgents.CalDav.Core.dll']
@@ -64,6 +67,17 @@ def runtime_fixture(directory,label):
 
 
 class BuildIdentityTests(unittest.TestCase):
+    def test_otlp_comparison_rejects_different_dependency_closures(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);builds={}
+            for label in ['baseline','candidate']:
+                directory=root/label;directory.mkdir();runtime_fixture(directory,'same')
+                (directory/'Example.Dependency.dll').write_text(label)
+                hashes={name:hashlib.sha256((directory/name).read_bytes()).hexdigest() for name in ASSEMBLIES}
+                builds[label]=dict(source=dict(sha=label),assembly_sha256=hashes,
+                                   runtime_files_sha256=runtime_files(directory/ASSEMBLIES[0]))
+            with self.assertRaisesRegex(RuntimeError,'same build'):
+                benchmark_inputs(builds,root/'baseline'/ASSEMBLIES[0],root/'candidate'/ASSEMBLIES[0],True)
     def test_prepared_revisions_survive_later_commits_and_working_directory_changes(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -396,10 +410,40 @@ class ProfileTests(unittest.IsolatedAsyncioTestCase):
 
 
 class GateEvidenceTests(unittest.TestCase):
+    def test_gate_runner_records_source_and_only_completes_all_steps(self):
+        for failure in [None,'tests']:
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temporary:
+                root=Path(temporary)
+                candidate=dict(source=dict(sha='candidate',dirty=False),runtime_files_sha256={'runtime':'hash'})
+                calls=[]
+                def command(argv,**kwargs):
+                    name=gates.STEPS[len(calls)];calls.append(name)
+                    return SimpleNamespace(returncode=1 if name==failure else 0)
+                with patch.object(gates,'load_builds',return_value={'candidate':candidate}), \
+                        patch.object(gates,'source_identity',return_value=candidate['source']), \
+                        patch.object(gates,'runtime_files',return_value=candidate['runtime_files_sha256']), \
+                        patch.object(gates.subprocess,'run',side_effect=command):
+                    if failure:
+                        with self.assertRaisesRegex(RuntimeError,'Gate failed'):
+                            gates.run(root,'evidence')
+                    else:
+                        gates.run(root,'evidence')
+                proof=json.loads((root/'evidence/gate-source.json').read_text())
+                self.assertEqual(failure is None,proof['completed'])
+                self.assertEqual(gates.STEPS if failure is None else gates.STEPS[:4],calls)
+                if failure:
+                    with self.assertRaises(RuntimeError): gates.verify_gate_identity(root/'evidence',candidate)
+                else:
+                    gates.verify_gate_identity(root/'evidence',candidate)
+
     def test_complete_gates_are_required_before_aggregation(self):
         manifest=json.loads((HARNESS.parents[1]/'test-suite-manifest.json').read_text())
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary)
+            candidate=dict(source=dict(sha='candidate',dirty=False),runtime_files_sha256={'runtime':'hash'})
+            proof=dict(completed=True,source=candidate['source'],source_after=candidate['source'],
+                runtime_files_sha256=candidate['runtime_files_sha256'],steps=[dict(name=name,exit_code=0) for name in gates.STEPS])
+            (root/'gate-source.json').write_text(json.dumps(proof))
             for item in manifest['artifacts']:
                 trx=ET.Element('TestRun')
                 results=ET.SubElement(trx,'Results')
@@ -414,19 +458,59 @@ class GateEvidenceTests(unittest.TestCase):
                         (root/(item['coveragePrefix']+'.coverage.'+form+'.test.xml')).write_text('<coverage/>')
             coverage=root/'coverage-report';coverage.mkdir()
             (coverage/'Cobertura.xml').write_text('<coverage line-rate="1" branch-rate="1"/>')
-            validate_gates(root)
+            validate_gates(root,candidate)
+            for field,value in [('source',dict(sha='old',dirty=False)),
+                                ('source_after',dict(sha='candidate',dirty=True)),
+                                ('runtime_files_sha256',{'runtime':'stale'}),('completed',False)]:
+                with self.subTest(field=field):
+                    (root/'gate-source.json').write_text(json.dumps(dict(proof,**{field:value})))
+                    with self.assertRaises(RuntimeError): validate_gates(root,candidate)
+            (root/'gate-source.json').write_text(json.dumps(proof))
             strict=root/'strict-preconditions.trx';saved=strict.read_bytes();strict.unlink()
-            with self.assertRaises(RuntimeError): validate_gates(root)
+            with self.assertRaises(RuntimeError): validate_gates(root,candidate)
             strict.write_bytes(saved)
             core=root/'main-core.trx';original=core.read_bytes()
             for counter in ['failed','notExecuted','warning']:
                 with self.subTest(counter=counter):
                     trx=ET.fromstring(original);trx.find('.//Counters').set(counter,'1')
                     core.write_bytes(ET.tostring(trx))
-                    with self.assertRaises(RuntimeError): validate_gates(root)
+                    with self.assertRaises(RuntimeError): validate_gates(root,candidate)
             core.write_bytes(original)
             (coverage/'Cobertura.xml').write_text('<coverage line-rate="0.1" branch-rate="1"/>')
-            with self.assertRaises(RuntimeError): validate_gates(root)
+            with self.assertRaises(RuntimeError): validate_gates(root,candidate)
+
+
+class PersistedEvidenceTests(unittest.TestCase):
+    def test_failed_scale_is_recorded_and_rejected(self):
+        records=[]
+        record_scale(records.append,dict(outcome='success'),corpus_resources=600)
+        with self.assertRaisesRegex(RuntimeError,'Scale query failed'):
+            record_scale(records.append,dict(outcome='limit_exhausted',is_error=True),corpus_resources=6000)
+        self.assertEqual('limit_exhausted',records[-1]['outcome'])
+        self.assertEqual(6000,records[-1]['corpus_resources'])
+
+    def test_occurrence_checks_reject_noops_and_wrong_instances(self):
+        target='20260909T120000Z'
+        def fixture(verb):
+            lines=['BEGIN:VCALENDAR','BEGIN:VEVENT','UID:fixture','DTSTART:20260905T120000Z',
+                   'DTEND:20260905T130000Z','RRULE:FREQ=DAILY;COUNT=3']
+            if verb!='initial': lines.append('RDATE:'+target)
+            if verb=='exclude': lines.append('EXDATE:'+target)
+            lines.append('END:VEVENT')
+            if verb in ['cancel','restore_cancellation']:
+                lines+=['BEGIN:VEVENT','UID:fixture','RECURRENCE-ID:'+target]
+                if verb=='cancel': lines.append('STATUS:CANCELLED')
+                lines.append('END:VEVENT')
+            return ('\r\n'.join(lines+['END:VCALENDAR',''])).encode()
+        previous='initial'
+        for verb in ['add','exclude','restore_exclusion','cancel','restore_cancellation']:
+            with self.subTest(verb=verb):
+                data=fixture(verb)
+                verify_occurrence_fixture(data,verb,'fixture')
+                with self.assertRaises(RuntimeError): verify_occurrence_fixture(fixture(previous),verb,'fixture')
+                with self.assertRaises(RuntimeError):
+                    verify_occurrence_fixture(data.replace(target.encode(),b'20260910T120000Z'),verb,'fixture')
+                previous=verb
 
 
 class StartupCleanupTests(unittest.IsolatedAsyncioTestCase):

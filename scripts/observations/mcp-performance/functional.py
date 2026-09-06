@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import json
+import re
 from pathlib import Path
 import secrets
 import urllib.parse
@@ -22,6 +23,51 @@ def sanitize(value, key=''):
     if isinstance(value,str) and key not in SAFE_STRINGS:
         return '[redacted]'
     return value
+
+
+def verify_occurrence_fixture(data,verb,uid):
+    """Check the authored UTC fixture, including the targeted RDATE/override."""
+    def require(condition,detail):
+        if not condition:
+            raise RuntimeError('Persisted occurrence postcondition failed: '+detail)
+    events=[];stack=[];event=None
+    for line in re.sub(rb'\r?\n[ \t]',b'',data).decode().splitlines():
+        if ':' not in line:
+            continue
+        token,value=line.split(':',1)
+        name=token.split(';',1)[0].upper()
+        if name=='BEGIN':
+            stack.append(value.upper())
+            if value.upper()=='VEVENT': event={}
+        elif name=='END':
+            require(bool(stack) and stack[-1]==value.upper(),'component nesting')
+            if value.upper()=='VEVENT': events.append(event);event=None
+            stack.pop()
+        elif stack and stack[-1]=='VEVENT':
+            require(name!='RECURRENCE-ID' or ';RANGE=' not in token.upper(),'unexpected range override')
+            event.setdefault(name,[]).append(value)
+    require(not stack,'unclosed component')
+    require(all(event.get('UID')==[uid] for event in events),'event UID')
+    masters=[event for event in events if 'RECURRENCE-ID' not in event]
+    overrides=[event for event in events if 'RECURRENCE-ID' in event]
+    require(len(masters)==1,'master count')
+    master=masters[0];target='20260909T120000Z'
+    require(master.get('DTSTART')==['20260905T120000Z'],'master start')
+    require(master.get('DTEND')==['20260905T130000Z'],'master end')
+    rules=master.get('RRULE',[])
+    require(len(rules)==1 and dict(part.split('=',1) for part in rules[0].split(';'))==
+            {'FREQ':'DAILY','COUNT':'3'},'master recurrence rule')
+    values=lambda name:{value for line in master.get(name,[]) for value in line.split(',')}
+    require(values('RDATE')=={target},'added occurrence membership')
+    require(values('EXDATE')==({target} if verb=='exclude' else set()),'excluded occurrence membership')
+    require('CANCELLED' not in master.get('STATUS',[]),'master was cancelled')
+    require(len(overrides)<=1 and all(event['RECURRENCE-ID']==[target] for event in overrides),'override identity')
+    if verb=='cancel':
+        require(len(overrides)==1 and overrides[0].get('STATUS')==['CANCELLED'],'target cancellation')
+    elif verb=='restore_cancellation':
+        require(all('CANCELLED' not in event.get('STATUS',[]) for event in overrides),'target restoration')
+    else:
+        require(not overrides,'unexpected override')
 
 
 class Functional:
@@ -54,11 +100,23 @@ class Functional:
 
     def authoritative(self,href,contains=None,absent=False):
         status,data,_=request(self.state,'GET',urllib.parse.urlparse(href).path)
-        assert status==(404 if absent else 200), status
-        if contains:
-            assert contains.encode() in data
-        self.records.append(dict(authoritative=True,status=status,postcondition=True))
+        passed=status==(404 if absent else 200) and (not contains or contains.encode() in data)
+        self.records.append(dict(authoritative=True,status=status,postcondition=passed))
         self.save()
+        if not passed:
+            raise RuntimeError('Authoritative resource postcondition failed')
+
+    def authoritative_occurrence(self,href,verb,uid):
+        status,data,_=request(self.state,'GET',urllib.parse.urlparse(href).path)
+        passed=False
+        try:
+            if status!=200:
+                raise RuntimeError('Authoritative occurrence read failed')
+            verify_occurrence_fixture(data,verb,uid)
+            passed=True
+        finally:
+            self.records.append(dict(authoritative=True,status=status,occurrence_action=verb,postcondition=passed))
+            self.save()
 
     async def run(self):
         catalog=(await self.client.request('tools/list',{}))['result']['tools']
@@ -80,8 +138,9 @@ class Functional:
             if kind=='event':
                 fields.update(end=dict(kind='utcDateTime',value='2026-09-05T13:00:00Z'),
                               recurrenceSet=dict(rrule='FREQ=DAILY;COUNT=3'))
+            uid='functional-'+kind+'-'+secrets.token_hex(4)
             result=await self.call(kind+'s.create',dict(destination=dict(mode='default'),
-                                  entity=dict(kind=kind,uid='functional-'+kind+'-'+secrets.token_hex(4),fields=fields)))
+                                  entity=dict(kind=kind,uid=uid,fields=fields)))
             snapshot=result['snapshot']
             href=snapshot['resourceRevision']['href'];self.owned.add(href)
             self.authoritative(href,'SUMMARY:Disposable functional '+kind)
@@ -94,7 +153,7 @@ class Functional:
                 for verb in ['add','exclude','restore_exclusion','cancel','restore_cancellation']:
                     snapshot=await self.read(href)
                     await self.call('calendar_occurrences.'+verb,dict(snapshot=snapshot['entityRevision'],recurrenceIdentity=identity))
-                    self.authoritative(href)
+                    self.authoritative_occurrence(href,verb,uid)
             else:
                 snapshot=await self.read(href)
                 await self.call('todos.complete',dict(snapshot=snapshot['entityRevision']))

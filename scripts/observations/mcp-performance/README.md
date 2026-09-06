@@ -51,6 +51,8 @@ do build correspondente. Inverter baseline/candidata é erro antes da medição.
 No controle `--compare-otlp`, ambos apontam ao mesmo build e conservam essa
 identidade na agregação. Cada processo precisa corresponder ao seu argumento,
 inclusive ao hash de Core; pertencer ao conjunto dos dois builds não basta.
+No controle OTLP, o conjunto de dependências também deve ser idêntico entre os
+argumentos; igualdade somente de MCP e Core não basta.
 Os manifestos verificam também os assets declarados em `.deps.json` e os hashes
 de todo o diretório de execução copiado, incluindo dependências, assets por RID,
 deps e runtimeconfig. O driver registra esse conjunto para cada processo. Mantenha
@@ -84,6 +86,9 @@ no filho correspondente. Inclui queries limitadas e não limitadas quando
 permitidas, Start/Continue 1/5/200, recursos, criação/patch/conclusão, cinco
 mutações de recorrência, Move vazio/populado, exact create/replace/move e deletes
 de recurso/calendário por MRTR. Releitura HTTP verifica mutações e ausência.
+Para a fixture UTC de recorrência, a releitura confere UID, regra e horários do
+master, RDATE/EXDATE e o RECURRENCE-ID/STATUS do override solicitado após cada
+uma das cinco mutações. Operações sem efeito ou em outra instância falham.
 `edges.py` cobre leituras de controle, OTLP ligado/desligado/indisponível, EOF,
 escalas e falhas esperadas de limites. Uma falha esperada não conta como operação
 útil. O store só retém snapshots que precisam de continuação; corpus vazio não
@@ -212,6 +217,20 @@ propaga o código de saída do cliente depois de emitir seu resumo diagnóstico.
 O proxy também propaga o código de saída do MCP e termina de encaminhar stderr
 antes de registrar o encerramento.
 
+Para associar os gates à comparação preparada, use o wrapper sem mudar o estado
+Git entre `prepare.sh` e a execução abaixo:
+
+```bash
+python3 scripts/observations/mcp-performance/gates.py /tmp/caldav-perf-new --name gates-final
+```
+
+Ele executa os cinco comandos exigidos pelo repositório, na mesma ordem, e grava
+`gate-source.json` com a identidade inicial/final da fonte e do runtime. A marca
+de conclusão só aparece após todos os comandos passarem. O arquivo é colocado
+no diretório de artefatos depois que o runner termina, preservando a exigência de
+diretório inicialmente vazio. Use outro nome para repetir uma execução falha.
+Diretórios históricos sem essa prova não recebem identidade retroativamente.
+
 Execute `python3 scripts/observations/mcp-performance/test_harness.py` para as
 regressões do harness. Elas usam repositórios temporários e executáveis simulados
 para verificar identidade, contagens e tratamento de falhas; não substituem a
@@ -226,6 +245,8 @@ A agregação executa `verify-test-artifacts.sh` na fase `complete`, incluindo o
 manifesto das variantes estrita e de fuso alternativo, e `verify-coverage.sh`
 com os limiares 90%/85%. Diretórios parciais, contadores malsucedidos e cobertura
 insuficiente são rejeitados antes da emissão do resultado.
+Ela também exige que `gate-source.json` certifique exatamente a fonte e o runtime
+da candidata preparada; gates verdes de outro checkout são recusados.
 
 ```bash
 python3 scripts/observations/mcp-performance/aggregate.py /tmp/caldav-perf-new /tmp/caldav-perf-new/results.json --gates gates-final --runs continue-serial start-serial --traces /tmp/caldav-perf-new/complete-traces.json

@@ -9,6 +9,12 @@ from driver import Client, environment, query
 from infra import request, resource, verify, expected_counts
 
 
+def record_scale(remember,record,**metadata):
+    remember(dict(record,**metadata,scale=True))
+    if record['outcome']!='success' or record.get('is_error'):
+        raise RuntimeError('Scale query failed: '+record['outcome'])
+
+
 async def run(root,baseline,candidate):
     expected=expected_counts(root)
     if expected['todos']<2:
@@ -56,15 +62,14 @@ async def run(root,baseline,candidate):
                         args=query(tool,200);args['scope']=dict(mode='selected',calendar=dict(by='href',href=href))
                         if tool=='calendar_entities.query':args['entityKinds']=['event']
                         _,record=await c.call(tool,args)
-                        assert record['outcome']=='success'
-                        remember(dict(record,label=label,corpus_resources=count,scale=True))
+                        record_scale(remember,record,label=label,corpus_resources=count)
         # Include the requested seeded collection size without reseeding it.
         async with Client(candidate,environment(state,'caldav-perf-limits')) as c:
             args=query('calendar_entities.query',200)
             args.update(scope=dict(mode='selected',calendar=dict(by='href',href=state['url']+'/perftest/events/')),
                         entityKinds=['event'])
             _,record=await c.call('calendar_entities.query',args)
-            remember(dict(record,corpus_resources=expected['events'],scale=True,label='candidate'))
+            record_scale(remember,record,corpus_resources=expected['events'],label='candidate')
         over=resource('VEVENT',10000).replace('RRULE:FREQ=WEEKLY;COUNT=20','RRULE:FREQ=MINUTELY;COUNT=6000')
         assert request(state,'PUT',path+'over-limit.ics',over,{'Content-Type':'text/calendar'})[0]==201
         for label,assembly in [('baseline',baseline),('candidate',candidate)]:
