@@ -95,6 +95,9 @@ uma das cinco mutações. Operações sem efeito ou em outra instância falham.
 escalas e falhas esperadas de limites. Uma falha esperada não conta como operação
 útil. O store só retém snapshots que precisam de continuação; corpus vazio não
 serve para testar sua saturação.
+As verificações do harness usam condicionais explícitas, preservadas com
+`python -O` e `PYTHONOPTIMIZE`. EOF exige saída zero e ambos os streams vazios;
+a agregação rejeita contagens incompletas de traces antes de produzir resultados.
 
 Use a versão e o Python da instalação Hermes que `hermes --version` identifica.
 A prova implementada aceita o perfil OpenRouter já configurado. Ela lê somente

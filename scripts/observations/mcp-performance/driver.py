@@ -82,8 +82,10 @@ class Client:
 
     async def initialize(self, start):
         self.initialized = await self.request('server/discover', {})
-        assert PROTOCOL in self.initialized['result']['supportedVersions'], self.initialized
-        assert 'tools' in self.initialized['result']['capabilities']
+        if not (PROTOCOL in self.initialized['result']['supportedVersions']):
+            raise RuntimeError('Unsupported MCP protocol')
+        if not ('tools' in self.initialized['result']['capabilities']):
+            raise RuntimeError('MCP tools capability unavailable')
         self.startup_ms = (time.perf_counter_ns()-start)/1e6
         self.identity = dict(pid=self.process.pid, assembly=str(self.assembly),
             sha256=hashlib.sha256(self.assembly.read_bytes()).hexdigest(),
@@ -93,7 +95,8 @@ class Client:
             startup_ms=self.startup_ms, discovery=self.initialized)
         # Linux maps verifies the runtime actually loaded this assembly.
         self.identity['assembly_mapped'] = str(self.assembly) in Path(f'/proc/{self.process.pid}/maps').read_text()
-        assert self.identity['assembly_mapped']
+        if not (self.identity['assembly_mapped']):
+            raise RuntimeError('Assembly was not mapped')
         return self
 
     async def read(self):
@@ -184,7 +187,8 @@ class Client:
         stderr = await self.stderr
         self.identity.update(shutdown_ms=(time.perf_counter_ns()-start)/1e6,
                              exit_code=self.process.returncode, stderr_bytes=len(stderr))
-        assert self.process.returncode == 0 and not stderr, self.identity
+        if not (self.process.returncode == 0 and not stderr):
+            raise RuntimeError('MCP shutdown was not clean')
 
 
 def query(tool, size=5, bounded=True):

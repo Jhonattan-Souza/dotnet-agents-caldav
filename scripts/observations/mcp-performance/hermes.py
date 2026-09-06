@@ -20,14 +20,16 @@ sys.path.insert(0,str(repo/'scripts/observations/mcp-performance'))
 from driver import environment
 home=root/'hermes-isolated';home.mkdir(exist_ok=True);home.chmod(0o700)
 base=yaml.safe_load((a.source_home/'config.yaml').read_text())
-assert base['model'].get('provider')=='openrouter', 'This witness uses the already configured OpenRouter provider only'
+if not (base['model'].get('provider')=='openrouter'):
+    raise RuntimeError('This witness uses the already configured OpenRouter provider only')
 config={'model':base['model'],'agent':{'reasoning_effort':base.get('agent',{}).get('reasoning_effort','medium'),'max_turns':30},
 'mcp_servers':{'perf':{'command':sys.executable,'args':[str(repo/'scripts/observations/mcp-performance/hermes_proxy.py'),str(a.assembly),str(root/'hermes-wire-sanitized.jsonl'),str(root)],
 'env':{k:v for k,v in environment(state,'caldav-perf-hermes',exact=False).items() if k.startswith(('CALDAV_','OTEL_'))},'timeout':60,'connect_timeout':60}}}
 (home/'config.yaml').write_text(yaml.safe_dump(config));(home/'config.yaml').chmod(0o600)
 secrets=dotenv_values(a.source_home/'.env')
 key=os.environ.get('OPENROUTER_API_KEY') or secrets.get('OPENROUTER_API_KEY')
-assert key,'Configured OpenRouter credential unavailable'
+if not (key):
+    raise RuntimeError('Configured OpenRouter credential unavailable')
 (home/'.env').write_text('OPENROUTER_API_KEY='+key+'\n');(home/'.env').chmod(0o600)
 model_metadata={key:config['model'][key] for key in ['provider','model','default']
                 if isinstance(config['model'].get(key),str)}

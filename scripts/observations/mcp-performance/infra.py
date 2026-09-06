@@ -153,7 +153,8 @@ def seed(root, count):
         raise ValueError('Seed count cannot be negative')
     state = json.loads((root / 'infra-private.json').read_text())
     principal = '/' + state['username'] + '/'
-    assert request(state, 'MKCOL', principal)[0] in (201, 405)
+    if not (request(state, 'MKCOL', principal)[0] in (201, 405)):
+        raise RuntimeError('Seed principal creation failed')
     digest = hashlib.sha256()
     expected={}
     for name, kind, n in [('events', 'VEVENT', count), ('todos', 'VTODO', count), ('archive', 'VTODO', 0)]:
@@ -162,7 +163,8 @@ def seed(root, count):
 <D:resourcetype><D:collection/><C:calendar/></D:resourcetype><D:displayname>Performance {name}</D:displayname>
 <C:supported-calendar-component-set><C:comp name="{kind}"/></C:supported-calendar-component-set>
 </D:prop></D:set></D:mkcol>'''
-        assert request(state, 'MKCOL', path, body)[0] == 201
+        if not (request(state, 'MKCOL', path, body)[0] == 201):
+            raise RuntimeError('Seed calendar creation failed')
         expected[name]={}
         for i in range(n):
             data = resource(kind, i)
@@ -170,7 +172,8 @@ def seed(root, count):
             href=path+f'{i:04d}.ics'
             status,_,headers=request(state,'PUT',href,data,
                                      {'Content-Type':'text/calendar','If-None-Match':'*'})
-            assert status==201
+            if not (status==201):
+                raise RuntimeError('Seed resource creation failed')
             etag={key.lower():value for key,value in headers.items()}.get('etag')
             if not etag or etag.startswith('W/'):
                 raise RuntimeError('Seed PUT did not return a strong ETag')
@@ -179,7 +182,8 @@ def seed(root, count):
     state['corpus_etags']=expected
     save_private_state(root/'infra-private.json',state)
     counts = verify(state)
-    assert counts == {'events': count, 'todos': count, 'archive': 0}, counts
+    if not (counts == {'events': count, 'todos': count, 'archive': 0}):
+        raise RuntimeError('Seed counts differ')
     (root / 'corpus.json').write_text(json.dumps(dict(seed=20260905, resources=counts,
          authored_sha256=digest.hexdigest(), window=['2026-07-01T00:00:00Z','2026-12-31T00:00:00Z'],
          timezone='America/Sao_Paulo'), indent=2))
@@ -192,7 +196,8 @@ def verify(state):
     for name in ['events', 'todos', 'archive']:
         body = '<D:propfind xmlns:D="DAV:"><D:prop><D:getetag/></D:prop></D:propfind>'
         status, data, _ = request(state, 'PROPFIND', f"/{state['username']}/{name}/", body, {'Depth':'1'})
-        assert status == 207
+        if not (status == 207):
+            raise RuntimeError('Corpus listing failed')
         observed={}
         for response in ET.fromstring(data).findall('{DAV:}response'):
             href=urllib.parse.unquote(urllib.parse.urlsplit(response.findtext('{DAV:}href','')).path)
@@ -225,7 +230,8 @@ def down(root):
         if not docker('ps', '-aq', '--filter', 'name=^/' + name + '$'):
             continue
         owner = docker('inspect', '--format', '{{index .Config.Labels "caldav.performance.owner"}}', name)
-        assert owner == state['run']
+        if not (owner == state['run']):
+            raise RuntimeError('Container ownership differs')
         docker('rm', '-fv', name)
     path.unlink()
     import shutil
