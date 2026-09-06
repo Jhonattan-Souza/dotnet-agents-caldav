@@ -2,33 +2,76 @@
 """Diagnostic EventPipe capture, separate from the latency comparison."""
 import argparse
 import asyncio
+from contextlib import suppress
 import json
 from pathlib import Path
 from driver import Client,environment,query
 
 
+def save_record(path,records,record,warmup):
+    records.append(dict(record,warmup=warmup))
+    path.write_text(json.dumps(records,indent=2))
+    if record['outcome']!='success' or record.get('is_error'):
+        raise RuntimeError('Profile call failed: '+record['outcome'])
+
+
+async def stop_collectors(collectors):
+    for process in collectors:
+        if process.returncode is None:
+            with suppress(ProcessLookupError):
+                process.terminate()
+            try:
+                await asyncio.wait_for(process.wait(),5)
+            except TimeoutError:
+                with suppress(ProcessLookupError):
+                    process.kill()
+                await process.wait()
+
+
+async def capture(a,client,cursor,records,samples):
+    collectors=[]
+    with (a.root/(a.name+'-profile.log')).open('w') as log:
+        try:
+            collectors.append(await asyncio.create_subprocess_exec(str(a.profilers/'dotnet-trace'),'collect',
+                '--process-id',str(client.process.pid),'--profile','dotnet-sampled-thread-time',
+                '--duration','00:00:20','--output',str(a.root/(a.name+'.nettrace')),stdout=log,stderr=log))
+            collectors.append(await asyncio.create_subprocess_exec(str(a.profilers/'dotnet-counters'),'collect',
+                '--process-id',str(client.process.pid),'--counters','System.Runtime','--format','json',
+                '--duration','00:00:20','--output',str(a.root/(a.name+'-counters.json')),stdout=log,stderr=log))
+            for _ in range(5 if a.mode=='start' else 60):
+                arguments=query(a.tool,200) if a.mode=='start' else dict(cursor=cursor,pageSize=200)
+                _,record=await client.call(a.tool,arguments)
+                save_record(samples,records,record,False)
+            for process in collectors:
+                if await asyncio.wait_for(process.wait(),25)!=0:
+                    raise RuntimeError('Diagnostic collector failed; inspect the profile log')
+        finally:
+            await stop_collectors(collectors)
+
+
 async def run(a):
+    suffixes=['-profile-samples.json','-profile-process.json','-profile.log','.nettrace','-counters.json']
+    if any((a.root/(a.name+suffix)).exists() for suffix in suffixes):
+        raise RuntimeError('Use a new profile name; preserve previous attempts')
     state=json.loads((a.root/'infra-private.json').read_text())
+    samples=a.root/(a.name+'-profile-samples.json')
     records=[]
-    async with Client(a.assembly,environment(state,'caldav-perf-profile-'+a.name)) as c:
-        for _ in range(5):
-            response,record=await c.call(a.tool,query(a.tool,200))
-            assert record['outcome']=='success'
-        cursor=response['result']['structuredContent']['pagination']['nextCursor']
-        with (a.root/(a.name+'-profile.log')).open('w') as log:
-            tracer=await asyncio.create_subprocess_exec(str(a.profilers/'dotnet-trace'),'collect',
-                '--process-id',str(c.process.pid),'--profile','dotnet-sampled-thread-time',
-                '--duration','00:00:20','--output',str(a.root/(a.name+'.nettrace')),stdout=log,stderr=log)
-            counters=await asyncio.create_subprocess_exec(str(a.profilers/'dotnet-counters'),'collect',
-                '--process-id',str(c.process.pid),'--counters','System.Runtime','--format','json',
-                '--duration','00:00:20','--output',str(a.root/(a.name+'-counters.json')),stdout=log,stderr=log)
-            for _ in range(10 if a.mode=='start' else 60):
-                args=query(a.tool,200) if a.mode=='start' else dict(cursor=cursor,pageSize=200)
-                _,record=await c.call(a.tool,args);records.append(record)
-            assert await tracer.wait()==0
-            assert await counters.wait()==0
-    (a.root/(a.name+'-profile-samples.json')).write_text(json.dumps(records,indent=2))
-    (a.root/(a.name+'-profile-process.json')).write_text(json.dumps(c.identity,indent=2))
+    client=Client(a.assembly,environment(state,'caldav-perf-profile-'+a.name))
+    completed=False
+    try:
+        async with client as c:
+            for _ in range(5):
+                response,record=await c.call(a.tool,query(a.tool,200))
+                save_record(samples,records,record,True)
+            cursor=response['result']['structuredContent']['pagination']['nextCursor']
+            if a.mode=='continue' and cursor is None:
+                raise RuntimeError('Continue profiling requires a paginated result')
+            await capture(a,c,cursor,records,samples)
+        completed=True
+    finally:
+        if hasattr(client,'identity'):
+            (a.root/(a.name+'-profile-process.json')).write_text(json.dumps(
+                dict(client.identity,profile_completed=completed),indent=2))
 
 
 if __name__=='__main__':

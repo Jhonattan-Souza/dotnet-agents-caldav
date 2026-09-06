@@ -8,7 +8,7 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 from driver import Client,environment
 from functional import Functional
-from infra import request,verify
+from infra import request,verify,expected_counts
 
 
 async def run(root,assembly):
@@ -34,7 +34,7 @@ async def run(root,assembly):
         await f.call('calendar_resources.delete',dict(revision=snapshot['entityRevision']))
         f.authoritative(href,absent=True)
     (output/'process.json').write_text(json.dumps(c.identity,indent=2))
-    assert verify(state)==dict(events=600,todos=600,archive=0)
+    assert verify(state)==expected_counts(root)
 
 
 if __name__=='__main__':

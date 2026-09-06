@@ -7,7 +7,7 @@ from pathlib import Path
 import secrets
 import urllib.parse
 from driver import Client, environment, query
-from infra import request, resource, verify
+from infra import request, resource, verify, expected_counts
 
 SAFE_STRINGS = {'outcome','code','category','phase','state','mutationState','resultType','kind','entityKind',
                 'resultKind','completionState','mode','source','timeZone','operation','field','action',
@@ -67,7 +67,8 @@ class Functional:
         for tool in ['calendar_entities.query','calendar_occurrences.query','todos.query']:
             for size in [1,5,200]:
                 result=await self.call(tool,query(tool,size))
-                await self.call(tool,dict(cursor=result['pagination']['nextCursor'],pageSize=size))
+                if result['pagination']['nextCursor'] is not None:
+                    await self.call(tool,dict(cursor=result['pagination']['nextCursor'],pageSize=size))
         for tool in ['calendar_entities.query','todos.query']:
             await self.call(tool,query(tool,5,bounded=False))
         href=self.state['url']+'/perftest/todos/0001.ics'
@@ -133,10 +134,12 @@ class Functional:
         self.authoritative(collection,absent=True);self.owned.discard(collection)
         called={r['tool'] for r in self.records if 'tool' in r}
         assert called=={t['name'] for t in catalog},called
-        assert verify(self.state)==dict(events=600,todos=600,archive=0)
+        assert verify(self.state)==expected_counts(self.root)
 
 
 async def run(root,assembly):
+    if expected_counts(root)['todos']<2:
+        raise RuntimeError('The functional matrix requires at least two seeded todos; cleanup supports any seed count')
     state=json.loads((root/'infra-private.json').read_text())
     async with Client(assembly,environment(state,'caldav-perf-functional',exact=True)) as client:
         f=Functional(root,client,state)

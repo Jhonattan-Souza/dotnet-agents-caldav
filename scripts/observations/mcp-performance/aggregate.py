@@ -6,6 +6,7 @@ import json
 import math
 from pathlib import Path
 import statistics
+import subprocess
 import xml.etree.ElementTree as ET
 from build_manifest import load_builds, verify_process_inputs
 
@@ -104,6 +105,8 @@ def schema_observations(root,builds):
         source=json.loads((root/('schema-'+label+'.json')).read_text());samples=source['samples']
         if source['assemblySha256']!=builds[label]['assembly_sha256']['DotnetAgents.CalDav.Mcp.dll']:
             raise RuntimeError(f'{label} schema observation does not match its prepared build')
+        if source['runtimeFilesSha256']!=builds[label]['runtime_files_sha256']:
+            raise RuntimeError(f'{label} schema observation has different runtime dependencies')
         workload=(source['tool'],source['payloadSha256'])
         if expected_workload is not None and workload!=expected_workload:
             raise RuntimeError('Schema observations require the same tool and payload')
@@ -116,7 +119,18 @@ def schema_observations(root,builds):
     return allocation
 
 
+def validate_gates(directory):
+    scripts=Path(__file__).resolve().parents[2]
+    for command in [
+        ['bash',str(scripts/'verify-test-artifacts.sh'),str(directory),'complete'],
+        ['bash',str(scripts/'verify-coverage.sh'),str(directory/'coverage-report'),'0.90','0.85']]:
+        result=subprocess.run(command,capture_output=True,text=True)
+        if result.returncode:
+            raise RuntimeError('Gate evidence validation failed: '+result.stderr.strip())
+
+
 def main(a):
+    validate_gates(a.root/a.gates)
     builds=load_builds(a.root)
     traces=load_traces(a.traces)
     results=[];startup=[]
