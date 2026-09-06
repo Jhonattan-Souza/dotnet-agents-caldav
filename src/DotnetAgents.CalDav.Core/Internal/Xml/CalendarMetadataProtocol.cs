@@ -102,14 +102,19 @@ internal static class CalendarMetadataProtocol
 
     private static int ReadSingleStatus(XElement[] elements)
     {
-        if (elements.Length != 1)
+        if (elements.Length != 1 || elements[0].HasElements)
             throw ProtocolError();
-        var parts = elements[0].Value.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length < 2 || !parts[0].StartsWith("HTTP/", StringComparison.Ordinal)
-            || !int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var status)
-            || status is < 100 or > 599)
+        var status = elements[0].Value.Trim();
+        if (status.IndexOfAny(['\r', '\n']) >= 0)
             throw ProtocolError();
-        return status;
+        try
+        {
+            return DavResponseParser.ParseStatusCode(status);
+        }
+        catch (XmlException)
+        {
+            throw ProtocolError();
+        }
     }
 
     private static XDocument ParseXml(byte[] body)

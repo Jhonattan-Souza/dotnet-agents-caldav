@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Xml;
 using DotnetAgents.CalDav.Core.Models;
+using DotnetAgents.CalDav.Core.Services;
 using DotnetAgents.CalDav.Mcp.Hosting;
 using ModelContextProtocol.Protocol;
 
@@ -17,6 +18,7 @@ internal static class CalendarProtocolToolSupport
         Func<CancellationToken, Task<object>> action,
         CancellationToken cancellationToken)
     {
+        using var progress = AttachProgressIfNeeded();
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
         try
@@ -32,6 +34,11 @@ internal static class CalendarProtocolToolSupport
             return Error(MapException(exception));
         }
     }
+
+    internal static CalendarOperationProgress.ProgressScope? AttachProgressIfNeeded() =>
+        CalendarOperationProgress.CurrentPhase is null
+            ? CalendarOperationProgress.Attach(CalendarOperationProgress.CreateState())
+            : null;
 
     internal static CallToolResult Success(object value, CalendarMutationState? mutationState = null)
     {
@@ -132,8 +139,14 @@ internal static class CalendarProtocolToolSupport
         CalendarTelemetryErrorCode.InvalidInput => CalendarTelemetryErrorPhase.SchemaLexicalDiscriminator,
         CalendarTelemetryErrorCode.SyncResetRequired => CalendarTelemetryErrorPhase.Pagination,
         CalendarTelemetryErrorCode.Indeterminate or CalendarTelemetryErrorCode.CommittedButUnverified => CalendarTelemetryErrorPhase.PostWriteVerificationOrReconciliation,
-        CalendarTelemetryErrorCode.LimitExhausted => CalendarTelemetryErrorPhase.Execution,
         CalendarTelemetryErrorCode.PayloadTooLarge => CalendarTelemetryErrorPhase.AdmissionAndPayload,
+        _ => CurrentFailurePhase()
+    };
+
+    private static CalendarTelemetryErrorPhase CurrentFailurePhase() => CalendarOperationProgress.CurrentPhase switch
+    {
+        CalendarOperationPhase.Fetch or CalendarOperationPhase.Filter or CalendarOperationPhase.Expand => CalendarTelemetryErrorPhase.Execution,
+        CalendarOperationPhase.Reconcile => CalendarTelemetryErrorPhase.PostWriteVerificationOrReconciliation,
         _ => CalendarTelemetryErrorPhase.SelectionDiscoveryCapability
     };
 

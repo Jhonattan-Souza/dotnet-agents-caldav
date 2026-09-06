@@ -5,6 +5,9 @@ collection tools, bounded discovery across calendar homes, and a storage-only
 scheduling boundary. The implementation passed the repository gates and an
 independent code review. This report records observed behavior of the tested
 server versions; it does not infer support from product names or advertisements.
+Operation trace counts require a unique match to a recorded call. Captured span
+totals also include startup activity; the final runs distinguish accepted-call
+spans from startup and retained diagnostic traces.
 
 ## Revisions and environment
 
@@ -39,6 +42,12 @@ Second review-fix build SHA-256 identities:
 - Core: `dde37de2588295ef6bf1e9ae44f4f2a02dc801971f3b42e8c7da3745c7aa69f8`
 - Product/build input snapshot (175 files): `581c9ab682a10b263eed12c03e1b838e648602ac41240dc52b88d30a66748940`
 
+Third review-fix build SHA-256 identities:
+
+- MCP: `02d9a8708d83e6767cbddde39888b652222b5ca7f35a716be2e2f782742fc6c2`
+- Core: `092be69dd04d01689623fee3b70e8161a9acbe0a2662fcaaddaeceb2f3c115f4`
+- Product/build input snapshot (175 files): `bb36978a15259d138bb3298b67f4a92672bd4ea72cb200642bef9dab4e281cc8`
+
 The Radicale lane enabled its existing verified Move profile. Baikal and
 Nextcloud left the profile unset. Nextcloud used exact configured Calendar
 scope and a fresh disposable user after repeated setup reached its default
@@ -47,11 +56,11 @@ calendar-creation rate limit. Server limits were left at their defaults.
 ## Automated gates
 
 - Clean, nonincremental Release build: zero warnings and errors.
-- Full suite: Core 2,842; MCP 1,092; integration 113; strict-preconditions 11;
-  alternate-time-zone 11. All 4,069 passed; zero skipped tests.
-- Aggregate coverage: 94.6% line and 86.1% branch; both required gates passed.
+- Full suite: Core 2,877; MCP 1,125; integration 113; strict-preconditions 11;
+  alternate-time-zone 11. All 4,137 passed; zero skipped tests.
+- Aggregate coverage: 94.6% line and 86.2% branch; both required gates passed.
 - Slopwatch: zero issues, including the method-complexity gate.
-- Package `0.0.0-rfcvalidation.5`: verified NuGet and symbols archives, matching
+- Package `0.0.0-rfcvalidation.6`: verified NuGet and symbols archives, matching
   root/tool MCP metadata, exact bundled skill, local tool install, and one
   passing package smoke test. Source metadata versions remain `0.0.0`.
 - Bundled skill validation, Python harness compilation, and `git diff --check`
@@ -115,6 +124,39 @@ without HTTP dispatch. Synthetic free/busy, timezone and href responses checked
 the parser fixes through MCP; they are labelled as fault injection, not native
 server compatibility. Queue rejection has unit and independent-probe coverage;
 it was not injected live. All fixture counts were restored.
+
+The third review tightened metadata HTTP status parsing, including rejection
+of embedded second status lines. Invalid acknowledgement evidence cannot confirm
+a property write. Cancellation observed after preflight and before dispatch
+propagates before the uncertain-write region. Caller cancellation retains its
+existing contract; the tool's private deadline reports `not_attempted`.
+Structured failures now derive their phase from operation progress, preserving
+discovery, execution and reconciliation distinctions across asynchronous calls.
+Invalid OPTIONS status codes leave scheduling evidence unknown without losing
+valid metadata. Negative advertised limits were already rejected by
+`NumberStyles.None`; new tests cover all three numeric properties and overflow.
+The independent probe passed all 60 cases, including the cancellation boundary
+with exactly one completed preflight and no write or reconciliation request.
+
+The third build passed 127 native/fault calls plus four earlier-build comparisons;
+all 131 matched Aspire traces containing 891 spans. The 988 captured spans also
+include 23 spans from three retained diagnostic traces and 74 startup/other spans.
+Each runtime repeated the four
+new tools and checkpoint restart checks. All 67 checked error results matched
+their operation trace's phase, code and mutation state. Fault injection reproduced the prior
+acceptance of a malformed HTTP version, a false committed outcome for a multiline
+acknowledgement, and an untyped error for OPTIONS status 600. The corrected build
+rejected ambiguous evidence and kept OPTIONS observations within the schema.
+Schema checks covered 33 complete error results and two complete successful
+OPTIONS results; two earlier checks covered only the scheduling object. Four
+harness assertion diagnostics remain separately labelled in the evidence.
+
+Holding preflight responses exercised the actual private tool deadline: it
+returned `limit_exhausted` / `execution` / `not_attempted` at 30.17 seconds after
+three read attempts, with zero PROPPATCH or reconciliation requests. Independent
+backend metadata stayed unchanged. This tests deadline handling; the narrower
+cancellation race after a completed preflight has deterministic unit and
+independent-probe coverage. Seeded fixture counts were restored after the runs.
 
 ## Every catalog operation
 
@@ -212,9 +254,11 @@ There is no vendor-specific trash-name exception.
 ## Performance observations
 
 The eight initial measurement runs covered 933 calls. Six compact-checkpoint
-sync runs added 186, and three direct runs on the second review-fix build added
-237: **1,356 measured performance calls**, each matched to Aspire, with zero
-transport retries. The latest 237 calls produced 1,216 matched spans.
+sync runs added 186, and direct runs on the second and third review-fix builds
+added 237 each: **1,593 measured performance calls**, each matched to Aspire.
+The first 1,356 had zero transport retries. The final 237 matched operation
+traces contain 1,394 spans; their captures also include 12 startup/other spans,
+for 1,406 total. One read retry recovered successfully; no write was replayed.
 Runs were sequential; builds, the test suite and Hermes inference were kept
 outside the timing windows.
 
@@ -227,22 +271,26 @@ Aspire attempt counts. Separate direct runs used one fresh process per operation
 and 15 repeated calls. First-call measurements exclude MCP startup and protocol
 initialization; the records include both first-call and repeated-call results.
 
-The table gives direct p50 / p95 milliseconds on the second review-fix build
+The table gives direct p50 / p95 milliseconds on the third review-fix build
 at 100 resources with explicit Calendar scope, 15 repeated calls per cell.
 Earlier measurements remain in the machine-readable evidence with their
 separate source and assembly identities.
 
 | Operation | Radicale | Baikal | Nextcloud |
 | --- | ---: | ---: | ---: |
-| Inspect | 6.90 / 8.86 | 8.83 / 16.55 | 33.84 / 41.91 |
-| Metadata patch | 13.91 / 16.26 | 21.49 / 28.39 | 59.68 / 61.62 |
-| Free/busy | 65.71 / 70.10 (rejected) | 29.70 / 43.77 | 29.93 / 606.13 |
-| Initial sync | 40.52 / 45.89 | 17.75 / 42.33 | 44.91 / 60.80 |
-| Unchanged sync | 16.02 / 18.76 | 4.80 / 6.43 | 16.99 / 17.73 |
+| Inspect | 6.71 / 9.13 | 8.93 / 12.21 | 32.71 / 39.82 |
+| Metadata patch | 13.36 / 287.19 | 19.67 / 26.80 | 56.81 / 61.09 |
+| Free/busy | 65.74 / 74.05 (rejected) | 30.58 / 43.74 | 29.23 / 626.46 |
+| Initial sync | 40.12 / 48.98 | 18.57 / 42.68 | 46.41 / 60.60 |
+| Unchanged sync | 17.25 / 18.30 | 4.94 / 5.87 | 16.87 / 17.93 |
 
-Radicale free/busy timing measures rejection of malformed content. Nextcloud
-free/busy included one 606.13 ms first repeated call. That sample remains in the stated
-p95. These are local observations with small sample sizes, not latency guarantees.
+Radicale free/busy timing measures rejection of malformed content. Its metadata
+patch p95 includes an interrupted reconciliation PROPFIND (`response_ended`)
+that recovered on one read retry. The operation sent exactly one PROPPATCH and
+returned success/committed. Nextcloud free/busy included a 626.46 ms repeated
+call with one REPORT and no retry. Both samples remain in the stated p95;
+the earlier build's 606.13 ms free/busy tail also remains in the evidence.
+These are local observations with small sample sizes, not latency guarantees.
 
 At 500 resources, the compact build's measurements before the PR review fixes were:
 
@@ -257,8 +305,9 @@ all unchanged reports returned zero changes. Radicale server work grows with
 collection size even for an unchanged poll. A fixed client request count does
 not imply fixed server computation.
 
-With explicit scope, inspection used two requests, metadata patch three
-(read, one PROPPATCH, readback), and free/busy one REPORT. Established sync
+With explicit scope, inspection used two requests, metadata patch normally three
+(read, one PROPPATCH, readback), and free/busy one REPORT. The recovered readback
+above added one PROPFIND to that patch call. Established sync
 checkpoints used one REPORT. Nextcloud initial sync used two because of the
 standard limit negotiation. No unchanged poll repeated discovery.
 
