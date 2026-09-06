@@ -120,6 +120,9 @@ class BuildIdentityTests(unittest.TestCase):
             otlp = benchmark_inputs(builds, candidate, candidate, compare_otlp=True)
             self.assertEqual(expected['candidate'], otlp['baseline']['source']['sha'])
             self.assertEqual(otlp['baseline'], otlp['candidate'])
+            publish=root/'candidate'/'publish';publish.mkdir()
+            (publish/ASSEMBLIES[0]).write_bytes(b'unrelated published copy')
+            self.assertEqual(builds,load_builds(root))
             dependency=root/'candidate'/'Example.Dependency.dll'
             original=dependency.read_bytes()
             dependency.write_bytes(b'stale dependency with unchanged first-party assemblies')

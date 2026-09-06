@@ -33,7 +33,9 @@ def runtime_files(assembly):
     directory=assembly.parent
     deps_path=assembly.with_suffix('.deps.json')
     deps=json.loads(deps_path.read_text())
-    assembly.with_suffix('.runtimeconfig.json').read_bytes()
+    config_path=assembly.with_suffix('.runtimeconfig.json')
+    config_path.read_bytes()
+    files={assembly,deps_path,config_path}
     target=deps['targets'][deps['runtimeTarget']['name']]
     for library in target.values():
         for group in ['runtime','native','resources','runtimeTargets']:
@@ -47,12 +49,17 @@ def runtime_files(assembly):
                     candidates=[directory/metadata['locale']/relative.name]
                 else:
                     candidates=[directory/relative,directory/relative.name]
-                if not any(path.is_file() for path in candidates):
+                resolved=[path for path in candidates if path.is_file()]
+                if not resolved:
                     raise RuntimeError(f'Missing app-local runtime dependency: {asset}')
-    # Hash the entire immutable copied output, including deps/runtimeconfig and
-    # RID assets, so changed or added files cannot alter resolution unnoticed.
+                files.update(resolved)
+    optional=[assembly.with_suffix('.runtimeconfig.dev.json'),directory/'.mcp/server.json']
+    files.update(path for path in optional if path.is_file())
+    files.update(directory.glob('appsettings*.json'))
+    # Ignore unrelated build/publish copies; the declared dependency graph and
+    # runtime configuration define the executable input set.
     return {path.relative_to(directory).as_posix():hashlib.sha256(path.read_bytes()).hexdigest()
-            for path in sorted(directory.rglob('*')) if path.is_file()}
+            for path in sorted(files)}
 
 
 def finalize(repository, manifest, assemblies):
