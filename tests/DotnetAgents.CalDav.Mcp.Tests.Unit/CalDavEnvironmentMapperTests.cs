@@ -138,16 +138,19 @@ public class CalDavEnvironmentMapperTests
         ]);
     }
 
-    [Fact]
-    public void MapFromEnvironment_MapsConfiguredTemporalEvaluationContextExactly()
+    [Theory]
+    [InlineData(null)]
+    [InlineData("America/Sao_Paulo")]
+    [InlineData("invalid-zone")]
+    public void MapFromEnvironment_MapsConfiguredTemporalEvaluationContextExactly(string? zone)
     {
         var configure = CalDavEnvironmentMapper.MapFromEnvironment(name =>
-            name == "CALDAV_EVALUATION_TIME_ZONE" ? "America/Sao_Paulo" : null);
+            name == "CALDAV_EVALUATION_TIME_ZONE" ? zone : null);
         var options = new CalDavOptions();
 
         configure(options);
 
-        options.EvaluationTimeZone.ShouldBe("America/Sao_Paulo");
+        options.EvaluationTimeZone.ShouldBe(zone);
     }
 
 }

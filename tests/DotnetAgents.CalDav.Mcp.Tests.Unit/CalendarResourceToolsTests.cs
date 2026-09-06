@@ -216,7 +216,7 @@ public sealed class CalendarResourceToolsTests
     }
 
     [Fact]
-    public async Task GetAsync_ReturnsFrozenSnapshotShapeWithoutLeakingContentToText()
+    public async Task GetAsync_ReturnsFrozenSnapshotShapeInCompatibilityText()
     {
         const string calendarHref = "https://cal.example/events/";
         const string resourceHref = "https://cal.example/events/a.ics";
@@ -247,7 +247,7 @@ public sealed class CalendarResourceToolsTests
         structured.GetProperty("snapshot").GetProperty("projection").GetProperty("kind").GetString().ShouldBe("event");
         structured.GetProperty("snapshot").GetProperty("entityRevision").GetProperty("entityUid").GetString().ShouldBe("u1");
         result.Content.ShouldHaveSingleItem();
-        result.Content[0].ShouldBeOfType<TextContentBlock>().Text.ShouldNotContain("Secret summary");
+        result.Content[0].ShouldBeOfType<TextContentBlock>().Text.ShouldContain("Secret summary");
         result.Content[0].ShouldBeOfType<TextContentBlock>().Text.ShouldNotContain(Convert.ToBase64String(bytes));
     }
 

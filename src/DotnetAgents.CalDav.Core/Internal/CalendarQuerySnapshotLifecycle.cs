@@ -28,15 +28,16 @@ internal sealed class CalendarQueryPageAdmission(CalendarQueryCursorIssuer curso
         }
 
         var fixedBudget = pageCodec.MeasureFixedBudget(snapshot);
-        if (fixedBudget.HumanReadableBytes > constraints.MaximumHumanReadableBytes)
+        if (!Fits(fixedBudget.CallToolResultBytes, fixedBudget.HumanReadableBytes, constraints))
         {
             return CalendarQueryPagePlanAdmission.Failure(CalendarQueryFailures.PayloadTooLarge(
-                constraints.HumanReadablePayloadTooLargeMessage));
+                "The query result envelope exceeds the safe payload limit."));
         }
 
         var admitted = new List<StoredCalendarEntityQueryItem>(
             Math.Min(pageSize, snapshot.Items.Length - position));
         var admittedBytes = 0L;
+        var humanBytes = fixedBudget.HumanReadableBytes;
         string? nextCursor = null;
         while (admitted.Count < pageSize && position + admitted.Count < snapshot.Items.Length)
         {
@@ -52,15 +53,16 @@ internal sealed class CalendarQueryPageAdmission(CalendarQueryCursorIssuer curso
                     snapshot.ExpiresAt,
                     snapshot.TemporalEvaluationContextUtf8)
                 : null;
-            var candidateBytes = admittedBytes + stored.JsonByteCount;
+            var candidateBytes = admittedBytes + stored.JsonByteCount + stored.EscapedJsonByteCount;
             var measured = fixedBudget.CallToolResultBytes
                 + candidateBytes
-                + Math.Max(0, candidateCount - 1)
+                + 2 * Math.Max(0, candidateCount - 1)
                 + CursorDelta(candidateCursor);
-            if (measured > constraints.MaximumCallToolResultBytes)
+            if (!Fits(measured, humanBytes + stored.HumanByteCount, constraints))
                 break;
             admitted.Add(stored);
             admittedBytes = candidateBytes;
+            humanBytes += stored.HumanByteCount;
             nextCursor = candidateCursor;
         }
 
@@ -72,7 +74,7 @@ internal sealed class CalendarQueryPageAdmission(CalendarQueryCursorIssuer curso
 
         var measuredBytes = checked((int)(fixedBudget.CallToolResultBytes
             + admittedBytes
-            + Math.Max(0, admitted.Count - 1)
+            + 2 * Math.Max(0, admitted.Count - 1)
             + CursorDelta(nextCursor)));
         return CalendarQueryPagePlanAdmission.Page(new CalendarQueryPagePlan(
             admitted,
@@ -80,7 +82,11 @@ internal sealed class CalendarQueryPageAdmission(CalendarQueryCursorIssuer curso
             measuredBytes));
     }
 
-    private static int CursorDelta(string? cursor) => cursor is null ? 0 : cursor.Length - 2;
+    private static bool Fits(long resultBytes, int humanBytes, CalendarQueryPageConstraints constraints) =>
+        resultBytes <= constraints.MaximumCallToolResultBytes && humanBytes <= constraints.MaximumHumanReadableBytes;
+
+    // Cursors use base64url ASCII. Two quoted copies replace null; the text copy escapes both quotes.
+    private static int CursorDelta(string? cursor) => cursor is null ? 0 : 2 * cursor.Length + 6;
 }
 
 internal sealed class CalendarQuerySnapshotPublication(

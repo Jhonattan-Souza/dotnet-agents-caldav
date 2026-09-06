@@ -84,6 +84,9 @@ public class McpMetadataTests
         envVars.EnumerateArray()
             .Single(item => item.GetProperty("name").GetString() == "OTEL_EXPORTER_OTLP_HEADERS")
             .GetProperty("isSecret").GetBoolean().ShouldBeTrue();
+        envVars.EnumerateArray()
+            .Single(item => item.GetProperty("name").GetString() == "CALDAV_EVALUATION_TIME_ZONE")
+            .GetProperty("isRequired").GetBoolean().ShouldBeTrue();
         var evaluationZoneDescription = envVars.EnumerateArray()
             .Single(item => item.GetProperty("name").GetString() == "CALDAV_EVALUATION_TIME_ZONE")
             .GetProperty("description").GetString();

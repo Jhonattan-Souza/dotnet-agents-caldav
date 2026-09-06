@@ -41,6 +41,9 @@ public sealed class CalendarTodoQueryModuleTests
             CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarTodoQueryPageItem>.Failure>();
 
         failure.Error.Code.ShouldBe(QueryFailureCode.InvalidInput);
+        failure.Error.Message.ShouldContain("evaluationTimeZone");
+        failure.Error.Message.ShouldContain("CALDAV_EVALUATION_TIME_ZONE");
+        failure.Error.Message.ShouldNotContain("bounded");
         constructionCount.ShouldBe(0);
         transport.DiscoveryCount.ShouldBe(0);
         provider.GetRequiredService<CalendarQuerySnapshotStore>().ActiveSnapshotCount.ShouldBe(0);

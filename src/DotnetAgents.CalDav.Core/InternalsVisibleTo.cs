@@ -2,3 +2,5 @@ using System.Runtime.CompilerServices;
 
 [assembly: InternalsVisibleTo("DotnetAgents.CalDav.Core.Tests.Unit")]
 [assembly: InternalsVisibleTo("DynamicProxyGenAssembly2")]
+
+[assembly: InternalsVisibleTo("DotnetAgents.CalDav.Mcp.Tests.Unit")]

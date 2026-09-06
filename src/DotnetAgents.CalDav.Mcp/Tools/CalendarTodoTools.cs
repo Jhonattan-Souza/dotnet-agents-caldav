@@ -37,7 +37,7 @@ public sealed class CalendarTodoTools
         OpenWorld = true,
         UseStructuredContent = true,
         OutputSchemaType = typeof(CalendarTodoQuerySuccessResult)),
-     Description("Start one compact To-do query or continue its immutable Query Result Snapshot. A Start resolves an explicit IANA Temporal Evaluation Context before CalDAV work and uses one VTODO-only authoritative corpus; Continue repeats the frozen page context without CalDAV or semantic work.")]
+     Description("Start one compact To-do query or continue its immutable Query Result Snapshot. Every Start, including queries without a window, requires an explicit IANA Temporal Evaluation Context from evaluationTimeZone or validated CALDAV_EVALUATION_TIME_ZONE configuration before CalDAV work and uses one VTODO-only authoritative corpus; Continue repeats the frozen page context without CalDAV or semantic work.")]
     public Task<CallToolResult> QueryAsync(
         RequestContext<CallToolRequestParams> requestContext,
         CancellationToken cancellationToken) => QueryRawAsync(requestContext.Params?.Arguments, cancellationToken);
@@ -69,7 +69,7 @@ public sealed class CalendarTodoTools
         payloadTooLarge ? QueryFailureCategory.LimitsAndAdmission : QueryFailureCategory.Input,
         payloadTooLarge
             ? "The To-do query arguments exceed the safe payload limit."
-            : "The To-do query input is invalid.",
+            : "The To-do query input is invalid. If evaluationTimeZone is supplied, provide a valid IANA time zone identifier.",
         false,
         payloadTooLarge ? QueryFailurePhase.AdmissionAndPayload : QueryFailurePhase.SchemaLexicalDiscriminator));
 

@@ -97,13 +97,40 @@ internal static class CalendarQueryToolSupport
         CallToolResult result,
         Func<int, bool, CallToolResult> createPayloadError)
     {
+        ApplyCompatibilityText(result);
         var humanReadableBytes = MeasureHumanReadableResult(result);
-        if (humanReadableBytes > MaximumHumanReadableBytes)
-            return createPayloadError(humanReadableBytes, true);
         var observedBytes = MeasureResult(result);
-        return observedBytes <= MaximumStructuredResultBytes
-            ? result
-            : createPayloadError(observedBytes, false);
+        if (humanReadableBytes <= MaximumHumanReadableBytes && observedBytes <= MaximumStructuredResultBytes)
+            return result;
+        var humanReadable = humanReadableBytes > MaximumHumanReadableBytes;
+        var replacement = createPayloadError(humanReadable ? humanReadableBytes : observedBytes, humanReadable);
+        ApplyCompatibilityText(replacement);
+        if (MeasureHumanReadableResult(replacement) > MaximumHumanReadableBytes
+            || MeasureResult(replacement) > MaximumStructuredResultBytes)
+            throw new InvalidOperationException("The payload-limit error exceeds the result budget.");
+        return replacement;
+    }
+
+    internal static void ApplyCompatibilityText(CallToolResult result)
+    {
+        if (result.StructuredContent is not { } structured)
+            return;
+        result.Content = [new TextContentBlock { Text = structured.GetRawText() },
+            .. AdditionalContent(result)];
+    }
+
+    private static IEnumerable<ContentBlock> AdditionalContent(CallToolResult result)
+    {
+        var replacedText = false;
+        foreach (var block in result.Content)
+        {
+            if (block is TextContentBlock && !replacedText)
+            {
+                replacedText = true;
+                continue;
+            }
+            yield return block;
+        }
     }
 
     private static bool TryCreateNameScope(
@@ -179,16 +206,34 @@ internal static class CalendarQueryToolSupport
 
     internal static int MeasureHumanReadableResult(CallToolResult result)
     {
-        var diagnostics = result.StructuredContent is { ValueKind: JsonValueKind.Object } structured
-            && structured.TryGetProperty("diagnostics", out var value)
-            ? value
-            : JsonSerializer.SerializeToElement(Array.Empty<object>());
-        return JsonSerializer.SerializeToUtf8Bytes(new CalendarHumanReadableBudget(
-            result.Content.OfType<TextContentBlock>().Select(block => block.Text).ToArray(),
-            diagnostics)).Length;
+        if (result.StructuredContent is not { ValueKind: JsonValueKind.Object } structured)
+            return JsonSerializer.SerializeToUtf8Bytes(result.Content.OfType<TextContentBlock>()
+                .Select(block => block.Text)).Length;
+        var bytes = MeasureHumanFields(structured) + MeasureSnapshotDiagnostics(structured);
+        if (structured.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
+            bytes += items.EnumerateArray().Sum(MeasureItemDiagnostics);
+        return bytes + result.Content.OfType<TextContentBlock>().Skip(1)
+            .Sum(block => JsonSerializer.SerializeToUtf8Bytes(block.Text).Length);
     }
 
-    private sealed record CalendarHumanReadableBudget(
-        IReadOnlyList<string> Text,
-        JsonElement Diagnostics);
+    private static int MeasureItemDiagnostics(JsonElement item) => item.ValueKind == JsonValueKind.Object
+        ? MeasureField(item, "diagnostics") + MeasureSnapshotDiagnostics(item)
+        : 0;
+
+    private static int MeasureSnapshotDiagnostics(JsonElement structured)
+    {
+        if (structured.TryGetProperty("snapshot", out var snapshot)
+            && snapshot.ValueKind == JsonValueKind.Object)
+            return MeasureField(snapshot, "diagnostics");
+        return 0;
+    }
+
+    private static int MeasureHumanFields(JsonElement structured) =>
+        MeasureField(structured, "message") + MeasureField(structured, "violations")
+        + MeasureField(structured, "diagnostics");
+
+    private static int MeasureField(JsonElement structured, string name) =>
+        structured.TryGetProperty(name, out var value)
+            ? JsonSerializer.SerializeToUtf8Bytes(value).Length
+            : 0;
 }

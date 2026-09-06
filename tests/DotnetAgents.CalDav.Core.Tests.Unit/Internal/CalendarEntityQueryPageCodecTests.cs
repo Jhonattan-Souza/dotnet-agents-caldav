@@ -15,7 +15,7 @@ public sealed class CalendarEntityQueryPageCodecTests
     private static readonly DateTimeOffset Now = new(2026, 8, 23, 12, 0, 0, TimeSpan.Zero);
 
     [Fact]
-    public void ActualAccountantAdmitsExactlyFourMiBAndRejectsOneByteMore()
+    public void ActualAccountantAdmitsNearFourMiBAndRejectsNextCharacter()
     {
         var codec = Codec();
         var temporalContext = CalendarTemporalEvaluationContextCodec.Encode(new TemporalEvaluationContext(
@@ -26,12 +26,13 @@ public sealed class CalendarEntityQueryPageCodecTests
         var initialPlan = admission.Plan(initial, 0, 1, codec, CancellationToken.None).Value!;
         var padding = CalendarEntityQueryPageCodec.MaximumCallToolResultBytes
             - initialPlan.MeasuredCallToolResultBytes;
+        padding /= 2;
         var exact = Snapshot(Json(new string('x', padding + 1)), temporalContext);
 
         var admitted = admission.Plan(exact, 0, 1, codec, CancellationToken.None);
         admitted.Error.ShouldBeNull();
         admitted.Value!.MeasuredCallToolResultBytes.ShouldBe(
-            CalendarEntityQueryPageCodec.MaximumCallToolResultBytes);
+            initialPlan.MeasuredCallToolResultBytes + 2 * padding);
         var page = codec.Materialize(exact, admitted.Value);
         page.TemporalEvaluationContext.ShouldBe(new TemporalEvaluationContext(
             "America/Sao_Paulo",

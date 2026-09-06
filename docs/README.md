@@ -20,6 +20,7 @@ describes the shipped tool surface. Find behavioral regressions in
 - [Query module and immutable result snapshots](adr/0004-deep-query-result-snapshot-module.md)
 - [Configured temporal evaluation context](adr/0005-configured-temporal-evaluation-context.md)
 - [Server-authoritative Move](adr/0006-server-authoritative-semantic-move.md)
+- [Complete MCP JSON presentation and result budgets](adr/0007-mcp-json-compatibility-results.md)
 
 ## Historical performance observations
 

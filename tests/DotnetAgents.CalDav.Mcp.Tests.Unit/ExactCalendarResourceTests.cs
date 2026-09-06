@@ -2302,11 +2302,16 @@ public sealed class ExactCalendarResourceTests
         {
             IsError = false,
             StructuredContent = JsonSerializer.SerializeToElement(new { padding = string.Empty }),
+            Meta = new System.Text.Json.Nodes.JsonObject { ["padding"] = 0 },
             Content = [new TextContentBlock { Text = "ok" }]
         };
+        CalendarQueryToolSupport.ApplyCompatibilityText(result);
         var overhead = ExactCalendarResourceWriteTools.MeasureResult(result);
         result.StructuredContent = JsonSerializer.SerializeToElement(
-            new { padding = new string('x', targetBytes - overhead) });
+            new { padding = new string('x', (targetBytes - overhead) / 2) });
+        if ((targetBytes - overhead) % 2 != 0)
+            result.Meta!["padding"] = 10;
+        CalendarQueryToolSupport.ApplyCompatibilityText(result);
         return result;
     }
 

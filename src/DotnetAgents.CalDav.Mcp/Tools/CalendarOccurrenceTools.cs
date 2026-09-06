@@ -31,7 +31,7 @@ public sealed class CalendarOccurrenceTools
         OpenWorld = true,
         UseStructuredContent = true,
         OutputSchemaType = typeof(CalendarOccurrenceQuerySuccessResult)),
-     Description("Start one bounded Occurrence query or continue its immutable Query Result Snapshot. Start evaluates recurrence once under an explicit IANA Temporal Evaluation Context from evaluationTimeZone or validated configuration; Continue accepts only cursor and optional pageSize and performs no CalDAV or semantic work.")]
+     Description("Start one bounded Occurrence query or continue its immutable Query Result Snapshot. Start evaluates recurrence once under an explicit IANA Temporal Evaluation Context from evaluationTimeZone or validated CALDAV_EVALUATION_TIME_ZONE configuration; Continue accepts only cursor and optional pageSize and performs no CalDAV or semantic work.")]
     public Task<CallToolResult> QueryAsync(
         RequestContext<CallToolRequestParams> requestContext,
         CancellationToken cancellationToken) => QueryRawAsync(requestContext.Params?.Arguments, cancellationToken);
@@ -58,7 +58,7 @@ public sealed class CalendarOccurrenceTools
         payloadTooLarge ? QueryFailureCategory.LimitsAndAdmission : QueryFailureCategory.Input,
         payloadTooLarge
             ? "The Occurrence query arguments exceed the safe payload limit."
-            : "The Occurrence query input is invalid.",
+            : "The Occurrence query input is invalid. If evaluationTimeZone is supplied, provide a valid IANA time zone identifier.",
         false,
         payloadTooLarge ? QueryFailurePhase.AdmissionAndPayload : QueryFailurePhase.SchemaLexicalDiscriminator));
 

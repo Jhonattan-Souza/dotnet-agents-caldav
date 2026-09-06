@@ -387,7 +387,7 @@ public sealed class CalendarEntityToolsTests
         var human = new CallToolResult
         {
             IsError = false,
-            StructuredContent = JsonSerializer.SerializeToElement(new { diagnostics = Array.Empty<object>() }),
+            StructuredContent = JsonSerializer.SerializeToElement(new { message = new string('x', CalendarEntityTools.MaximumHumanReadableBytes) }),
             Content = [new TextContentBlock { Text = new string('x', CalendarEntityTools.MaximumHumanReadableBytes) }]
         };
         CalendarEntityTools.EnsureBoundedResult(human).IsError.ShouldBe(true);
@@ -451,23 +451,32 @@ public sealed class CalendarEntityToolsTests
     [InlineData(1)]
     public void ActualSdkEnvelopeProvesFourMiBBelowAtAndAboveWithSeparatorAndCursor(int delta)
     {
-        static CallToolResult Result(int padding) => new()
+        static CallToolResult Result(int padding)
         {
-            IsError = false,
-            StructuredContent = JsonSerializer.SerializeToElement(new
+            var result = new CallToolResult
             {
-                outcome = "success",
-                items = new object[] { new { marker = 1 }, new { padding = new string('x', padding) } },
-                diagnostics = Array.Empty<object>(),
-                temporalEvaluationContext = new { timeZone = "America/Sao_Paulo", source = "caller" },
-                pagination = new { mode = "query_result_snapshot", nextCursor = "opaque-cursor" }
-            }),
-            Content = [new TextContentBlock { Text = "Calendar Entity query completed." }]
-        };
+                IsError = false,
+                Meta = new System.Text.Json.Nodes.JsonObject { ["padding"] = 0 },
+                StructuredContent = JsonSerializer.SerializeToElement(new
+                {
+                    outcome = "success",
+                    items = new object[] { new { marker = 1 }, new { padding = new string('x', padding) } },
+                    diagnostics = Array.Empty<object>(),
+                    temporalEvaluationContext = new { timeZone = "America/Sao_Paulo", source = "caller" },
+                    pagination = new { mode = "query_result_snapshot", nextCursor = "opaque-cursor" }
+                }),
+                Content = []
+            };
+            CalendarQueryToolSupport.ApplyCompatibilityText(result);
+            return result;
+        }
         var baseline = CalendarEntityTools.MeasureResult(Result(0));
-        var actual = Result(CalendarEntityTools.MaximumStructuredResultBytes - baseline + delta);
+        var target = CalendarEntityTools.MaximumStructuredResultBytes + delta;
+        var actual = Result((target - baseline) / 2);
+        if ((target - baseline) % 2 != 0)
+            actual.Meta!["padding"] = 10;
 
-        CalendarEntityTools.MeasureResult(actual).ShouldBe(CalendarEntityTools.MaximumStructuredResultBytes + delta);
+        CalendarEntityTools.MeasureResult(actual).ShouldBe(target);
         var bounded = CalendarEntityTools.EnsureBoundedResult(actual);
         bounded.IsError.ShouldBe(delta > 0);
     }

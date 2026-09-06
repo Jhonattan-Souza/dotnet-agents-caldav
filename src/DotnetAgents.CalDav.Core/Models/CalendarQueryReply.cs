@@ -76,6 +76,7 @@ public abstract record QueryReply<T>
 }
 
 /// <summary>One deterministic page from a completed query result.</summary>
+/// <param name="HumanText">Compact JSON compatibility representation of StructuredContent.</param>
 public sealed record QueryPage<T>(
     IReadOnlyList<T> Items,
     IReadOnlyList<QueryDiagnostic> Diagnostics,

@@ -47,8 +47,8 @@
         },
         {
           "name": "CALDAV_EVALUATION_TIME_ZONE",
-          "description": "Explicit IANA time zone used as the configured Temporal Evaluation Context for bounded Calendar Entity Starts and every Occurrence or To-do Start (optional)",
-          "isRequired": false
+          "description": "Explicit IANA time zone used as the configured Temporal Evaluation Context for bounded Calendar Entity Starts and every Occurrence or To-do Start, including To-do queries without a window",
+          "isRequired": true
         },
         {
           "name": "CALDAV_INTEROPERABILITY_PROFILE",
