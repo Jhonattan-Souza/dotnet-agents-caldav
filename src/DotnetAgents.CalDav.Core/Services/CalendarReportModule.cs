@@ -27,6 +27,7 @@ internal sealed class CalendarReportModule(
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(TimeSpan.FromSeconds(30));
         var href = await client.AuthorizeProtocolCalendarAsync(request.CalendarHref, deadline.Token).ConfigureAwait(false);
+        CalendarOperationProgress.SetPhase(CalendarOperationPhase.Fetch);
         var body = new XElement(CalDav + "free-busy-query", new XElement(CalDav + "time-range",
             new XAttribute("start", IcalUtc(request.From)), new XAttribute("end", IcalUtc(request.To)))).ToString(SaveOptions.DisableFormatting);
         var response = await client.SendProtocolRequestAsync(href, "REPORT", body, 1, deadline.Token).ConfigureAwait(false);
@@ -45,6 +46,7 @@ internal sealed class CalendarReportModule(
         deadline.CancelAfter(TimeSpan.FromSeconds(30));
         var binding = checkpoints.ConfigurationBinding(options.Value);
         var state = await ResolveStateAsync(request, binding, deadline.Token).ConfigureAwait(false);
+        CalendarOperationProgress.SetPhase(CalendarOperationPhase.Fetch);
         var (response, omitLimit) = await SendSyncReportAsync(state, request.PageSize, deadline.Token).ConfigureAwait(false);
         EnsureSuccessful(response, state.CalendarHref, 207);
         var page = CalendarSyncReportParser.Parse(response.Body, state.CalendarHref, state.SyncToken, request.PageSize, deadline.Token);

@@ -15,6 +15,7 @@ internal sealed class CalendarMetadataModule(CalDavClient client) : ICalendarMet
     public async Task<CalendarMetadataSnapshot> InspectAsync(string calendarHref, CancellationToken cancellationToken)
     {
         var href = await client.AuthorizeProtocolCalendarAsync(calendarHref, cancellationToken).ConfigureAwait(false);
+        CalendarOperationProgress.SetPhase(CalendarOperationPhase.Fetch);
         var observed = await ReadAsync(href, cancellationToken).ConfigureAwait(false);
         var scheduling = await ReadSchedulingAsync(href, cancellationToken).ConfigureAwait(false);
         return observed.Snapshot with { Scheduling = scheduling };
@@ -27,11 +28,11 @@ internal sealed class CalendarMetadataModule(CalDavClient client) : ICalendarMet
     {
         CalendarMetadataPatchProtocol.Validate(patch);
         var href = await client.AuthorizeProtocolCalendarAsync(calendarHref, cancellationToken).ConfigureAwait(false);
+        CalendarOperationProgress.SetPhase(CalendarOperationPhase.Fetch);
         // Require the target's Calendar resource type before a metadata write, even with an
         // explicit href allowlist. This read does not act as a concurrency precondition.
         await ReadAsync(href, cancellationToken).ConfigureAwait(false);
         var body = CalendarMetadataPatchProtocol.Body(patch);
-        CalendarOperationProgress.SetPhase(CalendarOperationPhase.Fetch);
         var dispatch = await DispatchAsync(href, patch, body, cancellationToken).ConfigureAwait(false);
         if (dispatch.State is CalendarMutationState.NotCommitted or CalendarMutationState.NotAttempted)
             return new(dispatch.State, Error: dispatch.Error);
@@ -44,6 +45,7 @@ internal sealed class CalendarMetadataModule(CalDavClient client) : ICalendarMet
         string body,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         try
         {
             var response = await client.SendProtocolRequestAsync(href, "PROPPATCH", body, null, cancellationToken).ConfigureAwait(false);
@@ -123,6 +125,8 @@ internal sealed class CalendarMetadataModule(CalDavClient client) : ICalendarMet
 
     private static CalendarSchedulingObservation SchedulingObservation(CalendarProtocolResponse response)
     {
+        if (response.StatusCode is < 100 or > 599)
+            return new("unknown", null);
         var tokens = response.DavCompliance.SelectMany(value => value.Split(',', StringSplitOptions.TrimEntries)).ToArray();
         if (response.StatusCode is < 200 or >= 300)
             return new("unknown", response.StatusCode);

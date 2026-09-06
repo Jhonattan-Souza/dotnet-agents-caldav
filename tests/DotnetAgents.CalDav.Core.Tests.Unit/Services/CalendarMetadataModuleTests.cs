@@ -86,6 +86,22 @@ public sealed class CalendarMetadataModuleTests
         result.Scheduling.ShouldBe(new CalendarSchedulingObservation("unknown", 403));
     }
 
+    [Theory]
+    [InlineData(600)]
+    [InlineData(999)]
+    public async Task Inspect_retains_metadata_without_exposing_invalid_options_status(int status)
+    {
+        using var fixture = new Fixture();
+        fixture.Enqueue(207, Metadata("Work", null).ToString());
+        fixture.Enqueue(status, string.Empty);
+
+        var result = await fixture.Module.InspectAsync(Href, CancellationToken.None);
+
+        result.DisplayName.ShouldBe("Work");
+        result.Scheduling.ShouldBe(new CalendarSchedulingObservation("unknown", null));
+        fixture.Methods.ShouldBe(["PROPFIND", "OPTIONS"]);
+    }
+
     [Fact]
     public async Task Patch_sends_one_atomic_write_and_preserves_unaddressed_description()
     {
@@ -404,6 +420,20 @@ public sealed class CalendarMetadataModuleTests
         fixture.Methods.ShouldBe(acknowledged ? ["PROPFIND", "PROPPATCH", "PROPFIND"] : ["PROPFIND", "PROPPATCH"]);
     }
 
+    [Fact]
+    public async Task Patch_cancellation_after_complete_preflight_propagates_before_dispatch_or_reconciliation()
+    {
+        using var fixture = new Fixture();
+        using var cancellation = new CancellationTokenSource();
+        fixture.EnqueueContent(207, new CancelOnDisposeContent(Metadata("Old", "Old").ToString(), cancellation));
+
+        var error = await Should.ThrowAsync<OperationCanceledException>(() =>
+            fixture.Module.PatchAsync(Href, BothPatch(), cancellation.Token));
+
+        error.CancellationToken.ShouldBe(cancellation.Token);
+        fixture.Methods.ShouldBe(["PROPFIND"]);
+    }
+
     private static Exception ResilienceFailure(string failure) => failure switch
     {
         "timeout" => new TimeoutRejectedException("private timeout details"),
@@ -558,6 +588,17 @@ public sealed class CalendarMetadataModuleTests
     private static XElement MultiStatus(params XElement[] properties) => new(Dav + "multistatus",
         new XElement(Dav + "response", new XElement(Dav + "href", Href), properties));
 
+    private sealed class CancelOnDisposeContent(string body, CancellationTokenSource cancellation)
+        : StringContent(body, Encoding.UTF8, "application/xml")
+    {
+        protected override void Dispose(bool disposing)
+        {
+            base.Dispose(disposing);
+            if (disposing)
+                cancellation.Cancel();
+        }
+    }
+
     private sealed class Fixture : HttpMessageHandler
     {
         private readonly Queue<Func<HttpResponseMessage>> _responses = new();
@@ -581,6 +622,11 @@ public sealed class CalendarMetadataModuleTests
         public void Enqueue(int status, string body) => _responses.Enqueue(() => new HttpResponseMessage((HttpStatusCode)status)
         {
             Content = new StringContent(body, Encoding.UTF8, "application/xml")
+        });
+
+        public void EnqueueContent(int status, HttpContent content) => _responses.Enqueue(() => new HttpResponseMessage((HttpStatusCode)status)
+        {
+            Content = content
         });
 
         public void EnqueueOptions(string? dav) => _responses.Enqueue(() =>

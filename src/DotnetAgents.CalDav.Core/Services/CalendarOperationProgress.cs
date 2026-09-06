@@ -15,6 +15,8 @@ public static class CalendarOperationProgress
         return new ProgressScope(previous, state);
     }
 
+    public static CalendarOperationPhase? CurrentPhase => CurrentState.Value?.Phase;
+
     internal static void SetPhase(CalendarOperationPhase phase) => CurrentState.Value?.AdvanceTo(phase);
 
     internal static void SetMoveNotAttempted(
@@ -44,7 +46,9 @@ public static class CalendarOperationProgress
         private int _phase = (int)phase;
         private CalendarMoveTelemetryState _moveState = CalendarMoveTelemetryState.None.Instance;
 
-        public string PhaseName => ((CalendarOperationPhase)Volatile.Read(ref _phase)).ToString().ToLowerInvariant();
+        internal CalendarOperationPhase Phase => (CalendarOperationPhase)Volatile.Read(ref _phase);
+
+        public string PhaseName => Phase.ToString().ToLowerInvariant();
 
         public CalendarMoveTelemetrySnapshot MoveTelemetry => Volatile.Read(ref _moveState).ToSnapshot();
 

@@ -7,6 +7,34 @@ namespace DotnetAgents.CalDav.Core.Tests.Unit.Services;
 public sealed class CalendarOperationProgressTests
 {
     [Fact]
+    public async Task CurrentPhaseTracksAsyncProgressAndRestoresNestedScopes()
+    {
+        CalendarOperationProgress.CurrentPhase.ShouldBeNull();
+        var state = CalendarOperationProgress.CreateState();
+        using (CalendarOperationProgress.Attach(state))
+        {
+            CalendarOperationProgress.CurrentPhase.ShouldBe(CalendarOperationPhase.Discovery);
+            await AdvanceAfterYieldAsync();
+            CalendarOperationProgress.CurrentPhase.ShouldBe(CalendarOperationPhase.Fetch);
+            using (CalendarOperationProgress.Attach(CalendarOperationProgress.CreateState()))
+            {
+                CalendarOperationProgress.CurrentPhase.ShouldBe(CalendarOperationPhase.Discovery);
+                CalendarOperationProgress.SetPhase(CalendarOperationPhase.Reconcile);
+                CalendarOperationProgress.CurrentPhase.ShouldBe(CalendarOperationPhase.Reconcile);
+            }
+            CalendarOperationProgress.CurrentPhase.ShouldBe(CalendarOperationPhase.Fetch);
+            state.PhaseName.ShouldBe("fetch");
+        }
+        CalendarOperationProgress.CurrentPhase.ShouldBeNull();
+    }
+
+    private static async Task AdvanceAfterYieldAsync()
+    {
+        await Task.Yield();
+        CalendarOperationProgress.SetPhase(CalendarOperationPhase.Fetch);
+    }
+
+    [Fact]
     public void PublicMoveSnapshotCompatibilityRemainsAvailable()
     {
         var state = CalendarOperationProgress.CreateState();

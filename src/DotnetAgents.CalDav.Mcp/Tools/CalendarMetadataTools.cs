@@ -26,6 +26,7 @@ public sealed class CalendarMetadataTools(ICalendarMetadataModule module)
         CalendarMetadataPatch patch,
         CancellationToken cancellationToken)
     {
+        using var progress = CalendarProtocolToolSupport.AttachProgressIfNeeded();
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
         try
