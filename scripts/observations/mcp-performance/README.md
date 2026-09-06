@@ -53,9 +53,10 @@ identidade na agregação. Cada processo precisa corresponder ao seu argumento,
 inclusive ao hash de Core; pertencer ao conjunto dos dois builds não basta.
 No controle OTLP, o conjunto de dependências também deve ser idêntico entre os
 argumentos; igualdade somente de MCP e Core não basta.
-Os manifestos verificam também os assets declarados em `.deps.json` e os hashes
-de todo o diretório de execução copiado, incluindo dependências, assets por RID,
-deps e runtimeconfig. O driver registra esse conjunto para cada processo. Mantenha
+Os manifestos verificam também os assets declarados em `.deps.json` e seus hashes,
+incluindo dependências, assets por RID, deps, runtimeconfig e configurações locais.
+Cópias auxiliares de publicação fora desse grafo não integram a assinatura.
+O driver registra esse conjunto para cada processo. Mantenha
 esses diretórios imutáveis; trocar uma dependência como JsonSchema.Net invalida a
 identidade mesmo quando MCP e Core não mudaram.
 
@@ -179,7 +180,9 @@ EventPipe `dotnet-sampled-thread-time` inclui esperas; seus percentuais não sã
 percentuais de CPU. Runtime counters são coleta externa, não métricas já
 exportadas pelo produto. Para a comparação síncrona de alocação, copie
 `schema-observation/` ao diretório externo, compile e passe diretório do assembly,
-uma página estruturada real de MCP salva localmente e nome da ferramenta. O
+uma página estruturada real de MCP salva localmente, nome da ferramenta e o
+manifesto `baseline-build.json` ou `candidate-build.json`, nessa ordem. O nome da
+ferramenta precisa corresponder à página capturada. O
 programa usa reflexão para chamar o guard original em cada assembly sobre o
 mesmo JSON, após 20 aquecimentos e com 100 amostras. Não mede transporte.
 A agregação exige o hash de assembly correspondente ao build de cada observação,

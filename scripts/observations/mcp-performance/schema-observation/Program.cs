@@ -4,15 +4,34 @@ using System.Runtime.Loader;
 using System.Security.Cryptography;
 using System.Text.Json;
 
+if (args.Length != 4)
+{
+    Console.Error.WriteLine("Usage: SchemaObservation <assembly-directory> <page-json> <tool-name> <build-manifest>");
+    return 64;
+}
+
 // Run a copy of this project outside the repository. Resolve the exact build's
 // dependencies and invoke its unmodified internal guard on a real MCP result.
 var directory = Path.GetFullPath(args[0]);
 var payload = File.ReadAllBytes(args[1]);
-Dictionary<string, string> RuntimeFiles() => Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories)
-    .OrderBy(path => path, StringComparer.Ordinal)
-    .ToDictionary(path => Path.GetRelativePath(directory, path).Replace(Path.DirectorySeparatorChar, '/'),
-        path => Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(path))), StringComparer.Ordinal);
+using var manifest = JsonDocument.Parse(File.ReadAllBytes(args[3]));
+var expectedFiles = JsonSerializer.Deserialize<Dictionary<string, string>>(
+    manifest.RootElement.GetProperty("runtime_files_sha256").GetRawText())!;
+string RuntimePath(string name)
+{
+    var path = Path.GetFullPath(Path.Combine(directory, name));
+    var relative = Path.GetRelativePath(directory, path);
+    if (Path.IsPathRooted(relative) || relative == ".." || relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+        throw new InvalidOperationException("Runtime manifest path escapes its assembly directory.");
+    return path;
+}
+Dictionary<string, string> RuntimeFiles() => expectedFiles.Keys.OrderBy(name => name, StringComparer.Ordinal)
+    .ToDictionary(name => name, name => Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(RuntimePath(name)))), StringComparer.Ordinal);
+bool SameFiles(Dictionary<string, string> left, Dictionary<string, string> right) =>
+    left.Count == right.Count && left.All(item => right.TryGetValue(item.Key, out var value) && value == item.Value);
 var runtimeFiles = RuntimeFiles();
+if (!SameFiles(runtimeFiles, expectedFiles))
+    throw new InvalidOperationException("Schema observation runtime differs from the prepared build.");
 AssemblyLoadContext.Default.Resolving += (_, name) =>
     AssemblyLoadContext.Default.LoadFromAssemblyPath(Path.Combine(directory, name.Name + ".dll"));
 var assemblyPath = Path.Combine(directory, "DotnetAgents.CalDav.Mcp.dll");
@@ -45,7 +64,7 @@ for (var i = 0; i < 100; i++)
         gen2 = GC.CollectionCount(2) - gen2
     });
 }
-if (!runtimeFiles.SequenceEqual(RuntimeFiles()))
+if (!SameFiles(runtimeFiles, RuntimeFiles()))
     throw new InvalidOperationException("Runtime files changed during schema observation.");
 Console.WriteLine(JsonSerializer.Serialize(new
 {
@@ -57,3 +76,4 @@ Console.WriteLine(JsonSerializer.Serialize(new
     boundary = "CalendarOutputSchemaGuard.Validate via reflection; no transport; current-thread allocations",
     samples
 }));
+return 0;
