@@ -33,7 +33,7 @@ public sealed class CalendarEntityTools
         OpenWorld = true,
         UseStructuredContent = true,
         OutputSchemaType = typeof(CalendarEntityQuerySuccessResult)),
-     Description("Start one Calendar Entity query or continue its immutable Query Result Snapshot. A bounded Start requires an explicit IANA Temporal Evaluation Context from evaluationTimeZone or validated configuration; Continue repeats the frozen context without CalDAV or semantic work.")]
+     Description("Start one Calendar Entity query or continue its immutable Query Result Snapshot. A bounded Start requires an explicit IANA Temporal Evaluation Context from evaluationTimeZone or validated CALDAV_EVALUATION_TIME_ZONE configuration; Continue repeats the frozen context without CalDAV or semantic work.")]
     public Task<CallToolResult> QueryAsync(
         RequestContext<CallToolRequestParams> requestContext,
         CancellationToken cancellationToken) => QueryRawAsync(requestContext.Params?.Arguments, cancellationToken);
@@ -65,7 +65,7 @@ public sealed class CalendarEntityTools
         payloadTooLarge ? QueryFailureCategory.LimitsAndAdmission : QueryFailureCategory.Input,
         payloadTooLarge
             ? "The query arguments exceed the safe payload limit."
-            : "The Calendar Entity query input is invalid.",
+            : "The Calendar Entity query input is invalid. If evaluationTimeZone is supplied, provide a valid IANA time zone identifier.",
         false,
         payloadTooLarge ? QueryFailurePhase.AdmissionAndPayload : QueryFailurePhase.SchemaLexicalDiscriminator));
 

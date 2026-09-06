@@ -203,6 +203,10 @@ internal sealed record CalendarQuerySnapshot(
 internal sealed record StoredCalendarEntityQueryItem(ReadOnlyMemory<byte> JsonUtf8)
 {
     internal int JsonByteCount => JsonUtf8.Length;
+
+    internal int HumanByteCount { get; } = CalendarQueryPageBudget.ItemHumanBytes(JsonUtf8);
+
+    internal int EscapedJsonByteCount { get; } = CalendarQueryPageBudget.EscapedBytes(JsonUtf8.Span);
 }
 
 internal sealed record CalendarQueryStoreAdmission(

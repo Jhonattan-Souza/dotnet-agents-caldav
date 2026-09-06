@@ -12,7 +12,6 @@ internal sealed class CalendarOccurrenceQueryPageCodec : ICalendarQueryPageCodec
     internal const int MaximumPageSize = 200;
     private const int MaximumCallToolResultBytes = 4 * 1024 * 1024;
     private const int MaximumHumanReadableBytes = 64 * 1024;
-    private const string SuccessText = "Occurrence query completed.";
     private static readonly CalendarQueryPageConstraints PageConstraints = new(
         DefaultPageSize,
         MaximumPageSize,
@@ -72,7 +71,7 @@ internal sealed class CalendarOccurrenceQueryPageCodec : ICalendarQueryPageCodec
             diagnostics,
             plan.NextCursor,
             structuredContent,
-            SuccessText,
+            structuredContent.GetRawText(),
             plan.MeasuredCallToolResultBytes,
             TemporalEvaluationContext: CalendarTemporalEvaluationContextCodec.Decode(
                 snapshot.TemporalEvaluationContextUtf8));
@@ -82,37 +81,10 @@ internal sealed class CalendarOccurrenceQueryPageCodec : ICalendarQueryPageCodec
         ReadOnlyMemory<byte> diagnosticsUtf8,
         ReadOnlyMemory<byte> temporalEvaluationContextUtf8)
     {
-        var callToolResult = new ArrayBufferWriter<byte>();
-        using (var writer = new Utf8JsonWriter(callToolResult))
-        {
-            writer.WriteStartObject();
-            writer.WritePropertyName("content");
-            writer.WriteStartArray();
-            writer.WriteStartObject();
-            writer.WriteString("type", "text");
-            writer.WriteString("text", SuccessText);
-            writer.WriteEndObject();
-            writer.WriteEndArray();
-            writer.WritePropertyName("structuredContent");
+        var structured = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(structured))
             WriteEmptyStructuredContent(writer, diagnosticsUtf8, temporalEvaluationContextUtf8);
-            writer.WriteBoolean("isError", false);
-            writer.WriteNull("_meta");
-            writer.WriteNull("resultType");
-            writer.WriteEndObject();
-        }
-        var human = new ArrayBufferWriter<byte>();
-        using (var writer = new Utf8JsonWriter(human))
-        {
-            writer.WriteStartObject();
-            writer.WritePropertyName("Text");
-            writer.WriteStartArray();
-            writer.WriteStringValue(SuccessText);
-            writer.WriteEndArray();
-            writer.WritePropertyName("Diagnostics");
-            writer.WriteRawValue(diagnosticsUtf8.Span, skipInputValidation: true);
-            writer.WriteEndObject();
-        }
-        return new CalendarQueryFixedBudget(callToolResult.WrittenCount, human.WrittenCount);
+        return CalendarQueryPageBudget.Measure(structured.WrittenMemory, diagnosticsUtf8);
     }
 
     private static void WriteEmptyStructuredContent(

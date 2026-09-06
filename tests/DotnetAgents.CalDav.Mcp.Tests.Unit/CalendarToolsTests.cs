@@ -108,7 +108,7 @@ public sealed class CalendarToolsTests
         var result = await sut.ListAsync(CancellationToken.None);
 
         result.IsError.ShouldBe(true);
-        ((TextContentBlock)result.Content.Single()).Text.ShouldBe("Calendar discovery failed.");
+        ((TextContentBlock)result.Content.Single()).Text.ShouldBe(JsonSerializer.Serialize(result.StructuredContent));
         var error = result.StructuredContent!.Value.Deserialize<CalendarErrorResult>()!;
         error.Code.ShouldBe(expectedCode);
         error.Category.ShouldBe(expectedCategory);

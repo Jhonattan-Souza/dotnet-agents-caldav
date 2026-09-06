@@ -40,6 +40,7 @@ public sealed class ContractCatalogTests
 
         var evaluationZone = catalog["environment"]!.AsArray()
             .Single(item => item!["name"]!.GetValue<string>() == "CALDAV_EVALUATION_TIME_ZONE")!;
+        evaluationZone["required"]!.GetValue<bool>().ShouldBeTrue();
         var description = evaluationZone["description"]!.GetValue<string>();
         description.ShouldContain("bounded Calendar Entity Starts and every Occurrence or To-do Start");
         description.ShouldNotContain("later", Case.Insensitive);

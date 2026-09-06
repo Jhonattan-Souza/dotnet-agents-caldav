@@ -68,7 +68,7 @@ public sealed class CalendarTodoToolsTests
         result.IsError.ShouldBe(false);
         result.StructuredContent.ShouldBe(structured);
         result.Content.ShouldHaveSingleItem().ShouldBeOfType<ModelContextProtocol.Protocol.TextContentBlock>()
-            .Text.ShouldBe("module-text");
+            .Text.ShouldBe(JsonSerializer.Serialize(result.StructuredContent));
         await module.Received(1).QueryTodosAsync(
             Arg.Is<CalendarTodoQueryRequest.Start>(start =>
                 start.PageSize == 17

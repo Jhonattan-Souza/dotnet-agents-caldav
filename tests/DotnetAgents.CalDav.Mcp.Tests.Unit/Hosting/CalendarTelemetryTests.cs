@@ -32,7 +32,7 @@ public sealed class CalendarTelemetryTests
             var candidate = CalendarToolResult.Error(new CallToolResult
             {
                 IsError = true,
-                StructuredContent = JsonSerializer.SerializeToElement(new { code = "conflict" }),
+                StructuredContent = JsonSerializer.SerializeToElement(new { code = "conflict", message = new string('x', CalendarQueryToolSupport.MaximumHumanReadableBytes + 1) }),
                 Content = [new TextContentBlock { Text = new string('x', CalendarQueryToolSupport.MaximumHumanReadableBytes + 1) }]
             }, conflict, CalendarMutationState.NotCommitted);
             var payload = CalendarTelemetryFacts.FromInputGuard(payloadTooLarge: true);

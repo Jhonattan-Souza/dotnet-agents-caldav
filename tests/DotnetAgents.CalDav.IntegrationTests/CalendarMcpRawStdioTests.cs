@@ -1013,6 +1013,8 @@ public sealed class CalendarMcpRawStdioTests
     {
         result.GetProperty("isError").GetBoolean().ShouldBeTrue();
         var structured = result.GetProperty("structuredContent");
+        using var text = JsonDocument.Parse(result.GetProperty("content")[0].GetProperty("text").GetString()!);
+        JsonElement.DeepEquals(text.RootElement, structured).ShouldBeTrue();
         structured.GetProperty("code").GetString().ShouldBe(code);
         structured.GetProperty("phase").GetString().ShouldBe(phase);
         structured.TryGetProperty("items", out _).ShouldBeFalse();

@@ -132,7 +132,7 @@ internal static class StrictToolInputGuard
         var violations = evidence.Violations.Count > 0
             ? evidence.Violations
             : DefaultViolations(evidence);
-        return CalendarErrorViolations.Attach(createError(false), violations);
+        return CalendarToolResult.WithViolations(() => createError(false), violations);
     }
 
     private static IReadOnlyList<CalendarInputViolation> DefaultViolations(StrictToolInputEvidence evidence)

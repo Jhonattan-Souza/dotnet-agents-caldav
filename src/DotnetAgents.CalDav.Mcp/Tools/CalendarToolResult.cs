@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using DotnetAgents.CalDav.Core.Models;
 using DotnetAgents.CalDav.Mcp.Hosting;
 using ModelContextProtocol.Protocol;
@@ -37,15 +39,30 @@ internal readonly record struct CalendarToolResult(
         CalendarMutationState mutationState) =>
         new(value, new CalendarTerminalFacts(error, mutationState));
 
-    internal CallToolResult FinalizeResult()
+    private static readonly AsyncLocal<IReadOnlyList<CalendarInputViolation>?> PendingViolations = new();
+
+    internal static CallToolResult WithViolations(
+        Func<CallToolResult> createResult, IReadOnlyList<CalendarInputViolation> violations)
     {
-        Facts.Observe();
-        return Value;
+        var previous = PendingViolations.Value;
+        PendingViolations.Value = violations;
+        try
+        {
+            return createResult();
+        }
+        finally
+        {
+            PendingViolations.Value = previous;
+        }
     }
+
+    internal CallToolResult FinalizeResult() => FinalizeBounded(CreatePayloadError);
 
     internal CallToolResult FinalizeBounded(
         Func<int, bool, CalendarToolResult> createPayloadError)
     {
+        if (PendingViolations.Value is { } violations)
+            CalendarErrorViolations.Attach(Value, violations);
         var terminal = this;
         var bounded = CalendarQueryToolSupport.EnsureBoundedResult(
             Value,
@@ -56,5 +73,34 @@ internal readonly record struct CalendarToolResult(
             });
         terminal.Facts.Observe();
         return bounded;
+    }
+
+    private CalendarToolResult CreatePayloadError(int byteCount, bool humanReadable)
+    {
+        var facts = new CalendarStructuredErrorFacts(
+            CalendarTelemetryErrorCode.PayloadTooLarge,
+            CalendarTelemetryErrorCategory.LimitsAndAdmission,
+            CalendarTelemetryErrorPhase.AdmissionAndPayload,
+            false);
+        var body = new JsonObject
+        {
+            ["code"] = facts.CodeName,
+            ["category"] = facts.CategoryName,
+            ["phase"] = facts.PhaseName,
+            ["retryable"] = false,
+            ["message"] = humanReadable
+                ? "The human-readable result exceeds the safe payload limit."
+                : "The serialized result exceeds the safe payload limit.",
+            ["limits"] = new JsonObject { ["byteCount"] = byteCount }
+        };
+        if (Value.StructuredContent is { } structured
+            && structured.TryGetProperty("mutationState", out var mutation))
+            body["mutationState"] = mutation.GetString();
+        return new CalendarToolResult(new CallToolResult
+        {
+            IsError = true,
+            StructuredContent = JsonSerializer.SerializeToElement(body),
+            Content = []
+        }, new CalendarTerminalFacts(facts, Facts.MutationState));
     }
 }

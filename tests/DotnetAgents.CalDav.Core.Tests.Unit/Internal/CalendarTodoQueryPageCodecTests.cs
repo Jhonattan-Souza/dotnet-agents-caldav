@@ -14,7 +14,7 @@ public sealed class CalendarTodoQueryPageCodecTests
     private static readonly DateTimeOffset Now = new(2026, 8, 23, 12, 0, 0, TimeSpan.Zero);
 
     [Fact]
-    public void ActualAccountantAdmitsExactlyFourMiBAndRejectsOneByteMore()
+    public void ActualAccountantAdmitsNearFourMiBAndRejectsNextCharacter()
     {
         var codec = Codec();
         var initial = Snapshot(Json("x"));
@@ -22,13 +22,14 @@ public sealed class CalendarTodoQueryPageCodecTests
         var initialPlan = admission.Plan(initial, 0, 1, codec, CancellationToken.None).Value!;
         var padding = CalendarTodoQueryPageCodec.MaximumCallToolResultBytes
             - initialPlan.MeasuredCallToolResultBytes;
+        padding /= 2;
         var exact = Snapshot(Json(new string('x', padding + 1)));
 
         var admitted = admission.Plan(exact, 0, 1, codec, CancellationToken.None);
 
         admitted.Error.ShouldBeNull();
         admitted.Value!.MeasuredCallToolResultBytes.ShouldBe(
-            CalendarTodoQueryPageCodec.MaximumCallToolResultBytes);
+            initialPlan.MeasuredCallToolResultBytes + 2 * padding);
         var page = CalendarTodoQueryPageCodec.Materialize(exact, admitted.Value);
         page.StructuredContent.GetProperty("excludedIndeterminateCount").GetInt32().ShouldBe(7);
         page.TemporalEvaluationContext.ShouldBe(new TemporalEvaluationContext(

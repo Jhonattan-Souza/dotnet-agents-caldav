@@ -189,7 +189,7 @@ public sealed class CalendarResourceDeleteToolsTests
                 CalendarEntityKind.Todo,
                 "\"r1\""),
             Arg.Any<CancellationToken>());
-        result.Content.OfType<TextContentBlock>().Single().Text.ShouldNotContain("todo-1");
+        result.Content.OfType<TextContentBlock>().Single().Text.ShouldContain("todo-1");
     }
 
     [Theory]

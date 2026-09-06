@@ -449,12 +449,12 @@ internal sealed class CalendarTemporalContextResolver(IOptions<CalDavOptions> op
                 ? CalendarTemporalContextResolution.Success(new TemporalEvaluationContext(
                     caller, TemporalEvaluationContextSource.Caller))
                 : CalendarTemporalContextResolution.Failure(CalendarQueryFailures.InvalidInput(
-                    $"The {request.QueryName} query evaluationTimeZone is invalid."));
+                    $"The {request.QueryName} query evaluationTimeZone is invalid; provide a valid IANA time zone identifier in evaluationTimeZone."));
         }
         return options.Value.EvaluationTimeZone is { } configured && IanaTimeZoneIds.IsValid(configured)
             ? CalendarTemporalContextResolution.Success(new TemporalEvaluationContext(
                 configured, TemporalEvaluationContextSource.Configuration))
             : CalendarTemporalContextResolution.Failure(CalendarQueryFailures.InvalidInput(
-                $"A bounded {request.QueryName} query requires a Temporal Evaluation Context."));
+                $"The {request.QueryName} query requires a Temporal Evaluation Context; provide an IANA time zone identifier in evaluationTimeZone or configure CALDAV_EVALUATION_TIME_ZONE."));
     }
 }

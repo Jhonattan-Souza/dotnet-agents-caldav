@@ -1,6 +1,7 @@
 using System.Text.Json;
 using DotnetAgents.CalDav.Core.Models;
 using DotnetAgents.CalDav.Core.Services;
+using DotnetAgents.CalDav.Mcp.Tools;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
@@ -278,13 +279,11 @@ internal static class CalendarExecutionPolicy
 
     internal static CallToolResult CreateBusyResult(bool mutation)
     {
-        CalendarTelemetry.ObserveStructuredError(new CalendarStructuredErrorFacts(
+        var facts = new CalendarStructuredErrorFacts(
             CalendarTelemetryErrorCode.Busy,
             CalendarTelemetryErrorCategory.LimitsAndAdmission,
             CalendarTelemetryErrorPhase.AdmissionAndPayload,
-            true));
-        if (mutation)
-            CalendarTelemetry.ObserveMutationState(CalendarMutationState.NotAttempted);
+            true);
         var structured = new Dictionary<string, object?>
         {
             ["code"] = "busy",
@@ -296,21 +295,21 @@ internal static class CalendarExecutionPolicy
         };
         if (mutation)
             structured["mutationState"] = "not_attempted";
-        return new CallToolResult
+        return new CalendarToolResult(new CallToolResult
         {
             IsError = true,
             StructuredContent = JsonSerializer.SerializeToElement(structured),
-            Content = [new TextContentBlock { Text = "Calendar operation admission failed." }]
-        };
+            Content = []
+        }, new CalendarTerminalFacts(facts, mutation ? CalendarMutationState.NotAttempted : null)).FinalizeResult();
     }
 
     internal static CallToolResult CreateDeadlineResult(bool mutation)
     {
-        CalendarTelemetry.ObserveStructuredError(new CalendarStructuredErrorFacts(
+        var facts = new CalendarStructuredErrorFacts(
             CalendarTelemetryErrorCode.LimitExhausted,
             CalendarTelemetryErrorCategory.LimitsAndAdmission,
             CalendarTelemetryErrorPhase.Execution,
-            false));
+            false);
         var structured = new Dictionary<string, object?>
         {
             ["code"] = "limit_exhausted",
@@ -324,12 +323,12 @@ internal static class CalendarExecutionPolicy
         // Lower layers return a more specific state when they can; the only safe fallback here is unknown.
         if (mutation)
             structured["mutationState"] = "unknown";
-        return new CallToolResult
+        return new CalendarToolResult(new CallToolResult
         {
             IsError = true,
             StructuredContent = JsonSerializer.SerializeToElement(structured),
-            Content = [new TextContentBlock { Text = "Calendar operation exceeded its execution budget." }]
-        };
+            Content = []
+        }, new CalendarTerminalFacts(facts, mutation ? CalendarMutationState.Unknown : null)).FinalizeResult();
     }
 }
 

@@ -27,6 +27,7 @@ public static class CalDavEnvironmentMapper
             options.CalendarHrefs = getEnv("CALDAV_CALENDAR_HREFS");
             options.DefaultTodoCalendarName = getEnv("CALDAV_DEFAULT_TODO_CALENDAR_NAME");
             options.DefaultEventCalendarName = getEnv("CALDAV_DEFAULT_EVENT_CALENDAR_NAME");
+            // Installation requires this value; manual callers may supply evaluationTimeZone per call.
             options.EvaluationTimeZone = getEnv("CALDAV_EVALUATION_TIME_ZONE");
             options.InteroperabilityProfile = getEnv("CALDAV_INTEROPERABILITY_PROFILE");
         };
