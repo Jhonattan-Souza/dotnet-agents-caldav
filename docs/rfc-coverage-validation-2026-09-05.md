@@ -48,6 +48,12 @@ Third review-fix build SHA-256 identities:
 - Core: `092be69dd04d01689623fee3b70e8161a9acbe0a2662fcaaddaeceb2f3c115f4`
 - Product/build input snapshot (175 files): `bb36978a15259d138bb3298b67f4a92672bd4ea72cb200642bef9dab4e281cc8`
 
+Fourth review-fix build SHA-256 identities:
+
+- MCP: `548be13a046eefa259d23f36e9f0af08df6de5139c1e9847a3c672bcdc3cd145`
+- Core: `6674df38e828f167db95728d91b042a07442bcb906380b1484d6fbde382c76dd`
+- Product/build input snapshot (177 files): `bc7cc962f9519687767a80f78a00e8123ea21fba661f37a98385eb7087b541c6`
+
 The Radicale lane enabled its existing verified Move profile. Baikal and
 Nextcloud left the profile unset. Nextcloud used exact configured Calendar
 scope and a fresh disposable user after repeated setup reached its default
@@ -56,11 +62,11 @@ calendar-creation rate limit. Server limits were left at their defaults.
 ## Automated gates
 
 - Clean, nonincremental Release build: zero warnings and errors.
-- Full suite: Core 2,877; MCP 1,125; integration 113; strict-preconditions 11;
-  alternate-time-zone 11. All 4,137 passed; zero skipped tests.
-- Aggregate coverage: 94.6% line and 86.2% branch; both required gates passed.
+- Full suite: Core 2,992; MCP 1,126; integration 113; strict-preconditions 11;
+  alternate-time-zone 11. All 4,253 passed; zero skipped tests.
+- Aggregate coverage: 94.6% line and 86.3% branch; both required gates passed.
 - Slopwatch: zero issues, including the method-complexity gate.
-- Package `0.0.0-rfcvalidation.6`: verified NuGet and symbols archives, matching
+- Package `0.0.0-rfcvalidation.7`: verified NuGet and symbols archives, matching
   root/tool MCP metadata, exact bundled skill, local tool install, and one
   passing package smoke test. Source metadata versions remain `0.0.0`.
 - Bundled skill validation, Python harness compilation, and `git diff --check`
@@ -158,6 +164,44 @@ backend metadata stayed unchanged. This tests deadline handling; the narrower
 cancellation race after a completed preflight has deterministic unit and
 independent-probe coverage. Seeded fixture counts were restored after the runs.
 
+The fourth review found that sync still accepted line breaks through the shared
+status parser, while the DAV compliance whitelist rejected valid extension
+tokens. Status validation now rejects internal CR/LF and accepts only SP/HT as
+field separators across metadata, discovery, multiget and sync. Regressions
+place malformed evidence after an earlier valid sync row, then verify whole-page
+failure, unchanged checkpoint state, corrected retry and prior-handle replay.
+
+Scheduling checks and metadata inspection now share one bounded DAV header
+parser. It accepts the token and coded-URL forms in [RFC 4918 §10.1](https://datatracker.ietf.org/doc/html/rfc4918#section-10.1),
+including commas inside coded URLs. URI identifiers use [RFC 3986 generic syntax](https://datatracker.ietf.org/doc/html/rfc3986#section-4.3)
+without network access or scheme-specific URL restrictions. The parser tolerates
+up to 32 empty list elements across fields, requires at least one actual class
+as evidence, and caps combined field values at 64 KiB. These bounds retain
+[HTTP recipient list handling](https://www.rfc-editor.org/rfc/rfc9110.html#section-5.6.1.2)
+without accepting malformed tails. A separate review claim about extra metadata
+properties was incorrect: output already projects the fixed eleven requested
+properties. Tests now prove that behavior with 12 and 100 unrequested properties.
+All 97 independent checks passed; the earlier build failed 60 of them.
+
+That build passed 175 current native/fault calls and 31 earlier-build comparisons.
+All 206 accepted calls matched unique operation traces containing 1,554 spans;
+the 1,612 captured spans also include 58 startup/other spans and no diagnostic
+operation traces. All 49 checked error results matched their accepted traces.
+Full schema checks covered 107 returned terminal payloads (77 current and 30
+earlier); redacted native protocol payloads were not reconstructed for this check.
+
+A known-member comparison demonstrated the sync failure's consequence: applying
+the earlier build's malformed 404 response removed an existing member from a
+local Python inventory, while independent backend GET still returned 200 and
+unchanged content. The corrected build rejected the page without a checkpoint;
+corrected retry and prior-handle replay returned the complete delta. This check
+did not delete the resource through MCP. Valid DAV extension headers allowed
+the intended stored-URN mutation and collection deletion on Radicale, while
+scheduling advertisements and malformed headers stopped before writes. Coded
+URI validation made zero requests to the test endpoint. Native four-tool checks
+and representative legacy reads passed on all three runtimes; fixtures were
+restored afterward.
+
 ## Every catalog operation
 
 The live driver called all 27 candidate tools on each runtime, including raw
@@ -254,11 +298,11 @@ There is no vendor-specific trash-name exception.
 ## Performance observations
 
 The eight initial measurement runs covered 933 calls. Six compact-checkpoint
-sync runs added 186, and direct runs on the second and third review-fix builds
-added 237 each: **1,593 measured performance calls**, each matched to Aspire.
-The first 1,356 had zero transport retries. The final 237 matched operation
-traces contain 1,394 spans; their captures also include 12 startup/other spans,
-for 1,406 total. One read retry recovered successfully; no write was replayed.
+sync runs added 186, and direct runs on the second, third and fourth review-fix
+builds added 237 each: **1,830 measured performance calls**, each matched to
+Aspire. One read retry occurred on the third build and recovered successfully;
+no write was replayed. The final 237 had zero retries. Their accepted operation
+traces contain 1,393 spans, plus 12 startup/other spans for 1,405 captured total.
 Runs were sequential; builds, the test suite and Hermes inference were kept
 outside the timing windows.
 
@@ -271,25 +315,27 @@ Aspire attempt counts. Separate direct runs used one fresh process per operation
 and 15 repeated calls. First-call measurements exclude MCP startup and protocol
 initialization; the records include both first-call and repeated-call results.
 
-The table gives direct p50 / p95 milliseconds on the third review-fix build
+The table gives direct p50 / p95 milliseconds on the fourth review-fix build
 at 100 resources with explicit Calendar scope, 15 repeated calls per cell.
 Earlier measurements remain in the machine-readable evidence with their
 separate source and assembly identities.
 
 | Operation | Radicale | Baikal | Nextcloud |
 | --- | ---: | ---: | ---: |
-| Inspect | 6.71 / 9.13 | 8.93 / 12.21 | 32.71 / 39.82 |
-| Metadata patch | 13.36 / 287.19 | 19.67 / 26.80 | 56.81 / 61.09 |
-| Free/busy | 65.74 / 74.05 (rejected) | 30.58 / 43.74 | 29.23 / 626.46 |
-| Initial sync | 40.12 / 48.98 | 18.57 / 42.68 | 46.41 / 60.60 |
-| Unchanged sync | 17.25 / 18.30 | 4.94 / 5.87 | 16.87 / 17.93 |
+| Inspect | 6.70 / 45.92 | 8.94 / 17.98 | 33.32 / 39.68 |
+| Metadata patch | 12.45 / 15.85 | 19.84 / 32.24 | 59.69 / 64.37 |
+| Free/busy | 65.39 / 67.90 (rejected) | 31.64 / 44.99 | 30.03 / 606.42 |
+| Initial sync | 39.27 / 47.12 | 18.22 / 40.37 | 46.75 / 59.72 |
+| Unchanged sync | 16.65 / 17.95 | 5.40 / 7.24 | 17.32 / 24.09 |
 
-Radicale free/busy timing measures rejection of malformed content. Its metadata
-patch p95 includes an interrupted reconciliation PROPFIND (`response_ended`)
-that recovered on one read retry. The operation sent exactly one PROPPATCH and
-returned success/committed. Nextcloud free/busy included a 626.46 ms repeated
-call with one REPORT and no retry. Both samples remain in the stated p95;
-the earlier build's 606.13 ms free/busy tail also remains in the evidence.
+Radicale free/busy timing measures rejection of malformed content. Its final
+inspection p95 includes a 45.92 ms call with two HTTP requests and no retry;
+Nextcloud free/busy includes a 606.42 ms call with one REPORT and no retry.
+Both samples remain in the stated p95. The third build's 287.19 ms metadata
+patch had an interrupted reconciliation PROPFIND (`response_ended`) that
+recovered on one read retry, with one PROPPATCH and success/committed. That
+observation and the earlier Nextcloud free/busy tails of 626.46 and 606.13 ms
+remain in the evidence with their original build identities.
 These are local observations with small sample sizes, not latency guarantees.
 
 At 500 resources, the compact build's measurements before the PR review fixes were:

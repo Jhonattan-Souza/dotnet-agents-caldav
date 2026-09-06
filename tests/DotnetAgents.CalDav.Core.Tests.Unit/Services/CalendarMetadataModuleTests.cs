@@ -60,6 +60,11 @@ public sealed class CalendarMetadataModuleTests
     [InlineData("", "unknown")]
     [InlineData("1, invalid value", "unknown")]
     [InlineData("1, calendar-access", "not_advertised")]
+    [InlineData("1, calendar-access, vendor.feature", "not_advertised")]
+    [InlineData("1, <urn:x,calendar-auto-schedule,y>", "not_advertised")]
+    [InlineData("1, <urn:x,calendar-auto-schedule,y>, calendar-auto-schedule", "advertised")]
+    [InlineData("1, <urn:x#fragment>", "unknown")]
+    [InlineData(",1,,calendar-access,", "not_advertised")]
     public async Task Inspect_distinguishes_unknown_scheduling_from_successful_absence(string? dav, string expected)
     {
         using var fixture = new Fixture();

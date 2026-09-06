@@ -68,6 +68,25 @@ public sealed class CalendarMetadataProtocolTests
     }
 
     [Theory]
+    [InlineData(12)]
+    [InlineData(100)]
+    public void UnrequestedServerPropertiesDoNotExpandTheFixedMetadataObservationSurface(int extraCount)
+    {
+        var baseline = CalendarMetadataProtocol.ParseMetadata(Href, Response(Metadata()), TestContext.Current.CancellationToken).Snapshot;
+        var extras = Enumerable.Range(0, extraCount)
+            .Select(index => new XElement(XName.Get("property-" + index, "urn:server-extension"), "inert evidence")).ToArray();
+        var response = Response(Metadata(extras));
+
+        var observed = CalendarMetadataProtocol.ParseMetadata(Href, response, TestContext.Current.CancellationToken);
+
+        observed.Properties.Count.ShouldBe(extraCount + 1);
+        observed.Snapshot.Properties.Count.ShouldBe(11);
+        observed.Snapshot.Properties.ShouldBe(baseline.Properties);
+        observed.Snapshot.Reports.ShouldBeEmpty();
+        observed.Snapshot.Privileges.ShouldBeEmpty();
+    }
+
+    [Theory]
     [InlineData("HTTP/1.1 0200 OK")]
     [InlineData("HTTP/bogus 200 OK")]
     [InlineData("HTTP/1.x 200 OK")]

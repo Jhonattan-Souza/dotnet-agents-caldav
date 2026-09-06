@@ -14,6 +14,11 @@ public partial class CalDavClientTests
 {
     [Theory]
     [InlineData("1, calendar-access", true)]
+    [InlineData("1, calendar-access, vendor.feature", true)]
+    [InlineData("1, calendar-access, !#$%&'*+-.^_`|~", true)]
+    [InlineData("1, <urn:x,calendar-auto-schedule,y>", true)]
+    [InlineData(",1,,calendar-access,", true)]
+    [InlineData("1, <urn:x,calendar-auto-schedule,y>, calendar-auto-schedule", false)]
     [InlineData("1, calendar-access, calendar-auto-schedule", false)]
     [InlineData("1, CALENDAR-AUTO-SCHEDULE", false)]
     [InlineData("1, invalid compliance", false)]
@@ -91,6 +96,27 @@ public partial class CalDavClientTests
 
         result.Code.ShouldBe(CalendarCollectionDispatchCode.SchedulingUnsafe);
         requests.ShouldHaveSingleItem().Method.ShouldBe(HttpMethod.Options);
+    }
+
+    [Theory]
+    [InlineData("1, calendar-access, vendor.feature")]
+    [InlineData("1, <urn:x,calendar-auto-schedule,y>")]
+    [InlineData(",1,,calendar-access,")]
+    public async Task CollectionDelete_ValidExtensionEvidenceAllowsOneDelete(string dav)
+    {
+        var methods = new List<string>();
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            methods.Add(request.Method.Method);
+            var response = new HttpResponseMessage(request.Method == HttpMethod.Options ? HttpStatusCode.OK : HttpStatusCode.NoContent);
+            response.Headers.TryAddWithoutValidation("DAV", dav);
+            return response;
+        });
+
+        var result = await CreateSut(handler).DeleteCalendarCollectionAsync("https://example.com/calendar/", CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarCollectionDispatchCode.Dispatched);
+        methods.ShouldBe(["OPTIONS", "DELETE"]);
     }
 
     [Theory]
