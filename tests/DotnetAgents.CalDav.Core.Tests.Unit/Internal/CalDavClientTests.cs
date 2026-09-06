@@ -475,9 +475,10 @@ public partial class CalDavClientTests
     }
 
     [Theory]
-    [InlineData(HttpStatusCode.BadRequest)]
-    [InlineData(HttpStatusCode.Forbidden)]
-    public async Task CalendarMultigetRejectsInvalidUtf8ErrorWithoutCachingFallback(HttpStatusCode status)
+    [InlineData(HttpStatusCode.BadRequest, null)]
+    [InlineData(HttpStatusCode.Forbidden, null)]
+    [InlineData(HttpStatusCode.Forbidden, "x-unknown-charset")]
+    public async Task CalendarMultigetUnreadableXmlErrorPreservesHttpFailureWithoutCachingFallback(HttpStatusCode status, string? charset)
     {
         const string calendarHref = "https://example.com/calendars/user/events/";
         var requestCount = 0;
@@ -487,16 +488,20 @@ public partial class CalDavClientTests
             return new HttpResponseMessage(status)
             {
                 Content = new ByteArrayContent([0xc3, 0x28])
+                {
+                    Headers = { ContentType = new MediaTypeHeaderValue("application/xml") { CharSet = charset } }
+                }
             };
         }));
 
         for (var call = 0; call < 2; call++)
         {
-            await Should.ThrowAsync<CalendarDiscoveryProtocolException>(() =>
+            var error = await Should.ThrowAsync<HttpRequestException>(() =>
                 sut.GetCalendarResourceForQueryAsync(
                     calendarHref,
                     calendarHref + "a.ics",
                     TestContext.Current.CancellationToken));
+            error.StatusCode.ShouldBe(status);
         }
 
         requestCount.ShouldBe(2);
@@ -713,7 +718,7 @@ public partial class CalDavClientTests
     }
 
     [Fact]
-    public async Task CalendarMultigetRejectsUtf16EvenWithMatchingBomAndDeclaration()
+    public async Task CalendarMultigetAcceptsUtf16WithMatchingBomAndDeclaration()
     {
         const string calendarHref = "https://example.com/calendars/user/events/";
         const string xml = "<?xml version='1.0' encoding='utf-16'?><d:multistatus xmlns:d='DAV:'><d:response><d:href>/calendars/user/events/a.ics</d:href><d:status>HTTP/1.1 404 Not Found</d:status></d:response></d:multistatus>";
@@ -723,10 +728,12 @@ public partial class CalDavClientTests
             Content = new ByteArrayContent(bytes)
         }));
 
-        await Should.ThrowAsync<System.Xml.XmlException>(() => sut.GetCalendarResourceForQueryAsync(
+        var result = await sut.GetCalendarResourceForQueryAsync(
             calendarHref,
             calendarHref + "a.ics",
-            TestContext.Current.CancellationToken));
+            TestContext.Current.CancellationToken);
+
+        result.Code.ShouldBe(CalendarResourceReadCode.NotFound);
     }
 
     [Theory]

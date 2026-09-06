@@ -21,7 +21,6 @@ internal static class CalendarMultigetResponseParser
     private static readonly XName ResponseName = Dav + "response";
     private static readonly XName MultistatusName = Dav + "multistatus";
     private static readonly XName CalendarDataName = CalDav + "calendar-data";
-    private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 
     internal static async Task<IReadOnlyList<CalendarMultigetResource>> ParseAsync(
         HttpContent content,
@@ -32,15 +31,15 @@ internal static class CalendarMultigetResponseParser
             throw new ArgumentOutOfRangeException(nameof(requestedResourceCount));
         try
         {
-            return await ParseStrictUtf8Async(content, requestedResourceCount, cancellationToken).ConfigureAwait(false);
+            return await ParseEncodedXmlAsync(content, requestedResourceCount, cancellationToken).ConfigureAwait(false);
         }
-        catch (DecoderFallbackException exception)
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException)
         {
-            throw new XmlException("The Calendar multiget response was not valid UTF-8.", exception);
+            throw new XmlException("The Calendar multiget response has an unsupported or malformed XML encoding.", exception);
         }
     }
 
-    private static async Task<IReadOnlyList<CalendarMultigetResource>> ParseStrictUtf8Async(
+    private static async Task<IReadOnlyList<CalendarMultigetResource>> ParseEncodedXmlAsync(
         HttpContent content,
         int requestedResourceCount,
         CancellationToken cancellationToken)
@@ -50,13 +49,10 @@ internal static class CalendarMultigetResponseParser
             ? new GZipStream(encoded, CompressionMode.Decompress, leaveOpen: false)
             : encoded;
         await using var bounded = new MaximumReadStream(decompressed, MaximumBatchBytes);
-        using var text = new StreamReader(
+        using var input = await XmlStreamingResponseReader.CreateAsync(
             bounded,
-            StrictUtf8,
-            detectEncodingFromByteOrderMarks: false,
-            bufferSize: 4096,
-            leaveOpen: false);
-        using var reader = XmlReader.Create(text, new XmlReaderSettings
+            content.Headers.ContentType?.CharSet,
+            new XmlReaderSettings
         {
             Async = true,
             DtdProcessing = DtdProcessing.Prohibit,
@@ -64,19 +60,20 @@ internal static class CalendarMultigetResponseParser
             IgnoreProcessingInstructions = false,
             MaxCharactersFromEntities = 0,
             MaxCharactersInDocument = MaximumBatchBytes
-        });
-        return await ReadResourcesAsync(reader, requestedResourceCount, cancellationToken).ConfigureAwait(false);
+        }, (4 * MaximumRootEnvelopeBytes) + 4096, cancellationToken).ConfigureAwait(false);
+        return await ReadResourcesAsync(input, requestedResourceCount, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<IReadOnlyList<CalendarMultigetResource>> ReadResourcesAsync(
-        XmlReader reader,
+        XmlStreamingResponseReader input,
         int requestedResourceCount,
         CancellationToken cancellationToken)
     {
         var resources = new List<CalendarMultigetResource>(requestedResourceCount);
         var root = new XmlEnvelopeBudget(MaximumRootEnvelopeBytes, "root");
+        var reader = input.Reader;
         var rootSeen = false;
-        while (await reader.ReadAsync().ConfigureAwait(false))
+        while (await input.ReadAsync().ConfigureAwait(false))
         {
             cancellationToken.ThrowIfCancellationRequested();
             EnsureDepth(reader, "response");

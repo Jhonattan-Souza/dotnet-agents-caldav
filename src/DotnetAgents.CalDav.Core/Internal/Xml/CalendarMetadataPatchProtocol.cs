@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
@@ -33,7 +34,7 @@ internal static partial class CalendarMetadataPatchProtocol
     private static void ValidateValue(CalendarMetadataTextPatch property, bool displayName)
     {
         var value = property.Value!;
-        if (value.Length > (displayName ? 256 : 4096)
+        if (ExceedsTextLimit(value, displayName ? 256 : 4096)
             || displayName && string.IsNullOrWhiteSpace(value)
             || displayName && property.Language is not null)
             throw InvalidInput();
@@ -47,6 +48,19 @@ internal static partial class CalendarMetadataPatchProtocol
         {
             throw InvalidInput();
         }
+    }
+
+    private static bool ExceedsTextLimit(string value, int maximum)
+    {
+        if (value.Length <= maximum)
+            return false;
+        var scalars = 0;
+        foreach (var _ in value.EnumerateRunes())
+        {
+            if (++scalars > maximum)
+                return true;
+        }
+        return false;
     }
 
     internal static string Body(CalendarMetadataPatch patch) => new XElement(CalendarMetadataProtocol.Dav + "propertyupdate",
@@ -75,7 +89,7 @@ internal static partial class CalendarMetadataPatchProtocol
             return HttpDispatch(response.StatusCode);
         try
         {
-            var properties = CalendarMetadataProtocol.ReadProperties(href, response.Body);
+            var properties = CalendarMetadataProtocol.ReadProperties(href, response.Body, response.CharSet);
             return PropertyDispatch(patch, properties);
         }
         catch (Exception exception) when (exception is CalendarProtocolException or XmlException)

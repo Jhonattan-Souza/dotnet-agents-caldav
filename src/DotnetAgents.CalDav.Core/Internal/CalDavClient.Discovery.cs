@@ -1,5 +1,5 @@
 using System.Net;
-using System.Text;
+using System.Xml.Linq;
 using DotnetAgents.CalDav.Core.Internal.Xml;
 using DotnetAgents.CalDav.Core.Models;
 using DotnetAgents.CalDav.Core.Services;
@@ -35,13 +35,13 @@ internal sealed partial class CalDavClient
     }
 
     private void AddDiscoveredMembers(
-        (string Content, Uri RequestUri) response,
+        (XDocument Document, Uri RequestUri) response,
         int depth,
         Dictionary<string, CalendarDescriptor> calendars,
         Queue<(string Href, int Depth)> pending,
         IReadOnlyList<string> scope)
     {
-        foreach (var member in DavResponseParser.ParseCollectionMembers(response.Content))
+        foreach (var member in DavResponseParser.ParseCollectionMembers(response.Document))
         {
             if (!TryCanonicalizeCalendarHref(response.RequestUri, member.Href, out var canonical))
                 throw new CalendarDiscoveryProtocolException("Unsafe discovered collection href.");
@@ -132,14 +132,14 @@ internal sealed partial class CalDavClient
         }
     }
 
-    private CalendarHomeDiscovery ParseHomeDiscovery((string Content, Uri RequestUri) response)
+    private CalendarHomeDiscovery ParseHomeDiscovery((XDocument Document, Uri RequestUri) response)
     {
-        var homes = DavResponseParser.ParseCalendarHomeSets(response.Content)
+        var homes = DavResponseParser.ParseCalendarHomeSets(response.Document)
             .Select(href => CanonicalDiscoveryHref(response.RequestUri, href))
             .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
         if (homes.Length > 16)
             throw new CalendarDiscoveryLimitException("home_count", homes.Length, 16);
-        var principal = DavResponseParser.ParseCurrentUserPrincipal(response.Content);
+        var principal = DavResponseParser.ParseCurrentUserPrincipal(response.Document);
         return new(homes, principal is null ? null : CanonicalDiscoveryHref(response.RequestUri, principal));
     }
 
@@ -147,13 +147,14 @@ internal sealed partial class CalDavClient
         TryCanonicalizeCalendarHref(requestUri, href, out var canonical) ? canonical
             : throw new CalendarDiscoveryProtocolException("Unsafe Calendar discovery href.");
 
-    private async Task<(string Content, Uri RequestUri)> ReadDiscoveryAsync(
+    private async Task<(XDocument Document, Uri RequestUri)> ReadDiscoveryAsync(
         string href, string body, int depth, CalendarTraversalBudget budget, CancellationToken cancellationToken)
     {
         budget.BeforeRequest();
         var response = await SendPropFindAsync(href, body, depth, cancellationToken).ConfigureAwait(false);
-        budget.AddBytes(Encoding.UTF8.GetByteCount(response.Content));
-        return response;
+        budget.AddBytes(response.Content.Length);
+        cancellationToken.ThrowIfCancellationRequested();
+        return (DavResponseParser.ParseDocument(response.Content, response.Charset), response.RequestUri);
     }
 
     private sealed record CalendarHomeDiscovery(IReadOnlyList<string> Homes, string? Principal);

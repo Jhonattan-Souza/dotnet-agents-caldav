@@ -189,17 +189,21 @@ async def run(root,assembly,output,exact_scope=False):
         configure_scope(state)
     before=verify(state)
     service='caldav-rfc-'+state.get('server','radicale')+'-'+output.name
-    async with Client(assembly,environment(state,service,exact=True)) as client:
-        f=Functional(output,client,state)
-        try:
-            await f.run()
-        finally:
-            for href in f.owned:
-                status,_,_=request(state,'DELETE',urllib.parse.urlparse(href).path)
-                assert status in (200,204,404)
-    client.identity['service_name']=service
-    client.identity['explicit_calendar_scope']=exact_scope
-    (output/'functional-process.json').write_text(json.dumps(client.identity,indent=2))
+    client=Client(assembly,environment(state,service,exact=True))
+    try:
+        async with client:
+            f=Functional(output,client,state)
+            try:
+                await f.run()
+            finally:
+                for href in f.owned:
+                    status,_,_=request(state,'DELETE',urllib.parse.urlparse(href).path)
+                    assert status in (200,204,404)
+    finally:
+        if hasattr(client,'identity'):
+            client.identity['service_name']=service
+            client.identity['explicit_calendar_scope']=exact_scope
+            (output/'functional-process.json').write_text(json.dumps(client.identity,indent=2))
     assert verify(state)==before, 'Smoke suite changed the seeded fixture resource counts'
     if getattr(f,'new_checkpoint',None):
         from protocol import checkpoint_restart

@@ -15,7 +15,7 @@ using Xunit;
 
 namespace DotnetAgents.CalDav.Mcp.Tests.Unit;
 
-public sealed class CalendarProtocolFailurePhaseTests
+public sealed partial class CalendarProtocolFailurePhaseTests
 {
     private const string Href = "https://cal.example/cal/";
     private const string Metadata = """
@@ -190,13 +190,16 @@ public sealed class CalendarProtocolFailurePhaseTests
         {
             "calendars.inspect" => new CalendarMetadataTools(_provider.GetRequiredService<ICalendarMetadataModule>())
                 .InspectAsync(Href, CancellationToken.None),
-            "calendars.patch" => new CalendarMetadataTools(_provider.GetRequiredService<ICalendarMetadataModule>())
-                .PatchAsync(Href, new CalendarMetadataPatch(new CalendarMetadataTextPatch("set", "Work")), CancellationToken.None),
+            "calendars.patch" => PatchAsync(new CalendarMetadataPatch(new CalendarMetadataTextPatch("set", "Work"))),
             "calendars.free_busy" => new CalendarReportTools(_provider.GetRequiredService<ICalendarReportModule>())
                 .FreeBusyRawAsync(Arguments(new { calendarHref = Href, from = "2026-09-05T00:00:00Z", to = "2026-09-06T00:00:00Z" }), CancellationToken.None),
             _ => new CalendarReportTools(_provider.GetRequiredService<ICalendarReportModule>())
                 .ChangesRawAsync(Arguments(new { calendarHref = Href }), CancellationToken.None)
         };
+
+        internal Task<CallToolResult> PatchAsync(CalendarMetadataPatch patch) =>
+            new CalendarMetadataTools(_provider.GetRequiredService<ICalendarMetadataModule>())
+                .PatchAsync(Href, patch, CancellationToken.None);
 
         private static Dictionary<string, JsonElement> Arguments(object value) =>
             JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(JsonSerializer.Serialize(value))!;

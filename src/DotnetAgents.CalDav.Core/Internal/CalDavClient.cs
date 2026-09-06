@@ -5,6 +5,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Xml.Linq;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Core.Internal.Ical;
@@ -182,7 +183,7 @@ internal sealed partial class CalDavClient : ICalendarClient, ICalendarMoveResou
             cancellationToken);
         var calendarUri = response.RequestUri;
         var hrefs = new List<string>();
-        foreach (var candidateHref in DavResponseParser.ParseCalendarResourceHrefs(response.Content))
+        foreach (var candidateHref in DavResponseParser.ParseCalendarResourceHrefs(response.Document))
         {
             if (IsCollectionSelfHref(calendarUri, candidateHref))
                 continue;
@@ -196,7 +197,7 @@ internal sealed partial class CalDavClient : ICalendarClient, ICalendarMoveResou
         return hrefs.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
     }
 
-    private async Task<(string Content, Uri RequestUri)> QueryWithCapabilitiesAsync(
+    private async Task<(XDocument Document, Uri RequestUri)> QueryWithCapabilitiesAsync(
         string calendarHref,
         CalendarEntityKind entityKind,
         DateTimeOffset? from,
@@ -832,7 +833,7 @@ internal sealed partial class CalDavClient : ICalendarClient, ICalendarMoveResou
 
     private sealed record BoundedContentRead(byte[]? Content, int ObservedByteCount);
 
-    private async Task<(string Content, Uri RequestUri)> SendPropFindAsync(string href, string body, int depth, CancellationToken cancellationToken)
+    private async Task<(byte[] Content, string? Charset, Uri RequestUri)> SendPropFindAsync(string href, string body, int depth, CancellationToken cancellationToken)
     {
         if (!TryCanonicalizeCalendarHref(new Uri(_options.Value.BaseUrl, UriKind.Absolute), href, out var canonicalHref))
             throw new CalendarDiscoveryProtocolException("Unsafe CalDAV discovery href.");
@@ -848,17 +849,10 @@ internal sealed partial class CalDavClient : ICalendarClient, ICalendarMoveResou
         var read = await ReadBoundedContentAsync(response.Content, cancellationToken);
         if (read.Content is null)
             throw new CalendarDiscoveryLimitException("byte_count", read.ObservedByteCount, MaximumCalendarResourceBytes);
-        try
-        {
-            return (StrictUtf8.GetString(read.Content), requestUri);
-        }
-        catch (DecoderFallbackException)
-        {
-            throw new CalendarDiscoveryProtocolException("The CalDAV discovery response was not valid UTF-8.");
-        }
+        return (read.Content, response.Content.Headers.ContentType?.CharSet, requestUri);
     }
 
-    private async Task<(string Content, Uri RequestUri)> SendReportAsync(
+    private async Task<(XDocument Document, Uri RequestUri)> SendReportAsync(
         string href,
         string body,
         CancellationToken cancellationToken)
@@ -881,23 +875,16 @@ internal sealed partial class CalDavClient : ICalendarClient, ICalendarMoveResou
                 null,
                 HttpStatusCode.RequestEntityTooLarge);
         }
-        try
+        if (!response.IsSuccessStatusCode)
         {
-            var content = StrictUtf8.GetString(bounded.Content);
-            if (!response.IsSuccessStatusCode)
-            {
-                if (response.StatusCode is HttpStatusCode.MethodNotAllowed or HttpStatusCode.NotImplemented
-                    || response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Forbidden
-                    && DavResponseParser.IsSupportedFilterError(content))
-                    throw new CalendarQueryFilterUnsupportedException();
-                response.EnsureSuccessStatusCode();
-            }
-            return (content, response.RequestMessage?.RequestUri ?? new Uri(canonicalHref, UriKind.Absolute));
+            if (response.StatusCode is HttpStatusCode.MethodNotAllowed or HttpStatusCode.NotImplemented
+                || response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.Forbidden
+                && DavResponseParser.IsSupportedFilterError(bounded.Content, response.Content.Headers.ContentType?.CharSet))
+                throw new CalendarQueryFilterUnsupportedException();
+            response.EnsureSuccessStatusCode();
         }
-        catch (DecoderFallbackException)
-        {
-            throw new CalendarDiscoveryProtocolException("The CalDAV REPORT response was not valid UTF-8.");
-        }
+        return (DavResponseParser.ParseDocument(bounded.Content, response.Content.Headers.ContentType?.CharSet),
+            response.RequestMessage?.RequestUri ?? new Uri(canonicalHref, UriKind.Absolute));
     }
 
     private async Task<(IReadOnlyList<CalendarMultigetResource> Resources, Uri RequestUri)> SendMultigetReportAsync(
@@ -925,16 +912,7 @@ internal sealed partial class CalDavClient : ICalendarClient, ICalendarMoveResou
             if (bounded.Content is not null
                 && response.StatusCode is (HttpStatusCode.BadRequest or HttpStatusCode.Forbidden))
             {
-                string errorBody;
-                try
-                {
-                    errorBody = StrictUtf8.GetString(bounded.Content);
-                }
-                catch (DecoderFallbackException)
-                {
-                    throw new CalendarDiscoveryProtocolException("The Calendar multiget error response was not valid UTF-8.");
-                }
-                if (DavResponseParser.IsCalendarMultigetUnsupportedError(errorBody))
+                if (DavResponseParser.IsCalendarMultigetUnsupportedError(bounded.Content, response.Content.Headers.ContentType?.CharSet))
                     throw new CalendarMultigetUnsupportedException();
             }
             response.EnsureSuccessStatusCode();
