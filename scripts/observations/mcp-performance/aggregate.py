@@ -108,12 +108,12 @@ def schema_observations(root,builds):
             raise RuntimeError(f'{label} schema observation does not match its prepared build')
         if source['runtimeFilesSha256']!=builds[label]['runtime_files_sha256']:
             raise RuntimeError(f'{label} schema observation has different runtime dependencies')
-        workload=(source['tool'],source['payloadSha256'])
+        workload=(source['tool'],source['payloadSha256'],source['runtime'])
         if expected_workload is not None and workload!=expected_workload:
-            raise RuntimeError('Schema observations require the same tool and payload')
+            raise RuntimeError('Schema observations require the same tool, payload and .NET runtime')
         expected_workload=workload
         allocation.append(dict(label=label,n=len(samples),payload_sha256=source['payloadSha256'],
-            tool=source['tool'],assembly_sha256=source['assemblySha256'],
+            tool=source['tool'],runtime=source['runtime'],assembly_sha256=source['assemblySha256'],
             median_ms=statistics.median(s['elapsedMilliseconds'] for s in samples),
             median_allocated_bytes=statistics.median(s['allocatedBytes'] for s in samples),
             gc_collections={g:sum(s[g] for s in samples) for g in ['gen0','gen1','gen2']}))

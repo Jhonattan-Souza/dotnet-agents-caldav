@@ -186,7 +186,7 @@ ferramenta precisa corresponder à página capturada. O
 programa usa reflexão para chamar o guard original em cada assembly sobre o
 mesmo JSON, após 20 aquecimentos e com 100 amostras. Não mede transporte.
 A agregação exige o hash de assembly correspondente ao build de cada observação,
-além de ferramenta e payload idênticos entre baseline e candidata.
+além de ferramenta, payload e versão do runtime .NET idênticos entre baseline e candidata.
 O observador também registra os hashes dos arquivos de runtime e rejeita mudanças
 durante a coleta; esses hashes devem corresponder ao manifesto do build.
 
@@ -215,10 +215,15 @@ metadata versionada temporária com `scripts/prepare-release-metadata.sh` e
 `package.sh <diretório-externo>` reproduz esse gate num clone local com o diff
 completo contra HEAD, incluindo alterações staged e arquivos de build da raiz,
 mais arquivos novos não ignorados. Um checkout limpo usa diretamente seu commit.
+O gate exige `candidate-build.json` desse diretório: verifica a fonte atual antes
+do clone e a fonte copiada antes e depois da validação do pacote. Mudanças após
+`prepare.sh` exigem preparar outra candidata.
 Gera somente o pacote de teste `0.0.0-perf.20260905`, sem publicação. A prova Hermes
 propaga o código de saída do cliente depois de emitir seu resumo diagnóstico.
 O proxy também propaga o código de saída do MCP e termina de encaminhar stderr
 antes de registrar o encerramento.
+Sua configuração sanitizada retém somente provedor e nome do modelo, com permissão
+0600; credenciais, headers e opções arbitrárias do perfil ficam fora dessa evidência.
 
 Para associar os gates à comparação preparada, use o wrapper sem mudar o estado
 Git entre `prepare.sh` e a execução abaixo:

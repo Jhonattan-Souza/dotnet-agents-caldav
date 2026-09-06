@@ -3,7 +3,9 @@ set -euo pipefail
 [[ $# == 1 ]] || { echo 'Usage: package.sh <external-run-directory>' >&2; exit 64; }
 results_directory=$(realpath -- "$1")
 repository_root=$(git rev-parse --show-toplevel)
+manifest_tool="$(dirname -- "$(realpath -- "$0")")/build_manifest.py"
 case "$results_directory/" in "$repository_root/"*) echo 'Use an external directory' >&2; exit 65;; esac
+python3 "$manifest_tool" verify-source "$repository_root" "$results_directory/candidate-build.json"
 package_checkout="$results_directory/package-checkout"
 package_version=0.0.0-perf.20260905
 git diff HEAD --binary > "$results_directory/package-source.patch"
@@ -17,6 +19,7 @@ while IFS= read -r -d '' added_path; do
   mkdir -p -- "$package_checkout/$(dirname -- "$added_path")"
   cp -a -- "$repository_root/$added_path" "$package_checkout/$added_path"
 done < <(git ls-files --others --exclude-standard -z)
+python3 "$manifest_tool" verify-source "$package_checkout" "$results_directory/candidate-build.json"
 cd -- "$package_checkout"
 metadata_path="$results_directory/package-metadata/server.json"
 bash scripts/prepare-release-metadata.sh "v$package_version" "$metadata_path"
@@ -27,3 +30,4 @@ dotnet pack src/DotnetAgents.CalDav.Mcp/DotnetAgents.CalDav.Mcp.csproj -c Releas
   "/p:Version=$package_version" "/p:McpServerMetadataPath=$metadata_path" \
   --include-symbols -p:SymbolPackageFormat=snupkg -o "$results_directory/packages"
 bash scripts/verify-release-package.sh "$package_version" "$results_directory/packages"
+python3 "$manifest_tool" verify-source "$package_checkout" "$results_directory/candidate-build.json"

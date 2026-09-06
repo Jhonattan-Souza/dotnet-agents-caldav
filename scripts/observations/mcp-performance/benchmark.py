@@ -19,6 +19,8 @@ TOOLS = ['calendar_entities.query', 'calendar_occurrences.query', 'todos.query']
 def validate_args(args):
     if args.compare_otlp and args.no_otlp:
         raise ValueError('compare-otlp and no-otlp are mutually exclusive')
+    if args.compare_otlp and args.topology != 'single_session':
+        raise ValueError('compare-otlp supports only single_session topology')
     for name in ['blocks', 'samples', 'cohort_samples']:
         if getattr(args, name) <= 0:
             raise ValueError(name.replace('_', '-') + ' must be positive')
@@ -128,14 +130,12 @@ async def process_cohort(args,label,tool,block,references):
 
 
 async def run(args):
+    validate_args(args)
     args.baseline=args.baseline.resolve()
     args.candidate=args.candidate.resolve()
     output=args.root/(args.name+'-samples.jsonl')
     if output.exists():
         raise RuntimeError('Use a new run name; never overwrite previous samples')
-    if args.compare_otlp:
-        assert args.baseline.read_bytes()==args.candidate.read_bytes()
-        assert args.topology=='single_session'
     manifest={k:str(v) if isinstance(v,Path) else v for k,v in vars(args).items()}
     manifest['build_inputs']=benchmark_inputs(load_builds(args.root),args.baseline,args.candidate,args.compare_otlp)
     manifest['harness_sha256']={p.name:hashlib.sha256(p.read_bytes()).hexdigest()

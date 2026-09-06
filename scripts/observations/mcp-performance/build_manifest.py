@@ -28,6 +28,11 @@ def capture(repository, manifest):
         json.dump(dict(source=source_identity(repository)), stream, indent=2)
 
 
+def verify_source(repository, manifest):
+    if source_identity(repository) != json.loads(manifest.read_text())['source']:
+        raise RuntimeError('Source does not match the prepared candidate')
+
+
 def runtime_files(assembly):
     assembly=Path(assembly).resolve()
     directory=assembly.parent
@@ -130,13 +135,15 @@ def verify_process_inputs(root, name, processes, builds):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['capture', 'finalize'])
+    parser.add_argument('action', choices=['capture', 'finalize', 'verify-source'])
     parser.add_argument('repository', type=Path)
     parser.add_argument('manifest', type=Path)
     parser.add_argument('assemblies', type=Path, nargs='?')
     args = parser.parse_args()
     if args.action == 'capture':
         capture(args.repository, args.manifest)
+    elif args.action == 'verify-source':
+        verify_source(args.repository, args.manifest)
     else:
         if args.assemblies is None:
             parser.error('finalize requires the copied assembly directory')
