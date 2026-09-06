@@ -2,7 +2,7 @@
 
 Status: Accepted
 
-All 23 tools return compact JSON in a TextContent block, semantically identical to
+All 27 tools return compact JSON in a TextContent block, semantically identical to
 structuredContent, following the MCP structured-content compatibility recommendation:
 https://modelcontextprotocol.io/specification/draft/server/tools#structured-content.
 This includes errors, no_change and confirmation_declined. Resource links, public
