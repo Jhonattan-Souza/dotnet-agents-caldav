@@ -25,6 +25,7 @@ import driver
 import gates
 from functional import verify_occurrence_fixture
 from edges import record_scale
+import edges
 
 HARNESS = Path(__file__).resolve().parent
 ASSEMBLIES = ['DotnetAgents.CalDav.Mcp.dll', 'DotnetAgents.CalDav.Core.dll']
@@ -158,6 +159,35 @@ class BuildIdentityTests(unittest.TestCase):
 
 
 class CommandTests(unittest.TestCase):
+    def test_otlp_process_control_is_rejected_even_with_python_optimization(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            for flags in [[],['-O']]:
+                with self.subTest(flags=flags):
+                    result=subprocess.run([sys.executable,*flags,str(HARNESS/'benchmark.py'),str(root),
+                        'baseline.dll','candidate.dll','--name','invalid','--mode','continue',
+                        '--compare-otlp','--topology','processes'],capture_output=True,text=True)
+                    self.assertEqual(2,result.returncode,result.stderr)
+                    self.assertIn('single_session',result.stderr)
+                    self.assertNotIn('Traceback',result.stderr)
+                    self.assertEqual([],list(root.iterdir()))
+
+    def test_edge_inputs_reject_swapped_or_stale_builds_before_infrastructure(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);repo=repository(root)
+            for label in ['baseline','candidate']:
+                directory=root/label;directory.mkdir();runtime_fixture(directory,label)
+                manifest=root/(label+'-build.json');capture(repo,manifest);finalize(repo,manifest,directory)
+            baseline=root/'baseline'/ASSEMBLIES[0];candidate=root/'candidate'/ASSEMBLIES[0]
+            with patch.object(edges,'expected_counts',side_effect=AssertionError('Infrastructure reached')):
+                with self.assertRaisesRegex(RuntimeError,'baseline input'):
+                    asyncio.run(edges.run(root,candidate,baseline))
+                (root/'candidate'/'Example.Dependency.dll').write_text('stale')
+                with self.assertRaisesRegex(RuntimeError,'dependency set differs'):
+                    asyncio.run(edges.run(root,baseline,candidate))
+            self.assertFalse((root/'edges-manifest.json').exists())
+            self.assertFalse((root/'edges.jsonl').exists())
+
     def test_proxy_propagates_child_status_after_forwarding_stderr(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -240,6 +270,7 @@ class CommandTests(unittest.TestCase):
                         (repo / 'src' / 'removed.cs').unlink()
                     output = root / ('dirty' if dirty else 'clean')
                     output.mkdir()
+                    capture(repo,output/'candidate-build.json')
                     result = subprocess.run(['bash', str(HARNESS / 'package.sh'), str(output)],
                         cwd=repo, env=env, capture_output=True, text=True)
                     self.assertEqual(0, result.returncode, result.stderr)
@@ -250,12 +281,31 @@ class CommandTests(unittest.TestCase):
                     if dirty:
                         self.assertEqual('untracked source', (clone / 'src' / 'added.cs').read_text())
 
+    def test_package_rejects_source_changes_since_preparation_before_cloning(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);repo=repository(root)
+            for changed_commit in [False,True]:
+                with self.subTest(changed_commit=changed_commit):
+                    output=root/str(changed_commit);output.mkdir()
+                    capture(repo,output/'candidate-build.json')
+                    (repo/'Directory.Packages.props').write_text('changed '+str(changed_commit))
+                    if changed_commit:
+                        commit(repo)
+                    result=subprocess.run(['bash',str(HARNESS/'package.sh'),str(output)],
+                        cwd=repo,capture_output=True,text=True)
+                    self.assertNotEqual(0,result.returncode)
+                    self.assertIn('Source does not match',result.stderr)
+                    self.assertFalse((output/'package-checkout').exists())
+                    self.assertFalse((output/'package-source.patch').exists())
+
     def test_hermes_exit_status_reaches_the_shell_after_summary(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             source = root / 'source-home'
             source.mkdir()
-            (source / 'config.yaml').write_text(json.dumps({'model': {'provider': 'openrouter', 'model': 'test'}}))
+            (source / 'config.yaml').write_text(json.dumps({'model': {'provider': 'openrouter', 'model': 'test',
+                'api_key':'inline-secret-marker','headers':{'Authorization':'header-secret-marker'},
+                'base_url':'https://url-secret-marker@example.invalid','options':{'credential':'nested-secret-marker'}}}))
             (source / '.env').write_text('OPENROUTER_API_KEY=test-only-placeholder\n')
             (root / 'infra-private.json').write_text(json.dumps(dict(
                 url='http://127.0.0.1:1', username='test', password='test-only', otlp='http://127.0.0.1:1')))
@@ -273,6 +323,10 @@ class CommandTests(unittest.TestCase):
                         env=env, capture_output=True, text=True)
                     self.assertEqual(exit_code, result.returncode, result.stderr)
                     self.assertEqual(exit_code, json.loads(result.stdout)['exit_code'])
+                    sanitized=root/'hermes-config-sanitized.json'
+                    self.assertEqual({'provider':'openrouter','model':'test'},json.loads(sanitized.read_text())['model'])
+                    self.assertNotIn('secret-marker',sanitized.read_text())
+                    self.assertEqual(0o600,stat.S_IMODE(sanitized.stat().st_mode))
 
 
 class EvidenceTests(unittest.TestCase):
@@ -282,14 +336,15 @@ class EvidenceTests(unittest.TestCase):
             builds={label:dict(assembly_sha256={ASSEMBLIES[0]:label},runtime_files_sha256={'dependency':label})
                     for label in ['baseline','candidate']}
             sources={label:dict(assemblySha256=label,tool='todos.query',payloadSha256='same-payload',
-                runtimeFilesSha256=builds[label]['runtime_files_sha256'],
+                runtimeFilesSha256=builds[label]['runtime_files_sha256'],runtime='10.0.0',
                 samples=[dict(elapsedMilliseconds=1,allocatedBytes=100,gen0=0,gen1=0,gen2=0)])
                 for label in builds}
             for label,source in sources.items():
                 (root/('schema-'+label+'.json')).write_text(json.dumps(source))
             self.assertEqual(2,len(schema_observations(root,builds)))
             for field,value in [('assemblySha256','baseline'),('tool','calendar_entities.query'),
-                                ('payloadSha256','different-payload'),('runtimeFilesSha256',{'dependency':'stale'})]:
+                                ('payloadSha256','different-payload'),('runtimeFilesSha256',{'dependency':'stale'}),
+                                ('runtime','10.0.1')]:
                 with self.subTest(field=field):
                     (root/'schema-candidate.json').write_text(json.dumps(dict(sources['candidate'],**{field:value})))
                     with self.assertRaises(RuntimeError):

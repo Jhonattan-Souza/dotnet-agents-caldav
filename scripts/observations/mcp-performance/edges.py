@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 from driver import Client, environment, query
 from infra import request, resource, verify, expected_counts
+from build_manifest import load_builds, benchmark_inputs
 
 
 def record_scale(remember,record,**metadata):
@@ -16,10 +17,15 @@ def record_scale(remember,record,**metadata):
 
 
 async def run(root,baseline,candidate):
+    inputs=benchmark_inputs(load_builds(root),baseline,candidate)
+    baseline=Path(inputs['baseline']['assembly']);candidate=Path(inputs['candidate']['assembly'])
+    if (root/'edges.jsonl').exists() or (root/'edges-manifest.json').exists():
+        raise RuntimeError('Use fresh edge evidence; preserve previous attempts')
     expected=expected_counts(root)
     if expected['todos']<2:
         raise RuntimeError('The limit matrix requires at least two seeded todos; cleanup supports any seed count')
     state=json.loads((root/'infra-private.json').read_text());records=[]
+    (root/'edges-manifest.json').write_text(json.dumps(dict(build_inputs=inputs),indent=2))
     def remember(value):
         records.append(value)
         with (root/'edges.jsonl').open('a') as stream:

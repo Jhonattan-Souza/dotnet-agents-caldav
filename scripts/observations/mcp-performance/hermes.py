@@ -26,7 +26,11 @@ secrets=dotenv_values(a.source_home/'.env')
 key=os.environ.get('OPENROUTER_API_KEY') or secrets.get('OPENROUTER_API_KEY')
 assert key,'Configured OpenRouter credential unavailable'
 (home/'.env').write_text('OPENROUTER_API_KEY='+key+'\n');(home/'.env').chmod(0o600)
-(root/'hermes-config-sanitized.json').write_text(json.dumps(dict(model=config['model'],agent=config['agent'],hermes_home=str(home),mcp_command=config['mcp_servers']['perf']['command'],mcp_args=config['mcp_servers']['perf']['args']),indent=2))
+model_metadata={key:config['model'][key] for key in ['provider','model','default']
+                if isinstance(config['model'].get(key),str)}
+with os.fdopen(os.open(root/'hermes-config-sanitized.json',os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600),'w') as stream:
+ os.fchmod(stream.fileno(),0o600)
+ json.dump(dict(model=model_metadata,agent=config['agent'],hermes_home=str(home),mcp_command=config['mcp_servers']['perf']['command'],mcp_args=config['mcp_servers']['perf']['args']),stream,indent=2)
 prompt='''Execute uma prova real de integração usando somente as ferramentas MCP perf disponíveis nesta sessão persistente. Todos os calendários são fixtures locais descartáveis e as mutações abaixo estão autorizadas. Faça em sequência: 1) calendars.list. 2) calendar_entities.query com scope all, entityKinds event e todo, janela UTC 2026-07-01T00:00:00Z até 2026-12-31T00:00:00Z e pageSize 1; Continue com o cursor obtido e pageSize 5 na mesma sessão. 3) calendar_occurrences.query com a mesma janela e pageSize 1, depois Continue pageSize 5. 4) todos.query com scope all, a mesma janela e pageSize 1; Continue pageSize 5. Os valores temporais usam kind utcDateTime. 5) todos.create no calendário padrão, entity kind todo, UID hermes-perf-20260905-integration, fields summary Hermes disposable integration. 6) calendar_resources.get no href criado. 7) todos.patch usando o entityRevision recém-lido, target scope master, patch scalars field summary operation set value Hermes patched integration. 8) Releia, execute todos.complete com a revisão fresca e releia para confirmar COMPLETED persistido. 9) Tente calendar_resources.delete usando a revisão fresca. Se houver uma confirmação MRTR que a integração não consiga continuar, registre a limitação e pare sem inventar campos ou repetir tentativas. Resuma apenas chamadas realmente executadas. Não use terminal, arquivos nem ferramentas fora deste MCP.'''
 (root/'hermes-prompt.txt').write_text(prompt)
 env={k:v for k,v in os.environ.items() if not k.startswith(('HERMES_','CALDAV_','OTEL_'))}
