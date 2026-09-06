@@ -9,6 +9,44 @@ namespace DotnetAgents.CalDav.Core.Tests.Unit.Internal.Xml;
 public class DavResponseParserTests
 {
     [Theory]
+    [InlineData("HTTP/1.1 404\nHTTP/1.1 200")]
+    [InlineData("HTTP/1.1 404\rHTTP/1.1 200")]
+    [InlineData("HTTP/1.1 404\r\nHTTP/1.1 200")]
+    [InlineData("HTTP/1.1\n200 OK")]
+    [InlineData("HTTP/1.1\r200 OK")]
+    [InlineData("HTTP/1.1\u00a0200 OK")]
+    [InlineData("HTTP/1.1\u000b200 OK")]
+    [InlineData("HTTP/1.1\u000c200 OK")]
+    public void ParseStatusCode_RejectsEmbeddedLinesAndNonHttpFieldSeparators(string status)
+    {
+        Should.Throw<System.Xml.XmlException>(() => DavResponseParser.ParseStatusCode(status));
+    }
+
+    [Theory]
+    [InlineData("\r\n HTTP/1.1 404 Not Found \r\n", 404)]
+    [InlineData("HTTP/1.1\t200 OK", 200)]
+    [InlineData("HTTP/2 204 No Content", 204)]
+    public void ParseStatusCode_PreservesSurroundingWhitespaceAndHttpFieldSpacing(string status, int expected)
+    {
+        DavResponseParser.ParseStatusCode(status).ShouldBe(expected);
+    }
+
+    [Theory]
+    [InlineData("&#10;")]
+    [InlineData("&#13;")]
+    [InlineData("&#13;&#10;")]
+    [InlineData("&#160;")]
+    public void DiscoveryProperties_RejectsEncodedNonHttpStatusSeparators(string separator)
+    {
+        var xml = "<d:multistatus xmlns:d='DAV:' xmlns:c='urn:ietf:params:xml:ns:caldav'>"
+            + "<d:response><d:href>/cal/</d:href><d:propstat><d:prop><d:resourcetype><c:calendar/>"
+            + "</d:resourcetype></d:prop><d:status>HTTP/1.1" + separator + "200 OK</d:status>"
+            + "</d:propstat></d:response></d:multistatus>";
+
+        Should.Throw<System.Xml.XmlException>(() => DavResponseParser.ParseCalendars(xml));
+    }
+
+    [Theory]
     [InlineData("<d:status>HTTP/1.1 403 Forbidden</d:status><d:propstat><d:status>HTTP/1.1 200 OK</d:status><d:prop><d:resourcetype><c:calendar/></d:resourcetype></d:prop></d:propstat>")]
     [InlineData("<d:propstat><d:prop><d:resourcetype><c:calendar/></d:resourcetype></d:prop></d:propstat>")]
     [InlineData("<d:propstat><d:status>HTTP/1.1 200 OK</d:status><d:prop><d:resourcetype/><d:resourcetype/></d:prop></d:propstat>")]

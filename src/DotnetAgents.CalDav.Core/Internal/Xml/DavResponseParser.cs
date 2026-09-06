@@ -375,8 +375,10 @@ internal static class DavResponseParser
 
     internal static int ParseStatusCode(string rawStatus)
     {
-        var parts = rawStatus.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length < 2
+        var statusLine = rawStatus.Trim();
+        var parts = statusLine.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+        if (statusLine.IndexOfAny(['\r', '\n']) >= 0
+            || parts.Length < 2
             || !IsHttpVersion(parts[0])
             || parts[1].Length != 3
             || !int.TryParse(parts[1], System.Globalization.NumberStyles.None,

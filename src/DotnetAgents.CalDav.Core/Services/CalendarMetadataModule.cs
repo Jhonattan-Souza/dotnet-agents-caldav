@@ -127,13 +127,11 @@ internal sealed class CalendarMetadataModule(CalDavClient client) : ICalendarMet
     {
         if (response.StatusCode is < 100 or > 599)
             return new("unknown", null);
-        var tokens = response.DavCompliance.SelectMany(value => value.Split(',', StringSplitOptions.TrimEntries)).ToArray();
         if (response.StatusCode is < 200 or >= 300)
             return new("unknown", response.StatusCode);
-        if (tokens.Contains("calendar-auto-schedule", StringComparer.OrdinalIgnoreCase))
-            return new("advertised", response.StatusCode);
-        return new(CalendarSchedulingSafety.ProvesSchedulingAbsent(response.DavCompliance)
-            ? "not_advertised" : "unknown", response.StatusCode);
+        if (!DavComplianceHeader.TryRead(response.DavCompliance, out var automaticScheduling))
+            return new("unknown", response.StatusCode);
+        return new(automaticScheduling ? "advertised" : "not_advertised", response.StatusCode);
     }
 
     private static bool IsOptionalOptionsFailure(Exception exception, CancellationToken cancellationToken) =>

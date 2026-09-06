@@ -103,15 +103,6 @@ internal static class CalendarSchedulingSafety
     internal static bool RequiresCheck(ReadOnlyMemory<byte> prior, ReadOnlyMemory<byte> proposed) =>
         HasParticipation(prior) || HasParticipation(proposed);
 
-    internal static bool ProvesSchedulingAbsent(IReadOnlyList<string> headers)
-    {
-        var values = headers.SelectMany(value => value.Split(',')).Select(value => value.Trim()).ToArray();
-        return values.Length > 0 && values.All(IsComplianceValue)
-            && !values.Contains("calendar-auto-schedule", StringComparer.OrdinalIgnoreCase);
-    }
-
-    private static bool IsComplianceValue(string value) => value.Length > 0
-        && (value.All(character => char.IsAsciiLetterOrDigit(character) || character is '-' or '_')
-            || value.StartsWith('<') && value.EndsWith('>')
-                && Uri.TryCreate(value[1..^1], UriKind.Absolute, out _));
+    internal static bool ProvesSchedulingAbsent(IReadOnlyList<string> headers) =>
+        DavComplianceHeader.TryRead(headers, out var automaticScheduling) && !automaticScheduling;
 }

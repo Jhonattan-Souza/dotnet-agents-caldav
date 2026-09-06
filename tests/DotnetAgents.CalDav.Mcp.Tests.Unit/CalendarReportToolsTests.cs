@@ -197,6 +197,23 @@ public class CalendarReportToolsTests
         result.StructuredContent.Value.GetProperty("message").GetString()!.ShouldContain("rebuild inventory");
     }
 
+    [Fact]
+    public async Task MalformedSyncXmlReturnsProtocolErrorWithoutChangesOrCheckpoint()
+    {
+        var module = Substitute.For<ICalendarReportModule>();
+        module.ChangesAsync(Arg.Any<CalendarResourceChangesRequest>(), Arg.Any<CancellationToken>()).Returns(
+            Task.FromException<CalendarResourceChangesResult>(new System.Xml.XmlException("private malformed sync status")));
+
+        var result = await new CalendarReportTools(module).ChangesRawAsync(
+            Arguments(JsonSerializer.Serialize(new { checkpoint = Checkpoint })), CancellationToken.None);
+
+        ErrorCode(result).ShouldBe("upstream_protocol_error");
+        result.StructuredContent!.Value.TryGetProperty("changes", out _).ShouldBeFalse();
+        result.StructuredContent.Value.TryGetProperty("checkpoint", out _).ShouldBeFalse();
+        result.StructuredContent.Value.GetRawText().ShouldNotContain("private malformed sync status");
+        CalendarOutputSchemaGuard.Validate("calendar_resources.changes", result);
+    }
+
     private static Dictionary<string, JsonElement> Arguments(string json) => JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json)!;
 
     private static string ErrorCode(CallToolResult result)

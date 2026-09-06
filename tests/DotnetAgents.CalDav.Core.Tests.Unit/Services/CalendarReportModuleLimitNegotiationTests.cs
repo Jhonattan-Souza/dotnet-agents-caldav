@@ -1,4 +1,5 @@
 using System.Net;
+using System.Xml;
 using System.Xml.Linq;
 using DotnetAgents.CalDav.Core.Models;
 using Shouldly;
@@ -101,6 +102,46 @@ public partial class CalendarReportModuleTests
         SyncRequestToken(fixture.Handler.Requests[1]).ShouldBe("urn:sync:prior");
         SyncRequestToken(fixture.Handler.Requests[2]).ShouldBe("urn:sync:prior");
     }
+
+    [Theory]
+    [InlineData("removed")]
+    [InlineData("changed")]
+    [InlineData("truncated")]
+    public async Task MalformedSyncStatusCannotAdvanceCheckpointAndPriorHandleRemainsReplayable(string kind)
+    {
+        foreach (var separator in new[] { "&#10;", "&#13;", "&#13;&#10;", "&#160;" })
+        {
+            using var fixture = new Fixture();
+            fixture.Add(207, SyncResponse("urn:sync:prior", Changed("initial.ics")));
+            fixture.Add(207, SyncResponse("urn:sync:advanced", Changed("earlier.ics") + MalformedSyncStatus(kind, separator)));
+            var recoveredPage = SyncResponse("urn:sync:advanced", Changed("earlier.ics") + Changed("later.ics"));
+            fixture.Add(207, recoveredPage);
+            fixture.Add(207, recoveredPage);
+            var prior = await fixture.Module.ChangesAsync(new CalendarResourceChangesRequest.Start(CalendarHref, 2), CancellationToken.None);
+
+            await Should.ThrowAsync<XmlException>(() => fixture.Module.ChangesAsync(
+                new CalendarResourceChangesRequest.Continue(prior.Checkpoint, 2), CancellationToken.None));
+
+            fixture.Protector.RetainedCheckpointCount.ShouldBe(1);
+            fixture.Handler.Requests.Count.ShouldBe(2);
+            var recovered = await fixture.Module.ChangesAsync(new CalendarResourceChangesRequest.Continue(prior.Checkpoint, 2), CancellationToken.None);
+            var replay = await fixture.Module.ChangesAsync(new CalendarResourceChangesRequest.Continue(prior.Checkpoint, 2), CancellationToken.None);
+            recovered.Changes.Select(change => change.Href).ShouldBe(new[] { CalendarHref + "earlier.ics", CalendarHref + "later.ics" });
+            recovered.HasMore.ShouldBeFalse();
+            replay.Changes.ShouldBe(recovered.Changes);
+            replay.Checkpoint.ShouldBe(recovered.Checkpoint);
+            fixture.Protector.RetainedCheckpointCount.ShouldBe(2);
+            fixture.Handler.Requests.Skip(1).ShouldAllBe(request => SyncRequestToken(request) == "urn:sync:prior");
+        }
+    }
+
+    private static string MalformedSyncStatus(string kind, string separator) => kind switch
+    {
+        "removed" => "<d:response><d:href>/cal/later.ics</d:href><d:status>HTTP/1.1 404" + separator
+            + "HTTP/1.1 200</d:status></d:response>",
+        "changed" => Changed("later.ics").Replace("HTTP/1.1 200 OK", "HTTP/1.1" + separator + "200 OK", StringComparison.Ordinal),
+        _ => Self507().Replace("HTTP/1.1 507 Insufficient Storage", "HTTP/1.1 507" + separator + "HTTP/1.1 200", StringComparison.Ordinal)
+    };
 
     [Theory]
     [InlineData("")]

@@ -104,12 +104,9 @@ internal static class CalendarMetadataProtocol
     {
         if (elements.Length != 1 || elements[0].HasElements)
             throw ProtocolError();
-        var status = elements[0].Value.Trim();
-        if (status.IndexOfAny(['\r', '\n']) >= 0)
-            throw ProtocolError();
         try
         {
-            return DavResponseParser.ParseStatusCode(status);
+            return DavResponseParser.ParseStatusCode(elements[0].Value);
         }
         catch (XmlException)
         {
