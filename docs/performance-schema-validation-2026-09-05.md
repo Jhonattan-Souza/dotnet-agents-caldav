@@ -222,6 +222,11 @@ Cliente direto completou as 23 ferramentas do catálogo com exact habilitado:
 criação de calendário, consultas e paginação, criação/patch/conclusão de fixtures,
 cinco mutações de recorrência, Move vazio/populado, exact get/create/replace/move,
 MRTR e exclusões com ausência autoritativa. O catálogo padrão descoberto tem 19.
+Nas cinco mutações de recorrência, a checagem HTTP original confirmou existência
+do recurso. Durante a revisão do harness, uma nova passagem real conferiu também
+UID, regra, RDATE/EXDATE e identidade/status do override após cada verbo. Essa
+validação detecta operações sem efeito ou em outra instância; sua evidência está
+em `/tmp/caldav-perf-pr-validation/review7-occurrence-verification.json`.
 Os controles verificaram OTLP ligado/desligado/collector indisponível e EOF limpo,
 escalas 1/50/200/600, excesso de 5000 ocorrências e saturação do store. Limites
 esperados foram registrados à parte.

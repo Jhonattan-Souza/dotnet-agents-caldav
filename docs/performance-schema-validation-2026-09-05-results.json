@@ -3771,6 +3771,8 @@
   },
   "measurement_limitations": {
     "historical_shared_process_cpu": "Concurrent single_session CPU windows overlap. Original means are retained as mean_overlapping_process_cpu_delta_ms; mean_cpu_ms is null because those deltas cannot be attributed per operation.",
-    "historical_corpus_verification": "The original run checked collection counts and compared measured page hashes between builds; it did not persist the seed ETag map needed to detect every same-count corpus edit. Later harness verification does not retroactively strengthen that evidence."
+    "historical_corpus_verification": "The original run checked collection counts and compared measured page hashes between builds; it did not persist the seed ETag map needed to detect every same-count corpus edit. Later harness verification does not retroactively strengthen that evidence.",
+    "historical_occurrence_postconditions": "The original five occurrence mutations checked HTTP 200 after schema-valid success. A later real functional run additionally verified UID, master recurrence, target RDATE/EXDATE and override identity/status; those stronger checks are not retroactively attributed to the original run.",
+    "historical_gate_source_binding": "The original gates were executed and retained in the documented checkout workflow, but they predate gate-source.json. The new aggregator requires a source/runtime-bound gate run and does not manufacture that proof for old artifact directories."
   }
 }

@@ -9,6 +9,7 @@ import statistics
 import subprocess
 import xml.etree.ElementTree as ET
 from build_manifest import load_builds, verify_process_inputs
+from gates import verify_gate_identity
 
 
 def percentile(values,p):
@@ -119,7 +120,8 @@ def schema_observations(root,builds):
     return allocation
 
 
-def validate_gates(directory):
+def validate_gates(directory,candidate):
+    verify_gate_identity(directory,candidate)
     scripts=Path(__file__).resolve().parents[2]
     for command in [
         ['bash',str(scripts/'verify-test-artifacts.sh'),str(directory),'complete'],
@@ -130,8 +132,8 @@ def validate_gates(directory):
 
 
 def main(a):
-    validate_gates(a.root/a.gates)
     builds=load_builds(a.root)
+    validate_gates(a.root/a.gates,builds['candidate'])
     traces=load_traces(a.traces)
     results=[];startup=[]
     for name in a.runs:
