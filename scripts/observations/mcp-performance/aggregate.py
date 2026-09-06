@@ -46,7 +46,9 @@ def join_run(root,name,traces,builds):
                     and low<=int(trace['start_ns'])<=high):
                     matches[trace['trace_id']]=trace
         expected=len(rows) if rows[0]['otlp'] else 0
-        assert len(matches)==expected,(name,summary['tool'],summary['size'],summary['label'],len(matches),expected)
+        if len(matches)!=expected:
+            raise RuntimeError(f'Incomplete trace matches for {name}/{summary["tool"]}/{summary["label"]}: '
+                               f'found {len(matches)}, expected {expected}')
         summary.update(run=name,topology=rows[0]['topology'],otlp=rows[0]['otlp'],
             trace_matches=len(matches),mean_stdio_response_bytes=statistics.mean(r['response_bytes'] for r in rows),
             distinct_item_hashes=sorted({r['item_sha256'] for r in rows}))
@@ -63,7 +65,8 @@ def join_run(root,name,traces,builds):
             http.update(trace['http']);statuses.update(trace['http_statuses'])
             for phase,value in trace['phases'].items():phases[phase].append(value)
         if summary['mode']=='continue':
-            assert not http,(name,summary['tool'],'Continue performed HTTP')
+            if http:
+                raise RuntimeError('Continue performed HTTP')
         summary.update(server_mcp_p50_ms=percentile([t['outer_ms'] for t in group],.5),
             server_mcp_p95_ms=percentile([t['outer_ms'] for t in group],.95),
             operation_p50_ms=percentile([t['operation_ms'] for t in group],.5),
@@ -73,7 +76,8 @@ def join_run(root,name,traces,builds):
             mean_phase_ms={k:statistics.mean(v) for k,v in phases.items()},
             representative_trace_ids=[t['trace_id'] for t in sorted(group,key=lambda t:t['outer_ms'])[::max(1,len(group)//3)][:3]])
     for p in processes:
-        assert p['assembly_mapped'] and p['exit_code']==0 and p['stderr_bytes']==0
+        if not p['assembly_mapped'] or p['exit_code']!=0 or p['stderr_bytes']!=0:
+            raise RuntimeError('Measured process identity or clean shutdown was not verified')
     startup=[]
     for label in ['baseline','candidate']:
         group=[p for p in processes if p['label']==label]

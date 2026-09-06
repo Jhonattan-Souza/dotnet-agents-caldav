@@ -16,7 +16,8 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from build_manifest import capture, finalize, load_builds, source_identity, benchmark_inputs, verify_process_inputs, runtime_files, prepared_input
-from aggregate import load_traces, schema_observations, validate_gates
+from aggregate import load_traces, schema_observations, validate_gates, join_run
+import aggregate
 from infra import radicale_config, save_private_state, verify, expected_counts
 import cleanup as cleanup_module
 import profile as profiling
@@ -166,6 +167,22 @@ class BuildIdentityTests(unittest.TestCase):
 
 
 class CommandTests(unittest.TestCase):
+    def test_eof_control_requires_empty_streams_success_and_bounded_shutdown(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            for code in ['exit 0','echo unexpected','echo diagnostic >&2','exit 17','exec sleep 60']:
+                with self.subTest(code=code):
+                    executable(root/'dotnet',code)
+                    with patch.dict(os.environ,PATH=str(root)+os.pathsep+os.environ['PATH']), \
+                         patch.object(edges,'EOF_TIMEOUT_SECONDS',0.1):
+                        probe=edges.eof_control(root/'server.dll',dict(os.environ))
+                        if code=='exit 0':
+                            asyncio.run(probe)
+                        else:
+                            error=TimeoutError if code=='exec sleep 60' else RuntimeError
+                            with self.assertRaises(error):
+                                asyncio.run(probe)
+
     def test_single_build_commands_reject_wrong_inputs_before_fixture_or_client_access(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary);prepared_fixture(root)
@@ -371,6 +388,19 @@ class CommandTests(unittest.TestCase):
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_missing_trace_matches_cannot_produce_a_successful_aggregate(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            (root/'incomplete-processes.jsonl').write_text('')
+            (root/'incomplete-summary.json').write_text(json.dumps([
+                dict(label='baseline',tool='todos.query',size=1,mode='continue')]))
+            sample=dict(label='baseline',tool='todos.query',size=1,warmup=False,block=0,cohort=0,
+                        otlp=True,timestamp_ns=100,elapsed_ms=1,service='test-service')
+            (root/'incomplete-samples.jsonl').write_text(json.dumps(sample)+'\n')
+            with patch.object(aggregate,'verify_process_inputs',return_value={}):
+                with self.assertRaisesRegex(RuntimeError,'Incomplete trace matches.*found 0, expected 1'):
+                    join_run(root,'incomplete',[],{})
+
     def test_schema_observations_require_correct_build_and_identical_workload(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary)
@@ -615,7 +645,7 @@ class PersistedEvidenceTests(unittest.TestCase):
 
 class StartupCleanupTests(unittest.IsolatedAsyncioTestCase):
     async def test_failed_negotiation_reaps_the_child_and_reader_tasks(self):
-        for kind,error in [('legacy',AssertionError),('malformed',TypeError),
+        for kind,error in [('legacy',RuntimeError),('malformed',TypeError),
                            ('timeout',TimeoutError),('cancelled',asyncio.CancelledError)]:
             with self.subTest(kind=kind), tempfile.TemporaryDirectory() as temporary:
                 root=Path(temporary)

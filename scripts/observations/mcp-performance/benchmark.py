@@ -64,7 +64,8 @@ async def cohort(args, label, tool, block, cohort_index, references):
     assembly = getattr(args,label)
     async with Client(assembly, env) as client:
         catalog = await client.request('tools/list', {})
-        assert set(TOOLS).issubset(t['name'] for t in catalog['result']['tools'])
+        if not (set(TOOLS).issubset(t['name'] for t in catalog['result']['tools'])):
+            raise RuntimeError('Required tool missing from live catalog')
         base = dict(label=label, tool=tool, block=block, cohort=cohort_index, mode=args.mode,
                     concurrency=args.concurrency, topology='single_session', service=service,
                     otlp=otlp, pid=client.process.pid)
@@ -74,7 +75,8 @@ async def cohort(args, label, tool, block, cohort_index, references):
                 record_sample(args,base,record,i<5,args.page_size,references)
         else:
             response, setup = await client.call(tool, query(tool, 1))
-            assert setup['outcome']=='success', setup
+            if not (setup['outcome']=='success'):
+                raise RuntimeError('Continue setup failed')
             cursor = response['result']['structuredContent']['pagination']['nextCursor']
             for size in args.sizes:
                 call_args = dict(cursor=cursor,pageSize=size)
@@ -94,7 +96,8 @@ async def cohort(args, label, tool, block, cohort_index, references):
                         digest = hashlib.sha256(json.dumps(value,sort_keys=True).encode()).hexdigest()
                         if reference is None:
                             reference = digest
-                        assert reference == digest, 'Replay content/order changed'
+                        if not (reference == digest):
+                            raise RuntimeError('Replay content/order changed')
                 append(args.root/(args.name+'-batches.jsonl'),dict(base,size=size,
                     successful_ops=args.samples, elapsed_ms=(time.perf_counter_ns()-start)/1e6))
     append(args.root/(args.name+'-processes.jsonl'),dict(base,**client.identity))
@@ -110,7 +113,8 @@ async def process_cohort(args,label,tool,block,references):
         for _ in range(args.concurrency):
             c=await stack.enter_async_context(Client(getattr(args,label),environment(state,service,otlp=not args.no_otlp)))
             response,record=await c.call(tool,query(tool,1))
-            assert record['outcome']=='success'
+            if not (record['outcome']=='success'):
+                raise RuntimeError('Continue setup failed')
             clients.append(c);cursors.append(response['result']['structuredContent']['pagination']['nextCursor'])
         for size in args.sizes:
             async def call(index):

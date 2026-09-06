@@ -193,8 +193,10 @@ class Functional:
         await self.call('calendars.delete',dict(href=collection))
         self.authoritative(collection,absent=True);self.owned.discard(collection)
         called={r['tool'] for r in self.records if 'tool' in r}
-        assert called=={t['name'] for t in catalog},called
-        assert verify(self.state)==expected_counts(self.root)
+        if not (called=={t['name'] for t in catalog}):
+            raise RuntimeError('Functional matrix did not cover the live catalog')
+        if not (verify(self.state)==expected_counts(self.root)):
+            raise RuntimeError('Corpus restoration failed')
 
 
 async def run(root,assembly):
@@ -210,7 +212,8 @@ async def run(root,assembly):
         finally:
             for href in f.owned:
                 status,_,_=request(state,'DELETE',urllib.parse.urlparse(href).path)
-                assert status in (200,204,404)
+                if not (status in (200,204,404)):
+                    raise RuntimeError('Owned fixture cleanup failed')
     (root/'functional-process.json').write_text(json.dumps(dict(client.identity,build_input=build_input),indent=2))
 
 

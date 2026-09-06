@@ -22,22 +22,26 @@ async def run(root,assembly):
 <C:prop-filter name="UID"><C:text-match collation="i;octet">{uid}</C:text-match></C:prop-filter>
 </C:comp-filter></C:comp-filter></C:filter></C:calendar-query>'''
     status,data,_=request(state,'REPORT','/perftest/todos/',body,{'Depth':'1'})
-    assert status==207
+    if not (status==207):
+        raise RuntimeError('Hermes fixture lookup failed')
     matches=[x for x in ET.fromstring(data).findall('{DAV:}response') if uid in ''.join(x.itertext())]
     checks=[dict(completed='STATUS:COMPLETED' in ''.join(x.itertext()),
                  summary_patched='SUMMARY:Hermes patched integration' in ''.join(x.itertext())) for x in matches]
-    assert len(checks)==1 and all(checks[0].values()),checks
+    if not (len(checks)==1 and all(checks[0].values())):
+        raise RuntimeError('Hermes persisted todo checks failed')
     (root/'hermes-authoritative.json').write_text(json.dumps(dict(http_status=status,matching_resources=1,checks=checks),indent=2))
     output=root/'hermes-direct-cleanup-final';output.mkdir()
     async with Client(assembly,environment(state,'caldav-perf-hermes-direct-cleanup-final')) as c:
         f=Functional(output,c,state)
         href=urllib.parse.urljoin(state['url'],matches[0].findtext('{DAV:}href'))
         snapshot=await f.read(href)
-        assert snapshot['entityRevision']['entityUid']==uid
+        if not (snapshot['entityRevision']['entityUid']==uid):
+            raise RuntimeError('Hermes fixture UID differs')
         await f.call('calendar_resources.delete',dict(revision=snapshot['entityRevision']))
         f.authoritative(href,absent=True)
     (output/'process.json').write_text(json.dumps(dict(c.identity,build_input=build_input),indent=2))
-    assert verify(state)==expected_counts(root)
+    if not (verify(state)==expected_counts(root)):
+        raise RuntimeError('Corpus restoration failed')
 
 
 if __name__=='__main__':
