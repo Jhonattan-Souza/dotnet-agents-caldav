@@ -20,7 +20,7 @@ using Xunit;
 
 namespace DotnetAgents.CalDav.Core.Tests.Unit.Services;
 
-public sealed class CalendarMetadataModuleTests
+public sealed partial class CalendarMetadataModuleTests
 {
     private const string Href = "https://cal.example/home/work/";
     private static readonly XNamespace Dav = "DAV:";

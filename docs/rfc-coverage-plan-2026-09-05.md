@@ -62,6 +62,12 @@ Checkpoints remain distinct from immutable query snapshot cursors.
   truthful error; never present a silently truncated response as complete.
 - Preserve the existing multiget batches and zero-remote-work query Continue
   behavior. Native sync transfers href/ETag deltas without calendar bodies.
+- Decode response XML using [RFC 7303 §3.2](https://datatracker.ietf.org/doc/html/rfc7303#section-3.2):
+  a byte-order mark takes precedence over the HTTP charset, followed by XML
+  encoding detection. Reject invalid encoded bytes before accepting protocol
+  evidence. Keep multiget streaming and apply response byte bounds after
+  decompression, before character decoding; discovery's aggregate budget counts
+  those bytes directly. Authoritative iCalendar resources retain their UTF-8 contract.
 - Interpret PROPPATCH status per requested property. A 207 response alone
   cannot prove success; ambiguous transport or malformed response truth cannot
   prove that a write did not commit.

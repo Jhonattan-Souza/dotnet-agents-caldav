@@ -28,7 +28,7 @@ internal static class CalendarMetadataProtocol
         CancellationToken cancellationToken = default)
     {
         RequireStatus(response, 207);
-        var properties = ReadProperties(href, response.Body);
+        var properties = ReadProperties(href, response.Body, response.CharSet);
         var resourceType = Value(properties, Dav + "resourcetype");
         if (resourceType is null)
             throw PropertyFailure(properties.GetValueOrDefault(Dav + "resourcetype")?.StatusCode);
@@ -56,9 +56,9 @@ internal static class CalendarMetadataProtocol
             new CalendarSchedulingObservation("unknown", null)));
     }
 
-    internal static IReadOnlyDictionary<XName, CalendarMetadataProperty> ReadProperties(string href, byte[] body)
+    internal static IReadOnlyDictionary<XName, CalendarMetadataProperty> ReadProperties(string href, byte[] body, string? charset = null)
     {
-        var root = ParseXml(body).Root;
+        var root = ParseXml(body, charset).Root;
         if (root?.Name != Dav + "multistatus")
             throw ProtocolError();
         var responses = root.Elements(Dav + "response").ToArray();
@@ -114,16 +114,14 @@ internal static class CalendarMetadataProtocol
         }
     }
 
-    private static XDocument ParseXml(byte[] body)
+    private static XDocument ParseXml(byte[] body, string? charset)
     {
-        using var stream = new MemoryStream(body, writable: false);
-        using var reader = XmlReader.Create(stream, new XmlReaderSettings
+        var document = XmlResponseReader.Load(body, charset, new XmlReaderSettings
         {
             DtdProcessing = DtdProcessing.Prohibit,
             XmlResolver = null,
             MaxCharactersInDocument = 4 * 1024 * 1024
-        });
-        var document = XDocument.Load(reader, LoadOptions.PreserveWhitespace);
+        }, LoadOptions.PreserveWhitespace);
         if (document.Descendants().Any(element => element.Ancestors().Take(65).Count() > 64))
             throw ProtocolError();
         return document;

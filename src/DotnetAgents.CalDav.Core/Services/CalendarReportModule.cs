@@ -49,7 +49,7 @@ internal sealed class CalendarReportModule(
         CalendarOperationProgress.SetPhase(CalendarOperationPhase.Fetch);
         var (response, omitLimit) = await SendSyncReportAsync(state, request.PageSize, deadline.Token).ConfigureAwait(false);
         EnsureSuccessful(response, state.CalendarHref, 207);
-        var page = CalendarSyncReportParser.Parse(response.Body, state.CalendarHref, state.SyncToken, request.PageSize, deadline.Token);
+        var page = CalendarSyncReportParser.Parse(response.Body, state.CalendarHref, state.SyncToken, request.PageSize, deadline.Token, response.CharSet);
         if (checkpoints.ConfigurationBinding(options.Value) != binding)
             throw new CalendarProtocolException("sync_reset_required", "The Calendar configuration changed. Start again with calendarHref and no checkpoint.");
         var checkpoint = checkpoints.Protect(state with
@@ -87,7 +87,7 @@ internal sealed class CalendarReportModule(
             return false;
         try
         {
-            var root = CalendarSyncReportParser.ReadXml(response.Body);
+            var root = CalendarSyncReportParser.ReadXml(response.Body, response.CharSet);
             var conditions = root.Elements().Where(element => element.Name.Namespace == Dav).Take(2).ToArray();
             return root.Name == Dav + "error" && conditions.Length == 1
                 && IsLimitPrecondition(conditions[0]);
@@ -149,7 +149,7 @@ internal sealed class CalendarReportModule(
         XElement root;
         try
         {
-            root = CalendarSyncReportParser.ReadXml(response.Body);
+            root = CalendarSyncReportParser.ReadXml(response.Body, response.CharSet);
         }
         catch (XmlException)
         {

@@ -16,9 +16,10 @@ internal static class CalendarSyncReportParser
         string calendarHref,
         string priorToken,
         int pageSize,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? charset = null)
     {
-        var root = ReadXml(body);
+        var root = ReadXml(body, charset);
         if (root.Name != Dav + "multistatus")
             throw InvalidResponse();
         var syncToken = ReadSyncToken(root);
@@ -41,16 +42,15 @@ internal static class CalendarSyncReportParser
         return new(changes, syncToken, hasMore);
     }
 
-    internal static XElement ReadXml(byte[] body)
+    internal static XElement ReadXml(byte[] body, string? charset = null)
     {
-        using var stream = new MemoryStream(body, writable: false);
-        using var reader = XmlReader.Create(stream, new XmlReaderSettings
+        var document = XmlResponseReader.Load(body, charset, new XmlReaderSettings
         {
             DtdProcessing = DtdProcessing.Prohibit,
             XmlResolver = null,
             MaxCharactersInDocument = 4 * 1024 * 1024
         });
-        return XDocument.Load(reader).Root ?? throw InvalidResponse();
+        return document.Root ?? throw InvalidResponse();
     }
 
     private static string ReadSyncToken(XElement root)

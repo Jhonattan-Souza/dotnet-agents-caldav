@@ -61,7 +61,8 @@ internal sealed partial class CalDavClient
             response.RequestMessage?.RequestUri?.AbsoluteUri ?? href,
             content.Content,
             response.Content.Headers.ContentType?.MediaType,
-            response.Headers.TryGetValues("DAV", out var compliance) ? compliance.ToArray() : []);
+            response.Headers.TryGetValues("DAV", out var compliance) ? compliance.ToArray() : [],
+            response.Content.Headers.ContentType?.CharSet);
     }
 }
 
@@ -70,4 +71,5 @@ internal sealed record CalendarProtocolResponse(
     string RequestHref,
     byte[] Body,
     string? ContentType,
-    IReadOnlyList<string> DavCompliance);
+    IReadOnlyList<string> DavCompliance,
+    string? CharSet = null);

@@ -27,22 +27,28 @@ internal static class DavResponseParser
 
     /// <summary>Parses all successful calendar-home-set hrefs.</summary>
     public static IReadOnlyList<string> ParseCalendarHomeSets(string multistatusXml) =>
-        ParsePropertyHrefs(multistatusXml, CalDav + "calendar-home-set");
+        ParseCalendarHomeSets(ParseDocument(multistatusXml));
+
+    internal static IReadOnlyList<string> ParseCalendarHomeSets(XDocument document) =>
+        ParsePropertyHrefs(document, CalDav + "calendar-home-set");
 
     public static string? ParseCalendarHomeSet(string multistatusXml) =>
         ParseCalendarHomeSets(multistatusXml).FirstOrDefault();
 
     /// <summary>Parses successful current-user-principal evidence.</summary>
     public static string? ParseCurrentUserPrincipal(string multistatusXml) =>
-        ParsePropertyHrefs(multistatusXml, Dav + "current-user-principal") switch
+        ParseCurrentUserPrincipal(ParseDocument(multistatusXml));
+
+    internal static string? ParseCurrentUserPrincipal(XDocument document) =>
+        ParsePropertyHrefs(document, Dav + "current-user-principal") switch
         {
             [] => null,
             [var href] => href,
             _ => throw new XmlException("A WebDAV response contains conflicting principal hrefs.")
         };
 
-    private static IReadOnlyList<string> ParsePropertyHrefs(string xml, XName property) =>
-        ResponseElements(ParseDocument(xml))
+    private static IReadOnlyList<string> ParsePropertyHrefs(XDocument document, XName property) =>
+        ResponseElements(document)
             .Select(response => GetSuccessfulProperty(response, property))
             .OfType<XElement>()
             .SelectMany(value => value.Elements(Dav + "href"))
@@ -53,7 +59,10 @@ internal static class DavResponseParser
 
     /// <summary>Reads direct collection members without trusting failed property values.</summary>
     internal static IReadOnlyList<CalendarDiscoveryMember> ParseCollectionMembers(string xml) =>
-        ResponseElements(ParseDocument(xml))
+        ParseCollectionMembers(ParseDocument(xml));
+
+    internal static IReadOnlyList<CalendarDiscoveryMember> ParseCollectionMembers(XDocument document) =>
+        ResponseElements(document)
             .Select(ParseCollectionMember)
             .OfType<CalendarDiscoveryMember>()
             .ToArray();
@@ -77,8 +86,10 @@ internal static class DavResponseParser
 
     /// <summary>Parses successful Calendar Object Resource hrefs from a REPORT multistatus.</summary>
     public static IReadOnlyList<string> ParseCalendarResourceHrefs(string multistatusXml)
+        => ParseCalendarResourceHrefs(ParseDocument(multistatusXml));
+
+    internal static IReadOnlyList<string> ParseCalendarResourceHrefs(XDocument document)
     {
-        var document = ParseDocument(multistatusXml);
         return ResponseElements(document)
             .Select(TryParseCalendarResourceHref)
             .OfType<string>()
@@ -100,44 +111,51 @@ internal static class DavResponseParser
     {
         try
         {
-            var document = ParseDocument(responseXml);
-            return document.Descendants().Any(element =>
-                element.Name.Namespace == CalDav
-                && element.Name.LocalName is "supported-filter" or "supported-collation");
+            return IsSupportedFilterError(ParseDocument(responseXml));
         }
         catch (XmlException)
         {
             return false;
         }
     }
+
+    internal static bool IsSupportedFilterError(byte[] body, string? charset)
+    {
+        try
+        {
+            return IsSupportedFilterError(ParseDocument(body, charset));
+        }
+        catch (XmlException)
+        {
+            return false;
+        }
+    }
+
+    private static bool IsSupportedFilterError(XDocument document) => document.Descendants().Any(element =>
+        element.Name.Namespace == CalDav && element.Name.LocalName is "supported-filter" or "supported-collation");
 
     /// <summary>Recognizes the CalDAV precondition that prevents duplicate UIDs in one Calendar.</summary>
     public static bool IsNoUidConflictError(string responseXml)
     {
         try
         {
-            var document = ParseDocument(responseXml);
-            return document.Descendants().Any(element =>
-                element.Name.Namespace == CalDav
-                && element.Name.LocalName == "no-uid-conflict");
+            return IsNoUidConflictError(ParseDocument(responseXml));
         }
         catch (XmlException)
         {
             return false;
         }
     }
+
+    internal static bool IsNoUidConflictError(XDocument document) => document.Descendants().Any(element =>
+        element.Name.Namespace == CalDav && element.Name.LocalName == "no-uid-conflict");
 
     /// <summary>Recognizes bounded DAV/CalDAV errors that state the requested operation is unsupported.</summary>
     public static bool IsUnsupportedCapabilityError(string responseXml)
     {
         try
         {
-            var document = ParseDocument(responseXml);
-            return document.Descendants().Any(element =>
-                element.Name.Namespace == CalDav
-                    && element.Name.LocalName is "supported-calendar-data" or "supported-calendar-component"
-                || element.Name.Namespace == Dav
-                    && element.Name.LocalName is "supported-method" or "supported-report");
+            return IsUnsupportedCapabilityError(ParseDocument(responseXml));
         }
         catch (XmlException)
         {
@@ -145,21 +163,40 @@ internal static class DavResponseParser
         }
     }
 
+    internal static bool IsUnsupportedCapabilityError(XDocument document) => document.Descendants().Any(element =>
+        element.Name.Namespace == CalDav
+            && element.Name.LocalName is "supported-calendar-data" or "supported-calendar-component"
+        || element.Name.Namespace == Dav
+            && element.Name.LocalName is "supported-method" or "supported-report");
+
     /// <summary>Recognizes only Calendar multiget-specific unsupported REPORT preconditions.</summary>
     internal static bool IsCalendarMultigetUnsupportedError(string responseXml)
     {
         try
         {
-            var error = ParseDocument(responseXml).Root;
-            return error?.Name == Dav + "error" && error.Elements().Any(element =>
-                element.Name == CalDav + "supported-calendar-data"
-                || element.Name == Dav + "supported-report");
+            return IsCalendarMultigetUnsupportedError(ParseDocument(responseXml));
         }
         catch (XmlException)
         {
             return false;
         }
     }
+
+    internal static bool IsCalendarMultigetUnsupportedError(byte[] body, string? charset)
+    {
+        try
+        {
+            return IsCalendarMultigetUnsupportedError(ParseDocument(body, charset));
+        }
+        catch (XmlException)
+        {
+            return false;
+        }
+    }
+
+    private static bool IsCalendarMultigetUnsupportedError(XDocument document) => document.Root is { } error
+        && error.Name == Dav + "error" && error.Elements().Any(element =>
+            element.Name == CalDav + "supported-calendar-data" || element.Name == Dav + "supported-report");
 
     private static string? TryParseCalendarResourceHref(XElement response)
     {
@@ -245,7 +282,22 @@ internal static class DavResponseParser
         using var textReader = new StringReader(xml);
         using var xmlReader = XmlReader.Create(textReader, settings);
         var document = XDocument.Load(xmlReader, LoadOptions.PreserveWhitespace);
-        if (document.Descendants().Any(element => element.Ancestors().Count() > MaxXmlDepth))
+        return ValidateDocumentDepth(document);
+    }
+
+    internal static XDocument ParseDocument(byte[] body, string? charset)
+    {
+        var document = XmlResponseReader.Load(body, charset, new XmlReaderSettings
+        {
+            MaxCharactersInDocument = MaxXmlCharacters,
+            MaxCharactersFromEntities = 0
+        }, LoadOptions.PreserveWhitespace);
+        return ValidateDocumentDepth(document);
+    }
+
+    private static XDocument ValidateDocumentDepth(XDocument document)
+    {
+        if (document.Descendants().Any(element => element.Ancestors().Take(MaxXmlDepth + 1).Count() > MaxXmlDepth))
             throw new XmlException("The WebDAV response exceeds the safe XML depth limit.");
         return document;
     }

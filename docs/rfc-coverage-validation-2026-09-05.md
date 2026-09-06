@@ -1,4 +1,4 @@
-# RFC collection operations: live validation, 2026-09-05
+# RFC collection operations: live validation, 2026-09-05 to 2026-09-06
 
 The [RFC coverage plan](rfc-coverage-plan-2026-09-05.md) selected four native
 collection tools, bounded discovery across calendar homes, and a storage-only
@@ -54,6 +54,23 @@ Fourth review-fix build SHA-256 identities:
 - Core: `6674df38e828f167db95728d91b042a07442bcb906380b1484d6fbde382c76dd`
 - Product/build input snapshot (177 files): `bc7cc962f9519687767a80f78a00e8123ea21fba661f37a98385eb7087b541c6`
 
+Fifth review's XML encoding build SHA-256 identities:
+
+- MCP: `afc01dc0083b8c56e6f3c5c04d3646a4b015896452cfb87c7d5cafecda830e33`
+- Core: `92ce9ff6e764f14db49c80def9e04bc0fb398879418dfcb90e0b69fbfc43115d`
+- Product/build input snapshot (180 files): `544e53ce1f0a83229c55fca1004d99558a92dd38a7b513043418f874e2004168`
+
+Final build, including Unicode metadata limits:
+
+- MCP: `7f132bf22affd4d3d0bcae7c63da03965083a177fb6046a225b4b0dcbf5b92c1`
+- Core: `a19c07f93011f2fd23407f7d71cae8847ed4ba70a419791647f748cfc54feb1a`
+- Product/build input snapshot (180 files): `9a8d3b28fdd4dd85441cbb462b965f8e0838bce469f508a36ca2507cbe91fe03`
+
+Independent probes used Release assemblies from this final source:
+
+- MCP: `48dd0032727f8e2d1828564bf815464c82a02e7265979a7588589cad08a1fdaf`
+- Core: `bb4d6960235edd6124ebfc58333ef61b730d6b1b5995778f625686898ae8bb0f`
+
 The Radicale lane enabled its existing verified Move profile. Baikal and
 Nextcloud left the profile unset. Nextcloud used exact configured Calendar
 scope and a fresh disposable user after repeated setup reached its default
@@ -62,11 +79,11 @@ calendar-creation rate limit. Server limits were left at their defaults.
 ## Automated gates
 
 - Clean, nonincremental Release build: zero warnings and errors.
-- Full suite: Core 2,992; MCP 1,126; integration 113; strict-preconditions 11;
-  alternate-time-zone 11. All 4,253 passed; zero skipped tests.
-- Aggregate coverage: 94.6% line and 86.3% branch; both required gates passed.
-- Slopwatch: zero issues, including the method-complexity gate.
-- Package `0.0.0-rfcvalidation.7`: verified NuGet and symbols archives, matching
+- Full suite: Core 3,118; MCP 1,136; integration 113; strict-preconditions 11;
+  alternate-time-zone 11. All 4,389 passed; zero skipped tests.
+- Aggregate coverage: 94.6% line and 86.4% branch; both required gates passed.
+- Slopwatch: zero issues across 307 files, including the method-complexity gate.
+- Package `0.0.0-rfcvalidation.9`: verified NuGet and symbols archives, matching
   root/tool MCP metadata, exact bundled skill, local tool install, and one
   passing package smoke test. Source metadata versions remain `0.0.0`.
 - Bundled skill validation, Python harness compilation, and `git diff --check`
@@ -202,10 +219,66 @@ URI validation made zero requests to the test endpoint. Native four-tool checks
 and representative legacy reads passed on all three runtimes; fixtures were
 restored afterward.
 
+The fifth review found forced UTF-8 decoding in discovery. The correction applies
+[RFC 7303 §3.2](https://datatracker.ietf.org/doc/html/rfc7303#section-3.2)
+across XML readers: a byte-order mark takes precedence over the HTTP charset,
+followed by XML encoding detection. Metadata, sync, PROPPATCH acknowledgements,
+and DAV error conditions retain their response charset. Discovery counts actual
+decompressed bytes and parses each response once. Multiget retains streaming,
+bounded encoding lookahead, resource/envelope limits, and cancellation during
+network reads. Strict validation rejects invalid declaration-selected bytes
+that the runtime would otherwise replace, including ASCII and a UTF-8 alias.
+The 89-case independent probe passed completely; the earlier build failed 72.
+
+[XML 1.0 §4.3.3](https://www.w3.org/TR/xml/#charencoding) requires UTF-8 and
+UTF-16 support. Additional encodings depend on the runtime. It rejects valid
+BOM-less big-endian XML declared only as `utf-32`; an explicit `utf-32BE`
+declaration or a byte-order mark works. UTF-32 support is optional under
+[RFC 7303 Appendix C.3](https://datatracker.ietf.org/doc/html/rfc7303#appendix-C.3).
+
+The encoding build repeated all 27 tools on each runtime and three checkpoint
+restart checks, then passed 61 encoding/fault calls and 11 earlier-build
+comparisons. All 342 accepted calls matched unique traces containing 3,320 spans;
+their 3,429 captured spans include 109 startup/other spans. Full output-schema
+checks covered 70 terminal results, and 62 error results matched their traces'
+phase, code and mutation state. The faults covered encoding precedence, Unicode
+names/hrefs/ETags, malformed bytes after an earlier valid multiget resource,
+gzip, decompressed discovery limits, sync retry/replay, and encoded DAV errors.
+Ambiguous property acknowledgements preserved uncertain write outcomes.
+
+Separately, 71 diagnostic calls produced 849 captured spans: 843 call spans and
+six startup/other spans. A 67-call Radicale run stopped after its sole PROPPATCH
+lost the HTTP response (`response_ended`, no status, no retry). One reconciliation
+PROPFIND succeeded; the tool correctly remained `indeterminate` / `unknown`.
+The original runner did not persist that failed process's identity, so its
+expected launched build is recorded without claiming actual process attestation.
+Two additional harness mistakes concerned an existing bounded GET fallback and
+an earlier build's unsupported Latin1 corrective response. Corrected runs retain
+separate identities. The shipped harness now saves available process identity
+after context exit even when a scenario or shutdown fails; failure-path checks
+verified this change. Native fixture metadata and resource counts were restored.
+
+A final contract check found that metadata text limits counted UTF-16 units,
+rejecting schema-valid supplementary characters. The final build counts Unicode
+scalar values with bounded early exit, retaining XML character validation and
+the constant-time fast path for short values. Its Release assemblies passed 20
+additional independent checks; the encoding build failed six. Those same Release
+assemblies also passed the 89 encoding checks, for 109 independent checks against
+the final source with no remaining findings.
+
+The final build passed 24 native metadata calls plus six comparisons with the
+encoding build. All 30 calls matched traces containing 162 spans; 174 captured
+spans include 12 startup spans and no diagnostics. All 30 output schemas and 24
+input character-constraint checks passed. Each server persisted and returned
+exact 256/4,096-scalar values; 257/4,097-scalar inputs failed before HTTP. All 12
+refusal results matched their trace phases. Nine writes, including restoration,
+each dispatched one PROPPATCH. Seeded metadata and resource counts were restored.
+
 ## Every catalog operation
 
-The live driver called all 27 candidate tools on each runtime, including raw
-Exact operations. MRTR fixture confirmations were completed through MCP.
+The live driver called all 27 candidate tools on each runtime in the initial
+candidate and again in the XML encoding build, including raw Exact operations.
+Both runs produced the counts below. MRTR fixture confirmations were completed through MCP.
 Independent HTTP reads verified mutation postconditions. Expected errors were
 asserted explicitly; calling every tool does not mean every runtime supports
 every successful mutation.
@@ -298,11 +371,15 @@ There is no vendor-specific trash-name exception.
 ## Performance observations
 
 The eight initial measurement runs covered 933 calls. Six compact-checkpoint
-sync runs added 186, and direct runs on the second, third and fourth review-fix
-builds added 237 each: **1,830 measured performance calls**, each matched to
+sync runs added 186, and direct runs on the second, third, fourth and final
+review-fix builds added 237 each: **2,067 measured performance calls**, each matched to
 Aspire. One read retry occurred on the third build and recovered successfully;
 no write was replayed. The final 237 had zero retries. Their accepted operation
 traces contain 1,393 spans, plus 12 startup/other spans for 1,405 captured total.
+Those calls used 397 HTTP attempts across 12 clean MCP processes: 221 successes
+and 16 expected Radicale free/busy protocol failures. All 48 metadata patches
+committed with exactly one PROPPATCH each. An offline exporter label-comparison
+mistake was corrected without repeating or discarding live measurements.
 Runs were sequential; builds, the test suite and Hermes inference were kept
 outside the timing windows.
 
@@ -315,23 +392,23 @@ Aspire attempt counts. Separate direct runs used one fresh process per operation
 and 15 repeated calls. First-call measurements exclude MCP startup and protocol
 initialization; the records include both first-call and repeated-call results.
 
-The table gives direct p50 / p95 milliseconds on the fourth review-fix build
+The table gives direct p50 / p95 milliseconds on the final build
 at 100 resources with explicit Calendar scope, 15 repeated calls per cell.
 Earlier measurements remain in the machine-readable evidence with their
 separate source and assembly identities.
 
 | Operation | Radicale | Baikal | Nextcloud |
 | --- | ---: | ---: | ---: |
-| Inspect | 6.70 / 45.92 | 8.94 / 17.98 | 33.32 / 39.68 |
-| Metadata patch | 12.45 / 15.85 | 19.84 / 32.24 | 59.69 / 64.37 |
-| Free/busy | 65.39 / 67.90 (rejected) | 31.64 / 44.99 | 30.03 / 606.42 |
-| Initial sync | 39.27 / 47.12 | 18.22 / 40.37 | 46.75 / 59.72 |
-| Unchanged sync | 16.65 / 17.95 | 5.40 / 7.24 | 17.32 / 24.09 |
+| Inspect | 6.57 / 10.00 | 10.17 / 13.90 | 33.33 / 39.34 |
+| Metadata patch | 12.73 / 17.00 | 20.29 / 29.80 | 56.64 / 61.68 |
+| Free/busy | 65.34 / 67.30 (rejected) | 32.18 / 45.81 | 29.30 / 612.43 |
+| Initial sync | 40.38 / 47.52 | 18.01 / 41.40 | 45.00 / 57.03 |
+| Unchanged sync | 16.15 / 17.54 | 5.12 / 6.71 | 17.39 / 19.09 |
 
-Radicale free/busy timing measures rejection of malformed content. Its final
-inspection p95 includes a 45.92 ms call with two HTTP requests and no retry;
-Nextcloud free/busy includes a 606.42 ms call with one REPORT and no retry.
-Both samples remain in the stated p95. The third build's 287.19 ms metadata
+Radicale free/busy timing measures rejection of malformed content. The final
+Nextcloud free/busy p95 includes a 612.43 ms call with one REPORT and no retry.
+The fourth build's 45.92 ms inspection and 606.42 ms free/busy samples remain
+in their original distributions. The third build's 287.19 ms metadata
 patch had an interrupted reconciliation PROPFIND (`response_ended`) that
 recovered on one read retry, with one PROPPATCH and success/committed. That
 observation and the earlier Nextcloud free/busy tails of 626.46 and 606.13 ms
