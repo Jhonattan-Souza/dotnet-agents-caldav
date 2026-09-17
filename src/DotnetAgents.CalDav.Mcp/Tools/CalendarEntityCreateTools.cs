@@ -32,7 +32,7 @@ public sealed class CalendarEntityCreateTools
         OpenWorld = true,
         UseStructuredContent = true,
         OutputSchemaType = typeof(CalendarEntityCreateSuccessResult)),
-     Description("Create one typed Event in the default or explicitly selected Calendar.")]
+     Description("Create one typed Event in the default or explicitly selected Calendar. A timed Event without an explicit end or duration defaults to PT1H; a date-only Event remains one nominal day.")]
     public Task<CallToolResult> CreateEventAsync(
         RequestContext<CallToolRequestParams> requestContext,
         CancellationToken cancellationToken) =>
