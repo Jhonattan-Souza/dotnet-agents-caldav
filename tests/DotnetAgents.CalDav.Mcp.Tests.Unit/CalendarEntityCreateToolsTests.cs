@@ -813,6 +813,50 @@ public sealed class CalendarEntityCreateToolsTests
             Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task CreateEventRawAsync_DefaultsTimedEventDurationThroughParserAndService()
+    {
+        const string calendarHref = "https://cal.example/events/";
+        const string resourceHref = "https://cal.example/events/mcp-default-duration.ics";
+        var client = Substitute.For<ICalendarClient>();
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
+            new CalendarDescriptor
+            {
+                Href = calendarHref,
+                DisplayName = "Events",
+                DisplayNameProvenance = DisplayNameProvenance.DavDisplayName,
+                EventSupport = EntityKindSupport.Advertised,
+                TodoSupport = EntityKindSupport.NotAdvertised
+            }
+        ]);
+        CalendarResourceCreateRequest? dispatched = null;
+        client.CreateCalendarResourceAsync(
+                Arg.Do<CalendarResourceCreateRequest>(request => dispatched = request),
+                Arg.Any<CancellationToken>())
+            .Returns(CalendarResourceCreateResult.Dispatched(resourceHref));
+        client.GetCalendarResourceAsync(resourceHref, Arg.Any<CancellationToken>()).Returns(_ =>
+            CalendarResourceRead.Success(resourceHref, "\"r1\"", dispatched!.AuthoritativeUtf8));
+        using var serviceHost = CalendarServiceTestHost.Create(
+            client,
+            options =>
+            {
+                options.BaseUrl = "https://cal.example";
+                options.DefaultEventCalendarName = "Events";
+            });
+        var sut = new CalendarEntityCreateTools(serviceHost.Service, TimeProvider.System);
+        var arguments = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+            """
+            {"destination":{"mode":"default"},"entity":{"kind":"event","uid":"mcp-default-duration","fields":{"start":{"kind":"utcDateTime","value":"2026-08-17T13:00:00Z"}}}}
+            """);
+
+        var result = await sut.CreateEventRawAsync(arguments, CancellationToken.None);
+
+        result.IsError.ShouldBe(false);
+        var content = Encoding.UTF8.GetString(dispatched!.AuthoritativeUtf8.Span);
+        content.ShouldContain("DURATION:PT1H\r\n");
+        content.ShouldNotContain("DTEND");
+    }
+
     [Theory]
     [InlineData("PT2H")]
     [InlineData("P1W")]

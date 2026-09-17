@@ -185,6 +185,7 @@ public sealed class CalendarEntityPatchMatrixTests
                 "2026-08-21T12:00:00Z")))), CancellationToken.None);
         pointResult.Code.ShouldBe(CalendarEntityPatchCode.Success);
         pointOutbound().ShouldNotContain("DTEND");
+        pointOutbound().ShouldNotContain("DURATION");
     }
 
     [Theory]

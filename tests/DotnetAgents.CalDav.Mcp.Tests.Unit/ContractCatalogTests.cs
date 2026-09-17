@@ -208,6 +208,10 @@ public sealed class ContractCatalogTests
             .ShouldBe("#/$defs/deleteInput");
         FindTool(catalog, "events.create")["inputSchema"]!["$ref"]!.GetValue<string>()
             .ShouldBe("#/$defs/eventCreateInput");
+        FindTool(catalog, "events.create")["description"]!.GetValue<string>()
+            .ShouldContain("timed Event without an explicit end or duration defaults to PT1H");
+        FindTool(catalog, "events.create")["description"]!.GetValue<string>()
+            .ShouldContain("date-only Event remains one nominal day");
         FindTool(catalog, "todos.create")["inputSchema"]!["$ref"]!.GetValue<string>()
             .ShouldBe("#/$defs/todoCreateInput");
         FindTool(catalog, "events.patch")["inputSchema"]!["$ref"]!.GetValue<string>()

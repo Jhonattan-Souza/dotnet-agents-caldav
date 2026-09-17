@@ -76,7 +76,7 @@ client-specific commands.
 - `calendar_occurrences.query` — Start one bounded Event and To-do Occurrence query under an explicit caller or configured IANA Temporal Evaluation Context, or continue its immutable Query Result Snapshot with no CalDAV or recurrence work.
 - `todos.query` — Start a compact normalized To-do query over one authoritative VTODO-only corpus, or continue its immutable Query Result Snapshot without remote or semantic re-execution. Every Start requires a caller or configured IANA Temporal Evaluation Context.
 - `calendar_resources.get` — Read an authoritative semantic-or-opaque snapshot by confirmed absolute href.
-- `events.create` — Create one Event in a selected Calendar.
+- `events.create` — Create one Event in a selected Calendar. Timed Events without an explicit `end` or `duration` default to `PT1H`; date-only Events remain one nominal day.
 - `events.patch` — Apply a revision-bound semantic patch to one Event resource.
 - `todos.create` — Create one To-do in a selected Calendar.
 - `todos.patch` — Apply a revision-bound semantic patch to one To-do resource.

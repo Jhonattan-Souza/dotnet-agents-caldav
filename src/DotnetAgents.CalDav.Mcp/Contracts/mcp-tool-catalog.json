@@ -3073,7 +3073,7 @@
         "idempotentHint": false,
         "openWorldHint": true
       },
-      "description": "Create one typed Event in the default or explicitly selected Calendar."
+      "description": "Create one typed Event in the default or explicitly selected Calendar. A timed Event without an explicit end or duration defaults to PT1H; a date-only Event remains one nominal day."
     },
     {
       "name": "events.patch",

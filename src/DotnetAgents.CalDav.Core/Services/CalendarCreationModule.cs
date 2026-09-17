@@ -19,6 +19,7 @@ internal sealed class CalendarCreationModule(
     private const int MaximumDiagnostics = 32;
     private const int MaximumCalendarResourceBytes = 4 * 1024 * 1024;
     private const string ExactCreatePolicyVersion = "1";
+    private const string DefaultTimedEventDuration = "PT1H";
     private static readonly TimeSpan PreDispatchBudget = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan ReconciliationBudget = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan MutationExecutionBudget = TimeSpan.FromSeconds(60);
@@ -78,19 +79,24 @@ internal sealed class CalendarCreationModule(
     {
         if (!IsValidEventCreateRequest(request))
             return Failure(CalendarEntityCreateCode.InvalidInput);
-        var prevalidation = PrevalidateEventRequest(request);
+        var normalizedRequest = WithDefaultTimedEventDuration(request);
+        var prevalidation = PrevalidateEventRequest(normalizedRequest);
         if (prevalidation is not null)
             return prevalidation;
 
-        var selection = await SelectCalendarAsync(request.Destination, CalendarEntityKind.Event, cancellationToken);
+        var selection = await SelectCalendarAsync(normalizedRequest.Destination, CalendarEntityKind.Event, cancellationToken);
         if (selection.Code != CalendarSelectionCode.Success)
             return SelectionFailure(selection);
         if (selection.Calendar!.EventSupport != EntityKindSupport.Advertised)
             return Failure(CalendarEntityCreateCode.UnsupportedCapability, selection.Candidates);
-        var contentValidation = PrevalidateEventContent(request);
+        var contentValidation = PrevalidateEventContent(normalizedRequest);
         if (contentValidation is not null)
             return contentValidation;
-        return await CreateEventInCalendarAsync(selection.Calendar, request, startedTimestamp, cancellationToken);
+        return await CreateEventInCalendarAsync(
+            selection.Calendar,
+            normalizedRequest,
+            startedTimestamp,
+            cancellationToken);
     }
 
     private async Task<CalendarEntityCreateResult> CreateTodoCoreAsync(
@@ -425,6 +431,32 @@ internal sealed class CalendarCreationModule(
             request.Uid ?? "generated-uid",
             request.Fields,
             timeProvider.GetUtcNow()));
+
+    private static CalendarEventCreateRequest WithDefaultTimedEventDuration(CalendarEventCreateRequest request)
+    {
+        var fields = WithDefaultTimedEventDuration(request.Fields);
+        if (fields.RecurrenceSet?.Overrides is not { Count: > 0 } overrides)
+            return request with { Fields = fields };
+        var normalizedOverrides = overrides
+            .Select(item => item with { Fields = WithDefaultTimedEventDuration(item.Fields) })
+            .ToArray();
+        return request with
+        {
+            Fields = fields with
+            {
+                RecurrenceSet = fields.RecurrenceSet with { Overrides = normalizedOverrides }
+            }
+        };
+    }
+
+    private static CalendarEventCreateFields WithDefaultTimedEventDuration(CalendarEventCreateFields fields) =>
+        fields.Start?.Kind is CalendarTemporalKind.FloatingDateTime
+            or CalendarTemporalKind.UtcDateTime
+            or CalendarTemporalKind.ZonedDateTime
+        && fields.End is null
+        && fields.Duration is null
+            ? fields with { Duration = DefaultTimedEventDuration }
+            : fields;
 
     private static CalendarEntityCreateResult? PrevalidateRecurrenceCapability(string? rule) =>
         CalendarEntityCreateValidator.RequiresUnsupportedRecurrenceScale(rule)
