@@ -3,16 +3,23 @@
   "isRoot": true,
   "tools": {
     "slopwatch.cmd": {
-      "version": "0.4.0",
+      "version": "0.4.2",
       "commands": [
         "slopwatch"
       ],
       "rollForward": false
     },
     "dotnet-reportgenerator-globaltool": {
-      "version": "5.5.6",
+      "version": "5.5.11",
       "commands": [
         "reportgenerator"
+      ],
+      "rollForward": false
+    },
+    "dotnet-outdated-tool": {
+      "version": "4.8.1",
+      "commands": [
+        "dotnet-outdated"
       ],
       "rollForward": false
     }
