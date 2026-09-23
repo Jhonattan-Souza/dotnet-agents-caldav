@@ -666,7 +666,7 @@ public sealed class OpenTelemetryStdioIntegrationTests
                     {
                         ["io.modelcontextprotocol/protocolVersion"] = "2026-07-28",
                         ["io.modelcontextprotocol/clientInfo"] = new { name = "privacy-test", version = "1" },
-                        ["io.modelcontextprotocol/clientCapabilities"] = new { }
+                        ["io.modelcontextprotocol/clientCapabilities"] = new { elicitation = new { form = new { } } }
                     },
                     name = "calendar_resources.delete",
                     arguments = new
@@ -794,7 +794,7 @@ public sealed class OpenTelemetryStdioIntegrationTests
                     {
                         ["io.modelcontextprotocol/protocolVersion"] = "2026-07-28",
                         ["io.modelcontextprotocol/clientInfo"] = new { name = "telemetry-delete", version = "1" },
-                        ["io.modelcontextprotocol/clientCapabilities"] = new { }
+                        ["io.modelcontextprotocol/clientCapabilities"] = new { elicitation = new { form = new { } } }
                     },
                     name = "calendar_resources.delete",
                     arguments
@@ -926,7 +926,7 @@ public sealed class OpenTelemetryStdioIntegrationTests
                     {
                         ["io.modelcontextprotocol/protocolVersion"] = "2026-07-28",
                         ["io.modelcontextprotocol/clientInfo"] = new { name = "telemetry-review", version = "1" },
-                        ["io.modelcontextprotocol/clientCapabilities"] = new { }
+                        ["io.modelcontextprotocol/clientCapabilities"] = new { elicitation = new { form = new { } } }
                     },
                     name = "calendar_resources.exact_create",
                     arguments = new

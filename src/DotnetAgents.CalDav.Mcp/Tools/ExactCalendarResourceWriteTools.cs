@@ -56,12 +56,16 @@ internal sealed class ExactCalendarResourceWriteTools
     public Task<CallToolResult> CreateAsync(
         RequestContext<CallToolRequestParams> requestContext,
         McpServer server,
-        CancellationToken cancellationToken) => CreateRawAsync(
+        CancellationToken cancellationToken)
+    {
+        CalendarMrtrCapabilityGuard.RequireConfirmationCapability(requestContext, server);
+        return CreateRawAsync(
             requestContext.Params?.Arguments,
             requestContext.Params?.RequestState,
             requestContext.Params?.InputResponses,
             server.IsMrtrSupported,
             cancellationToken);
+    }
 
     [McpServerTool(
         Name = "calendar_resources.exact_replace",
@@ -75,12 +79,16 @@ internal sealed class ExactCalendarResourceWriteTools
     public Task<CallToolResult> ReplaceAsync(
         RequestContext<CallToolRequestParams> requestContext,
         McpServer server,
-        CancellationToken cancellationToken) => ReplaceRawAsync(
+        CancellationToken cancellationToken)
+    {
+        CalendarMrtrCapabilityGuard.RequireConfirmationCapability(requestContext, server);
+        return ReplaceRawAsync(
             requestContext.Params?.Arguments,
             requestContext.Params?.RequestState,
             requestContext.Params?.InputResponses,
             server.IsMrtrSupported,
             cancellationToken);
+    }
 
     [McpServerTool(
         Name = "calendar_resources.exact_move",
@@ -94,12 +102,16 @@ internal sealed class ExactCalendarResourceWriteTools
     public Task<CallToolResult> MoveAsync(
         RequestContext<CallToolRequestParams> requestContext,
         McpServer server,
-        CancellationToken cancellationToken) => MoveRawAsync(
+        CancellationToken cancellationToken)
+    {
+        CalendarMrtrCapabilityGuard.RequireConfirmationCapability(requestContext, server);
+        return MoveRawAsync(
             requestContext.Params?.Arguments,
             requestContext.Params?.RequestState,
             requestContext.Params?.InputResponses,
             server.IsMrtrSupported,
             cancellationToken);
+    }
 
     internal async Task<CallToolResult> CreateRawAsync(
         IDictionary<string, JsonElement>? arguments,
