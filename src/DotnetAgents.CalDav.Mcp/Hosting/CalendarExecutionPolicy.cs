@@ -113,6 +113,10 @@ internal static class CalendarExecutionPolicy
                 telemetry?.ObserveMutationStateIfAbsent(CalendarMutationState.NotAttempted);
             telemetry?.Complete(CalendarOperationOutcome.InputRequired, moveTelemetry);
         }
+        else if (exception is MissingRequiredClientCapabilityException)
+        {
+            CompleteUndeclaredCapability(telemetry, mutation, moveTelemetry);
+        }
         else if (exception is OperationCanceledException && callerCancellationToken.IsCancellationRequested)
         {
             CompleteCallerCancellation(telemetry, moveTool, moveTelemetry);
@@ -125,6 +129,23 @@ internal static class CalendarExecutionPolicy
         {
             telemetry?.Fail(exception);
         }
+    }
+
+    // The guard refuses before the tool reaches its dispatch boundary, so the refusal carries the
+    // same structured facts as the typed MRTR-unsupported result rather than a generic internal error.
+    private static void CompleteUndeclaredCapability(
+        CalendarTelemetryOperation? telemetry,
+        bool mutation,
+        CalendarMoveTelemetrySnapshot? moveTelemetry)
+    {
+        if (mutation)
+            telemetry?.ObserveMutationStateIfAbsent(CalendarMutationState.NotAttempted);
+        telemetry?.ObserveStructuredError(new CalendarStructuredErrorFacts(
+            CalendarTelemetryErrorCode.UnsupportedCapability,
+            CalendarTelemetryErrorCategory.CapabilityAndProjection,
+            CalendarTelemetryErrorPhase.Mrtr,
+            false));
+        telemetry?.Complete(CalendarOperationOutcome.Error, moveTelemetry);
     }
 
     private static void CompleteCallerCancellation(

@@ -56,6 +56,7 @@ internal sealed class CalendarEntityPatchTools
             requestContext.Params?.RequestState,
             requestContext.Params?.InputResponses,
             server.IsMrtrSupported,
+            server.ClientCapabilities,
             cancellationToken);
 
     [McpServerTool(
@@ -76,6 +77,7 @@ internal sealed class CalendarEntityPatchTools
             requestContext.Params?.RequestState,
             requestContext.Params?.InputResponses,
             server.IsMrtrSupported,
+            server.ClientCapabilities,
             cancellationToken);
 
     internal async Task<CallToolResult> PatchEventRawAsync(
@@ -83,11 +85,25 @@ internal sealed class CalendarEntityPatchTools
         CancellationToken cancellationToken) => await PatchEventRawAsync(
         arguments, null, null, false, cancellationToken);
 
+    internal Task<CallToolResult> PatchEventRawAsync(
+        IDictionary<string, JsonElement>? arguments,
+        string? requestState,
+        IDictionary<string, InputResponse>? inputResponses,
+        bool mrtrSupported,
+        CancellationToken cancellationToken) => PatchEventRawAsync(
+        arguments,
+        requestState,
+        inputResponses,
+        mrtrSupported,
+        CalendarMrtrCapabilityGuard.RequiredCapabilities(),
+        cancellationToken);
+
     internal async Task<CallToolResult> PatchEventRawAsync(
         IDictionary<string, JsonElement>? arguments,
         string? requestState,
         IDictionary<string, InputResponse>? inputResponses,
         bool mrtrSupported,
+        ClientCapabilities? clientCapabilities,
         CancellationToken cancellationToken)
     {
         if (CalendarQueryToolSupport.MeasureArguments(arguments, arguments ?? new Dictionary<string, JsonElement>())
@@ -95,10 +111,12 @@ internal sealed class CalendarEntityPatchTools
             return CreateInputGuardError(payloadTooLarge: true);
         if (!CalendarEntityPatchArgumentParser.TryParseEvent(arguments, out var request))
             return Error();
-        if (RequiresConfirmation(request.Target, request.Patch))
-            return await ConfirmEventAsync(request, arguments!, requestState, inputResponses, mrtrSupported, cancellationToken);
-        return await ExecuteMutationAsync(
-            token => _calendarService.PatchEventAsync(request, token), cancellationToken);
+        if (!RequiresConfirmation(request.Target, request.Patch))
+            return await ExecuteMutationAsync(
+                token => _calendarService.PatchEventAsync(request, token), cancellationToken);
+        CalendarMrtrCapabilityGuard.RequireConfirmationCapability(
+            requestState, inputResponses, mrtrSupported, clientCapabilities);
+        return await ConfirmEventAsync(request, arguments!, requestState, inputResponses, mrtrSupported, cancellationToken);
     }
 
     internal async Task<CallToolResult> PatchTodoRawAsync(
@@ -106,11 +124,25 @@ internal sealed class CalendarEntityPatchTools
         CancellationToken cancellationToken) => await PatchTodoRawAsync(
         arguments, null, null, false, cancellationToken);
 
+    internal Task<CallToolResult> PatchTodoRawAsync(
+        IDictionary<string, JsonElement>? arguments,
+        string? requestState,
+        IDictionary<string, InputResponse>? inputResponses,
+        bool mrtrSupported,
+        CancellationToken cancellationToken) => PatchTodoRawAsync(
+        arguments,
+        requestState,
+        inputResponses,
+        mrtrSupported,
+        CalendarMrtrCapabilityGuard.RequiredCapabilities(),
+        cancellationToken);
+
     internal async Task<CallToolResult> PatchTodoRawAsync(
         IDictionary<string, JsonElement>? arguments,
         string? requestState,
         IDictionary<string, InputResponse>? inputResponses,
         bool mrtrSupported,
+        ClientCapabilities? clientCapabilities,
         CancellationToken cancellationToken)
     {
         if (CalendarQueryToolSupport.MeasureArguments(arguments, arguments ?? new Dictionary<string, JsonElement>())
@@ -118,10 +150,12 @@ internal sealed class CalendarEntityPatchTools
             return CreateInputGuardError(payloadTooLarge: true);
         if (!CalendarEntityPatchArgumentParser.TryParseTodo(arguments, out var request))
             return Error();
-        if (RequiresConfirmation(request.Target, request.Patch))
-            return await ConfirmTodoAsync(request, arguments!, requestState, inputResponses, mrtrSupported, cancellationToken);
-        return await ExecuteMutationAsync(
-            token => _calendarService.PatchTodoAsync(request, token), cancellationToken);
+        if (!RequiresConfirmation(request.Target, request.Patch))
+            return await ExecuteMutationAsync(
+                token => _calendarService.PatchTodoAsync(request, token), cancellationToken);
+        CalendarMrtrCapabilityGuard.RequireConfirmationCapability(
+            requestState, inputResponses, mrtrSupported, clientCapabilities);
+        return await ConfirmTodoAsync(request, arguments!, requestState, inputResponses, mrtrSupported, cancellationToken);
     }
 
     private Task<CallToolResult> ConfirmEventAsync(

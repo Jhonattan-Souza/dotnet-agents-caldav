@@ -155,6 +155,12 @@ public sealed class ContractCatalogTests
         catalog["$defs"]!["mrtrResponseValue"]!.ToJsonString().ShouldNotContain("\"null\"");
         mrtr["outerResult"]!["properties"]!["resultType"]!["const"]!.GetValue<string>()
             .ShouldBe("input_required");
+        var missingCapability = mrtr["missingRequiredClientCapabilityError"]!.AsObject();
+        missingCapability["properties"]!["code"]!["const"]!.GetValue<int>().ShouldBe(-32021);
+        missingCapability["properties"]!["data"]!["properties"]!["requiredCapabilities"]!["properties"]!
+            ["elicitation"]!["properties"]!.AsObject().ShouldContainKey("form");
+        missingCapability["description"]!.GetValue<string>()
+            .ShouldContain("only such exception");
         catalog["$defs"]!["eventCreateInput"]!["properties"]!["entity"]!["$ref"]!.GetValue<string>()
             .ShouldBe("#/$defs/eventCreateEntity");
         catalog["$defs"]!["todoCreateInput"]!["properties"]!["entity"]!["$ref"]!.GetValue<string>()

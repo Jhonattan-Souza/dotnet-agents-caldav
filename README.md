@@ -100,6 +100,20 @@ The default semantic catalog contains these 23 tools in the order shown.
 
 The four exact tools are enabled with `CALDAV_EXPOSE_EXACT_TOOLS=true`; this flag controls the deterministic stdio catalog without contacting the server. The configured CalDAV credentials are the stdio authorization context, 401/403 responses become typed call failures, and exact writes require client support for MCP Multi Round-Trip Requests. Exact Move uses headers-only GET absence probes, never scans destination members, never retries MOVE, and keeps its executable one-use plan inside Core.
 
+### Confirmed mutations
+
+`calendars.delete`, `calendar_resources.delete`, the three exact writes, and the
+recurrence-definition, `this-and-future`, `entire-set`, and `replaceAll` patches
+confirm through MCP Multi Round-Trip Requests. A call that opens a confirmation
+requires `_meta` to declare
+`io.modelcontextprotocol/clientCapabilities.elicitation` with form support. A
+blank `"elicitation": {}` counts as form support under the revision's
+compatibility rule; an elicitation that names only `url` does not. Without a
+form-capable declaration the server answers JSON-RPC error `-32021` with
+`data.requiredCapabilities` before it issues any CalDAV request, so the mutation
+is never attempted. That refusal is the one documented case where a tool answers
+with a JSON-RPC error instead of typed `structuredContent`.
+
 ## Optional OpenTelemetry observability
 
 To enable telemetry, set `OTEL_EXPORTER_OTLP_ENDPOINT` and leave `OTEL_SDK_DISABLED` unset or `false`. The server exports MCP and outbound HTTP signals, CalDAV operation and phase spans, and correlated logs through an allowlist. Each OTLP export call has a 250-millisecond limit to bound shutdown time if the collector stops responding.

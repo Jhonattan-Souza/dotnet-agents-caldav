@@ -92,6 +92,8 @@ Storage-only writes involving organizer or attendee data require evidence that t
 
 A protected mutation may return MCP `input_required`. Present the returned review, obtain the requested input, and continue the same tool with its opaque `requestState` and `inputResponses`. Keep `requestState` unchanged, single-use, and paired with the original arguments and revision.
 
+A JSON-RPC error `-32021` carrying `data.requiredCapabilities` means the harness did not declare form-capable `elicitation` for that request, so the server opened no confirmation and attempted nothing. A blank `elicitation` declaration counts as form support; one that names only `url` does not. Report that harness limitation instead of repeating the call unchanged.
+
 Expiry, mismatch, decline, a changed revision, or a continuation failure ends that exchange without a new write. If the active harness cannot continue MCP Multi Round-Trip Requests, report that limitation and leave the mutation uncommitted. Do not call the protected mutation or a verification query again to work around a missing continuation. A client hint such as `allow_input_required` is not a CalDAV tool argument unless the live input schema explicitly includes it.
 
 Treat `structuredContent` as authoritative. Report `outcome`, `mutationState`, `no_change`, `confirmation_declined`, and typed failures accurately. A transport-level success does not prove a mutation committed, and an indeterminate or committed-but-unverified result needs explicit disclosure rather than an automatic retry.

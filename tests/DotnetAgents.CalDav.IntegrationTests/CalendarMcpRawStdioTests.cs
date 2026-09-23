@@ -343,6 +343,59 @@ public sealed class CalendarMcpRawStdioTests
     }
 
     [Fact]
+    public async Task CalendarResourceDelete_UndeclaredFormElicitationRefusesBeforeAnyCalDavRequest()
+    {
+        await using var server = new DeleteServer();
+
+        var response = await InvokeRawDeleteFirstRoundAsync(server, "{}");
+
+        response.TryGetProperty("result", out _).ShouldBeFalse(response.ToString());
+        var error = response.GetProperty("error");
+        error.GetProperty("code").GetInt32().ShouldBe(-32021);
+        var required = error.GetProperty("data").GetProperty("requiredCapabilities");
+        required.GetProperty("elicitation").TryGetProperty("form", out _).ShouldBeTrue(required.ToString());
+        server.RequestCount.ShouldBe(0);
+        server.DeleteCount.ShouldBe(0);
+        server.IsDeleted.ShouldBeFalse();
+        response.ToString().ShouldNotContain("stdio-delete-1");
+    }
+
+    // A bare elicitation object declares form support: the protocol normalizes a blank capability
+    // to the in-band mode, so only an elicitation that names another mode alone is undeclared here.
+    [Theory]
+    [InlineData("{\"elicitation\":{\"form\":{}}}")]
+    [InlineData("{\"elicitation\":{}}")]
+    public async Task CalendarResourceDelete_DeclaredElicitationStillOpensTheConfirmationRound(
+        string clientCapabilities)
+    {
+        await using var server = new DeleteServer();
+
+        var response = await InvokeRawDeleteFirstRoundAsync(server, clientCapabilities);
+
+        response.TryGetProperty("error", out _).ShouldBeFalse(response.ToString());
+        var result = response.GetProperty("result");
+        result.GetProperty("inputRequests").TryGetProperty("confirm_delete", out _)
+            .ShouldBeTrue(result.ToString());
+        result.GetProperty("requestState").GetString().ShouldNotBeNullOrWhiteSpace();
+        server.RequestCount.ShouldBeGreaterThan(0);
+        server.DeleteCount.ShouldBe(0);
+        server.IsDeleted.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task CalendarResourceDelete_UrlOnlyElicitationIsRefusedBeforeAnyCalDavRequest()
+    {
+        await using var server = new DeleteServer();
+
+        var response = await InvokeRawDeleteFirstRoundAsync(server, "{\"elicitation\":{\"url\":{}}}");
+
+        response.GetProperty("error").GetProperty("code").GetInt32().ShouldBe(-32021);
+        response.GetProperty("error").GetProperty("data").GetProperty("requiredCapabilities")
+            .GetProperty("elicitation").TryGetProperty("form", out _).ShouldBeTrue();
+        server.RequestCount.ShouldBe(0);
+    }
+
+    [Fact]
     public async Task CalendarResourceDelete_RootDuplicateRevisionReturnsTypedInvalidInputBeforeNetwork()
     {
         const string request = """
@@ -393,7 +446,7 @@ public sealed class CalendarMcpRawStdioTests
     {
         var arguments = DeleteArgumentsAtSize(argumentBytes);
         Encoding.UTF8.GetByteCount(arguments).ShouldBe(argumentBytes);
-        var request = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"calendar_resources.delete\",\"arguments\":"
+        var request = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":\"2026-07-28\",\"io.modelcontextprotocol/clientCapabilities\":{\"elicitation\":{\"form\":{}}}},\"name\":\"calendar_resources.delete\",\"arguments\":"
             + arguments
             + "}}";
 
@@ -805,6 +858,34 @@ public sealed class CalendarMcpRawStdioTests
         }
     }
 
+    private static async Task<JsonElement> InvokeRawDeleteFirstRoundAsync(
+        DeleteServer server,
+        string clientCapabilities)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        using var process = StartServer(server.BaseUrl, server.CalendarHref);
+        try
+        {
+            await process.StandardInput.WriteLineAsync(
+                "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":\"2026-07-28\",\"io.modelcontextprotocol/clientInfo\":{\"name\":\"raw-test\",\"version\":\"1\"},\"io.modelcontextprotocol/clientCapabilities\":"
+                + clientCapabilities
+                + "},\"name\":\"calendar_resources.delete\",\"arguments\":"
+                + DeleteArguments(server.ResourceHref, "stdio-delete-1")
+                + "}}");
+            await process.StandardInput.FlushAsync(timeout.Token);
+            var response = await ReadResponseAsync(process, 2, timeout.Token);
+            process.StandardInput.Close();
+            await process.WaitForExitAsync(timeout.Token);
+            (await process.StandardError.ReadToEndAsync(timeout.Token)).ShouldBeEmpty();
+            return response;
+        }
+        finally
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
+        }
+    }
+
     private static async Task<JsonElement> InvokeRawDeleteMrtrMismatchAsync(
         DeleteServer server,
         string mismatch)
@@ -815,7 +896,7 @@ public sealed class CalendarMcpRawStdioTests
         try
         {
             await process.StandardInput.WriteLineAsync(
-                "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":\"2026-07-28\",\"io.modelcontextprotocol/clientInfo\":{\"name\":\"raw-test\",\"version\":\"1\"},\"io.modelcontextprotocol/clientCapabilities\":{}},\"name\":\"calendar_resources.delete\",\"arguments\":"
+                "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":\"2026-07-28\",\"io.modelcontextprotocol/clientInfo\":{\"name\":\"raw-test\",\"version\":\"1\"},\"io.modelcontextprotocol/clientCapabilities\":{\"elicitation\":{\"form\":{}}}},\"name\":\"calendar_resources.delete\",\"arguments\":"
                 + arguments
                 + "}}");
             await process.StandardInput.FlushAsync(timeout.Token);
@@ -1262,6 +1343,7 @@ public sealed class CalendarMcpRawStdioTests
         private int _deleteCount;
         private int _deleted;
         private int _propFindCount;
+        private int _requestCount;
         private string? _observedIfMatch;
 
         public DeleteServer()
@@ -1284,6 +1366,8 @@ public sealed class CalendarMcpRawStdioTests
         public int DeleteCount => Volatile.Read(ref _deleteCount);
 
         public int PropFindCount => Volatile.Read(ref _propFindCount);
+
+        public int RequestCount => Volatile.Read(ref _requestCount);
 
         public bool IsDeleted => Volatile.Read(ref _deleted) != 0;
 
@@ -1322,6 +1406,7 @@ public sealed class CalendarMcpRawStdioTests
 
         private async Task RespondAsync(HttpListenerContext context)
         {
+            Interlocked.Increment(ref _requestCount);
             switch (context.Request.HttpMethod)
             {
                 case "PROPFIND":

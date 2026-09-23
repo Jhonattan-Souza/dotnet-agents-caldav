@@ -57,12 +57,16 @@ internal sealed class CalendarCollectionTools
     public Task<CallToolResult> DeleteAsync(
         RequestContext<CallToolRequestParams> requestContext,
         McpServer server,
-        CancellationToken cancellationToken) => DeleteRawAsync(
+        CancellationToken cancellationToken)
+    {
+        CalendarMrtrCapabilityGuard.RequireConfirmationCapability(requestContext, server);
+        return DeleteRawAsync(
             requestContext.Params?.Arguments,
             requestContext.Params?.RequestState,
             requestContext.Params?.InputResponses,
             server.IsMrtrSupported,
             cancellationToken);
+    }
 
     internal async Task<CallToolResult> CreateRawAsync(
         IDictionary<string, JsonElement>? arguments,

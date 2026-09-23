@@ -69,6 +69,56 @@ public sealed class CalendarExecutionPolicyTests
         operation.Status.ShouldBe(ActivityStatusCode.Unset);
     }
 
+    [Fact]
+    public async Task PublicToolFilter_UndeclaredElicitationRecordsNotAttemptedWithTypedErrorFacts()
+    {
+        var stopped = new List<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == CalendarTelemetry.InstrumentationName,
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) =>
+                ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = stopped.Add
+        };
+        ActivitySource.AddActivityListener(listener);
+        using var services = new ServiceCollection()
+            .AddSingleton(TimeProvider.System)
+            .AddSingleton<CalendarOperationAdmission>()
+            .BuildServiceProvider();
+        await using var transport = new StreamServerTransport(
+            new MemoryStream(),
+            new MemoryStream(),
+            "missing-capability-telemetry-test",
+            Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
+        await using var server = McpServer.Create(
+            transport,
+            new McpServerOptions(),
+            Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance,
+            services);
+        var context = new RequestContext<CallToolRequestParams>(
+            server,
+            new JsonRpcRequest { Id = new RequestId(1L), Method = "tools/call" },
+            new CallToolRequestParams { Name = "calendar_resources.delete" });
+        var filtered = CalendarExecutionPolicy.CallTool((_, _) =>
+            throw new MissingRequiredClientCapabilityException(
+                CalendarMrtrCapabilityGuard.RequiredCapabilities(),
+                "private-capability-message"));
+
+        await Should.ThrowAsync<MissingRequiredClientCapabilityException>(() =>
+            filtered(context, TestContext.Current.CancellationToken).AsTask());
+
+        var operation = stopped.Single(activity => activity.OperationName == "caldav.operation");
+        operation.GetTagItem("caldav.outcome").ShouldBe("error");
+        operation.GetTagItem("caldav.mutation.state").ShouldBe("not_attempted");
+        operation.GetTagItem("caldav.error.code").ShouldBe("unsupported_capability");
+        operation.GetTagItem("caldav.error.category").ShouldBe("capabilityAndProjection");
+        operation.GetTagItem("caldav.error.phase").ShouldBe("mrtr");
+        operation.GetTagItem("error.type").ShouldBe("caldav.unsupported_capability");
+        operation.GetTagItem("error.type").ShouldNotBe("internal_error");
+        operation.Status.ShouldBe(ActivityStatusCode.Error);
+        operation.Tags.ShouldNotContain(tag => tag.Value == "private-capability-message");
+    }
+
     [Theory]
     [InlineData("none")]
     [InlineData("unspecified")]

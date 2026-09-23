@@ -2833,6 +2833,56 @@
           ]
         }
       ]
+    },
+    "missingRequiredClientCapabilityError": {
+      "description": "A confirmation round is only opened for a request whose _meta declares io.modelcontextprotocol/clientCapabilities.elicitation with form support. A blank elicitation object counts as form support under the revision's compatibility rule; an elicitation that names only the url mode does not. A capability that is undeclared for that request is refused as this JSON-RPC error instead of a typed structuredContent result, which is the only such exception, and the refusal precedes every CalDAV request so the mutation is never attempted. Tools that confirm unconditionally refuse before argument admission; events.patch and todos.patch refuse only for the recurrence-definition, this-and-future, entire-set, and replaceAll patches that require confirmation.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message",
+        "data"
+      ],
+      "properties": {
+        "code": {
+          "const": -32021
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "requiredCapabilities"
+          ],
+          "properties": {
+            "requiredCapabilities": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "elicitation"
+              ],
+              "properties": {
+                "elicitation": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "form"
+                  ],
+                  "properties": {
+                    "form": {
+                      "type": "object",
+                      "additionalProperties": false
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "environment": [
