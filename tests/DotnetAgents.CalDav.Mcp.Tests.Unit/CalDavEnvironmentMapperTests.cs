@@ -130,6 +130,10 @@ public class CalDavEnvironmentMapperTests
             "CALDAV_URL",
             "CALDAV_USERNAME",
             "CALDAV_PASSWORD",
+            "CALDAV_OAUTH_TOKEN_ENDPOINT",
+            "CALDAV_OAUTH_CLIENT_ID",
+            "CALDAV_OAUTH_CLIENT_SECRET",
+            "CALDAV_OAUTH_REFRESH_TOKEN",
             "CALDAV_CALENDAR_HREFS",
             "CALDAV_DEFAULT_TODO_CALENDAR_NAME",
             "CALDAV_DEFAULT_EVENT_CALENDAR_NAME",
@@ -154,6 +158,30 @@ public class CalDavEnvironmentMapperTests
         configure(options);
 
         options.SchedulingMode.ShouldBe(mode);
+    }
+
+    [Fact]
+    public void MapFromEnvironment_MapsOAuthRefreshTokenGrantSettings()
+    {
+        var envVars = new Dictionary<string, string?>
+        {
+            ["CALDAV_AUTH_SCHEME"] = "oauth2",
+            ["CALDAV_OAUTH_TOKEN_ENDPOINT"] = "https://oauth2.example.com/token",
+            ["CALDAV_OAUTH_CLIENT_ID"] = "client-id",
+            ["CALDAV_OAUTH_CLIENT_SECRET"] = "client-secret",
+            ["CALDAV_OAUTH_REFRESH_TOKEN"] = "refresh-token",
+        };
+        var options = new CalDavOptions();
+
+        CalDavEnvironmentMapper.MapFromEnvironment(key => envVars.GetValueOrDefault(key))(options);
+
+        options.AuthenticationScheme.ShouldBe("oauth2");
+        options.OAuthTokenEndpoint.ShouldBe("https://oauth2.example.com/token");
+        options.OAuthClientId.ShouldBe("client-id");
+        options.OAuthClientSecret.ShouldBe("client-secret");
+        options.OAuthRefreshToken.ShouldBe("refresh-token");
+        options.Username.ShouldBeEmpty();
+        options.Password.ShouldBeEmpty();
     }
 
     [Theory]

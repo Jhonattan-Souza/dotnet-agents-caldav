@@ -42,7 +42,11 @@ internal sealed class CalendarMutationRequestStateProtector
         _credentialContext = Bind(JsonSerializer.SerializeToUtf8Bytes(new CredentialBinding(
             configured.AuthenticationScheme ?? string.Empty,
             configured.Username,
-            configured.Password)));
+            configured.Password,
+            configured.OAuthTokenEndpoint ?? string.Empty,
+            configured.OAuthClientId ?? string.Empty,
+            configured.OAuthClientSecret ?? string.Empty,
+            configured.OAuthRefreshToken ?? string.Empty)));
         _configurationContext = Bind(JsonSerializer.SerializeToUtf8Bytes(new ConfigurationBinding(
             NormalizeEndpoint(configured.BaseUrl),
             NormalizeOrigin(configured.BaseUrl),
@@ -416,7 +420,14 @@ internal sealed class CalendarMutationRequestStateProtector
         string ConfigurationContext,
         ProtectedExactMoveBinding? ExactMoveBinding);
 
-    private sealed record CredentialBinding(string AuthenticationScheme, string Username, string Password);
+    private sealed record CredentialBinding(
+        string AuthenticationScheme,
+        string Username,
+        string Password,
+        string OAuthTokenEndpoint,
+        string OAuthClientId,
+        string OAuthClientSecret,
+        string OAuthRefreshToken);
 
     private sealed record ConfigurationBinding(
         string Endpoint,

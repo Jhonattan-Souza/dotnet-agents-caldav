@@ -434,7 +434,7 @@ public class CalDavOptionsTests
         });
 
         result.Failed.ShouldBeTrue();
-        result.Failures.ShouldBe(["CalDav:AuthenticationScheme must be 'basic' or 'bearer' when specified."]);
+        result.Failures.ShouldBe(["CalDav:AuthenticationScheme must be 'basic', 'bearer', or 'oauth2' when specified."]);
     }
 
     [Fact]
@@ -516,5 +516,125 @@ public class CalDavOptionsTests
         options.ToString().ShouldContain("AuthenticationScheme = bearer");
         options.ToString().ShouldNotContain("static-token-secret");
         new CalDavOptions().ToString().ShouldContain("AuthenticationScheme = basic");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public void ValidateCalDavOptions_OAuthSchemeAcceptsARefreshTokenGrantWithOrWithoutClientSecret(string? clientSecret)
+    {
+        var result = new ValidateCalDavOptions().Validate(null, OAuthOptions(options => options.OAuthClientSecret = clientSecret));
+
+        result.Succeeded.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void ValidateCalDavOptions_OAuthSchemeRequiresEndpointClientAndRefreshToken()
+    {
+        var result = new ValidateCalDavOptions().Validate(null, new CalDavOptions
+        {
+            BaseUrl = "https://apidata.example.com/caldav/v2/",
+            AuthenticationScheme = CalDavAuthenticationSchemes.OAuth2
+        });
+
+        result.Failed.ShouldBeTrue();
+        result.Failures.ShouldBe([
+            "CalDav:OAuthTokenEndpoint is required and must be an absolute HTTPS URL without credentials or a fragment when CalDav:AuthenticationScheme is 'oauth2'.",
+            "CalDav:OAuthClientId is required when CalDav:AuthenticationScheme is 'oauth2'.",
+            "CalDav:OAuthRefreshToken is required when CalDav:AuthenticationScheme is 'oauth2'."
+        ]);
+    }
+
+    [Theory]
+    [InlineData("user", "")]
+    [InlineData("", "password")]
+    public void ValidateCalDavOptions_OAuthSchemeRejectsBasicOrBearerCredentials(string username, string password)
+    {
+        var result = new ValidateCalDavOptions().Validate(null, OAuthOptions(options =>
+        {
+            options.Username = username;
+            options.Password = password;
+        }));
+
+        result.Failed.ShouldBeTrue();
+        result.Failures.ShouldHaveSingleItem().ShouldStartWith(
+            "CalDav:Username and CalDav:Password must be empty when CalDav:AuthenticationScheme is 'oauth2'");
+        result.Failures.ShouldAllBe(failure => !failure.Contains("password", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("http://oauth2.example.com/token")]
+    [InlineData("http://127.0.0.1/token")]
+    [InlineData("https://client:secret@oauth2.example.com/token")]
+    [InlineData("https://oauth2.example.com/token#fragment")]
+    [InlineData("/token")]
+    [InlineData("ftp://oauth2.example.com/token")]
+    public void ValidateCalDavOptions_OAuthSchemeRequiresAnHttpsTokenEndpoint(string endpoint)
+    {
+        var result = new ValidateCalDavOptions().Validate(null, OAuthOptions(options => options.OAuthTokenEndpoint = endpoint));
+
+        result.Failed.ShouldBeTrue();
+        result.Failures.ShouldHaveSingleItem().ShouldContain("CalDav:OAuthTokenEndpoint");
+        result.Failures.ShouldAllBe(failure => !failure.Contains("secret", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ValidateCalDavOptions_OAuthSchemeKeepsATokenEndpointQuery()
+    {
+        var result = new ValidateCalDavOptions().Validate(null, OAuthOptions(options =>
+            options.OAuthTokenEndpoint = "https://oauth2.example.com/token?tenant=calendar"));
+
+        result.Succeeded.ShouldBeTrue();
+    }
+
+    [Theory]
+    [InlineData(null, "https://oauth2.example.com/token", null, null, null)]
+    [InlineData("basic", null, "client", null, null)]
+    [InlineData("bearer", null, null, "secret", null)]
+    [InlineData("basic", null, null, null, "refresh")]
+    public void ValidateCalDavOptions_OAuthSettingsAreRejectedOutsideTheOAuthScheme(
+        string? scheme, string? endpoint, string? clientId, string? clientSecret, string? refreshToken)
+    {
+        var result = new ValidateCalDavOptions().Validate(null, new CalDavOptions
+        {
+            BaseUrl = "https://caldav.example.com",
+            AuthenticationScheme = scheme,
+            Username = scheme == "bearer" ? string.Empty : "user",
+            Password = "pass",
+            OAuthTokenEndpoint = endpoint,
+            OAuthClientId = clientId,
+            OAuthClientSecret = clientSecret,
+            OAuthRefreshToken = refreshToken
+        });
+
+        result.Failed.ShouldBeTrue();
+        result.Failures.ShouldBe([
+            "CalDav:OAuthTokenEndpoint, OAuthClientId, OAuthClientSecret, and OAuthRefreshToken apply only when CalDav:AuthenticationScheme is 'oauth2'."
+        ]);
+    }
+
+    [Fact]
+    public void CalDavOptions_ToString_OmitsOAuthSecrets()
+    {
+        var text = OAuthOptions(_ => { }).ToString();
+
+        text.ShouldContain("AuthenticationScheme = oauth2");
+        text.ShouldNotContain("client-secret-value");
+        text.ShouldNotContain("refresh-token-value");
+    }
+
+    private static CalDavOptions OAuthOptions(Action<CalDavOptions> configure)
+    {
+        var options = new CalDavOptions
+        {
+            BaseUrl = "https://apidata.example.com/caldav/v2/",
+            AuthenticationScheme = CalDavAuthenticationSchemes.OAuth2,
+            OAuthTokenEndpoint = "https://oauth2.example.com/token",
+            OAuthClientId = "client-id",
+            OAuthClientSecret = "client-secret-value",
+            OAuthRefreshToken = "refresh-token-value"
+        };
+        configure(options);
+        return options;
     }
 }

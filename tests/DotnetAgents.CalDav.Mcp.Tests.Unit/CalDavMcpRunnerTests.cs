@@ -191,6 +191,30 @@ public class CalDavMcpRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_IncompleteOAuthConfigurationFailsStartupWithoutEchoingSecrets()
+    {
+        var output = new StringWriter();
+
+        var exitCode = await new CalDavMcpRunner(output).RunAsync(CalDavEnvironmentMapper.MapFromEnvironment(name => name switch
+        {
+            "CALDAV_URL" => "https://apidata.example.com/caldav/v2/",
+            "CALDAV_AUTH_SCHEME" => "oauth2",
+            "CALDAV_OAUTH_TOKEN_ENDPOINT" => "http://oauth2.example.com/token",
+            "CALDAV_OAUTH_CLIENT_SECRET" => "private-client-secret",
+            "CALDAV_OAUTH_REFRESH_TOKEN" => "private-refresh-token",
+            _ => null
+        }), TestContext.Current.CancellationToken);
+
+        exitCode.ShouldBe(1);
+        var text = output.ToString();
+        text.ShouldContain("CalDav:OAuthTokenEndpoint is required and must be an absolute HTTPS URL");
+        text.ShouldContain("CalDav:OAuthClientId is required");
+        text.ShouldNotContain("private-client-secret");
+        text.ShouldNotContain("private-refresh-token");
+        text.ShouldNotContain("oauth2.example.com");
+    }
+
+    [Fact]
     public async Task RunAsync_UnknownAuthenticationSchemeFailsStartupWithTheClosedSet()
     {
         var output = new StringWriter();
@@ -204,7 +228,7 @@ public class CalDavMcpRunnerTests
         }, TestContext.Current.CancellationToken);
 
         exitCode.ShouldBe(1);
-        output.ToString().ShouldContain("CalDav:AuthenticationScheme must be 'basic' or 'bearer' when specified.");
+        output.ToString().ShouldContain("CalDav:AuthenticationScheme must be 'basic', 'bearer', or 'oauth2' when specified.");
     }
 
     [Fact]

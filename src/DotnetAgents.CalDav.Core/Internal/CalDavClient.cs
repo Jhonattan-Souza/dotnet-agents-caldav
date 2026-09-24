@@ -1124,15 +1124,23 @@ internal sealed partial class CalDavClient : ICalendarClient, ICalendarMoveResou
         }
     }
 
-    private static int GetConfigurationFingerprint(CalDavOptions options) => HashCode.Combine(
-        options.BaseUrl,
-        options.EffectiveAuthenticationScheme,
-        options.Username,
-        options.Password,
-        options.CalendarHrefs,
-        options.RedirectHosts,
-        options.DefaultEventCalendarName,
-        options.DefaultTodoCalendarName);
+    private static int GetConfigurationFingerprint(CalDavOptions options)
+    {
+        var fingerprint = new HashCode();
+        fingerprint.Add(options.BaseUrl);
+        fingerprint.Add(options.EffectiveAuthenticationScheme);
+        fingerprint.Add(options.Username);
+        fingerprint.Add(options.Password);
+        fingerprint.Add(options.OAuthTokenEndpoint);
+        fingerprint.Add(options.OAuthClientId);
+        fingerprint.Add(options.OAuthClientSecret);
+        fingerprint.Add(options.OAuthRefreshToken);
+        fingerprint.Add(options.CalendarHrefs);
+        fingerprint.Add(options.RedirectHosts);
+        fingerprint.Add(options.DefaultEventCalendarName);
+        fingerprint.Add(options.DefaultTodoCalendarName);
+        return fingerprint.ToHashCode();
+    }
 
     private enum CapabilityState
     {

@@ -72,6 +72,10 @@ internal sealed class CalendarQueryCapabilityState
                 writer.WriteStringValue(options.EffectiveAuthenticationScheme);
                 writer.WriteStringValue(options.Username);
                 writer.WriteStringValue(options.Password);
+                writer.WriteStringValue(options.OAuthTokenEndpoint);
+                writer.WriteStringValue(options.OAuthClientId);
+                writer.WriteStringValue(options.OAuthClientSecret);
+                writer.WriteStringValue(options.OAuthRefreshToken);
                 writer.WriteStringValue(options.CalendarHrefs);
                 writer.WriteStringValue(options.DefaultEventCalendarName);
                 writer.WriteStringValue(options.DefaultTodoCalendarName);
