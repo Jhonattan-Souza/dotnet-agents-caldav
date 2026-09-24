@@ -31,7 +31,7 @@ public sealed class CalendarTools
         OpenWorld = true,
         UseStructuredContent = true,
         OutputSchemaType = typeof(CalendarListResult)),
-     Description("List every configured Calendar with independent Event and To-do capability evidence.")]
+     Description("List every configured Calendar with independent Event and To-do capability evidence. An optional changeTag is opaque, advisory change evidence, never a revision or sync checkpoint.")]
     public async Task<CallToolResult> ListAsync(CancellationToken cancellationToken)
     {
         try

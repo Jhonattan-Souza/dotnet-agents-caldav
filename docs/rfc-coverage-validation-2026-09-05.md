@@ -490,8 +490,11 @@ and floating Events appear as UTC values. A window without busy time returns a
 VCALENDAR with no VFREEBUSY. The baseline and alternate-time-zone variants
 returned the same shape.
 
-`calendars.free_busy` now merges periods from every RFC 4791 VFREEBUSY
-component on all servers. Only the `radicale-3.7.8` profile admits the
+`calendars.free_busy` now merges periods from every VFREEBUSY component on all
+servers. This tolerates more than the single VFREEBUSY that
+[RFC 4791 §7.10](https://www.rfc-editor.org/rfc/rfc4791.html#section-7.10)
+describes. Merging is fail-safe: it only unions reported periods, and a `FREE`
+period never removes overlapping busy time. Only the `radicale-3.7.8` profile admits the
 per-period representation and the empty VCALENDAR. Without that profile, the
 Radicale response still fails with `upstream_protocol_error`. A stray `FBTYPE`
 property fails on every profile: outside VFREEBUSY, repeated, beside `FREEBUSY`,

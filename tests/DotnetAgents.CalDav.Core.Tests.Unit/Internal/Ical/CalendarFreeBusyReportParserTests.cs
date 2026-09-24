@@ -33,6 +33,22 @@ public class CalendarFreeBusyReportParserTests
     }
 
     [Fact]
+    public void FreePeriodsNeverSubtractOverlappingBusyTime()
+    {
+        var expected = new[]
+        {
+            new CalendarBusyPeriod("2026-09-05T01:00:00Z", "2026-09-05T03:00:00Z", "BUSY"),
+            new CalendarBusyPeriod("2026-09-05T02:00:00Z", "2026-09-05T04:00:00Z", "FREE")
+        };
+        var radicale = RadicaleComponent("DTSTART:20260905T010000Z", "DTEND:20260905T030000Z", "BUSY")
+            .Replace("END:VCALENDAR", "BEGIN:VFREEBUSY\nDTSTART:20260905T020000Z\nDTEND:20260905T040000Z\n"
+                + "FBTYPE:FREE\nEND:VFREEBUSY\nEND:VCALENDAR", StringComparison.Ordinal);
+
+        Parse(Wrap("FREEBUSY:20260905T010000Z/PT2H\nFREEBUSY;FBTYPE=FREE:20260905T020000Z/PT2H")).ShouldBe(expected);
+        ParseRadicale(radicale).ShouldBe(expected);
+    }
+
+    [Fact]
     public void AcceptsFoldedContentIncludingUtf8CodePointAndPositiveWeekDuration()
     {
         var content = Wrap("FREEBUSY;FBTYPE=BUSY-UNAVAILABLE:20260905T010000Z/\r\n\t+P1W\r\nCOMMENT:café");
@@ -384,6 +400,30 @@ public class CalendarFreeBusyReportParserTests
         var misplaced = ReplaceFirst(body, original, replacement);
 
         Should.Throw<CalendarProtocolException>(() => ParseRadicale(misplaced)).Code.ShouldBe("upstream_protocol_error");
+    }
+
+    [Fact]
+    public void RadicaleProfileResolvesZonedPeriodsThroughTheReportDefinitionBeforeTzdb()
+    {
+        // tzdb would place 09:00 America/New_York (EDT, -0400) at 13:00Z; the report's own
+        // definition fixes the zone at -0300 and is authoritative for its TZID.
+        const string reportDefinition = """
+            BEGIN:VTIMEZONE
+            TZID:America/New_York
+            BEGIN:STANDARD
+            DTSTART:19700101T000000
+            TZOFFSETFROM:-0300
+            TZOFFSETTO:-0300
+            TZNAME:X-FIXED
+            END:STANDARD
+            END:VTIMEZONE
+
+            """;
+        var body = RadicaleComponent("DTSTART;TZID=America/New_York:20260905T090000",
+                "DTEND;TZID=America/New_York:20260905T094500", "BUSY")
+            .Replace("BEGIN:VFREEBUSY", reportDefinition + "BEGIN:VFREEBUSY", StringComparison.Ordinal);
+
+        ParseRadicale(body).ShouldBe([new CalendarBusyPeriod("2026-09-05T12:00:00Z", "2026-09-05T12:45:00Z", "BUSY")]);
     }
 
     [Fact]

@@ -16,6 +16,7 @@ internal static class DavResponseParser
     private static readonly XNamespace AppleCs = "http://apple.com/ns/ical/";
     internal static readonly XName ChangeTagProperty = XName.Get("getctag", "http://calendarserver.org/ns/");
     private const int MaximumChangeTagLength = 1024;
+    private static readonly char[] XmlWhitespace = [' ', '\t', '\r', '\n'];
 
     /// <summary>Parses every discovered Calendar collection with independent component evidence.</summary>
     public static IReadOnlyList<CalendarDescriptor> ParseCalendars(string multistatusXml)
@@ -415,11 +416,12 @@ internal static class DavResponseParser
 
     /// <summary>
     /// Reads an advisory CalendarServer change tag as an opaque string. Only surrounding XML
-    /// whitespace is removed; an empty, structured, or oversized value is treated as absent.
+    /// whitespace (space, tab, CR, LF) is removed; an empty, structured, or oversized value is
+    /// treated as absent.
     /// </summary>
     internal static string? ReadChangeTag(XElement? property)
     {
-        var value = property is null || property.HasElements ? null : property.Value.Trim();
+        var value = property is null || property.HasElements ? null : property.Value.Trim(XmlWhitespace);
         return value is { Length: > 0 and <= MaximumChangeTagLength } ? value : null;
     }
 
