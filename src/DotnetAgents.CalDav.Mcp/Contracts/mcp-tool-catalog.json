@@ -2993,7 +2993,7 @@
         "idempotentHint": true,
         "openWorldHint": true
       },
-      "description": "Start one Calendar Entity query or continue its immutable Query Result Snapshot. A bounded Start requires an explicit IANA Temporal Evaluation Context from evaluationTimeZone or validated CALDAV_EVALUATION_TIME_ZONE configuration; Continue repeats the frozen context without CalDAV or semantic work."
+      "description": "Start one Calendar Entity query or continue its immutable Query Result Snapshot. A bounded Start requires an explicit IANA Temporal Evaluation Context from evaluationTimeZone or validated CALDAV_EVALUATION_TIME_ZONE configuration; optional text and categories select matching Calendar Entity content before pagination. Continue repeats the frozen context and filters without CalDAV or semantic work."
     },
     {
       "name": "calendar_occurrences.query",
@@ -3013,7 +3013,7 @@
         "idempotentHint": true,
         "openWorldHint": true
       },
-      "description": "Start one bounded Occurrence query or continue its immutable Query Result Snapshot. Start evaluates recurrence once under an explicit IANA Temporal Evaluation Context from evaluationTimeZone or validated CALDAV_EVALUATION_TIME_ZONE configuration; Continue accepts only cursor and optional pageSize and performs no CalDAV or semantic work."
+      "description": "Start one bounded Occurrence query or continue its immutable Query Result Snapshot. Start evaluates recurrence once under an explicit IANA Temporal Evaluation Context from evaluationTimeZone or validated CALDAV_EVALUATION_TIME_ZONE configuration and can select Occurrences by the text and categories of their effective component; Continue accepts only cursor and optional pageSize and performs no CalDAV or semantic work."
     },
     {
       "name": "todos.query",
@@ -3033,7 +3033,7 @@
         "idempotentHint": true,
         "openWorldHint": true
       },
-      "description": "Start one compact To-do query or continue its immutable Query Result Snapshot. Every Start, including queries without a window, requires an explicit IANA Temporal Evaluation Context from evaluationTimeZone or validated CALDAV_EVALUATION_TIME_ZONE configuration before CalDAV work and uses one VTODO-only authoritative corpus; Continue repeats the frozen page context without CalDAV or semantic work."
+      "description": "Start one compact To-do query or continue its immutable Query Result Snapshot. Every Start, including queries without a window, requires an explicit IANA Temporal Evaluation Context from evaluationTimeZone or validated CALDAV_EVALUATION_TIME_ZONE configuration before CalDAV work and uses one VTODO-only authoritative corpus, optionally narrowed by text and categories; Continue repeats the frozen page context without CalDAV or semantic work."
     },
     {
       "name": "calendar_resources.get",
@@ -4028,6 +4028,24 @@
           "maxLength": 255,
           "description": "Caller IANA Temporal Evaluation Context override for a bounded Start"
         },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "description": "Optional case-insensitive content search. It splits on whitespace into at most 16 terms; every term must occur as a substring of SUMMARY, DESCRIPTION, LOCATION, or one CATEGORIES value of the same component, and terms may match different properties. ASCII letters fold only to ASCII and other letters use the invariant Unicode lowercase mapping, without normalization. A resource matches when its master or any Recurrence Override component matches. A text or categories filter excludes Opaque Calendar Object Resources and is always evaluated locally on authoritative content; a server text-match only reduces candidates."
+        },
+        "categories": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "description": "Optional categories that must all be present: each value must equal, case-insensitively, one trimmed CATEGORIES value of the same component that satisfies text. A resource matches when its master or any Recurrence Override component matches. A text or categories filter excludes Opaque Calendar Object Resources and is always evaluated locally on authoritative content; a server text-match only reduces candidates."
+        },
         "cursor": {
           "type": "string",
           "minLength": 1,
@@ -4074,6 +4092,24 @@
               "minLength": 1,
               "maxLength": 255,
               "description": "Caller IANA Temporal Evaluation Context override for this bounded Start"
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "description": "Optional case-insensitive content search. It splits on whitespace into at most 16 terms; every term must occur as a substring of SUMMARY, DESCRIPTION, LOCATION, or one CATEGORIES value of the same component, and terms may match different properties. ASCII letters fold only to ASCII and other letters use the invariant Unicode lowercase mapping, without normalization. A resource matches when its master or any Recurrence Override component matches. A text or categories filter excludes Opaque Calendar Object Resources and is always evaluated locally on authoritative content; a server text-match only reduces candidates."
+            },
+            "categories": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 16,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "description": "Optional categories that must all be present: each value must equal, case-insensitively, one trimmed CATEGORIES value of the same component that satisfies text. A resource matches when its master or any Recurrence Override component matches. A text or categories filter excludes Opaque Calendar Object Resources and is always evaluated locally on authoritative content; a server text-match only reduces candidates."
             },
             "pageSize": {
               "type": "integer",
@@ -4160,6 +4196,24 @@
           "minLength": 1,
           "maxLength": 255
         },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "description": "Optional case-insensitive content search. It splits on whitespace into at most 16 terms; every term must occur as a substring of SUMMARY, DESCRIPTION, LOCATION, or one CATEGORIES value of the same component, and terms may match different properties. ASCII letters fold only to ASCII and other letters use the invariant Unicode lowercase mapping, without normalization. An Entity row matches through its master or any Recurrence Override component; an Occurrence row only through its own effective component. A text or categories filter excludes Opaque Calendar Object Resources and is always evaluated locally on authoritative content; a server text-match only reduces candidates."
+        },
+        "categories": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "description": "Optional categories that must all be present: each value must equal, case-insensitively, one trimmed CATEGORIES value of the same component that satisfies text. An Entity row matches through its master or any Recurrence Override component; an Occurrence row only through its own effective component. A text or categories filter excludes Opaque Calendar Object Resources and is always evaluated locally on authoritative content; a server text-match only reduces candidates."
+        },
         "dueFrom": {
           "$ref": "#/$defs/utcTemporalValue"
         },
@@ -4230,6 +4284,24 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 255
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "description": "Optional case-insensitive content search. It splits on whitespace into at most 16 terms; every term must occur as a substring of SUMMARY, DESCRIPTION, LOCATION, or one CATEGORIES value of the same component, and terms may match different properties. ASCII letters fold only to ASCII and other letters use the invariant Unicode lowercase mapping, without normalization. An Entity row matches through its master or any Recurrence Override component; an Occurrence row only through its own effective component. A text or categories filter excludes Opaque Calendar Object Resources and is always evaluated locally on authoritative content; a server text-match only reduces candidates."
+            },
+            "categories": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 16,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "description": "Optional categories that must all be present: each value must equal, case-insensitively, one trimmed CATEGORIES value of the same component that satisfies text. An Entity row matches through its master or any Recurrence Override component; an Occurrence row only through its own effective component. A text or categories filter excludes Opaque Calendar Object Resources and is always evaluated locally on authoritative content; a server text-match only reduces candidates."
             },
             "dueFrom": {
               "$ref": "#/$defs/utcTemporalValue"
@@ -4550,6 +4622,24 @@
           "type": "string",
           "minLength": 1
         },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "description": "Optional case-insensitive content search. It splits on whitespace into at most 16 terms; every term must occur as a substring of SUMMARY, DESCRIPTION, LOCATION, or one CATEGORIES value of the same component, and terms may match different properties. ASCII letters fold only to ASCII and other letters use the invariant Unicode lowercase mapping, without normalization. An Occurrence matches only through its own effective master or Recurrence Override component; overrides do not inherit master text. A text or categories filter excludes Opaque Calendar Object Resources and is always evaluated locally on authoritative content; a server text-match only reduces candidates."
+        },
+        "categories": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "description": "Optional categories that must all be present: each value must equal, case-insensitively, one trimmed CATEGORIES value of the same component that satisfies text. An Occurrence matches only through its own effective master or Recurrence Override component; overrides do not inherit master text. A text or categories filter excludes Opaque Calendar Object Resources and is always evaluated locally on authoritative content; a server text-match only reduces candidates."
+        },
         "pageSize": {
           "type": "integer",
           "minimum": 1,
@@ -4584,6 +4674,24 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 255
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "description": "Optional case-insensitive content search. It splits on whitespace into at most 16 terms; every term must occur as a substring of SUMMARY, DESCRIPTION, LOCATION, or one CATEGORIES value of the same component, and terms may match different properties. ASCII letters fold only to ASCII and other letters use the invariant Unicode lowercase mapping, without normalization. An Occurrence matches only through its own effective master or Recurrence Override component; overrides do not inherit master text. A text or categories filter excludes Opaque Calendar Object Resources and is always evaluated locally on authoritative content; a server text-match only reduces candidates."
+            },
+            "categories": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 16,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "description": "Optional categories that must all be present: each value must equal, case-insensitively, one trimmed CATEGORIES value of the same component that satisfies text. An Occurrence matches only through its own effective master or Recurrence Override component; overrides do not inherit master text. A text or categories filter excludes Opaque Calendar Object Resources and is always evaluated locally on authoritative content; a server text-match only reduces candidates."
             },
             "pageSize": {
               "type": "integer",

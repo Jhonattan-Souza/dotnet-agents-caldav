@@ -1,3 +1,4 @@
+using DotnetAgents.CalDav.Core.Internal.Ical;
 using DotnetAgents.CalDav.Core.Models;
 
 namespace DotnetAgents.CalDav.Core.Internal;
@@ -12,6 +13,13 @@ internal interface ICalendarQueryTransport
         CalendarEntityKind entityKind,
         DateTimeOffset? from,
         DateTimeOffset? to,
+        CancellationToken cancellationToken);
+
+    /// <summary>Returns the union of the pre-filter branches, or verified unavailability of text matching.</summary>
+    Task<CalendarTextCandidateResult> QueryTextCandidateHrefsAsync(
+        string calendarHref,
+        CalendarEntityKind entityKind,
+        CalendarTextPrefilter prefilter,
         CancellationToken cancellationToken);
 
     Task<CalendarMultigetResult> MultigetAsync(
@@ -35,4 +43,16 @@ internal abstract record CalendarMultigetResult
     internal sealed record Resources(IReadOnlyList<CalendarResourceRead> Values) : CalendarMultigetResult;
 
     internal sealed record VerifiedUnavailable : CalendarMultigetResult;
+}
+
+/// <summary>Closed result of one Calendar text-match candidate reduction.</summary>
+internal abstract record CalendarTextCandidateResult
+{
+    private CalendarTextCandidateResult()
+    {
+    }
+
+    internal sealed record Hrefs(IReadOnlySet<string> Values) : CalendarTextCandidateResult;
+
+    internal sealed record VerifiedUnavailable : CalendarTextCandidateResult;
 }

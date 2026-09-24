@@ -88,7 +88,10 @@ internal static class CalendarResourceSemanticProjectionMapper
         try
         {
             var document = CalendarContentDocument.Parse(snapshot.AuthoritativeUtf8.Span);
-            var component = CalendarTodoComponentSelector.Select(document, recurrenceIdentity);
+            var component = CalendarOccurrenceComponentSelector.Select(
+                document,
+                recurrenceIdentity,
+                CalendarEntityKind.Todo);
             var completed = Temporal(Owned(document, component.Path), "COMPLETED");
             return completed is null ? null : JsonSerializer.SerializeToElement(completed, ProjectionJson);
         }
@@ -114,7 +117,10 @@ internal static class CalendarResourceSemanticProjectionMapper
             return new CalendarTodoFieldsResult(
                 snapshot.Projection.Summary,
                 null, null, null, null, null, null, null, null, null, null, null);
-        var effective = CalendarTodoComponentSelector.Select(document, recurrenceIdentity);
+        var effective = CalendarOccurrenceComponentSelector.Select(
+            document,
+            recurrenceIdentity,
+            CalendarEntityKind.Todo);
         return TodoFields(document, effective, includeRecurrence: true, recurrenceComponent: master);
     }
 
@@ -654,7 +660,7 @@ internal static class CalendarResourceSemanticProjectionMapper
 
     private static JsonNode Node<T>(T value) => JsonSerializer.SerializeToNode(value, ProjectionJson)!;
 
-    private static IEnumerable<string> SplitEscaped(string value, char separator)
+    internal static IEnumerable<string> SplitEscaped(string value, char separator)
     {
         var start = 0;
         var escaped = false;

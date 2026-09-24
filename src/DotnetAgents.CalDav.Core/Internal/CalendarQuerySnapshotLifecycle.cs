@@ -51,7 +51,8 @@ internal sealed class CalendarQueryPageAdmission(CalendarQueryCursorIssuer curso
                     snapshot.Id,
                     candidatePosition,
                     snapshot.ExpiresAt,
-                    snapshot.TemporalEvaluationContextUtf8)
+                    snapshot.TemporalEvaluationContextUtf8,
+                    snapshot.TextFilterUtf8)
                 : null;
             var candidateBytes = admittedBytes + stored.JsonByteCount + stored.EscapedJsonByteCount;
             var measured = fixedBudget.CallToolResultBytes
@@ -176,7 +177,8 @@ internal sealed class CalendarQuerySnapshotReplay(
         && cursor.ExpiresAtUnixMilliseconds == snapshot.ExpiresAt.ToUnixTimeMilliseconds()
         && cursor.Position > 0
         && cursor.Position < snapshot.Items.Length
-        && cursorAuthenticator.MatchesTemporalContext(cursor, snapshot.TemporalEvaluationContextUtf8.Span);
+        && cursorAuthenticator.MatchesTemporalContext(cursor, snapshot.TemporalEvaluationContextUtf8.Span)
+        && cursorAuthenticator.MatchesTextFilter(cursor, snapshot.TextFilterUtf8.Span);
 
     private static QueryReply<TItem>.Failure Failure<TItem>(QueryFailure failure) => new(failure);
 }
@@ -186,7 +188,8 @@ internal sealed record CalendarQuerySnapshotDraft(
     ReadOnlyMemory<byte> DiagnosticsUtf8,
     long RetainedBytes,
     ReadOnlyMemory<byte> TemporalEvaluationContextUtf8,
-    ReadOnlyMemory<byte> AdditionalContextUtf8 = default)
+    ReadOnlyMemory<byte> AdditionalContextUtf8 = default,
+    ReadOnlyMemory<byte> TextFilterUtf8 = default)
 {
     internal CalendarQuerySnapshot CreateSnapshot(DateTimeOffset expiresAt) => new(
         Guid.NewGuid(),
@@ -195,5 +198,6 @@ internal sealed record CalendarQuerySnapshotDraft(
         DiagnosticsUtf8,
         RetainedBytes,
         TemporalEvaluationContextUtf8,
-        AdditionalContextUtf8);
+        AdditionalContextUtf8,
+        TextFilterUtf8);
 }

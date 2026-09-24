@@ -69,6 +69,31 @@ internal static class CalendarQueryToolSupport
         return TryApplyFraction(parsed, fraction, out value);
     }
 
+    /// <summary>
+    /// Reads the optional lexical text and categories members of a query Start. Their content bounds are the
+    /// Core query contract, so a present but out-of-bounds value reaches Core and returns its specific message.
+    /// </summary>
+    internal static bool TryReadTextFilter(
+        IDictionary<string, JsonElement> arguments,
+        out CalendarTextFilter? filter)
+    {
+        filter = null;
+        var hasText = arguments.TryGetValue("text", out var textElement);
+        var hasCategories = arguments.TryGetValue("categories", out var categoriesElement);
+        if (!hasText && !hasCategories)
+            return true;
+        if (hasText && textElement.ValueKind != JsonValueKind.String
+            || hasCategories && !IsStringArray(categoriesElement))
+            return false;
+        filter = new CalendarTextFilter(
+            hasText ? textElement.GetString() : null,
+            hasCategories ? categoriesElement.EnumerateArray().Select(item => item.GetString()!).ToArray() : null);
+        return true;
+    }
+
+    private static bool IsStringArray(JsonElement element) => element.ValueKind == JsonValueKind.Array
+        && element.EnumerateArray().All(item => item.ValueKind == JsonValueKind.String);
+
     internal static bool HasScopeShape(JsonElement scope)
     {
         if (!TryGetUniqueProperties(scope, out var properties)

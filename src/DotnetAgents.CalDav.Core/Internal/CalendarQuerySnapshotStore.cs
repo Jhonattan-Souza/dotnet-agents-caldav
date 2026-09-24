@@ -198,7 +198,8 @@ internal sealed record CalendarQuerySnapshot(
     ReadOnlyMemory<byte> DiagnosticsUtf8,
     long RetainedBytes,
     ReadOnlyMemory<byte> TemporalEvaluationContextUtf8 = default,
-    ReadOnlyMemory<byte> AdditionalContextUtf8 = default);
+    ReadOnlyMemory<byte> AdditionalContextUtf8 = default,
+    ReadOnlyMemory<byte> TextFilterUtf8 = default);
 
 internal sealed record StoredCalendarEntityQueryItem(ReadOnlyMemory<byte> JsonUtf8)
 {

@@ -6,7 +6,8 @@ public sealed record CalendarOccurrenceQuery(
     DateTimeOffset From,
     DateTimeOffset To,
     string? EvaluationTimeZone = null,
-    bool IncludeCancelledOccurrences = false);
+    bool IncludeCancelledOccurrences = false,
+    CalendarTextFilter? TextFilter = null);
 
 /// <summary>Preserved temporal family of a Calendar value.</summary>
 public enum CalendarTemporalKind

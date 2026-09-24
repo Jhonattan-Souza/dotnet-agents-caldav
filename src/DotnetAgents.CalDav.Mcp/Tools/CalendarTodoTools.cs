@@ -37,7 +37,7 @@ public sealed class CalendarTodoTools
         OpenWorld = true,
         UseStructuredContent = true,
         OutputSchemaType = typeof(CalendarTodoQuerySuccessResult)),
-     Description("Start one compact To-do query or continue its immutable Query Result Snapshot. Every Start, including queries without a window, requires an explicit IANA Temporal Evaluation Context from evaluationTimeZone or validated CALDAV_EVALUATION_TIME_ZONE configuration before CalDAV work and uses one VTODO-only authoritative corpus; Continue repeats the frozen page context without CalDAV or semantic work.")]
+     Description("Start one compact To-do query or continue its immutable Query Result Snapshot. Every Start, including queries without a window, requires an explicit IANA Temporal Evaluation Context from evaluationTimeZone or validated CALDAV_EVALUATION_TIME_ZONE configuration before CalDAV work and uses one VTODO-only authoritative corpus, optionally narrowed by text and categories; Continue repeats the frozen page context without CalDAV or semantic work.")]
     public Task<CallToolResult> QueryAsync(
         RequestContext<CallToolRequestParams> requestContext,
         CancellationToken cancellationToken) => QueryRawAsync(requestContext.Params?.Arguments, cancellationToken);
@@ -163,17 +163,18 @@ public sealed class CalendarTodoTools
         request = null!;
         if (arguments.Keys.Any(key => key is not (
                 "scope" or "completionStates" or "from" or "to" or "evaluationTimeZone"
-                or "dueFrom" or "dueTo" or "projection" or "pageSize"))
+                or "dueFrom" or "dueTo" or "text" or "categories" or "projection" or "pageSize"))
             || !TryReadScope(arguments, out var scope)
             || !TryReadStates(arguments, out var states)
             || !TryReadWindow(arguments, "from", "to", out var from, out var to)
             || !TryReadWindow(arguments, "dueFrom", "dueTo", out var dueFrom, out var dueTo)
             || !TryReadOptionalString(arguments, "evaluationTimeZone", out var evaluationTimeZone)
             || !TryReadProjection(arguments, out var projection)
+            || !CalendarQueryToolSupport.TryReadTextFilter(arguments, out var textFilter)
             || !TryReadOptionalPageSize(arguments, out var pageSize))
             return false;
         request = new CalendarTodoQueryRequest.Start(
-            new CalendarTodoQuery(scope!, states, from, to, evaluationTimeZone, dueFrom, dueTo),
+            new CalendarTodoQuery(scope!, states, from, to, evaluationTimeZone, dueFrom, dueTo, textFilter),
             projection,
             pageSize ?? 50);
         return true;

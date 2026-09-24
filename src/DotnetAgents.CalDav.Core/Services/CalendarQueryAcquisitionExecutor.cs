@@ -11,7 +11,8 @@ internal sealed record CalendarQueryAcquisitionRequest(
     CalendarEntityScope Scope,
     IReadOnlyList<CalendarEntityKind> EntityKinds,
     DateTimeOffset? From,
-    DateTimeOffset? To);
+    DateTimeOffset? To,
+    CalendarTextPrefilter? TextPrefilter = null);
 
 internal sealed record AcquiredCalendarQuery(
     IReadOnlyList<AcquiredCalendarResource> Resources,
@@ -53,6 +54,8 @@ internal sealed class CalendarQueryAcquisitionExecutor(
             .Concat(selection.Diagnostics)
             .Take(MaximumDiagnostics)
             .ToList();
+        if (request.TextPrefilter?.IsEmpty == true)
+            CalendarQueryTelemetry.ObserveTextPrefilter(CalendarQueryTextPrefilter.Ineligible);
         IReadOnlyDictionary<string, CalendarDescriptor>? candidates;
         using (CalendarQueryTelemetry.StartPhase(CalendarQueryPhase.Candidate))
             candidates = await CollectCandidatesAsync(transport, selection.Selections, request, cancellationToken)
@@ -160,6 +163,8 @@ internal sealed class CalendarQueryAcquisitionExecutor(
                 request.From,
                 request.To,
                 cancellationToken).ConfigureAwait(false);
+            hrefs = await ReduceByTextAsync(transport, selection, request.TextPrefilter, hrefs, cancellationToken)
+                .ConfigureAwait(false);
             foreach (var href in hrefs)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -174,6 +179,31 @@ internal sealed class CalendarQueryAcquisitionExecutor(
         }
         CalendarQueryTelemetry.Add(CalendarQueryCounter.Candidate, candidates.Count);
         return candidates;
+    }
+
+    // Each text REPORT is an independent superset of the local match, so intersecting it with the kind or
+    // time-range candidates can only remove resources that the local evaluation would also exclude.
+    private static async Task<IReadOnlyList<string>> ReduceByTextAsync(
+        ICalendarQueryTransport transport,
+        (CalendarDescriptor Calendar, CalendarEntityKind Kind) selection,
+        CalendarTextPrefilter? prefilter,
+        IReadOnlyList<string> hrefs,
+        CancellationToken cancellationToken)
+    {
+        if (prefilter is null || prefilter.IsEmpty)
+            return hrefs;
+        var reduced = await transport.QueryTextCandidateHrefsAsync(
+            selection.Calendar.Href,
+            selection.Kind,
+            prefilter,
+            cancellationToken).ConfigureAwait(false);
+        if (reduced is not CalendarTextCandidateResult.Hrefs matched)
+        {
+            CalendarQueryTelemetry.ObserveTextPrefilter(CalendarQueryTextPrefilter.Unavailable);
+            return hrefs;
+        }
+        CalendarQueryTelemetry.ObserveTextPrefilter(CalendarQueryTextPrefilter.Applied);
+        return hrefs.Where(matched.Values.Contains).ToArray();
     }
 
     private static SelectionResult Select(

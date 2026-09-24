@@ -70,6 +70,28 @@ public sealed class CalendarQueryTelemetryTests
     }
 
     [Fact]
+    public void TextPrefilterUnavailabilityIsTheRetainedOperationFact()
+    {
+        CalendarQueryTelemetry.ObserveTextPrefilter(CalendarQueryTextPrefilter.Applied);
+        using var listener = Listen();
+        using var source = new ActivitySource(CalendarQueryTelemetry.InstrumentationName, "0.1.0");
+        using var operation = source.StartActivity("caldav.operation");
+        operation.ShouldNotBeNull();
+        CalendarQueryTelemetry.Begin(CalendarQueryMode.Start);
+
+        CalendarQueryTelemetry.ObserveTextPrefilter(CalendarQueryTextPrefilter.Ineligible);
+        operation.GetTagItem("caldav.query.text_prefilter").ShouldBe("ineligible");
+        CalendarQueryTelemetry.ObserveTextPrefilter(CalendarQueryTextPrefilter.Applied);
+        operation.GetTagItem("caldav.query.text_prefilter").ShouldBe("applied");
+        Should.Throw<ArgumentOutOfRangeException>(() =>
+            CalendarQueryTelemetry.ObserveTextPrefilter((CalendarQueryTextPrefilter)int.MaxValue));
+        CalendarQueryTelemetry.ObserveTextPrefilter(CalendarQueryTextPrefilter.Unavailable);
+        CalendarQueryTelemetry.ObserveTextPrefilter(CalendarQueryTextPrefilter.Applied);
+
+        operation.GetTagItem("caldav.query.text_prefilter").ShouldBe("unavailable");
+    }
+
+    [Fact]
     public void ContinueInitializesOnlyLookupAndAdmissionCounters()
     {
         using var listener = Listen();

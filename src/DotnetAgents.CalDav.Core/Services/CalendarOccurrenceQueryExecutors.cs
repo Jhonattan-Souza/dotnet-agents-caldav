@@ -19,6 +19,8 @@ internal sealed class CalendarOccurrenceQueryStartExecutor(
     {
         if (!IsValid(request))
             return Failure(CalendarQueryFailures.InvalidInput("The Occurrence query input is invalid."));
+        if (!CalendarTextCriteria.TryCreate(request.Query.TextFilter, out var criteria))
+            return Failure(CalendarQueryFailures.InvalidTextFilter("Occurrence"));
         var temporal = temporalContextResolver.Resolve(new CalendarTemporalContextRequest(
             true,
             request.Query.EvaluationTimeZone,
@@ -31,13 +33,13 @@ internal sealed class CalendarOccurrenceQueryStartExecutor(
             async execution =>
             {
                 var acquired = await acquisitionExecutor.ExecuteAsync(
-                        AcquisitionRequest(request.Query),
+                        AcquisitionRequest(request.Query, criteria),
                         execution.Token)
                     .ConfigureAwait(false);
                 execution.ThrowIfDeadlineExpired();
                 return acquired.Error is not null
                     ? CompletedCalendarOccurrenceQuery.Failure(acquired.Error)
-                    : Complete(acquired, request.Query, temporal.Context!, execution.Token);
+                    : Complete(acquired, request.Query, criteria, temporal.Context!, execution.Token);
             },
             (completed, token) => completed.Error is not null
                 ? Failure(completed.Error)
@@ -51,6 +53,7 @@ internal sealed class CalendarOccurrenceQueryStartExecutor(
     private static CompletedCalendarOccurrenceQuery Complete(
         AcquiredCalendarQuery acquired,
         CalendarOccurrenceQuery query,
+        CalendarTextCriteria? criteria,
         TemporalEvaluationContext temporalContext,
         CancellationToken cancellationToken)
     {
@@ -63,7 +66,8 @@ internal sealed class CalendarOccurrenceQueryStartExecutor(
             {
                 var snapshot = resource.Snapshot;
                 cancellationToken.ThrowIfCancellationRequested();
-                if (snapshot.Projection.Kind == CalendarResourceProjectionKind.Opaque)
+                if (snapshot.Projection.Kind == CalendarResourceProjectionKind.Opaque
+                    || !CalendarOccurrenceTextFilter.MayMatch(resource, criteria))
                     continue;
                 CalendarQueryTelemetry.Add(CalendarQueryCounter.Evaluation);
                 if (CalendarOccurrenceEvaluator.HasInvalidComponentStructure(snapshot))
@@ -78,7 +82,7 @@ internal sealed class CalendarOccurrenceQueryStartExecutor(
                 var failure = EvaluationFailure(evaluated.Code, observedCount);
                 if (failure is not null)
                     return CompletedCalendarOccurrenceQuery.Failure(failure);
-                occurrences.AddRange(evaluated.Items);
+                occurrences.AddRange(CalendarOccurrenceTextFilter.Select(resource, criteria, evaluated.Items));
             }
         }
         var ordered = occurrences
@@ -88,13 +92,14 @@ internal sealed class CalendarOccurrenceQueryStartExecutor(
             .ThenBy(item => CalendarOccurrenceEvaluator.GetIdentitySortKey(item.RecurrenceIdentity), StringComparer.Ordinal)
             .ThenBy(item => item.Snapshot.ResourceHref, StringComparer.Ordinal)
             .ToArray();
-        return Project(ordered, acquired.Diagnostics, temporalContext, cancellationToken);
+        return Project(ordered, acquired.Diagnostics, temporalContext, criteria, cancellationToken);
     }
 
     private static CompletedCalendarOccurrenceQuery Project(
         IReadOnlyList<EvaluatedOccurrence> occurrences,
         IReadOnlyList<QueryDiagnostic> diagnostics,
         TemporalEvaluationContext temporalContext,
+        CalendarTextCriteria? criteria,
         CancellationToken cancellationToken)
     {
         var countFailure = CalendarQuerySnapshotPolicy.Validate(occurrences.Count, 0);
@@ -118,19 +123,23 @@ internal sealed class CalendarOccurrenceQueryStartExecutor(
         }
         var diagnosticsUtf8 = JsonSerializer.SerializeToUtf8Bytes(diagnostics);
         var temporalContextUtf8 = CalendarTemporalEvaluationContextCodec.Encode(temporalContext);
-        var retainedBytes = itemBytes + diagnosticsUtf8.Length + temporalContextUtf8.Length;
+        var textFilterUtf8 = criteria?.EncodeBinding() ?? [];
+        var retainedBytes = itemBytes + diagnosticsUtf8.Length + temporalContextUtf8.Length + textFilterUtf8.Length;
         var retainedFailure = CalendarQuerySnapshotPolicy.Validate(projected.Count, retainedBytes);
         return retainedFailure is null
             ? CompletedCalendarOccurrenceQuery.Success(
-                projected.MoveToImmutable(), diagnosticsUtf8, retainedBytes, temporalContextUtf8)
+                projected.MoveToImmutable(), diagnosticsUtf8, retainedBytes, temporalContextUtf8, textFilterUtf8)
             : CompletedCalendarOccurrenceQuery.Failure(retainedFailure);
     }
 
-    private static CalendarQueryAcquisitionRequest AcquisitionRequest(CalendarOccurrenceQuery query) => new(
+    private static CalendarQueryAcquisitionRequest AcquisitionRequest(
+        CalendarOccurrenceQuery query,
+        CalendarTextCriteria? criteria) => new(
         query.Scope,
         [CalendarEntityKind.Event, CalendarEntityKind.Todo],
         query.From,
-        query.To);
+        query.To,
+        criteria?.Prefilter);
 
     private static bool IsValid(CalendarOccurrenceQueryRequest.Start request) => request.Query is not null
         && request.PageSize is >= 1 and <= CalendarOccurrenceQueryPageCodec.MaximumPageSize
@@ -172,21 +181,50 @@ internal sealed record CompletedCalendarOccurrenceQuery(
     ReadOnlyMemory<byte> DiagnosticsUtf8,
     long RetainedBytes,
     ReadOnlyMemory<byte> TemporalEvaluationContextUtf8,
+    ReadOnlyMemory<byte> TextFilterUtf8,
     QueryFailure? Error)
 {
     internal static CompletedCalendarOccurrenceQuery Success(
         ImmutableArray<StoredCalendarEntityQueryItem> items,
         ReadOnlyMemory<byte> diagnosticsUtf8,
         long retainedBytes,
-        ReadOnlyMemory<byte> temporalEvaluationContextUtf8) =>
-        new(items, diagnosticsUtf8, retainedBytes, temporalEvaluationContextUtf8, null);
+        ReadOnlyMemory<byte> temporalEvaluationContextUtf8,
+        ReadOnlyMemory<byte> textFilterUtf8) =>
+        new(items, diagnosticsUtf8, retainedBytes, temporalEvaluationContextUtf8, textFilterUtf8, null);
 
     internal static CompletedCalendarOccurrenceQuery Failure(QueryFailure error) =>
-        new([], ReadOnlyMemory<byte>.Empty, 0, ReadOnlyMemory<byte>.Empty, error);
+        new([], ReadOnlyMemory<byte>.Empty, 0, ReadOnlyMemory<byte>.Empty, ReadOnlyMemory<byte>.Empty, error);
 
     internal CalendarQuerySnapshotDraft ToSnapshotDraft() => new(
         Items,
         DiagnosticsUtf8,
         RetainedBytes,
-        TemporalEvaluationContextUtf8);
+        TemporalEvaluationContextUtf8,
+        TextFilterUtf8: TextFilterUtf8);
+}
+
+/// <summary>
+/// Applies a text filter around Occurrence evaluation. A resource with no matching component is dropped before
+/// evaluation, so its recurrence or temporal failures cannot depend on whether a server pre-filter excluded it;
+/// each surviving Occurrence then matches only its own effective master or Recurrence Override component.
+/// </summary>
+internal static class CalendarOccurrenceTextFilter
+{
+    internal static bool MayMatch(AcquiredCalendarResource resource, CalendarTextCriteria? criteria) =>
+        criteria is null || criteria.MatchesAnyComponent(resource.Document!, Kind(resource.Snapshot));
+
+    internal static IEnumerable<EvaluatedOccurrence> Select(
+        AcquiredCalendarResource resource,
+        CalendarTextCriteria? criteria,
+        IEnumerable<EvaluatedOccurrence> occurrences) => criteria is null
+        ? occurrences
+        : occurrences.Where(occurrence => criteria.MatchesOccurrence(
+            resource.Document!,
+            Kind(resource.Snapshot),
+            occurrence.RecurrenceIdentity));
+
+    private static CalendarEntityKind Kind(CalendarResourceSnapshot snapshot) =>
+        snapshot.Projection.Kind == CalendarResourceProjectionKind.Event
+            ? CalendarEntityKind.Event
+            : CalendarEntityKind.Todo;
 }

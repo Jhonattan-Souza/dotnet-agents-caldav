@@ -905,6 +905,27 @@ public sealed class CalendarTelemetryTests
         activity.GetTagItem("caldav.query.fallback_reason").ShouldBe("multiget_unavailable");
     }
 
+    [Theory]
+    [InlineData("applied", "applied")]
+    [InlineData("unavailable", "unavailable")]
+    [InlineData("ineligible", "ineligible")]
+    [InlineData("dentist", null)]
+    public void QueryTelemetryAllowlistKeepsOnlyClosedTextPrefilterFacts(string value, string? expected)
+    {
+        using var listener = ListenTo(CalendarTelemetry.InstrumentationName);
+        using var source = new ActivitySource(CalendarTelemetry.InstrumentationName);
+        using var activity = source.StartActivity("caldav.operation");
+        activity.ShouldNotBeNull();
+        activity.SetTag("caldav.query.text_prefilter", value);
+        activity.SetTag("caldav.query.text", "private search");
+        activity.Stop();
+
+        new TelemetryActivityAllowlistProcessor().OnEnd(activity);
+
+        activity.GetTagItem("caldav.query.text_prefilter").ShouldBe(expected);
+        activity.GetTagItem("caldav.query.text").ShouldBeNull();
+    }
+
     [Fact]
     public void QueryDimensionsAreRemovedFromNonCalendarInstrumentation()
     {

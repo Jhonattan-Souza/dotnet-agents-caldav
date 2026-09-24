@@ -1,3 +1,4 @@
+using DotnetAgents.CalDav.Core.Internal.Ical;
 using DotnetAgents.CalDav.Core.Models;
 
 namespace DotnetAgents.CalDav.Core.Internal;
@@ -20,6 +21,16 @@ internal sealed class CalendarQueryTransport(
             entityKind,
             from,
             to,
+            cancellationToken).ConfigureAwait(false);
+
+    public async Task<CalendarTextCandidateResult> QueryTextCandidateHrefsAsync(
+        string calendarHref,
+        CalendarEntityKind entityKind,
+        CalendarTextPrefilter prefilter,
+        CancellationToken cancellationToken) => await client.QueryTextCandidateHrefsAsync(
+            calendarHref,
+            entityKind,
+            prefilter,
             cancellationToken).ConfigureAwait(false);
 
     public async Task<CalendarMultigetResult> MultigetAsync(

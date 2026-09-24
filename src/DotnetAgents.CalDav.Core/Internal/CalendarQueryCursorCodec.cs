@@ -72,16 +72,18 @@ internal sealed class CalendarQueryCursorIssuer(CalendarQueryCursorKey key)
         Guid snapshotId,
         int position,
         DateTimeOffset expiresAt,
-        ReadOnlyMemory<byte> temporalEvaluationContextUtf8 = default) => Protect(new CalendarQueryCursor(
-        Version: 2,
+        ReadOnlyMemory<byte> temporalEvaluationContextUtf8 = default,
+        ReadOnlyMemory<byte> textFilterUtf8 = default) => Protect(new CalendarQueryCursor(
+        Version: CalendarQueryCursor.CurrentVersion,
         Tool: tool,
         SnapshotId: snapshotId,
         Position: position,
         ExpiresAtUnixMilliseconds: expiresAt.ToUnixTimeMilliseconds(),
         Context: key.Context,
-        TemporalContextBinding: BindTemporalContext(temporalEvaluationContextUtf8.Span)));
+        TemporalContextBinding: Bind(temporalEvaluationContextUtf8.Span),
+        TextFilterBinding: Bind(textFilterUtf8.Span)));
 
-    private string BindTemporalContext(ReadOnlySpan<byte> value) =>
+    private string Bind(ReadOnlySpan<byte> value) =>
         Convert.ToHexStringLower(HMACSHA256.HashData(key.NonceKey, value));
 
     private string Protect(CalendarQueryCursor cursor)
@@ -133,6 +135,12 @@ internal sealed class CalendarQueryCursorAuthenticator(
         cursor.TemporalContextBinding,
         Convert.ToHexStringLower(HMACSHA256.HashData(key.NonceKey, temporalEvaluationContextUtf8)));
 
+    internal bool MatchesTextFilter(
+        CalendarQueryCursor cursor,
+        ReadOnlySpan<byte> textFilterUtf8) => FixedTimeEquals(
+        cursor.TextFilterBinding,
+        Convert.ToHexStringLower(HMACSHA256.HashData(key.NonceKey, textFilterUtf8)));
+
     private CalendarQueryCursor? Decrypt(byte[] protectedBytes)
     {
         var nonce = protectedBytes.AsSpan(0, 12);
@@ -146,11 +154,12 @@ internal sealed class CalendarQueryCursorAuthenticator(
 
     private bool IsValid(CalendarQueryCursor? cursor, string expectedTool) => cursor is
         {
-            Version: 2,
+            Version: CalendarQueryCursor.CurrentVersion,
             SnapshotId: var snapshotId,
             Position: >= 1,
             ExpiresAtUnixMilliseconds: > 0,
-            TemporalContextBinding.Length: 64
+            TemporalContextBinding.Length: 64,
+            TextFilterBinding.Length: 64
         }
         && string.Equals(cursor.Tool, expectedTool, StringComparison.Ordinal)
         && snapshotId != Guid.Empty
@@ -188,7 +197,11 @@ internal sealed record CalendarQueryCursor(
     int Position,
     long ExpiresAtUnixMilliseconds,
     string Context,
-    string TemporalContextBinding);
+    string TemporalContextBinding,
+    string TextFilterBinding)
+{
+    internal const int CurrentVersion = 3;
+}
 
 internal sealed record CalendarQueryCursorAuthentication(
     CalendarQueryCursorAuthenticationCode Code,

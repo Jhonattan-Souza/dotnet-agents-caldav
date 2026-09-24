@@ -206,6 +206,37 @@ public sealed class CalendarQueryCursorCodecTests
     }
 
     [Fact]
+    public void CursorAuthenticatesTheExactFrozenTextFilterBinding()
+    {
+        var key = new CalendarQueryCursorKey(OptionsFor(), Key);
+        var issuer = new CalendarQueryCursorIssuer(key);
+        var authenticator = new CalendarQueryCursorAuthenticator(key, new FixedTimeProvider(Now));
+        var filterA = "[[\"dentist\"],[]]"u8.ToArray();
+        var filterB = "[[\"dentist\"],[\"health\"]]"u8.ToArray();
+        var protectedCursor = issuer.Issue(
+            CalendarEntityQueryPageCodec.ToolName,
+            Guid.NewGuid(),
+            1,
+            Now.AddMinutes(10),
+            textFilterUtf8: filterA);
+        var unfiltered = authenticator.Authenticate(
+                issuer.Issue(CalendarEntityQueryPageCodec.ToolName, Guid.NewGuid(), 1, Now.AddMinutes(10)),
+                CalendarEntityQueryPageCodec.ToolName)
+            .Cursor.ShouldNotBeNull();
+
+        var cursor = authenticator.Authenticate(protectedCursor, CalendarEntityQueryPageCodec.ToolName)
+            .Cursor.ShouldNotBeNull();
+
+        cursor.Version.ShouldBe(CalendarQueryCursor.CurrentVersion);
+        authenticator.MatchesTextFilter(cursor, filterA).ShouldBeTrue();
+        authenticator.MatchesTextFilter(cursor, filterB).ShouldBeFalse();
+        authenticator.MatchesTextFilter(cursor, []).ShouldBeFalse();
+        authenticator.MatchesTextFilter(unfiltered, []).ShouldBeTrue();
+        authenticator.MatchesTextFilter(unfiltered, filterA).ShouldBeFalse();
+        protectedCursor.ShouldNotContain("dentist");
+    }
+
+    [Fact]
     public void IssuerRejectsProtectedCursorBeyondTheLexicalLimit()
     {
         var issuer = new CalendarQueryCursorIssuer(new CalendarQueryCursorKey(OptionsFor(), Key));

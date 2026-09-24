@@ -4,6 +4,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using DotnetAgents.CalDav.Core.Internal;
+using DotnetAgents.CalDav.Core.Internal.Ical;
 using DotnetAgents.CalDav.Core.Models;
 
 namespace DotnetAgents.CalDav.Core.Services;
@@ -21,6 +22,8 @@ internal sealed class CalendarTodoQueryStartExecutor(
     {
         if (!IsValid(request))
             return Failure(CalendarQueryFailures.InvalidInput());
+        if (!CalendarTextCriteria.TryCreate(request.Query.TextFilter, out var criteria))
+            return Failure(CalendarQueryFailures.InvalidTextFilter("To-do"));
         var temporal = temporalContextResolver.Resolve(new CalendarTemporalContextRequest(
             true,
             request.Query.EvaluationTimeZone,
@@ -30,7 +33,7 @@ internal sealed class CalendarTodoQueryStartExecutor(
         return await queryPolicy.ExecuteStartAsync<CompletedCalendarTodoQuery, CalendarTodoQueryPageItem>(
             cancellationToken,
             "The To-do query exceeded the Calendar limit.",
-            execution => CompleteAsync(request, temporal.Context!, execution),
+            execution => CompleteAsync(request, criteria, temporal.Context!, execution),
             (completed, token) => completed.Error is not null
                 ? Failure(completed.Error)
                 : snapshotPublication.Publish(
@@ -42,6 +45,7 @@ internal sealed class CalendarTodoQueryStartExecutor(
 
     private async Task<CompletedCalendarTodoQuery> CompleteAsync(
         CalendarTodoQueryRequest.Start request,
+        CalendarTextCriteria? criteria,
         TemporalEvaluationContext temporalContext,
         CalendarQueryPolicy.CalendarQueryExecution execution)
     {
@@ -50,7 +54,8 @@ internal sealed class CalendarTodoQueryStartExecutor(
                 request.Query.Scope,
                 [CalendarEntityKind.Todo],
                 null,
-                null),
+                null,
+                criteria?.Prefilter),
             execution.Token).ConfigureAwait(false);
         execution.ThrowIfDeadlineExpired();
         if (acquired.Error is not null)
@@ -62,6 +67,7 @@ internal sealed class CalendarTodoQueryStartExecutor(
                 acquired.Resources,
                 request.Query with { EvaluationTimeZone = temporalContext.TimeZone },
                 request.Projection,
+                criteria,
                 execution.Token);
         }
         if (evaluated.Error is not null)
@@ -70,10 +76,12 @@ internal sealed class CalendarTodoQueryStartExecutor(
         var temporalContextUtf8 = CalendarTemporalEvaluationContextCodec.Encode(temporalContext);
         var additionalContextUtf8 = Encoding.UTF8.GetBytes(
             evaluated.ExcludedIndeterminateCount.ToString(CultureInfo.InvariantCulture));
+        var textFilterUtf8 = criteria?.EncodeBinding() ?? [];
         var retainedBytes = evaluated.ProjectedBytes
             + diagnosticsUtf8.Length
             + temporalContextUtf8.Length
-            + additionalContextUtf8.Length;
+            + additionalContextUtf8.Length
+            + textFilterUtf8.Length;
         var retainedFailure = CalendarQuerySnapshotPolicy.Validate(evaluated.Items.Length, retainedBytes);
         return retainedFailure is null
             ? CompletedCalendarTodoQuery.Success(
@@ -81,7 +89,8 @@ internal sealed class CalendarTodoQueryStartExecutor(
                 diagnosticsUtf8,
                 retainedBytes,
                 temporalContextUtf8,
-                additionalContextUtf8)
+                additionalContextUtf8,
+                textFilterUtf8)
             : CompletedCalendarTodoQuery.Failure(retainedFailure);
     }
 
@@ -136,6 +145,7 @@ internal sealed record CompletedCalendarTodoQuery(
     long RetainedBytes,
     ReadOnlyMemory<byte> TemporalEvaluationContextUtf8,
     ReadOnlyMemory<byte> AdditionalContextUtf8,
+    ReadOnlyMemory<byte> TextFilterUtf8,
     QueryFailure? Error)
 {
     internal static CompletedCalendarTodoQuery Success(
@@ -143,18 +153,21 @@ internal sealed record CompletedCalendarTodoQuery(
         ReadOnlyMemory<byte> diagnosticsUtf8,
         long retainedBytes,
         ReadOnlyMemory<byte> temporalEvaluationContextUtf8,
-        ReadOnlyMemory<byte> additionalContextUtf8) => new(
+        ReadOnlyMemory<byte> additionalContextUtf8,
+        ReadOnlyMemory<byte> textFilterUtf8) => new(
         items,
         diagnosticsUtf8,
         retainedBytes,
         temporalEvaluationContextUtf8,
         additionalContextUtf8,
+        textFilterUtf8,
         null);
 
     internal static CompletedCalendarTodoQuery Failure(QueryFailure error) => new(
         [],
         ReadOnlyMemory<byte>.Empty,
         0,
+        ReadOnlyMemory<byte>.Empty,
         ReadOnlyMemory<byte>.Empty,
         ReadOnlyMemory<byte>.Empty,
         error);
@@ -164,5 +177,6 @@ internal sealed record CompletedCalendarTodoQuery(
         DiagnosticsUtf8,
         RetainedBytes,
         TemporalEvaluationContextUtf8,
-        AdditionalContextUtf8);
+        AdditionalContextUtf8,
+        TextFilterUtf8);
 }
