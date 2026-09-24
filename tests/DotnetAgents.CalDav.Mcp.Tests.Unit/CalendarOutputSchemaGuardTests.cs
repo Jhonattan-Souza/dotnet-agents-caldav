@@ -144,6 +144,82 @@ public sealed class CalendarOutputSchemaGuardTests
         Should.NotThrow(() => CalendarOutputSchemaGuard.Validate(toolName, result));
     }
 
+    [Theory]
+    [InlineData("calendars.list")]
+    [InlineData("calendars.inspect")]
+    [InlineData("calendars.free_busy")]
+    [InlineData("calendar_resources.changes")]
+    [InlineData("calendar_resources.exact_get")]
+    [InlineData("todos.query")]
+    [InlineData("calendar_resources.get")]
+    public void Validate_RejectsACurrentSnapshotOnReadToolErrors(string toolName)
+    {
+        var error = new JsonObject
+        {
+            ["code"] = "conflict",
+            ["category"] = "state",
+            ["message"] = "The resource changed.",
+            ["retryable"] = false,
+            ["phase"] = "targetRevision"
+        };
+        Should.NotThrow(() => CalendarOutputSchemaGuard.Validate(toolName, ErrorResult(error)));
+
+        error["currentSnapshot"] = EventSnapshot();
+
+        Should.Throw<InvalidOperationException>(() => CalendarOutputSchemaGuard.Validate(toolName, ErrorResult(error)));
+    }
+
+    [Theory]
+    [InlineData("calendars.create", false)]
+    [InlineData("calendars.delete", false)]
+    [InlineData("calendars.patch", false)]
+    [InlineData("events.patch", true)]
+    [InlineData("calendar_resources.delete", true)]
+    public void Validate_AcceptsACurrentSnapshotOnlyOnEntityMutationErrors(string toolName, bool accepted)
+    {
+        var error = new JsonObject
+        {
+            ["code"] = "conflict",
+            ["category"] = "state",
+            ["message"] = "The resource changed.",
+            ["retryable"] = false,
+            ["phase"] = "targetRevision",
+            ["mutationState"] = "not_committed"
+        };
+        Should.NotThrow(() => CalendarOutputSchemaGuard.Validate(toolName, ErrorResult(error)));
+
+        error["currentSnapshot"] = EventSnapshot();
+
+        if (accepted)
+            Should.NotThrow(() => CalendarOutputSchemaGuard.Validate(toolName, ErrorResult(error)));
+        else
+            Should.Throw<InvalidOperationException>(() => CalendarOutputSchemaGuard.Validate(toolName, ErrorResult(error)));
+    }
+
+    private static JsonObject EventSnapshot() => new()
+    {
+        ["calendar"] = new JsonObject { ["href"] = "https://cal.example/events/" },
+        ["resourceRevision"] = new JsonObject
+        {
+            ["href"] = "https://cal.example/events/one.ics", ["entityTag"] = "\"strong\""
+        },
+        ["entityRevision"] = new JsonObject
+        {
+            ["href"] = "https://cal.example/events/one.ics", ["entityUid"] = "one",
+            ["entityKind"] = "event", ["entityTag"] = "\"strong\""
+        },
+        ["calendarProperties"] = new JsonArray(),
+        ["projection"] = new JsonObject { ["kind"] = "event", ["uid"] = "one", ["fields"] = new JsonObject() },
+        ["diagnostics"] = new JsonArray()
+    };
+
+    private static CallToolResult ErrorResult(JsonObject error) => new()
+    {
+        IsError = true,
+        StructuredContent = JsonSerializer.SerializeToElement(error),
+        Content = []
+    };
+
     private static CallToolResult Result(string json) => new()
     {
         StructuredContent = JsonSerializer.Deserialize<JsonElement>(json),

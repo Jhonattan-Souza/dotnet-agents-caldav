@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using ModelContextProtocol.Protocol;
 
 namespace DotnetAgents.CalDav.Mcp.Hosting;
 
@@ -15,6 +16,15 @@ internal static class CalendarToolContract
     public static JsonElement GetOutputSchema(string toolName = "calendars.list") => GetSchema(toolName, "outputSchema");
 
     public static JsonObject GetCacheMetadata(string toolName = "calendars.list") => FindTool(toolName)["cache"]!.DeepClone().AsObject();
+
+    /// <summary>Returns the caching hints advertised on every <c>tools/list</c> result.</summary>
+    public static (TimeSpan TimeToLive, CacheScope Scope) GetToolsListCache()
+    {
+        var cache = Catalog["transport"]!["toolsListCache"]!;
+        return (
+            TimeSpan.FromMilliseconds(cache["ttlMs"]!.GetValue<int>()),
+            Enum.Parse<CacheScope>(cache["cacheScope"]!.GetValue<string>(), ignoreCase: true));
+    }
 
     private static JsonElement GetSchema(string toolName, string schemaProperty)
     {

@@ -1,13 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "protocolRevision": "2026-07-28",
-  "supportedProtocolRevisions": [
-    "2024-11-05",
-    "2025-03-26",
-    "2025-06-18",
-    "2025-11-25",
-    "2026-07-28"
-  ],
   "createSemantics": {
     "authoritativeOperation": "conditional_put",
     "preflightEnumeration": false,
@@ -2844,70 +2837,6 @@
           ]
         }
       ]
-    },
-    "missingRequiredClientCapabilityError": {
-      "description": "On the 2026-07-28 revision a confirmation round is only opened for a request whose _meta declares io.modelcontextprotocol/clientCapabilities.elicitation with form support. A blank elicitation object counts as form support under the revision's compatibility rule; an elicitation that names only the url mode does not. A capability that is undeclared for that request is refused as this JSON-RPC error instead of a typed structuredContent result, which is the only such exception, and the refusal precedes every CalDAV request so the mutation is never attempted. Tools that confirm unconditionally refuse before argument admission; events.patch and todos.patch refuse only for the recurrence-definition, this-and-future, entire-set, and replaceAll patches that require confirmation.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "code",
-        "message",
-        "data"
-      ],
-      "properties": {
-        "code": {
-          "const": -32021
-        },
-        "message": {
-          "type": "string",
-          "minLength": 1
-        },
-        "data": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "requiredCapabilities"
-          ],
-          "properties": {
-            "requiredCapabilities": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "elicitation"
-              ],
-              "properties": {
-                "elicitation": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "required": [
-                    "form"
-                  ],
-                  "properties": {
-                    "form": {
-                      "type": "object",
-                      "additionalProperties": false
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "initializeHandshakeConfirmation": {
-      "description": "Sessions negotiated through initialize (2024-11-05 through 2025-11-25) declare client capabilities once for the session and receive no inputRequests result. Elicitation exists from 2025-06-18: when a 2025-06-18 or 2025-11-25 session declared elicitation with form support, including a blank elicitation object, the same confirmation form is sent as a classic server-to-client elicitation/create request inside the original tools/call and the tool completes in that call; requestState never leaves the server. The server does not bound the wait for that answer, but a confirmation answered more than 10 minutes after the review ends as confirmation_expired with mutationState not_attempted. A 2024-11-05 or 2025-03-26 session, and any session without form elicitation, receives the typed unsupported_capability result in phase mrtr with mutationState not_attempted instead of JSON-RPC error -32021, and the mutation is never attempted.",
-      "revisions": [
-        "2025-06-18",
-        "2025-11-25"
-      ],
-      "unsupportedRevisions": [
-        "2024-11-05",
-        "2025-03-26"
-      ],
-      "method": "elicitation/create",
-      "requiredClientCapability": "elicitation.form",
-      "undeclaredOutcome": "unsupported_capability"
     }
   },
   "environment": [
@@ -2946,16 +2875,6 @@
       "name": "CALDAV_INTEROPERABILITY_PROFILE",
       "required": false,
       "description": "Verified server profile; radicale-3.7.8 enables server-authoritative MOVE"
-    },
-    {
-      "name": "CALDAV_SCHEDULING_MODE",
-      "required": false,
-      "enum": [
-        "storage_only",
-        "server_managed"
-      ],
-      "default": "storage_only",
-      "description": "Scheduling model for participation-bearing writes and Calendar collection deletion; server_managed allows them on servers advertising calendar-auto-schedule and discloses schedulingSideEffects"
     },
     {
       "name": "CALDAV_EXPOSE_EXACT_TOOLS",
@@ -9887,13 +9806,6 @@
         }
       }
     },
-    "schedulingSideEffects": {
-      "description": "Present only under CALDAV_SCHEDULING_MODE=server_managed on scheduling-governed mutations whose mutationState is committed or unknown. possible: this call admitted a write because the server advertised calendar-auto-schedule, so the server may have sent invitations, updates, replies or cancellations; none: this call admitted no write on a server that advertised calendar-auto-schedule.",
-      "enum": [
-        "none",
-        "possible"
-      ]
-    },
     "toolsCallMetadata": {
       "type": "object",
       "required": [
@@ -10135,9 +10047,6 @@
         },
         "mutationState": {
           "const": "committed"
-        },
-        "schedulingSideEffects": {
-          "$ref": "#/$defs/schedulingSideEffects"
         },
         "calendar": {
           "$ref": "#/$defs/calendarDescriptor"
@@ -10417,9 +10326,6 @@
             "committed",
             "unknown"
           ]
-        },
-        "schedulingSideEffects": {
-          "$ref": "#/$defs/schedulingSideEffects"
         }
       }
     },
@@ -10544,9 +10450,6 @@
         "mutationState": {
           "const": "committed"
         },
-        "schedulingSideEffects": {
-          "$ref": "#/$defs/schedulingSideEffects"
-        },
         "snapshot": {
           "$ref": "#/$defs/calendarSnapshot"
         },
@@ -10573,9 +10476,6 @@
         },
         "mutationState": {
           "const": "committed"
-        },
-        "schedulingSideEffects": {
-          "$ref": "#/$defs/schedulingSideEffects"
         },
         "deletionReceipt": {
           "$ref": "#/$defs/deletionReceipt"
@@ -10715,9 +10615,6 @@
             "committed",
             "unknown"
           ]
-        },
-        "schedulingSideEffects": {
-          "$ref": "#/$defs/schedulingSideEffects"
         },
         "currentSnapshot": {
           "$ref": "#/$defs/exactConflictSnapshot"
