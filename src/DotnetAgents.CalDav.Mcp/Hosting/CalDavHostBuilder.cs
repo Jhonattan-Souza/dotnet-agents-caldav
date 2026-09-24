@@ -31,7 +31,10 @@ public sealed class CalDavHostBuilder
         builder.Logging.ClearProviders();
         OpenTelemetryHostConfiguration.Configure(builder, environmentProvider);
 
-        var mcpBuilder = builder.Services.AddMcpServer(options => options.ProtocolVersion = "2026-07-28")
+        // Leaving the revision unpinned lets the SDK negotiate every revision it implements: initialize
+        // handshakes for 2024-11-05 through 2025-11-25 and server/discover with per-request metadata for
+        // 2026-07-28. Confirmation support is then decided per revision by CalendarMrtrCapabilityGuard.
+        var mcpBuilder = builder.Services.AddMcpServer(options => options.ProtocolVersion = null)
             .WithStdioServerTransport()
             .WithMessageFilters(filters => filters.AddIncomingFilter(StrictToolInputGuard.Incoming))
             .WithRequestFilters(filters => filters

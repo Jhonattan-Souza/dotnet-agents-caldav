@@ -27,6 +27,14 @@ Add this MCP server to VS Code, Claude Desktop, Cursor, or any MCP client:
 }
 ```
 
+The server negotiates the MCP revision with the client. It answers the
+`initialize` handshake for `2024-11-05`, `2025-03-26`, `2025-06-18`, and
+`2025-11-25`, and `server/discover` with per-request metadata for `2026-07-28`,
+so current and older MCP clients connect without configuration. Reads and
+unconfirmed writes behave identically on every revision; see
+[Confirmed mutations](#confirmed-mutations) for how each revision confirms a
+protected change.
+
 ## Bundled Agent Skill
 
 The NuGet package includes the harness-neutral Agent Skill at
@@ -98,21 +106,31 @@ The default semantic catalog contains these 23 tools in the order shown.
 - `calendar_resources.exact_replace` — Replace a strong-tagged resource with complete caller-authored Unicode text or canonical base64 bytes after MRTR confirmation.
 - `calendar_resources.exact_move` — Review and atomically move a strong-tagged complete resource to an explicit href with constant-work MRTR and authoritative-byte verification; requires the verified interoperability profile.
 
-The four exact tools are enabled with `CALDAV_EXPOSE_EXACT_TOOLS=true`; this flag controls the deterministic stdio catalog without contacting the server. The configured CalDAV credentials are the stdio authorization context, 401/403 responses become typed call failures, and exact writes require client support for MCP Multi Round-Trip Requests. Exact Move uses headers-only GET absence probes, never scans destination members, never retries MOVE, and keeps its executable one-use plan inside Core.
+The four exact tools are enabled with `CALDAV_EXPOSE_EXACT_TOOLS=true`; this flag controls the deterministic stdio catalog without contacting the server. The configured CalDAV credentials are the stdio authorization context, 401/403 responses become typed call failures, and exact writes require form elicitation support, confirmed as described in [Confirmed mutations](#confirmed-mutations). Exact Move uses headers-only GET absence probes, never scans destination members, never retries MOVE, and keeps its executable one-use plan inside Core.
 
 ### Confirmed mutations
 
 `calendars.delete`, `calendar_resources.delete`, the three exact writes, and the
 recurrence-definition, `this-and-future`, `entire-set`, and `replaceAll` patches
-confirm through MCP Multi Round-Trip Requests. A call that opens a confirmation
-requires `_meta` to declare
-`io.modelcontextprotocol/clientCapabilities.elicitation` with form support. A
-blank `"elicitation": {}` counts as form support under the revision's
-compatibility rule; an elicitation that names only `url` does not. Without a
-form-capable declaration the server answers JSON-RPC error `-32021` with
-`data.requiredCapabilities` before it issues any CalDAV request, so the mutation
-is never attempted. That refusal is the one documented case where a tool answers
-with a JSON-RPC error instead of typed `structuredContent`.
+require a form confirmation before they mutate. A blank `"elicitation": {}`
+counts as form support under the revision's compatibility rule; an elicitation
+that names only `url` does not.
+
+On `2026-07-28` the confirmation travels through MCP Multi Round-Trip Requests.
+A call that opens a confirmation requires `_meta` to declare
+`io.modelcontextprotocol/clientCapabilities.elicitation` with form support.
+Without a form-capable declaration the server answers JSON-RPC error `-32021`
+with `data.requiredCapabilities` before it issues any CalDAV request, so the
+mutation is never attempted. That refusal is the one documented case where a
+tool answers with a JSON-RPC error instead of typed `structuredContent`.
+
+On the `initialize` revisions (`2024-11-05` through `2025-11-25`) a session that
+declared form elicitation receives the same confirmation form as a classic
+`elicitation/create` request inside the original `tools/call`, and the tool
+completes in that call; the protected continuation state never leaves the
+server. A session without form elicitation receives the typed
+`unsupported_capability` result in phase `mrtr` with `mutationState`
+`not_attempted`, and the mutation is never attempted.
 
 ## Optional OpenTelemetry observability
 

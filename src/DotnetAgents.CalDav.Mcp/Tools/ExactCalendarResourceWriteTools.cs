@@ -55,15 +55,14 @@ internal sealed class ExactCalendarResourceWriteTools
      Description("Create a complete caller-authored Calendar Object Resource at an explicitly provided absolute destination resource href.")]
     public Task<CallToolResult> CreateAsync(
         RequestContext<CallToolRequestParams> requestContext,
-        McpServer server,
         CancellationToken cancellationToken)
     {
-        CalendarMrtrCapabilityGuard.RequireConfirmationCapability(requestContext, server);
+        CalendarMrtrCapabilityGuard.RequireConfirmationCapability(requestContext);
         return CreateRawAsync(
             requestContext.Params?.Arguments,
             requestContext.Params?.RequestState,
             requestContext.Params?.InputResponses,
-            server.IsMrtrSupported,
+            CalendarMrtrCapabilityGuard.IsConfirmationSupported(requestContext),
             cancellationToken);
     }
 
@@ -78,15 +77,14 @@ internal sealed class ExactCalendarResourceWriteTools
      Description("Confirm and replace one revision-bound resource at its explicitly provided absolute href with a complete caller-authored Calendar Object Resource.")]
     public Task<CallToolResult> ReplaceAsync(
         RequestContext<CallToolRequestParams> requestContext,
-        McpServer server,
         CancellationToken cancellationToken)
     {
-        CalendarMrtrCapabilityGuard.RequireConfirmationCapability(requestContext, server);
+        CalendarMrtrCapabilityGuard.RequireConfirmationCapability(requestContext);
         return ReplaceRawAsync(
             requestContext.Params?.Arguments,
             requestContext.Params?.RequestState,
             requestContext.Params?.InputResponses,
-            server.IsMrtrSupported,
+            CalendarMrtrCapabilityGuard.IsConfirmationSupported(requestContext),
             cancellationToken);
     }
 
@@ -101,15 +99,14 @@ internal sealed class ExactCalendarResourceWriteTools
      Description("Review, confirm, and atomically move one strong-revision-bound complete resource to an explicitly provided absolute destination href with constant work and authoritative-byte verification.")]
     public Task<CallToolResult> MoveAsync(
         RequestContext<CallToolRequestParams> requestContext,
-        McpServer server,
         CancellationToken cancellationToken)
     {
-        CalendarMrtrCapabilityGuard.RequireConfirmationCapability(requestContext, server);
+        CalendarMrtrCapabilityGuard.RequireConfirmationCapability(requestContext);
         return MoveRawAsync(
             requestContext.Params?.Arguments,
             requestContext.Params?.RequestState,
             requestContext.Params?.InputResponses,
-            server.IsMrtrSupported,
+            CalendarMrtrCapabilityGuard.IsConfirmationSupported(requestContext),
             cancellationToken);
     }
 
