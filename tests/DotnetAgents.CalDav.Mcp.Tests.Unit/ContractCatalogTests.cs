@@ -226,6 +226,19 @@ public sealed class ContractCatalogTests
         var entityQueryInput = catalog["$defs"]!["entityQueryInput"]!.AsObject();
         entityQueryInput["oneOf"]![0]!["properties"]!.AsObject().ShouldContainKey("evaluationTimeZone");
         entityQueryInput["oneOf"]![1]!["properties"]!.AsObject().ShouldNotContainKey("evaluationTimeZone");
+        foreach (var inputName in new[] { "entityQueryInput", "occurrenceQueryInput", "todoQueryInput" })
+        {
+            var input = catalog["$defs"]![inputName]!.AsObject();
+            var start = input["oneOf"]![0]!["properties"]!.AsObject();
+            start["text"]!["maxLength"]!.GetValue<int>().ShouldBe(256);
+            start["categories"]!["maxItems"]!.GetValue<int>().ShouldBe(16);
+            start["categories"]!["items"]!["maxLength"]!.GetValue<int>().ShouldBe(128);
+            start["text"]!["description"]!.GetValue<string>().ShouldContain("always evaluated locally");
+            input["properties"]!.AsObject().ShouldContainKey("text");
+            input["properties"]!.AsObject().ShouldContainKey("categories");
+            input["oneOf"]![1]!["properties"]!.AsObject().ShouldNotContainKey("text");
+            input["oneOf"]![1]!["properties"]!.AsObject().ShouldNotContainKey("categories");
+        }
         var entityQuerySuccess = catalog["$defs"]!["entityQuerySuccess"]!.AsObject();
         entityQuerySuccess["properties"]!.AsObject().ShouldContainKey("temporalEvaluationContext");
         var occurrenceQuerySuccess = catalog["$defs"]!["occurrenceQuerySuccess"]!.AsObject();

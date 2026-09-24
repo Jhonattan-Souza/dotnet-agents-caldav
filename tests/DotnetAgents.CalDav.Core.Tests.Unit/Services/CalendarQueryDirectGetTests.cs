@@ -5,6 +5,7 @@ using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Core.DependencyInjection;
 using DotnetAgents.CalDav.Core.Internal;
+using DotnetAgents.CalDav.Core.Internal.Ical;
 using DotnetAgents.CalDav.Core.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http.Resilience;
@@ -673,6 +674,13 @@ public sealed class CalendarQueryDirectGetTests
             DateTimeOffset? to,
             CancellationToken cancellationToken) => Task.FromResult(hrefs);
 
+        public Task<CalendarTextCandidateResult> QueryTextCandidateHrefsAsync(
+            string calendarHref,
+            CalendarEntityKind entityKind,
+            CalendarTextPrefilter prefilter,
+            CancellationToken cancellationToken) => throw new InvalidOperationException(
+            "Text candidate reduction is not scripted.");
+
         public Task<CalendarMultigetResult> MultigetAsync(
             string calendarHref,
             IReadOnlyList<string> resourceHrefs,
@@ -717,6 +725,13 @@ public sealed class CalendarQueryDirectGetTests
             DateTimeOffset? from,
             DateTimeOffset? to,
             CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<CalendarTextCandidateResult> QueryTextCandidateHrefsAsync(
+            string calendarHref,
+            CalendarEntityKind entityKind,
+            CalendarTextPrefilter prefilter,
+            CancellationToken cancellationToken) => throw new InvalidOperationException(
+            "Text candidate reduction is not scripted.");
 
         public Task<CalendarMultigetResult> MultigetAsync(
             string calendarHref,
@@ -783,6 +798,13 @@ public sealed class CalendarQueryDirectGetTests
             DateTimeOffset? from,
             DateTimeOffset? to,
             CancellationToken cancellationToken) => Task.FromResult(Hrefs);
+
+        public Task<CalendarTextCandidateResult> QueryTextCandidateHrefsAsync(
+            string calendarHref,
+            CalendarEntityKind entityKind,
+            CalendarTextPrefilter prefilter,
+            CancellationToken cancellationToken) => throw new InvalidOperationException(
+            "Text candidate reduction is not scripted.");
 
         public Task<CalendarMultigetResult> MultigetAsync(
             string calendarHref,
@@ -858,6 +880,13 @@ public sealed class CalendarQueryDirectGetTests
             DateTimeOffset? from,
             DateTimeOffset? to,
             CancellationToken cancellationToken) => Task.FromResult(Hrefs);
+
+        public Task<CalendarTextCandidateResult> QueryTextCandidateHrefsAsync(
+            string calendarHref,
+            CalendarEntityKind entityKind,
+            CalendarTextPrefilter prefilter,
+            CancellationToken cancellationToken) => throw new InvalidOperationException(
+            "Text candidate reduction is not scripted.");
 
         public Task<CalendarMultigetResult> MultigetAsync(
             string calendarHref,

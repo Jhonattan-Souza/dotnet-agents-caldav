@@ -4,6 +4,7 @@ using System.Text.Json;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.DependencyInjection;
 using DotnetAgents.CalDav.Core.Internal;
+using DotnetAgents.CalDav.Core.Internal.Ical;
 using DotnetAgents.CalDav.Core.Models;
 using Microsoft.Extensions.DependencyInjection;
 using DotnetAgents.CalDav.Core.Configuration;
@@ -568,6 +569,13 @@ public sealed class CalendarTodoQueryModuleTests
                 ? hrefs
                 : (IReadOnlyList<string>)[calendarHref + "irrelevant-event.ics"]);
         }
+
+        public Task<CalendarTextCandidateResult> QueryTextCandidateHrefsAsync(
+            string calendarHref,
+            CalendarEntityKind entityKind,
+            CalendarTextPrefilter prefilter,
+            CancellationToken cancellationToken) => throw new InvalidOperationException(
+            "Text candidate reduction is not scripted.");
 
         public Task<CalendarMultigetResult> MultigetAsync(
             string requestedCalendarHref,

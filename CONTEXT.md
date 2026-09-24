@@ -112,6 +112,10 @@ _Avoid_: CalDAV cache, live result set, offset page
 An opaque authenticated position in one Query Result Snapshot whose validity cannot outlive that snapshot.
 _Avoid_: Page number, durable result identifier, CalDAV sync token
 
+**Text Filter**:
+An optional query predicate whose search terms and categories must all match one Calendar Entity component's own SUMMARY, DESCRIPTION, LOCATION, and CATEGORIES values. It is evaluated locally on authoritative content and frozen into the Query Result Snapshot; a server text-match only reduces candidates.
+_Avoid_: Server search, full-text index, fuzzy match
+
 **Synchronization Checkpoint**:
 An opaque handle to authenticated session state that binds one Calendar, authorization configuration, and native collection sync token. Its validity requires that state to remain in the bounded session store. A later native report observes changes since that state; it does not replay an immutable query page.
 _Avoid_: Query cursor, durable history, mutation revision

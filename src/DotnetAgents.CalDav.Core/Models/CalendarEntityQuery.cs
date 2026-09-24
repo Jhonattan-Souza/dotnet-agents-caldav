@@ -28,7 +28,17 @@ public sealed record CalendarEntityQuery(
     IReadOnlyList<CalendarEntityKind> EntityKinds,
     DateTimeOffset? From = null,
     DateTimeOffset? To = null,
-    string? EvaluationTimeZone = null);
+    string? EvaluationTimeZone = null,
+    CalendarTextFilter? TextFilter = null);
+
+/// <summary>
+/// Optional content filter for a semantic query. Every whitespace-separated term of <see cref="Text"/> must occur,
+/// case-insensitively, in SUMMARY, DESCRIPTION, LOCATION, or one CATEGORIES value of the same Calendar Entity
+/// component, and that component must carry every requested category.
+/// </summary>
+public sealed record CalendarTextFilter(
+    string? Text = null,
+    IReadOnlyList<string>? Categories = null);
 
 /// <summary>Explicit context used to evaluate floating and date-only Temporal Values.</summary>
 public sealed record TemporalEvaluationContext(

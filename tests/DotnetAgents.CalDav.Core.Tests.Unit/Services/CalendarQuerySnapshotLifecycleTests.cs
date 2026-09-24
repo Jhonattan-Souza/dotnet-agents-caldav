@@ -153,6 +153,45 @@ public sealed class CalendarQuerySnapshotLifecycleTests
     }
 
     [Fact]
+    public void ReplayRejectsCursorBoundToADifferentTextFilter()
+    {
+        var time = new MutableTimeProvider();
+        using var context = LifecycleContext.Create(time);
+        var filter = "[[\"dentist\"],[]]"u8.ToArray();
+        var first = context.Publication.Publish(
+                Draft(3, TemporalContext(), filter),
+                1,
+                context.PageCodec,
+                CancellationToken.None)
+            .ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Page>();
+        var cursor = first.Value.NextCursor.ShouldNotBeNull();
+        var snapshot = context.Reader.Get(context.SnapshotId(cursor)).ShouldNotBeNull();
+        var otherFilter = context.Issuer.Issue(
+            CalendarEntityQueryPageCodec.ToolName,
+            snapshot.Id,
+            1,
+            snapshot.ExpiresAt,
+            snapshot.TemporalEvaluationContextUtf8,
+            "[[\"doctor\"],[]]"u8.ToArray());
+        var noFilter = context.Issuer.Issue(
+            CalendarEntityQueryPageCodec.ToolName,
+            snapshot.Id,
+            1,
+            snapshot.ExpiresAt,
+            snapshot.TemporalEvaluationContextUtf8);
+
+        snapshot.TextFilterUtf8.ToArray().ShouldBe(filter);
+        context.Replay.Replay(cursor, null, context.PageCodec, CancellationToken.None)
+            .ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Page>().Value.Items.Count.ShouldBe(2);
+        context.Replay.Replay(otherFilter, null, context.PageCodec, CancellationToken.None)
+            .ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Failure>().Error.Code
+            .ShouldBe(QueryFailureCode.InvalidInput);
+        context.Replay.Replay(noFilter, null, context.PageCodec, CancellationToken.None)
+            .ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Failure>().Error.Code
+            .ShouldBe(QueryFailureCode.InvalidInput);
+    }
+
+    [Fact]
     public void ReplayOwnsAuthenticationLookupContextPositionAndVariableFinalPages()
     {
         var time = new MutableTimeProvider();
@@ -256,7 +295,8 @@ public sealed class CalendarQuerySnapshotLifecycleTests
 
     private static CalendarQuerySnapshotDraft Draft(
         int itemCount,
-        ReadOnlyMemory<byte> temporalContext = default)
+        ReadOnlyMemory<byte> temporalContext = default,
+        ReadOnlyMemory<byte> textFilter = default)
     {
         var items = Enumerable.Range(0, itemCount)
             .Select(index => new StoredCalendarEntityQueryItem(JsonSerializer.SerializeToUtf8Bytes(new { index })))
@@ -265,8 +305,9 @@ public sealed class CalendarQuerySnapshotLifecycleTests
         return new CalendarQuerySnapshotDraft(
             items,
             diagnostics,
-            items.Sum(item => item.JsonByteCount) + diagnostics.Length + temporalContext.Length,
-            temporalContext);
+            items.Sum(item => item.JsonByteCount) + diagnostics.Length + temporalContext.Length + textFilter.Length,
+            temporalContext,
+            TextFilterUtf8: textFilter);
     }
 
     private static ReadOnlyMemory<byte> TemporalContext() => CalendarTemporalEvaluationContextCodec.Encode(

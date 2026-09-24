@@ -32,15 +32,16 @@ internal static class CalendarTodoSnapshotEvaluator
         IReadOnlyList<AcquiredCalendarResource> resources,
         CalendarTodoQuery query,
         IReadOnlyList<CalendarTodoProjectionField> projection,
+        CalendarTextCriteria? criteria,
         CancellationToken cancellationToken)
     {
         var rows = new List<CalendarTodoEvaluatedRow>();
         var observedOccurrences = 0;
-        foreach (var resource in resources)
+        foreach (var resource in resources.Where(resource => MayMatchText(resource, criteria)))
         {
             cancellationToken.ThrowIfCancellationRequested();
             CalendarQueryTelemetry.Add(CalendarQueryCounter.Evaluation);
-            var evaluated = EvaluateResource(resource, query, cancellationToken);
+            var evaluated = EvaluateResource(resource, query, criteria, cancellationToken);
             observedOccurrences += evaluated.ObservedOccurrences;
             if (evaluated.Error is not null)
                 return CalendarTodoEvaluationResult.Failure(evaluated.Error);
@@ -56,9 +57,17 @@ internal static class CalendarTodoSnapshotEvaluator
         return FilterOrderAndProject(rows, query, projection, cancellationToken);
     }
 
+    // Text-mismatched resources leave before temporal evaluation, so a server pre-filter cannot change failures.
+    // An Opaque Calendar Object Resource has no To-do content to match and never survives a text filter.
+    private static bool MayMatchText(AcquiredCalendarResource resource, CalendarTextCriteria? criteria) =>
+        criteria is null
+        || resource.Snapshot.Projection.Kind == CalendarResourceProjectionKind.Todo
+            && criteria.MatchesAnyComponent(resource.Document!, CalendarEntityKind.Todo);
+
     private static CalendarTodoResourceEvaluation EvaluateResource(
         AcquiredCalendarResource resource,
         CalendarTodoQuery query,
+        CalendarTextCriteria? criteria,
         CancellationToken cancellationToken)
     {
         var snapshot = resource.Snapshot;
@@ -86,7 +95,7 @@ internal static class CalendarTodoSnapshotEvaluator
                     0);
             }
             return recurring
-                ? EvaluateRecurring(resource, document, master, query, cancellationToken)
+                ? EvaluateRecurring(resource, document, master, query, criteria, cancellationToken)
                 : EvaluateNonRecurring(resource, document, master, query, cancellationToken);
         }
         catch (CalendarTodoTemporalUnresolvedException)
@@ -129,6 +138,7 @@ internal static class CalendarTodoSnapshotEvaluator
         CalendarContentDocument document,
         CalendarContentComponent master,
         CalendarTodoQuery query,
+        CalendarTextCriteria? criteria,
         CancellationToken cancellationToken)
     {
         var snapshot = resource.Snapshot;
@@ -146,7 +156,12 @@ internal static class CalendarTodoSnapshotEvaluator
             cancellationToken);
         if (evaluated.Code != CalendarOccurrenceEvaluationCode.Success)
             return CalendarTodoResourceEvaluation.Failure(EvaluationFailure(evaluated));
-        var rows = evaluated.Items.Select(occurrence => CreateOccurrenceRow(
+        var rows = evaluated.Items
+            .Where(occurrence => criteria?.MatchesOccurrence(
+                document,
+                CalendarEntityKind.Todo,
+                occurrence.RecurrenceIdentity) != false)
+            .Select(occurrence => CreateOccurrenceRow(
                 occurrence,
                 document,
                 master))
@@ -181,7 +196,10 @@ internal static class CalendarTodoSnapshotEvaluator
         CalendarContentDocument document,
         CalendarContentComponent master)
     {
-        var component = CalendarTodoComponentSelector.Select(document, occurrence.RecurrenceIdentity);
+        var component = CalendarOccurrenceComponentSelector.Select(
+            document,
+            occurrence.RecurrenceIdentity,
+            CalendarEntityKind.Todo);
         var timing = ReadOccurrenceTiming(document, component, master, occurrence);
         var completion = CalendarTodoCompletionClassifier.Classify(document, component.Path);
         return new CalendarTodoEvaluatedRow(

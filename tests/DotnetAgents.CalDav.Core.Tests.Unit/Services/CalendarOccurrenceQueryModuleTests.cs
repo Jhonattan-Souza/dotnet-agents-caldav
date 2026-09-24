@@ -3,6 +3,7 @@ using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Core.DependencyInjection;
 using DotnetAgents.CalDav.Core.Internal;
+using DotnetAgents.CalDav.Core.Internal.Ical;
 using DotnetAgents.CalDav.Core.Models;
 using DotnetAgents.CalDav.Core.Services;
 using Microsoft.Extensions.DependencyInjection;
@@ -287,6 +288,13 @@ public sealed class CalendarOccurrenceQueryModuleTests
             TotalCalls++;
             return Task.FromResult(resourceHrefs);
         }
+
+        public Task<CalendarTextCandidateResult> QueryTextCandidateHrefsAsync(
+            string calendarHref,
+            CalendarEntityKind entityKind,
+            CalendarTextPrefilter prefilter,
+            CancellationToken cancellationToken) => throw new InvalidOperationException(
+            "Text candidate reduction is not scripted.");
 
         public Task<CalendarMultigetResult> MultigetAsync(
             string candidateCalendarHref,

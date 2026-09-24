@@ -28,6 +28,7 @@ internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activi
         "caldav.query.mode",
         "caldav.query.fetch_mode",
         "caldav.query.fallback_reason",
+        "caldav.query.text_prefilter",
         "caldav.query.phase",
         "caldav.query.candidate_count",
         "caldav.query.multiget_resource_count",
@@ -173,6 +174,8 @@ internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activi
             activity.GetTagItem("caldav.query.fetch_mode")));
         activity.SetTag("caldav.query.fallback_reason", ClosedQueryFallbackReason(
             activity.GetTagItem("caldav.query.fallback_reason")));
+        activity.SetTag("caldav.query.text_prefilter", ClosedQueryTextPrefilter(
+            activity.GetTagItem("caldav.query.text_prefilter")));
         activity.SetTag("caldav.query.phase", ClosedQueryPhase(activity.GetTagItem("caldav.query.phase")));
         foreach (var name in QueryCounterNames)
             activity.SetTag(name, NonNegativeCounter(activity.GetTagItem(name)));
@@ -251,6 +254,14 @@ internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activi
     private static string? ClosedQueryFallbackReason(object? value) => (value as string) switch
     {
         "multiget_unavailable" => "multiget_unavailable",
+        _ => null
+    };
+
+    private static string? ClosedQueryTextPrefilter(object? value) => (value as string) switch
+    {
+        "applied" => "applied",
+        "unavailable" => "unavailable",
+        "ineligible" => "ineligible",
         _ => null
     };
 

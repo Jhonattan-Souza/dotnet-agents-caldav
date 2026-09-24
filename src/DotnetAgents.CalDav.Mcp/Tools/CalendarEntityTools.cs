@@ -33,7 +33,7 @@ public sealed class CalendarEntityTools
         OpenWorld = true,
         UseStructuredContent = true,
         OutputSchemaType = typeof(CalendarEntityQuerySuccessResult)),
-     Description("Start one Calendar Entity query or continue its immutable Query Result Snapshot. A bounded Start requires an explicit IANA Temporal Evaluation Context from evaluationTimeZone or validated CALDAV_EVALUATION_TIME_ZONE configuration; Continue repeats the frozen context without CalDAV or semantic work.")]
+     Description("Start one Calendar Entity query or continue its immutable Query Result Snapshot. A bounded Start requires an explicit IANA Temporal Evaluation Context from evaluationTimeZone or validated CALDAV_EVALUATION_TIME_ZONE configuration; optional text and categories select matching Calendar Entity content before pagination. Continue repeats the frozen context and filters without CalDAV or semantic work.")]
     public Task<CallToolResult> QueryAsync(
         RequestContext<CallToolRequestParams> requestContext,
         CancellationToken cancellationToken) => QueryRawAsync(requestContext.Params?.Arguments, cancellationToken);
@@ -183,7 +183,9 @@ public sealed class CalendarEntityTools
     {
         scope = null;
         kinds = null;
-        if (arguments.Keys.Any(key => key is not ("scope" or "entityKinds" or "from" or "to" or "evaluationTimeZone" or "pageSize"))
+        if (arguments.Keys.Any(key => key is not (
+                "scope" or "entityKinds" or "from" or "to" or "evaluationTimeZone" or "text" or "categories"
+                or "pageSize"))
             || !arguments.TryGetValue("scope", out var scopeElement)
             || !arguments.TryGetValue("entityKinds", out var kindsElement)
             || !CalendarQueryToolSupport.HasScopeShape(scopeElement)
@@ -206,9 +208,10 @@ public sealed class CalendarEntityTools
         if (!CalendarQueryToolSupport.TryCreateScope(scope, out var domainScope)
             || !TryCreateKinds(kinds, out var domainKinds)
             || !TryReadWindow(arguments, out var from, out var to)
-            || !TryReadOptionalString(arguments, "evaluationTimeZone", out var evaluationTimeZone))
+            || !TryReadOptionalString(arguments, "evaluationTimeZone", out var evaluationTimeZone)
+            || !CalendarQueryToolSupport.TryReadTextFilter(arguments, out var textFilter))
             return false;
-        query = new CalendarEntityQuery(domainScope, domainKinds, from, to, evaluationTimeZone);
+        query = new CalendarEntityQuery(domainScope, domainKinds, from, to, evaluationTimeZone, textFilter);
         return true;
     }
 

@@ -105,6 +105,8 @@ internal sealed class CalendarEntityQueryStartExecutor
     {
         if (!IsValid(request))
             return Failure(CalendarQueryFailures.InvalidInput());
+        if (!CalendarTextCriteria.TryCreate(request.Query.TextFilter, out var criteria))
+            return Failure(CalendarQueryFailures.InvalidTextFilter("Calendar Entity"));
         var temporal = _temporalContextResolver.Resolve(new CalendarTemporalContextRequest(
             request.Query.From is not null,
             request.Query.EvaluationTimeZone,
@@ -114,7 +116,7 @@ internal sealed class CalendarEntityQueryStartExecutor
         return await _queryPolicy.ExecuteStartAsync<CompletedCalendarEntityQuery, CalendarEntityQueryItem>(
             cancellationToken,
             "The query exceeded the Calendar limit.",
-            execution => CompleteQueryAsync(request.Query, temporal.Context, execution),
+            execution => CompleteQueryAsync(request.Query, criteria, temporal.Context, execution),
             (completed, token) => completed.Error is not null
                 ? Failure(completed.Error)
                 : _snapshotPublication.Publish(
@@ -126,6 +128,7 @@ internal sealed class CalendarEntityQueryStartExecutor
 
     private async Task<CompletedCalendarEntityQuery> CompleteQueryAsync(
         CalendarEntityQuery query,
+        CalendarTextCriteria? criteria,
         TemporalEvaluationContext? temporalContext,
         CalendarQueryPolicy.CalendarQueryExecution execution)
     {
@@ -133,14 +136,15 @@ internal sealed class CalendarEntityQueryStartExecutor
                 query.Scope,
                 query.EntityKinds,
                 query.From,
-                query.To), execution.Token)
+                query.To,
+                criteria?.Prefilter), execution.Token)
             .ConfigureAwait(false);
         execution.ThrowIfDeadlineExpired();
         if (acquired.Error is not null)
             return CompletedCalendarEntityQuery.Failure(acquired.Error);
         FilterResult filtered;
         using (CalendarQueryTelemetry.StartPhase(CalendarQueryPhase.Evaluation))
-            filtered = Filter(acquired.Resources, query, temporalContext, execution.Token);
+            filtered = Filter(acquired.Resources, query, criteria, temporalContext, execution.Token);
         if (filtered.Error is not null)
             return CompletedCalendarEntityQuery.Failure(filtered.Error);
         using (CalendarQueryTelemetry.StartPhase(CalendarQueryPhase.Serialization))
@@ -148,6 +152,7 @@ internal sealed class CalendarEntityQueryStartExecutor
                 filtered.Resources.Select(resource => resource.Snapshot).ToArray(),
                 acquired.Diagnostics,
                 temporalContext,
+                criteria,
                 execution.Token);
     }
 
@@ -155,6 +160,7 @@ internal sealed class CalendarEntityQueryStartExecutor
         IReadOnlyList<CalendarResourceSnapshot> snapshots,
         IReadOnlyList<QueryDiagnostic> diagnostics,
         TemporalEvaluationContext? temporalContext,
+        CalendarTextCriteria? criteria,
         CancellationToken cancellationToken)
     {
         var countFailure = CalendarQuerySnapshotPolicy.Validate(snapshots.Count, 0);
@@ -175,7 +181,8 @@ internal sealed class CalendarEntityQueryStartExecutor
         }
         var diagnosticsUtf8 = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(diagnostics);
         var temporalContextUtf8 = CalendarTemporalEvaluationContextCodec.Encode(temporalContext);
-        var retainedBytes = itemBytes + diagnosticsUtf8.Length + temporalContextUtf8.Length;
+        var textFilterUtf8 = criteria?.EncodeBinding() ?? [];
+        var retainedBytes = itemBytes + diagnosticsUtf8.Length + temporalContextUtf8.Length + textFilterUtf8.Length;
         var retainedFailure = CalendarQuerySnapshotPolicy.Validate(projected.Count, retainedBytes);
         if (retainedFailure is not null)
             return CompletedCalendarEntityQuery.Failure(retainedFailure);
@@ -183,18 +190,21 @@ internal sealed class CalendarEntityQueryStartExecutor
             projected.MoveToImmutable(),
             diagnosticsUtf8,
             retainedBytes,
-            temporalContextUtf8);
+            temporalContextUtf8,
+            textFilterUtf8);
     }
 
     private static FilterResult Filter(
         IReadOnlyList<AcquiredCalendarResource> resources,
         CalendarEntityQuery query,
+        CalendarTextCriteria? criteria,
         TemporalEvaluationContext? temporalContext,
         CancellationToken cancellationToken)
     {
         var filtered = new List<AcquiredCalendarResource>();
         var occurrenceCount = 0;
-        foreach (var resource in resources.Where(resource => MatchesKind(resource.Snapshot, query.EntityKinds)))
+        foreach (var resource in resources.Where(resource => MatchesKind(resource.Snapshot, query.EntityKinds)
+                     && MatchesText(resource, criteria)))
         {
             var snapshot = resource.Snapshot;
             cancellationToken.ThrowIfCancellationRequested();
@@ -242,6 +252,16 @@ internal sealed class CalendarEntityQueryStartExecutor
         request.Query is not null
         && request.PageSize is >= 1 and <= CalendarEntityQueryPageCodec.MaximumPageSize;
 
+    // An Opaque Calendar Object Resource has no Calendar Entity content to match, so a text filter excludes it.
+    private static bool MatchesText(AcquiredCalendarResource resource, CalendarTextCriteria? criteria) =>
+        criteria is null
+        || resource.Snapshot.Projection.Kind != CalendarResourceProjectionKind.Opaque
+            && criteria.MatchesAnyComponent(
+                resource.Document!,
+                resource.Snapshot.Projection.Kind == CalendarResourceProjectionKind.Event
+                    ? CalendarEntityKind.Event
+                    : CalendarEntityKind.Todo);
+
     private static bool MatchesKind(CalendarResourceSnapshot snapshot, IReadOnlyList<CalendarEntityKind> kinds) =>
         snapshot.Projection.Kind == CalendarResourceProjectionKind.Opaque
         || kinds.Any(kind => kind == CalendarEntityKind.Event
@@ -278,23 +298,26 @@ internal sealed record CompletedCalendarEntityQuery(
     ReadOnlyMemory<byte> DiagnosticsUtf8,
     long RetainedBytes,
     ReadOnlyMemory<byte> TemporalEvaluationContextUtf8,
+    ReadOnlyMemory<byte> TextFilterUtf8,
     QueryFailure? Error)
 {
     internal static CompletedCalendarEntityQuery Success(
         ImmutableArray<StoredCalendarEntityQueryItem> items,
         ReadOnlyMemory<byte> diagnosticsUtf8,
         long retainedBytes,
-        ReadOnlyMemory<byte> temporalEvaluationContextUtf8) =>
-        new(items, diagnosticsUtf8, retainedBytes, temporalEvaluationContextUtf8, null);
+        ReadOnlyMemory<byte> temporalEvaluationContextUtf8,
+        ReadOnlyMemory<byte> textFilterUtf8) =>
+        new(items, diagnosticsUtf8, retainedBytes, temporalEvaluationContextUtf8, textFilterUtf8, null);
 
     internal static CompletedCalendarEntityQuery Failure(QueryFailure error) =>
-        new([], ReadOnlyMemory<byte>.Empty, 0, ReadOnlyMemory<byte>.Empty, error);
+        new([], ReadOnlyMemory<byte>.Empty, 0, ReadOnlyMemory<byte>.Empty, ReadOnlyMemory<byte>.Empty, error);
 
     internal CalendarQuerySnapshotDraft ToSnapshotDraft() => new(
         Items,
         DiagnosticsUtf8,
         RetainedBytes,
-        TemporalEvaluationContextUtf8);
+        TemporalEvaluationContextUtf8,
+        TextFilterUtf8: TextFilterUtf8);
 }
 
 internal static class CalendarQueryFailures
@@ -302,6 +325,12 @@ internal static class CalendarQueryFailures
     internal static QueryFailure InvalidInput(string message = "The Calendar Entity query input is invalid.") =>
         new(QueryFailureCode.InvalidInput, QueryFailureCategory.Input, message, false,
             QueryFailurePhase.SchemaLexicalDiscriminator);
+
+    internal static QueryFailure InvalidTextFilter(string queryName) => InvalidInput(
+        $"The {queryName} query text or categories filter is invalid; supply non-blank text of at most "
+        + $"{CalendarTextCriteria.MaximumTextLength} characters and {CalendarTextCriteria.MaximumTerms} terms, "
+        + $"and at most {CalendarTextCriteria.MaximumCategories} distinct trimmed categories of at most "
+        + $"{CalendarTextCriteria.MaximumCategoryLength} characters, without control characters.");
 
     internal static QueryFailure InvalidCursor() =>
         new(QueryFailureCode.InvalidInput, QueryFailureCategory.Input, "The continuation cursor is invalid.", false,

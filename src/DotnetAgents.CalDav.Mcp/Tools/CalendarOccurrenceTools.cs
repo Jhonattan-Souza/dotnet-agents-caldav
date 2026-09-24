@@ -31,7 +31,7 @@ public sealed class CalendarOccurrenceTools
         OpenWorld = true,
         UseStructuredContent = true,
         OutputSchemaType = typeof(CalendarOccurrenceQuerySuccessResult)),
-     Description("Start one bounded Occurrence query or continue its immutable Query Result Snapshot. Start evaluates recurrence once under an explicit IANA Temporal Evaluation Context from evaluationTimeZone or validated CALDAV_EVALUATION_TIME_ZONE configuration; Continue accepts only cursor and optional pageSize and performs no CalDAV or semantic work.")]
+     Description("Start one bounded Occurrence query or continue its immutable Query Result Snapshot. Start evaluates recurrence once under an explicit IANA Temporal Evaluation Context from evaluationTimeZone or validated CALDAV_EVALUATION_TIME_ZONE configuration and can select Occurrences by the text and categories of their effective component; Continue accepts only cursor and optional pageSize and performs no CalDAV or semantic work.")]
     public Task<CallToolResult> QueryAsync(
         RequestContext<CallToolRequestParams> requestContext,
         CancellationToken cancellationToken) => QueryRawAsync(requestContext.Params?.Arguments, cancellationToken);
@@ -156,10 +156,16 @@ public sealed class CalendarOccurrenceTools
             || !CalendarQueryToolSupport.TryParseUtc(to, out var domainTo)
             || domainFrom is null || domainTo is null
             || !TryReadOptionalString(arguments, "evaluationTimeZone", out var evaluationTimeZone)
+            || !CalendarQueryToolSupport.TryReadTextFilter(arguments, out var textFilter)
             || !TryReadOptionalPageSize(arguments, out var pageSize))
             return false;
         request = new CalendarOccurrenceQueryRequest.Start(
-            new CalendarOccurrenceQuery(domainScope, domainFrom.Value, domainTo.Value, evaluationTimeZone),
+            new CalendarOccurrenceQuery(
+                domainScope,
+                domainFrom.Value,
+                domainTo.Value,
+                evaluationTimeZone,
+                TextFilter: textFilter),
             pageSize ?? 50);
         return true;
     }
@@ -194,7 +200,8 @@ public sealed class CalendarOccurrenceTools
         scope = default;
         from = default;
         to = default;
-        return !arguments.Keys.Any(key => key is not ("scope" or "from" or "to" or "evaluationTimeZone" or "pageSize"))
+        return !arguments.Keys.Any(key => key is not (
+                "scope" or "from" or "to" or "evaluationTimeZone" or "text" or "categories" or "pageSize"))
             && arguments.TryGetValue("scope", out scope)
             && arguments.TryGetValue("from", out from)
             && arguments.TryGetValue("to", out to)

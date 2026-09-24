@@ -21,6 +21,7 @@ describes the shipped tool surface. Find behavioral regressions in
 - [Configured temporal evaluation context](adr/0005-configured-temporal-evaluation-context.md)
 - [Server-authoritative Move](adr/0006-server-authoritative-semantic-move.md)
 - [Complete MCP JSON presentation and result budgets](adr/0007-mcp-json-compatibility-results.md)
+- [Local Text Filter with server candidate reduction](adr/0008-local-text-filter-with-server-candidate-reduction.md)
 
 ## Historical performance observations
 

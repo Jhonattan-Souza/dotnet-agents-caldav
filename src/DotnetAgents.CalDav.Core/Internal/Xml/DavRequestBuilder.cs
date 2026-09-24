@@ -1,4 +1,5 @@
 using System.Xml.Linq;
+using DotnetAgents.CalDav.Core.Internal.Ical;
 using DotnetAgents.CalDav.Core.Models;
 
 namespace DotnetAgents.CalDav.Core.Internal.Xml;
@@ -12,6 +13,9 @@ internal static class DavRequestBuilder
     // detached overrides. This is only a representation envelope for DATE values and UTC offsets;
     // it is deliberately not a recurrence lookback window.
     private static readonly TimeSpan CandidatePlanningMargin = TimeSpan.FromDays(2);
+    // RFC 4791 section 7.5.1 requires every CalDAV server to support i;ascii-casemap. Text pre-filters carry only
+    // printable ASCII, for which this collation is at least as permissive as the local Unicode match.
+    private const string TextMatchCollation = "i;ascii-casemap";
     private static readonly XNamespace Dav = "DAV:";
     private static readonly XNamespace CalDav = "urn:ietf:params:xml:ns:caldav";
     private static readonly XNamespace AppleCs = "http://apple.com/ns/ical/";
@@ -72,11 +76,15 @@ internal static class DavRequestBuilder
         return doc.ToString(SaveOptions.DisableFormatting);
     }
 
-    /// <summary>Builds a minimal Calendar Entity candidate REPORT for one requested kind.</summary>
+    /// <summary>
+    /// Builds a minimal Calendar Entity candidate REPORT for one requested kind. Property matches all apply to the
+    /// entity comp-filter; the time-range stays its first child because some servers read only that position.
+    /// </summary>
     public static string BuildCalendarEntityQuery(
         CalendarEntityKind entityKind,
         DateTimeOffset? from = null,
-        DateTimeOffset? to = null)
+        DateTimeOffset? to = null,
+        IReadOnlyList<CalendarTextPropertyMatch>? propertyMatches = null)
     {
         var entityFilter = new XElement(CalDav + "comp-filter",
             new XAttribute("name", entityKind == CalendarEntityKind.Event ? "VEVENT" : "VTODO"));
@@ -85,6 +93,14 @@ internal static class DavRequestBuilder
             entityFilter.Add(new XElement(CalDav + "time-range",
                 new XAttribute("start", FormatUtcSecond(reportFrom)),
                 new XAttribute("end", FormatUtcSecond(reportTo))));
+        }
+        foreach (var match in propertyMatches ?? [])
+        {
+            entityFilter.Add(new XElement(CalDav + "prop-filter",
+                new XAttribute("name", match.PropertyName),
+                new XElement(CalDav + "text-match",
+                    new XAttribute("collation", TextMatchCollation),
+                    match.Text)));
         }
 
         var document = new XDocument(

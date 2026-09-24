@@ -60,7 +60,7 @@ Start one query with its complete scope, filters, requested window, and optional
 
 Use only fields the answer needs. Do not add discovery, another query family, or an exact-resource read merely to enrich an already sufficient result. If a call fails, inspect its arguments and typed outcome before doing anything else. Make at most one materially corrected retry; never fan the same failing operation out across Calendars, repeat it unchanged, or describe a local argument failure as server unavailability.
 
-For a title-only search across Calendars, make one unbounded `calendar_entities.query` with the requested Entity Kind and filter the returned snapshots locally. Do not guess a day, expand Occurrences, or query each Calendar separately.
+For a title, keyword, or tag search, pass `text` and, when the user names tags, `categories` on the narrowest query: an unbounded `calendar_entities.query` for resources across Calendars, `calendar_occurrences.query` for a bounded agenda, or `todos.query` for To-dos. Every whitespace-separated term and every category must match, case-insensitively, the summary, description, location, or categories of one Event or To-do component, and an Occurrence matches only its own override's text. Use the user's distinctive words, not synonyms or wildcards. Do not page through an unfiltered result to search it yourself, guess a day, or query each Calendar separately.
 
 A read is complete when the requested range is covered, the returned Temporal Evaluation Context is honored, and no extra projection or page was fetched.
 

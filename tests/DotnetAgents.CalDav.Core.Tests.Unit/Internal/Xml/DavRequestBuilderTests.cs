@@ -1,4 +1,5 @@
 using System.Xml.Linq;
+using DotnetAgents.CalDav.Core.Internal.Ical;
 using DotnetAgents.CalDav.Core.Internal.Xml;
 using DotnetAgents.CalDav.Core.Models;
 using Shouldly;
@@ -12,6 +13,41 @@ public class DavRequestBuilderTests
     private static readonly XNamespace CalDav = "urn:ietf:params:xml:ns:caldav";
     private static readonly XNamespace AppleCs = "http://apple.com/ns/ical/";
     private static readonly XNamespace CalServer = "http://calendarserver.org/ns/";
+
+    [Fact]
+    public void BuildCalendarEntityQuery_AddsEscapedAsciiCasemapTextMatchesAfterTheTimeRange()
+    {
+        var xml = DavRequestBuilder.BuildCalendarEntityQuery(
+            CalendarEntityKind.Todo,
+            DateTimeOffset.Parse("2026-08-16T10:00:00Z"),
+            DateTimeOffset.Parse("2026-08-17T10:00:00Z"),
+            [
+                new CalendarTextPropertyMatch("SUMMARY", "a<b&c"),
+                new CalendarTextPropertyMatch("CATEGORIES", "health")
+            ]);
+
+        var entityFilter = XDocument.Parse(xml).Descendants(CalDav + "comp-filter")
+            .Single(element => element.Attribute("name")!.Value == "VTODO");
+        var children = entityFilter.Elements().ToArray();
+        children.Select(child => child.Name.LocalName).ShouldBe(["time-range", "prop-filter", "prop-filter"]);
+        children[1].Attribute("name")!.Value.ShouldBe("SUMMARY");
+        children[2].Attribute("name")!.Value.ShouldBe("CATEGORIES");
+        var textMatches = entityFilter.Descendants(CalDav + "text-match").ToArray();
+        textMatches.Select(match => match.Value).ShouldBe(["a<b&c", "health"]);
+        textMatches.ShouldAllBe(match => match.Attribute("collation")!.Value == "i;ascii-casemap"
+            && match.Attribute("negate-condition") == null);
+        xml.ShouldContain("a&lt;b&amp;c");
+        xml.ShouldNotContain("calendar-data");
+    }
+
+    [Fact]
+    public void BuildCalendarEntityQuery_WithoutPropertyMatchesKeepsTheMinimalShape()
+    {
+        var xml = DavRequestBuilder.BuildCalendarEntityQuery(CalendarEntityKind.Event, propertyMatches: []);
+
+        xml.ShouldBe(DavRequestBuilder.BuildCalendarEntityQuery(CalendarEntityKind.Event));
+        xml.ShouldNotContain("prop-filter");
+    }
 
     [Fact]
     public void BuildPropFindCalendarHomeSet_ContainsPropfindAndCalendarHomeSet()

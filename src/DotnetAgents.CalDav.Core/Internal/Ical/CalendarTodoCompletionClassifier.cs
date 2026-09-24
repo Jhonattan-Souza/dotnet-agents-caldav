@@ -34,7 +34,10 @@ internal static class CalendarTodoCompletionClassifier
         try
         {
             var document = CalendarContentDocument.Parse(snapshot.AuthoritativeUtf8.Span);
-            var component = CalendarTodoComponentSelector.Select(document, recurrenceIdentity);
+            var component = CalendarOccurrenceComponentSelector.Select(
+                document,
+                recurrenceIdentity,
+                CalendarEntityKind.Todo);
             return Classify(document, component.Path);
         }
         catch (Exception exception) when (exception is FormatException or InvalidOperationException or ArgumentException)

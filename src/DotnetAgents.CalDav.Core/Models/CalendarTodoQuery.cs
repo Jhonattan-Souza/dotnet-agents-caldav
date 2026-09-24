@@ -8,4 +8,5 @@ public sealed record CalendarTodoQuery(
     DateTimeOffset? To = null,
     string? EvaluationTimeZone = null,
     DateTimeOffset? DueFrom = null,
-    DateTimeOffset? DueTo = null);
+    DateTimeOffset? DueTo = null,
+    CalendarTextFilter? TextFilter = null);

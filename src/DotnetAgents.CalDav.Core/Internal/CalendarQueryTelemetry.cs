@@ -46,6 +46,9 @@ internal static class CalendarQueryTelemetry
 
     internal static void ObserveDirectGetFallback() => FindState()?.ObserveDirectGetFallback();
 
+    internal static void ObserveTextPrefilter(CalendarQueryTextPrefilter outcome) =>
+        FindState()?.ObserveTextPrefilter(outcome);
+
     internal static Activity? StartPhase(CalendarQueryPhase phase)
     {
         var phaseName = PhaseName(phase);
@@ -120,11 +123,20 @@ internal static class CalendarQueryTelemetry
         _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, null)
     };
 
+    private static string TextPrefilterName(CalendarQueryTextPrefilter outcome) => outcome switch
+    {
+        CalendarQueryTextPrefilter.Applied => "applied",
+        CalendarQueryTextPrefilter.Unavailable => "unavailable",
+        CalendarQueryTextPrefilter.Ineligible => "ineligible",
+        _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, null)
+    };
+
     private sealed class OperationTelemetryState(Activity activity)
     {
         private readonly object _gate = new();
         private readonly Dictionary<CalendarQueryCounter, long> _counters = [];
         private CalendarQueryFetchMode? _fetchMode;
+        private CalendarQueryTextPrefilter? _textPrefilter;
 
         internal void Begin(CalendarQueryMode mode)
         {
@@ -178,6 +190,18 @@ internal static class CalendarQueryTelemetry
             }
         }
 
+        // Verified unavailability on any Calendar is the retained capability fact for the whole operation.
+        internal void ObserveTextPrefilter(CalendarQueryTextPrefilter outcome)
+        {
+            lock (_gate)
+            {
+                if (_textPrefilter == CalendarQueryTextPrefilter.Unavailable)
+                    return;
+                _textPrefilter = outcome;
+                activity.SetTag("caldav.query.text_prefilter", TextPrefilterName(outcome));
+            }
+        }
+
         private void SetCounter(CalendarQueryCounter counter, long value)
         {
             _counters[counter] = value;
@@ -217,6 +241,13 @@ internal enum CalendarQueryPhase
     Reservation,
     SnapshotLookup,
     PageAdmission
+}
+
+internal enum CalendarQueryTextPrefilter
+{
+    Applied,
+    Unavailable,
+    Ineligible
 }
 
 internal enum CalendarQueryFetchMode

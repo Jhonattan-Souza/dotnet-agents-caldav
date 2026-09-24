@@ -173,7 +173,6 @@ internal sealed partial class CalDavClient : ICalendarClient, ICalendarMoveResou
         {
             throw new CalendarDiscoveryProtocolException("Unsafe CalDAV REPORT href.");
         }
-        var authorizedCalendarUri = new Uri(authorizedCalendarHref, UriKind.Absolute);
         var response = await QueryWithCapabilitiesAsync(
             authorizedCalendarHref,
             entityKind,
@@ -181,8 +180,62 @@ internal sealed partial class CalDavClient : ICalendarClient, ICalendarMoveResou
             to,
             generation,
             cancellationToken);
+        return ParseCandidateHrefs(response, new Uri(authorizedCalendarHref, UriKind.Absolute))
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    /// <summary>
+    /// Unions the text-match REPORT branches for one Calendar and kind. Verified text-match unavailability is a
+    /// retained capability observation; the query then continues from its unreduced candidates.
+    /// </summary>
+    internal async Task<CalendarTextCandidateResult> QueryTextCandidateHrefsAsync(
+        string calendarHref,
+        CalendarEntityKind entityKind,
+        CalendarTextPrefilter prefilter,
+        CancellationToken cancellationToken)
+    {
+        CalendarOperationProgress.SetPhase(CalendarOperationPhase.Fetch);
+        EnsureCapabilityConfiguration();
+        var generation = Volatile.Read(ref _capabilityGeneration);
+        if (!TryCanonicalizeCalendarHref(
+                new Uri(_options.Value.BaseUrl, UriKind.Absolute),
+                calendarHref,
+                out var authorizedCalendarHref))
+        {
+            throw new CalendarDiscoveryProtocolException("Unsafe CalDAV REPORT href.");
+        }
+        var key = CapabilityKey.TextQuery(authorizedCalendarHref, entityKind);
+        if (IsUnavailable(key))
+            return new CalendarTextCandidateResult.VerifiedUnavailable();
+        var authorizedCalendarUri = new Uri(authorizedCalendarHref, UriKind.Absolute);
+        var hrefs = new SortedSet<string>(StringComparer.Ordinal);
+        try
+        {
+            foreach (var branch in prefilter.Branches)
+            {
+                var response = await SendReportAsync(
+                    authorizedCalendarHref,
+                    DavRequestBuilder.BuildCalendarEntityQuery(entityKind, propertyMatches: branch),
+                    cancellationToken);
+                hrefs.UnionWith(ParseCandidateHrefs(response, authorizedCalendarUri));
+            }
+        }
+        catch (CalendarQueryFilterUnsupportedException)
+        {
+            ObserveCapability(key, CapabilityState.Unavailable, generation);
+            return new CalendarTextCandidateResult.VerifiedUnavailable();
+        }
+        ObserveCapability(key, CapabilityState.Verified, generation);
+        return new CalendarTextCandidateResult.Hrefs(hrefs);
+    }
+
+    private IEnumerable<string> ParseCandidateHrefs(
+        (XDocument Document, Uri RequestUri) response,
+        Uri authorizedCalendarUri)
+    {
         var calendarUri = response.RequestUri;
-        var hrefs = new List<string>();
         foreach (var candidateHref in DavResponseParser.ParseCalendarResourceHrefs(response.Document))
         {
             if (IsCollectionSelfHref(calendarUri, candidateHref))
@@ -191,10 +244,8 @@ internal sealed partial class CalDavClient : ICalendarClient, ICalendarMoveResou
                 throw new CalendarDiscoveryProtocolException("Unsafe Calendar Object Resource candidate href.");
             if (!IsDirectResourceOf(authorizedCalendarUri, new Uri(canonicalHref, UriKind.Absolute)))
                 throw new CalendarDiscoveryProtocolException("Calendar Object Resource candidate escaped its authorized Calendar identity.");
-            hrefs.Add(canonicalHref);
+            yield return canonicalHref;
         }
-
-        return hrefs.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
     }
 
     private async Task<(XDocument Document, Uri RequestUri)> QueryWithCapabilitiesAsync(
@@ -1041,6 +1092,16 @@ internal sealed partial class CalDavClient : ICalendarClient, ICalendarMoveResou
                 calendar.AbsoluteUri,
                 null,
                 $"calendar-query:{kind}:{(filtered ? "filtered" : "minimal")}");
+        }
+
+        public static CapabilityKey TextQuery(string calendarHref, CalendarEntityKind kind)
+        {
+            var calendar = new Uri(calendarHref, UriKind.Absolute);
+            return new CapabilityKey(
+                calendar.GetLeftPart(UriPartial.Authority),
+                calendar.AbsoluteUri,
+                null,
+                $"calendar-query:{kind}:text-match");
         }
 
         public static CapabilityKey CalendarMultiget(string calendarHref)
