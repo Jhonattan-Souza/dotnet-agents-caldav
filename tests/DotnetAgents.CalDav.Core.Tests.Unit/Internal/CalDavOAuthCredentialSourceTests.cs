@@ -431,6 +431,36 @@ public sealed class CalDavOAuthCredentialSourceTests
     }
 
     [Fact]
+    public async Task Rejected_renewal_drops_the_cached_token_so_the_backoff_fails_fast()
+    {
+        var tokens = new TokenEndpointHandler(
+            TokenResponse("access-1", 3600),
+            () => new HttpResponseMessage(HttpStatusCode.BadRequest),
+            TokenResponse("access-2", 3600));
+        var time = new ManualTimeProvider(Start);
+        var source = CreateSource(tokens, time);
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var rejected = await source.GetAsync(cancellationToken);
+
+        await Should.ThrowAsync<CalDavAuthenticationException>(() => source.RenewAsync(rejected, cancellationToken).AsTask());
+        var fastFailure = await Should.ThrowAsync<CalDavAuthenticationException>(() => source.GetAsync(cancellationToken).AsTask());
+
+        fastFailure.Failure.ShouldBe(CalDavAuthenticationFailure.Rejected);
+        tokens.Requests.Count.ShouldBe(2);
+        time.Advance(CalDavOAuthCredentialSource.RejectionBackoff);
+        (await source.GetAsync(cancellationToken)).Parameter.ShouldBe("access-2");
+        tokens.Requests.Count.ShouldBe(3);
+    }
+
+    [Fact]
+    public void Credential_failure_check_recognizes_only_token_failures()
+    {
+        CalDavCredentialFailure.IsCredentialFailure(
+            new CalDavAuthenticationException(CalDavAuthenticationFailure.Unavailable, "token")).ShouldBeTrue();
+        CalDavCredentialFailure.IsCredentialFailure(new HttpRequestException("network")).ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task Unavailable_failure_is_shared_with_queued_callers_but_not_cached()
     {
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
