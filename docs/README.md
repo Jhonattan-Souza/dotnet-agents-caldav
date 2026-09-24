@@ -30,6 +30,7 @@ reproduction instructions to investigate those results; run the current suite
 to establish whether a checkout passes.
 
 - [RFC collection operations and three-server live validation](rfc-coverage-validation-2026-09-05.md)
+- [Move interoperability profiles for Baïkal and Nextcloud](move-interoperability-profiles-2026-09-24.md)
 - [August 21 load-test baseline](performance-load-test-2026-08-21.md) and
   [August 23 follow-up](performance-load-test-2026-08-23.md)
 - [Discovery reuse](performance-discovery-reuse-2026-08-23.md)

@@ -84,10 +84,14 @@ evidence, so it is treated conservatively as `PossiblyDispatched` and enters
 the same bilateral truth table rather than being reported as a definite
 rejection.
 
-The capability contract is explicit and fail closed. The only enabled profile
-is `radicale-3.7.8`, which denotes the repository's digest-pinned Radicale 3.7.8
-runtime evidence. Omission or any other value leaves both Move modes disabled;
-generic DAV discovery is not treated as proof of atomic UID enforcement.
+The capability contract is explicit and fail closed. The enabled profiles are
+`radicale-3.7.8`, which denotes the repository's digest-pinned Radicale 3.7.8
+runtime evidence, and `nextcloud-34.0.3`, added from the
+[2026-09-24 observation](../move-interoperability-profiles-2026-09-24.md).
+Omission or any other value leaves both Move modes disabled; generic DAV
+discovery is not treated as proof of atomic UID enforcement. A profile whose
+runtime rejects a rename within one Calendar also rejects that Exact Move
+before dispatch.
 
 Exact Move MRTR returns only a protected `CalendarExactMoveReviewBinding` from
 the initial call. A confirmed call performs fresh authorization, discovery,

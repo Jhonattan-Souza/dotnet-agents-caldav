@@ -17,6 +17,10 @@ IMAGES = {
 }
 
 
+# Verified Move interoperability profiles; Baikal 0.10.1 commits MOVE despite a UID conflict.
+MOVE_PROFILES = {'nextcloud': 'nextcloud-34.0.3'}
+
+
 BAIKAL_SETUP = r'''<?php
 require '/var/www/baikal/vendor/autoload.php';
 $base = '/var/www/baikal/';
@@ -51,7 +55,7 @@ echo "Configured disposable Baikal SQLite fixture\n";
 '''
 
 
-def up(root, server, telemetry_root):
+def up(root, server, telemetry_root, move_profile=False):
     root.mkdir(parents=True, exist_ok=False)
     root.chmod(0o700)
     telemetry = json.loads((telemetry_root / 'infra-private.json').read_text())
@@ -59,7 +63,8 @@ def up(root, server, telemetry_root):
     name = run + '-' + server
     state = dict(run=run, username='rfctest', password=secrets.token_hex(20),
                  api_key=telemetry['api_key'], dashboard=telemetry['dashboard'],
-                 otlp=telemetry['otlp'], containers=[name], profile=None,
+                 otlp=telemetry['otlp'], containers=[name],
+                 profile=MOVE_PROFILES[server] if move_profile else None,
                  server=server, principal_exists=True)
     path = root / 'infra-private.json'
     def save():
@@ -109,7 +114,7 @@ def up(root, server, telemetry_root):
     print(json.dumps(public))
 
 
-def fresh_nextcloud_user(root, parent):
+def fresh_nextcloud_user(root, parent, move_profile=False):
     state=json.loads((parent/'infra-private.json').read_text())
     if state.get('server')!='nextcloud' or len(state['containers'])!=1:
         raise ValueError('Use the original owned Nextcloud fixture manifest as the parent.')
@@ -125,13 +130,14 @@ def fresh_nextcloud_user(root, parent):
                     'php','occ','user:add','--password-from-env','--display-name','RFC disposable fixture',username],
                    env=dict(os.environ,NC_PASS=password),check=True,capture_output=True,text=True)
     state.update(username=username,password=password,home_path='/remote.php/dav/calendars/'+username+'/',
-                 containers=[],parent_fixture=str(parent))
+                 containers=[],parent_fixture=str(parent),
+                 profile=MOVE_PROFILES['nextcloud'] if move_profile else None)
     manifest=root/'infra-private.json'
     manifest.write_text(json.dumps(state,indent=2))
     manifest.chmod(0o600)
     public=dict(server='nextcloud',image=IMAGES['nextcloud'],parent_fixture=str(parent),
                 fixture_change='fresh disposable user; default server creation limits unchanged',
-                explicit_scope_required=True)
+                explicit_scope_required=True,profile=state['profile'])
     (root/'infra.json').write_text(json.dumps(public,indent=2))
     print(json.dumps(public))
 
@@ -142,12 +148,16 @@ if __name__ == '__main__':
     parser.add_argument('root', type=Path)
     parser.add_argument('--telemetry-root', type=Path)
     parser.add_argument('--fresh-user-from',type=Path)
+    parser.add_argument('--move-profile', action='store_true',
+                        help='Configure the verified Move interoperability profile for this lane.')
     args = parser.parse_args()
+    if args.move_profile and args.server not in MOVE_PROFILES:
+        parser.error('No verified Move interoperability profile exists for ' + args.server + '.')
     if args.fresh_user_from:
         if args.server!='nextcloud':
             parser.error('Fresh-user setup applies only to Nextcloud.')
-        fresh_nextcloud_user(args.root.resolve(),args.fresh_user_from.resolve())
+        fresh_nextcloud_user(args.root.resolve(),args.fresh_user_from.resolve(),args.move_profile)
     elif args.telemetry_root:
-        up(args.root.resolve(), args.server, args.telemetry_root.resolve())
+        up(args.root.resolve(), args.server, args.telemetry_root.resolve(), args.move_profile)
     else:
         parser.error('Provide --telemetry-root for a new container or --fresh-user-from for a new Nextcloud user.')
