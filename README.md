@@ -212,8 +212,7 @@ uncertain error requires inspection before another write.
 
 Participation-bearing creates, updates and deletes require fresh OPTIONS
 evidence that automatic server scheduling is absent. Updates check both stored
-and proposed data, including removed participation fields. Collection deletion
-requires that evidence regardless of its current members. Unknown evidence or
+and proposed data, including removed participation fields. Unknown evidence or
 `calendar-auto-schedule` returns `unsupported_capability` before the write.
 Native Calendar-to-Calendar MOVE retains its scheduling-neutral RFC behavior.
 Invitation/reply delivery remains outside the tool contract.
@@ -228,6 +227,17 @@ Confirmation reviews add a scheduling notice. Scheduling-governed outcomes whose
 automatic scheduling, otherwise `none`.
 The default mode never emits the field. See
 [ADR 0009](docs/adr/0009-opt-in-server-managed-scheduling.md).
+
+In storage-only mode, collection deletion needs that evidence only when a member could trigger
+scheduling. Without it, for example on Nextcloud or Baïkal, the MCP first scans
+every direct member: one Depth 1 PROPFIND lists strong ETags, calendar-multiget
+reads the data in batches of 50, and a second listing must match the first.
+The DELETE proceeds only when no member contains an `ORGANIZER` or `ATTENDEE`
+property, including one inside an alarm. A nested collection, a missing or weak
+ETag, a redirect, more than 5,000 members or 32 MiB of data, a transport or
+parse failure, or a change between listings returns `unsupported_capability`
+before the DELETE. The second listing narrows, but cannot remove, the window
+for a member written concurrently before the recursive DELETE.
 
 Discovery follows all advertised Calendar homes and nested ordinary
 collections, stopping at Calendar collections. It fails without partial results

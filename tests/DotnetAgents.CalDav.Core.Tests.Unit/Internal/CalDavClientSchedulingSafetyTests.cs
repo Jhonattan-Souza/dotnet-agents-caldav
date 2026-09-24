@@ -81,7 +81,7 @@ public partial class CalDavClientTests
     [InlineData("invalid compliance")]
     [InlineData("")]
     [InlineData(null)]
-    public async Task CollectionDelete_SchedulingEvidenceBlocksDispatchWithoutEnumeration(string? dav)
+    public async Task CollectionDelete_MissingSchedulingAbsenceProofFallsBackToAFailClosedMemberScan(string? dav)
     {
         var requests = new List<HttpRequestMessage>();
         var handler = new StubHttpMessageHandler(request =>
@@ -95,7 +95,7 @@ public partial class CalDavClientTests
         var result = await CreateSut(handler).DeleteCalendarCollectionAsync("https://example.com/calendar/", CancellationToken.None);
 
         result.Code.ShouldBe(CalendarCollectionDispatchCode.SchedulingUnsafe);
-        requests.ShouldHaveSingleItem().Method.ShouldBe(HttpMethod.Options);
+        requests.Select(request => request.Method.Method).ShouldBe(["OPTIONS", "PROPFIND"]);
     }
 
     [Theory]

@@ -62,6 +62,56 @@ public sealed partial class RadicaleConformanceHarnessTests(RadicaleConformanceF
     }
 
     [Fact]
+    public async Task Pinned_profile_collection_delete_scans_members_when_automatic_scheduling_is_advertised()
+    {
+        using var probe = CreateProbeClient();
+        var ordinary = new Uri(fixture.BaseUrl + "/conformance/collection-scan-ordinary/", UriKind.Absolute);
+        var participation = new Uri(fixture.BaseUrl + "/conformance/collection-scan-participation/", UriKind.Absolute);
+        (await CreateCalendarAsync(probe, ordinary, "Collection Scan Ordinary", "VEVENT")).ShouldBe(HttpStatusCode.Created);
+        (await CreateCalendarAsync(probe, participation, "Collection Scan Participation", "VEVENT"))
+            .ShouldBe(HttpStatusCode.Created);
+        (await SendProbeAsync(probe, HttpMethod.Put, new Uri(ordinary, "ordinary.ics"),
+            Event("collection-scan-ordinary", "DTSTART:20260816T100000Z\r\nSUMMARY:ATTENDEE review\r\n"),
+            ("If-None-Match", "*"))).Status.ShouldBe(HttpStatusCode.Created);
+        (await SendProbeAsync(probe, HttpMethod.Put, new Uri(participation, "meeting.ics"),
+            Event("collection-scan-meeting", "DTSTART:20260816T100000Z\r\nORGANIZER:mailto:owner@example.com\r\n"
+                + "ATTENDEE:mailto:guest@example.com\r\n"),
+            ("If-None-Match", "*"))).Status.ShouldBe(HttpStatusCode.Created);
+        var trace = new ConcurrentQueue<string>();
+        await using var provider = CreateProvider(fixture.BaseUrl, $"{ordinary.AbsoluteUri},{participation.AbsoluteUri}",
+            trace, new AdvertiseAutomaticSchedulingFilter());
+        var module = provider.GetRequiredService<ICalendarCollectionModule>();
+
+        var blocked = await ReviewAndDeleteCollectionAsync(module, participation);
+        blocked.Code.ShouldBe(CalendarCollectionDeleteCode.UnsupportedCapability);
+        blocked.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        trace.ShouldContain("REPORT:207");
+        trace.ShouldNotContain(entry => entry.StartsWith("DELETE:", StringComparison.Ordinal));
+        (await SendProbeAsync(probe, HttpMethod.Get, new Uri(participation, "meeting.ics"))).Status
+            .ShouldBe(HttpStatusCode.OK);
+
+        trace.Clear();
+        var deleted = await ReviewAndDeleteCollectionAsync(module, ordinary);
+        deleted.Code.ShouldBe(CalendarCollectionDeleteCode.Success);
+        deleted.MutationState.ShouldBe(CalendarMutationState.Committed);
+        trace.ShouldContain("OPTIONS:200");
+        trace.ShouldContain("REPORT:207");
+        trace.ShouldContain(entry => entry.StartsWith("DELETE:2", StringComparison.Ordinal));
+        (await SendProbeAsync(probe, HttpMethod.Get, new Uri(ordinary, "ordinary.ics"))).Status
+            .ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    private static async Task<CalendarCollectionDeleteResult> ReviewAndDeleteCollectionAsync(
+        ICalendarCollectionModule module,
+        Uri calendar)
+    {
+        var request = new CalendarCollectionDeleteRequest(calendar.AbsoluteUri);
+        var review = await module.ReviewDeleteAsync(request, TestContext.Current.CancellationToken);
+        review.Outcome.ShouldBeNull();
+        return await module.ExecuteConfirmedDeleteAsync(request, review.Binding!, TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
     public async Task Pinned_profile_characterizes_default_support_advertisement_violation_opaque_and_preconditions()
     {
         using var client = CreateProbeClient();
@@ -1263,6 +1313,29 @@ public sealed partial class RadicaleConformanceHarnessTests(RadicaleConformanceF
                 {
                     await insert(cancellationToken);
                 }
+                return response;
+            }
+        }
+    }
+
+    /// <summary>Makes the pinned server look like an automatic-scheduling server to the scheduling guard.</summary>
+    private sealed class AdvertiseAutomaticSchedulingFilter : IHttpMessageHandlerBuilderFilter
+    {
+        public Action<HttpMessageHandlerBuilder> Configure(Action<HttpMessageHandlerBuilder> next) => builder =>
+        {
+            next(builder);
+            builder.AdditionalHandlers.Insert(0, new AdvertiseAutomaticSchedulingHandler());
+        };
+
+        private sealed class AdvertiseAutomaticSchedulingHandler : DelegatingHandler
+        {
+            protected override async Task<HttpResponseMessage> SendAsync(
+                HttpRequestMessage request,
+                CancellationToken cancellationToken)
+            {
+                var response = await base.SendAsync(request, cancellationToken);
+                if (request.Method == HttpMethod.Options)
+                    response.Headers.TryAddWithoutValidation("DAV", "calendar-auto-schedule");
                 return response;
             }
         }

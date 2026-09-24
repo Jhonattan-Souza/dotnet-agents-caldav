@@ -265,6 +265,8 @@ public sealed class ContractCatalogTests
             .ShouldBe("#/$defs/deleteInput");
         FindTool(catalog, "events.create")["inputSchema"]!["$ref"]!.GetValue<string>()
             .ShouldBe("#/$defs/eventCreateInput");
+        FindTool(catalog, "calendars.delete")["description"]!.GetValue<string>()
+            .ShouldContain("only after a bounded member scan finds no organizer or attendee data");
         FindTool(catalog, "events.create")["description"]!.GetValue<string>()
             .ShouldContain("timed Event without an explicit end or duration defaults to PT1H");
         FindTool(catalog, "events.create")["description"]!.GetValue<string>()

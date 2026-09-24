@@ -78,6 +78,21 @@ internal static class DavResponseParser
         return new(GetRequiredMultigetHref(response), calendar);
     }
 
+    /// <summary>Reads direct member types and revisions without trusting failed property values.</summary>
+    internal static IReadOnlyList<CalendarCollectionMemberRevision> ParseMemberRevisions(XDocument document) =>
+        ResponseElements(document)
+            .Select(ParseMemberRevision)
+            .ToArray();
+
+    private static CalendarCollectionMemberRevision ParseMemberRevision(XElement response)
+    {
+        var resourceType = GetSuccessfulProperty(response, Dav + "resourcetype");
+        return new(
+            GetRequiredMultigetHref(response),
+            resourceType is null ? null : resourceType.Element(Dav + "collection") is not null,
+            GetSuccessfulProperty(response, Dav + "getetag")?.Value.Trim());
+    }
+
     // RFC 6638 section 2.2 forbids collection children in an Inbox; section 2.1
     // reserves Outbox child resources for future extensions, not calendar discovery.
     private static bool IsSchedulingCollection(XElement resourceType) =>
@@ -464,3 +479,6 @@ internal sealed record CalendarMultigetResource(
     string? CalendarData);
 
 internal sealed record CalendarDiscoveryMember(string Href, CalendarDescriptor? Calendar);
+
+/// <summary>One direct member of a collection; unknown type or revision evidence stays null.</summary>
+internal sealed record CalendarCollectionMemberRevision(string Href, bool? IsCollection, string? EntityTag);

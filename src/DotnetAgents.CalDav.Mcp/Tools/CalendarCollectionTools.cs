@@ -56,7 +56,7 @@ internal sealed class CalendarCollectionTools
         OpenWorld = true,
         UseStructuredContent = true,
         OutputSchemaType = typeof(CalendarCollectionDeleteSuccessResult)),
-     Description("Confirm and delete one exact CalDAV Calendar collection, including its resources.")]
+     Description("Confirm and delete one exact CalDAV Calendar collection, including its resources. Without evidence that the server does not schedule automatically, it deletes only after a bounded member scan finds no organizer or attendee data.")]
     public Task<CallToolResult> DeleteAsync(
         RequestContext<CallToolRequestParams> requestContext,
         CancellationToken cancellationToken)
