@@ -93,6 +93,24 @@ public sealed class CalDavAuthenticationHandlerTests
     }
 
     [Fact]
+    public async Task Cancellation_during_renewal_disposes_the_401_and_propagates()
+    {
+        var primary = new DisposalTrackingHandler();
+        using var invoker = new HttpMessageInvoker(new CalDavAuthenticationHandler(
+            new CancelledRenewalSource(),
+            Options.Create(new CalDavOptions { BaseUrl = "https://cal.example/dav/" }))
+        {
+            InnerHandler = primary
+        });
+        using var request = new HttpRequestMessage(HttpMethod.Get, "https://cal.example/dav/a.ics");
+
+        await Should.ThrowAsync<OperationCanceledException>(
+            () => invoker.SendAsync(request, TestContext.Current.CancellationToken));
+
+        primary.Content.ShouldNotBeNull().Disposed.ShouldBeTrue();
+    }
+
+    [Fact]
     public void Credential_text_never_contains_the_secret()
     {
         var credential = new CalDavCredential("Bearer", "secret-token");
@@ -134,6 +152,45 @@ public sealed class CalDavAuthenticationHandlerTests
                 Headers = { ETag = new EntityTagHeaderValue("\"r1\"") },
                 Content = new ByteArrayContent("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n"u8.ToArray())
             });
+        }
+    }
+
+    private sealed class CancelledRenewalSource : CalDavCredentialSource
+    {
+        internal override ValueTask<CalDavCredential> GetAsync(CancellationToken cancellationToken) =>
+            ValueTask.FromResult(new CalDavCredential("Bearer", "expired-token"));
+
+        internal override ValueTask<CalDavCredential?> RenewAsync(
+            CalDavCredential rejected,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromException<CalDavCredential?>(new OperationCanceledException());
+    }
+
+    private sealed class DisposalTrackingHandler : HttpMessageHandler
+    {
+        internal TrackingContent? Content { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            Content = new TrackingContent();
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized) { Content = Content });
+        }
+    }
+
+    private sealed class TrackingContent : ByteArrayContent
+    {
+        internal TrackingContent() : base([])
+        {
+        }
+
+        internal bool Disposed { get; private set; }
+
+        protected override void Dispose(bool disposing)
+        {
+            Disposed = true;
+            base.Dispose(disposing);
         }
     }
 }
