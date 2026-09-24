@@ -96,6 +96,8 @@ internal static class CalendarExecutionPolicy
             && services.GetService<IOptions<CalDavOptions>>() is { } options
             && CalDavSchedulingModes.IsServerManaged(options.Value));
 
+    // Query Starts own their deadline and orchestration (ADR 0004) and advance no aggregate phase past
+    // fetch, so a heartbeat would misreport their evaluation and page work; they send no progress.
     private static Func<ProgressNotificationValue, CancellationToken, Task>? LegacyProgressReport(
         string? toolName,
         Func<ProgressNotificationValue, CancellationToken, Task>? report) =>

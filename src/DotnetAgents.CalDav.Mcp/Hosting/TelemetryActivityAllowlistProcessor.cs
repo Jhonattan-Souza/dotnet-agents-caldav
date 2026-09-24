@@ -102,11 +102,11 @@ internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activi
     private static readonly SearchValues<char> ProtocolVersionCharacters =
         SearchValues.Create("0123456789-");
 
-    public override void OnStart(Activity data) => data.TraceStateString = null;
+    public override void OnStart(Activity data) => ClearPropagatedContext(data);
 
     public override void OnEnd(Activity data)
     {
-        data.TraceStateString = null;
+        ClearPropagatedContext(data);
         data.SetStatus(data.Status);
         if (data.Source.Name == OpenTelemetryHostConfiguration.McpInstrumentationName)
             SanitizeMcpActivity(data);
@@ -124,6 +124,16 @@ internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activi
             data.SetTag(tag.Key, null);
 
         data.SetTag("error.type", CalendarTelemetryVocabulary.ErrorType(data.GetTagItem("error.type")));
+    }
+
+    // A caller's W3C traceparent may parent the MCP server span, but caller-authored tracestate and
+    // baggage are opaque data: clearing them at start keeps descendants and outbound requests from
+    // inheriting them, and clearing them again at end keeps them out of every export.
+    private static void ClearPropagatedContext(Activity activity)
+    {
+        activity.TraceStateString = null;
+        foreach (var item in activity.Baggage.ToArray())
+            activity.SetBaggage(item.Key, null);
     }
 
     private static void SanitizeMcpActivity(Activity activity)

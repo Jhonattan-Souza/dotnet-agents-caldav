@@ -449,6 +449,7 @@ public sealed class CalendarTelemetryTests
         activity.SetTag("exception.message", "secret body");
         activity.SetTag("error.type", "System.Net.Http.HttpRequestException");
         activity.TraceStateString = "private=trace-state-secret";
+        activity.AddBaggage("user.id", "private-baggage-secret");
         activity.SetStatus(ActivityStatusCode.Error, "secret tool result");
         activity.Stop();
 
@@ -464,7 +465,31 @@ public sealed class CalendarTelemetryTests
         activity.GetTagItem("calendar.uid").ShouldBeNull();
         activity.GetTagItem("exception.message").ShouldBeNull();
         activity.TraceStateString.ShouldBeNull();
+        activity.Baggage.ShouldBeEmpty();
         activity.StatusDescription.ShouldBeNull();
+    }
+
+    [Fact]
+    public void ExportAllowlist_StartClearsCallerTraceStateAndBaggageBeforeDescendantsInherit()
+    {
+        using var listener = ListenTo(OpenTelemetryHostConfiguration.McpInstrumentationName);
+        using var source = new ActivitySource(OpenTelemetryHostConfiguration.McpInstrumentationName);
+        var processor = new TelemetryActivityAllowlistProcessor();
+        using var call = source.StartActivity("tools/call");
+        call.ShouldNotBeNull();
+        call.TraceStateString = "vendor=private-trace-state";
+        call.AddBaggage("user.id", "private-baggage");
+        call.AddBaggage("tenant", "private-tenant");
+
+        processor.OnStart(call);
+        using var descendant = source.StartActivity("descendant");
+
+        call.TraceStateString.ShouldBeNull();
+        call.Baggage.ShouldBeEmpty();
+        descendant.ShouldNotBeNull();
+        descendant.Parent.ShouldBeSameAs(call);
+        descendant.TraceStateString.ShouldBeNull();
+        descendant.Baggage.ShouldBeEmpty();
     }
 
     [Fact]
