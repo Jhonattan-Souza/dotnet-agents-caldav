@@ -102,11 +102,14 @@ internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activi
     private static readonly SearchValues<char> ProtocolVersionCharacters =
         SearchValues.Create("0123456789-");
 
-    public override void OnStart(Activity data) => ClearPropagatedContext(data);
+    // A caller's tracestate arrives on the remote parent context of the MCP server span; clearing it
+    // at start keeps descendants and outbound requests from inheriting it.
+    public override void OnStart(Activity data) => data.TraceStateString = null;
 
     public override void OnEnd(Activity data)
     {
-        ClearPropagatedContext(data);
+        data.TraceStateString = null;
+        RemoveOwnBaggage(data);
         data.SetStatus(data.Status);
         if (data.Source.Name == OpenTelemetryHostConfiguration.McpInstrumentationName)
             SanitizeMcpActivity(data);
@@ -126,12 +129,10 @@ internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activi
         data.SetTag("error.type", CalendarTelemetryVocabulary.ErrorType(data.GetTagItem("error.type")));
     }
 
-    // A caller's W3C traceparent may parent the MCP server span, but caller-authored tracestate and
-    // baggage are opaque data: clearing them at start keeps descendants and outbound requests from
-    // inheriting them, and clearing them again at end keeps them out of every export.
-    private static void ClearPropagatedContext(Activity activity)
+    // The SDK does not extract caller baggage and OTLP never serializes Activity.Baggage. This removes
+    // only baggage the span itself carries; inherited entries belong to their parent span.
+    private static void RemoveOwnBaggage(Activity activity)
     {
-        activity.TraceStateString = null;
         foreach (var item in activity.Baggage.ToArray())
             activity.SetBaggage(item.Key, null);
     }
