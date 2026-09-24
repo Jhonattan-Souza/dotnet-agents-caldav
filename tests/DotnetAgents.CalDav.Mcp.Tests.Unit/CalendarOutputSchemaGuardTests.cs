@@ -8,6 +8,8 @@ using Xunit;
 
 namespace DotnetAgents.CalDav.Mcp.Tests.Unit;
 
+// Enforce emits caldav.output_contract spans on the shared Calendar source.
+[Collection("TelemetryActivityCollection")]
 public sealed class CalendarOutputSchemaGuardTests
 {
     [Theory]
@@ -326,6 +328,10 @@ public sealed class CalendarOutputSchemaGuardTests
         structured.GetProperty("phase").GetString().ShouldBe("postWriteVerificationOrReconciliation");
         structured.GetProperty("retryable").GetBoolean().ShouldBeFalse();
         structured.GetProperty("mutationState").GetString().ShouldBe(mutationState);
+        structured.GetProperty("message").GetString().ShouldEndWith(
+            mutationState is "not_attempted" or "not_committed"
+                ? "it reported no committed write."
+                : "inspect the target before another write.");
         result.Content.OfType<TextContentBlock>().Single().Text.ShouldBe(structured.GetRawText());
         Should.NotThrow(() => CalendarOutputSchemaGuard.Validate(toolName, result));
     }

@@ -69,8 +69,7 @@ internal static class CalendarOutputSchemaGuard
             ["category"] = MutationViolationFacts.CategoryName,
             ["phase"] = MutationViolationFacts.PhaseName,
             ["retryable"] = MutationViolationFacts.Retryable,
-            ["message"] = "The mutation result violated its advertised output schema; "
-                + "inspect the target before another write.",
+            ["message"] = MutationViolationMessage(mutationState),
             ["mutationState"] = CalendarTelemetryVocabulary.MutationStateName(mutationState)
         };
         var replacement = new CallToolResult
@@ -82,6 +81,12 @@ internal static class CalendarOutputSchemaGuard
         CalendarQueryToolSupport.ApplyCompatibilityText(replacement);
         return replacement;
     }
+
+    // A handler that reported no commit keeps that evidence; any other state needs inspection first.
+    private static string MutationViolationMessage(CalendarMutationState mutationState) =>
+        mutationState is CalendarMutationState.NotAttempted or CalendarMutationState.NotCommitted
+            ? "The mutation result violated its advertised output schema; it reported no committed write."
+            : "The mutation result violated its advertised output schema; inspect the target before another write.";
 
     private static CalendarOutputContractViolation? FindViolation(string? toolName, CallToolResult result)
     {

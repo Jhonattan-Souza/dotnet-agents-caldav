@@ -76,7 +76,8 @@ public sealed class CalendarOutputContractEndToEndTests
         Should.NotThrow(() => CalendarOutputSchemaGuard.Validate("calendars.create", result));
         Activity violation;
         lock (stopped)
-            violation = stopped.Single(activity => activity.OperationName == "caldav.output_contract");
+            violation = stopped.Single(activity => activity.OperationName == "caldav.output_contract"
+                && Equals(activity.GetTagItem("caldav.tool.name"), "calendars.create"));
         violation.GetTagItem("caldav.tool.name").ShouldBe("calendars.create");
         violation.GetTagItem("caldav.output_contract.violation").ShouldBe("schema_violation");
         violation.GetTagItem("caldav.mutation.state").ShouldBe("committed");
