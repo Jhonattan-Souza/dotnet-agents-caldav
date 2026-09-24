@@ -188,7 +188,9 @@ internal sealed partial class CalDavClient : ICalendarClient, ICalendarMoveResou
 
     /// <summary>
     /// Unions the text-match REPORT branches for one Calendar and kind. Verified text-match unavailability is a
-    /// retained capability observation; the query then continues from its unreduced candidates.
+    /// retained capability observation. Because the local match is the result truth and the ordinary candidate
+    /// REPORT already succeeded, a payload limit or an unexplained 400/403 on a text REPORT fails open to the
+    /// unreduced candidates without retaining any capability state.
     /// </summary>
     internal async Task<CalendarTextCandidateResult> QueryTextCandidateHrefsAsync(
         string calendarHref,
@@ -206,6 +208,8 @@ internal sealed partial class CalDavClient : ICalendarClient, ICalendarMoveResou
         {
             throw new CalendarDiscoveryProtocolException("Unsafe CalDAV REPORT href.");
         }
+        if (prefilter.IsEmpty)
+            return new CalendarTextCandidateResult.Unreduced();
         var key = CapabilityKey.TextQuery(authorizedCalendarHref, entityKind);
         if (IsUnavailable(key))
             return new CalendarTextCandidateResult.VerifiedUnavailable();
@@ -227,9 +231,18 @@ internal sealed partial class CalDavClient : ICalendarClient, ICalendarMoveResou
             ObserveCapability(key, CapabilityState.Unavailable, generation);
             return new CalendarTextCandidateResult.VerifiedUnavailable();
         }
+        catch (HttpRequestException exception) when (IsUnreducedTextFailure(exception.StatusCode))
+        {
+            return new CalendarTextCandidateResult.Unreduced();
+        }
         ObserveCapability(key, CapabilityState.Verified, generation);
         return new CalendarTextCandidateResult.Hrefs(hrefs);
     }
+
+    // 413 covers both a server rejection and the local bounded-read limit, which an unwindowed common term can
+    // reach. 400/403 here carry no CalDAV precondition, so they prove nothing about text-match support.
+    private static bool IsUnreducedTextFailure(HttpStatusCode? statusCode) => statusCode is
+        HttpStatusCode.BadRequest or HttpStatusCode.Forbidden or HttpStatusCode.RequestEntityTooLarge;
 
     private IEnumerable<string> ParseCandidateHrefs(
         (XDocument Document, Uri RequestUri) response,

@@ -258,6 +258,7 @@ internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activi
     {
         "applied" => "applied",
         "unavailable" => "unavailable",
+        "unreduced" => "unreduced",
         "ineligible" => "ineligible",
         _ => null
     };

@@ -85,8 +85,11 @@ public sealed class CalendarQueryTelemetryTests
         operation.GetTagItem("caldav.query.text_prefilter").ShouldBe("applied");
         Should.Throw<ArgumentOutOfRangeException>(() =>
             CalendarQueryTelemetry.ObserveTextPrefilter((CalendarQueryTextPrefilter)int.MaxValue));
-        CalendarQueryTelemetry.ObserveTextPrefilter(CalendarQueryTextPrefilter.Unavailable);
+        CalendarQueryTelemetry.ObserveTextPrefilter(CalendarQueryTextPrefilter.Unreduced);
         CalendarQueryTelemetry.ObserveTextPrefilter(CalendarQueryTextPrefilter.Applied);
+        operation.GetTagItem("caldav.query.text_prefilter").ShouldBe("unreduced");
+        CalendarQueryTelemetry.ObserveTextPrefilter(CalendarQueryTextPrefilter.Unavailable);
+        CalendarQueryTelemetry.ObserveTextPrefilter(CalendarQueryTextPrefilter.Unreduced);
 
         operation.GetTagItem("caldav.query.text_prefilter").ShouldBe("unavailable");
     }

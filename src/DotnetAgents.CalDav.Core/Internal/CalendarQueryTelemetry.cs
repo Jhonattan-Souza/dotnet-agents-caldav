@@ -127,6 +127,7 @@ internal static class CalendarQueryTelemetry
     {
         CalendarQueryTextPrefilter.Applied => "applied",
         CalendarQueryTextPrefilter.Unavailable => "unavailable",
+        CalendarQueryTextPrefilter.Unreduced => "unreduced",
         CalendarQueryTextPrefilter.Ineligible => "ineligible",
         _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, null)
     };
@@ -190,15 +191,16 @@ internal static class CalendarQueryTelemetry
             }
         }
 
-        // Verified unavailability on any Calendar is the retained capability fact for the whole operation.
+        // Across Calendars the least reduced outcome wins: verified unavailability, then an unreduced attempt.
         internal void ObserveTextPrefilter(CalendarQueryTextPrefilter outcome)
         {
+            var name = TextPrefilterName(outcome);
             lock (_gate)
             {
-                if (_textPrefilter == CalendarQueryTextPrefilter.Unavailable)
+                if (_textPrefilter is { } current && current >= outcome)
                     return;
                 _textPrefilter = outcome;
-                activity.SetTag("caldav.query.text_prefilter", TextPrefilterName(outcome));
+                activity.SetTag("caldav.query.text_prefilter", name);
             }
         }
 
@@ -243,11 +245,13 @@ internal enum CalendarQueryPhase
     PageAdmission
 }
 
+/// <summary>Closed text pre-filter outcomes, ordered from most to least reduced.</summary>
 internal enum CalendarQueryTextPrefilter
 {
+    Ineligible,
     Applied,
-    Unavailable,
-    Ineligible
+    Unreduced,
+    Unavailable
 }
 
 internal enum CalendarQueryFetchMode

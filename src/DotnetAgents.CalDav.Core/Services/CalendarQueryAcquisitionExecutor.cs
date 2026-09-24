@@ -190,20 +190,25 @@ internal sealed class CalendarQueryAcquisitionExecutor(
         IReadOnlyList<string> hrefs,
         CancellationToken cancellationToken)
     {
-        if (prefilter is null || prefilter.IsEmpty)
+        if (prefilter is null || prefilter.IsEmpty || hrefs.Count == 0)
             return hrefs;
         var reduced = await transport.QueryTextCandidateHrefsAsync(
             selection.Calendar.Href,
             selection.Kind,
             prefilter,
             cancellationToken).ConfigureAwait(false);
-        if (reduced is not CalendarTextCandidateResult.Hrefs matched)
+        switch (reduced)
         {
-            CalendarQueryTelemetry.ObserveTextPrefilter(CalendarQueryTextPrefilter.Unavailable);
-            return hrefs;
+            case CalendarTextCandidateResult.Hrefs matched:
+                CalendarQueryTelemetry.ObserveTextPrefilter(CalendarQueryTextPrefilter.Applied);
+                return hrefs.Where(matched.Values.Contains).ToArray();
+            case CalendarTextCandidateResult.VerifiedUnavailable:
+                CalendarQueryTelemetry.ObserveTextPrefilter(CalendarQueryTextPrefilter.Unavailable);
+                return hrefs;
+            default:
+                CalendarQueryTelemetry.ObserveTextPrefilter(CalendarQueryTextPrefilter.Unreduced);
+                return hrefs;
         }
-        CalendarQueryTelemetry.ObserveTextPrefilter(CalendarQueryTextPrefilter.Applied);
-        return hrefs.Where(matched.Values.Contains).ToArray();
     }
 
     private static SelectionResult Select(

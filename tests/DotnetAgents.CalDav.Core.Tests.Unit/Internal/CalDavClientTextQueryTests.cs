@@ -154,28 +154,92 @@ public sealed class CalDavClientTextQueryTests
     }
 
     [Theory]
-    [InlineData("")]
-    [InlineData("<d:error xmlns:d=\"DAV:\"><d:need-privileges/></d:error>")]
-    public async Task UnrelatedForbiddenFailsWithoutRetainingUnavailability(string body)
+    [InlineData(HttpStatusCode.Forbidden, "")]
+    [InlineData(HttpStatusCode.Forbidden, "<d:error xmlns:d=\"DAV:\"><d:need-privileges/></d:error>")]
+    [InlineData(HttpStatusCode.BadRequest, "not xml")]
+    [InlineData(HttpStatusCode.RequestEntityTooLarge, "")]
+    public async Task UnexplainedRejectionOrPayloadLimitFailsOpenWithoutRetainingState(
+        HttpStatusCode status,
+        string body)
     {
         var requestCount = 0;
         var sut = CreateSut(_ =>
         {
             requestCount++;
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Forbidden)
-            {
-                Content = new StringContent(body)
-            });
+            return Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(body) });
         });
         var prefilter = Prefilter(new CalendarTextFilter("dentist"));
 
-        (await Should.ThrowAsync<HttpRequestException>(() => sut.QueryTextCandidateHrefsAsync(
-            CalendarHref, CalendarEntityKind.Event, prefilter, CancellationToken.None)))
-            .StatusCode.ShouldBe(HttpStatusCode.Forbidden);
-        await Should.ThrowAsync<HttpRequestException>(() => sut.QueryTextCandidateHrefsAsync(
-            CalendarHref, CalendarEntityKind.Event, prefilter, CancellationToken.None));
+        var first = await sut.QueryTextCandidateHrefsAsync(
+            CalendarHref, CalendarEntityKind.Event, prefilter, CancellationToken.None);
+        var second = await sut.QueryTextCandidateHrefsAsync(
+            CalendarHref, CalendarEntityKind.Event, prefilter, CancellationToken.None);
 
+        first.ShouldBeOfType<CalendarTextCandidateResult.Unreduced>();
+        second.ShouldBeOfType<CalendarTextCandidateResult.Unreduced>();
         requestCount.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task ResponseBeyondTheBoundedReadLimitFailsOpenAfterEarlierBranchesSucceeded()
+    {
+        var requestCount = 0;
+        var oversized = "<d:multistatus xmlns:d=\"DAV:\">"
+            + new string(' ', 4 * 1024 * 1024 + 1)
+            + "</d:multistatus>";
+        var sut = CreateSut(_ =>
+        {
+            requestCount++;
+            return Task.FromResult(requestCount == 1
+                ? MultiStatus(["/calendars/user/events/a.ics"])
+                : new HttpResponseMessage(HttpStatusCode.MultiStatus)
+                {
+                    Content = new StringContent(oversized, Encoding.UTF8, "application/xml")
+                });
+        });
+
+        var result = await sut.QueryTextCandidateHrefsAsync(
+            CalendarHref,
+            CalendarEntityKind.Event,
+            Prefilter(new CalendarTextFilter("dentist")),
+            CancellationToken.None);
+
+        result.ShouldBeOfType<CalendarTextCandidateResult.Unreduced>();
+        requestCount.ShouldBe(2);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    public async Task OtherFailuresStillFailTheQuery(HttpStatusCode status)
+    {
+        var sut = CreateSut(_ => Task.FromResult(new HttpResponseMessage(status)));
+
+        (await Should.ThrowAsync<HttpRequestException>(() => sut.QueryTextCandidateHrefsAsync(
+            CalendarHref,
+            CalendarEntityKind.Event,
+            Prefilter(new CalendarTextFilter("dentist")),
+            CancellationToken.None))).StatusCode.ShouldBe(status);
+    }
+
+    [Fact]
+    public async Task EmptyPrefilterNeverSendsARequestOrReducesCandidates()
+    {
+        var requestCount = 0;
+        var sut = CreateSut(_ =>
+        {
+            requestCount++;
+            return Task.FromResult(MultiStatus([]));
+        });
+
+        var result = await sut.QueryTextCandidateHrefsAsync(
+            CalendarHref,
+            CalendarEntityKind.Event,
+            new CalendarTextPrefilter([]),
+            CancellationToken.None);
+
+        result.ShouldBeOfType<CalendarTextCandidateResult.Unreduced>();
+        requestCount.ShouldBe(0);
     }
 
     [Theory]
