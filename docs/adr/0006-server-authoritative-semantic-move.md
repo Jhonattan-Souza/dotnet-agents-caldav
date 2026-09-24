@@ -23,7 +23,10 @@ CalDAV already owns the atomic decision. A conforming MOVE can bind the source
 with a strong `If-Match`, prohibit destination replacement with `Overwrite: F`,
 and report `CALDAV:no-uid-conflict`. Dispatch uncertainty still requires
 bilateral observation because a lost response cannot prove whether the server
-committed the mutation.
+committed the mutation. Addendum (2026-09-24): the Radicale 3.7.8 reference
+does not evaluate `If-Match` on MOVE, so staleness appearing between the
+pre-dispatch re-read and the MOVE surfaces as `fidelity_failure` with
+`mutationState: committed`.
 
 ## Decision
 

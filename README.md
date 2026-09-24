@@ -113,7 +113,7 @@ Credentials are attached only to the `CALDAV_URL` origin and HTTPS hosts authori
 - `calendar_occurrences.restore_exclusion` — Remove only one exact EXDATE.
 - `calendar_occurrences.cancel` — Create or update one complete cancelled override.
 - `calendar_occurrences.restore_cancellation` — Remove only cancelled status from one override.
-- `calendar_resources.move` — Move one reviewed resource with exact `If-Match`, `Overwrite: F`, server-authoritative UID collision truth, and bounded bilateral reconciliation; requires a verified interoperability profile.
+- `calendar_resources.move` — Move one reviewed resource with one MOVE that sends a strong `If-Match` and `Overwrite: F`, relies on server-authoritative UID collision truth, and ends with bounded bilateral reconciliation; requires a verified interoperability profile. Server enforcement of `If-Match` varies by profile (see the [2026-09-24 Move interoperability record](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/main/docs/move-interoperability-profiles-2026-09-24.md)).
 - `calendar_resources.delete` — Delete an entire resource from an explicitly supplied revision reference (href, UID, kind, and exact strong ETag) after MCP MRTR review and confirmation; success requires verified absence.
 - `calendars.inspect` — Inspect standard Calendar metadata (display name, CalDAV and WebDAV descriptions, color, order, timezone identifiers), report and privilege advertisements, storage limits, scheduling evidence, and any advisory Calendar Change Tag.
 - `calendars.patch` — Set or remove Calendar display name, description, color, order and time zone with one atomic, unconditional metadata update; preserve unaddressed properties.
