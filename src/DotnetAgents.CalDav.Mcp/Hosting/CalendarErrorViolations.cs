@@ -1,6 +1,8 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using DotnetAgents.CalDav.Core.Models;
 using ModelContextProtocol.Protocol;
 
 namespace DotnetAgents.CalDav.Mcp.Hosting;
@@ -17,6 +19,15 @@ internal static class CalendarErrorViolations
             .ThenBy(violation => violation.Message, StringComparer.Ordinal)
             .Take(MaximumCount)
             .ToArray();
+
+    /// <summary>Names each property of an atomic property write that the server did not apply.</summary>
+    internal static IEnumerable<CalendarInputViolation> FromRejectedProperties(
+        string pointerPrefix,
+        IEnumerable<CalendarPropertyRejection> rejections) => rejections.Select(rejection => rejection.StatusCode == 424
+            ? new CalendarInputViolation(pointerPrefix + rejection.Property, "property_not_applied",
+                "The server did not apply this property because another property in the same atomic request failed (HTTP 424).")
+            : new CalendarInputViolation(pointerPrefix + rejection.Property, "property_rejected",
+                string.Create(CultureInfo.InvariantCulture, $"The server rejected this property with HTTP status {rejection.StatusCode}.")));
 
     internal static CallToolResult Attach(
         CallToolResult result,

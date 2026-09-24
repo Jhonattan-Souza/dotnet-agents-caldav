@@ -12,8 +12,13 @@ public sealed record CalendarDescriptor
     /// <summary>Explains how <see cref="DisplayName"/> was obtained.</summary>
     public required DisplayNameProvenance DisplayNameProvenance { get; init; }
 
+    /// <summary>The CALDAV:calendar-description text.</summary>
     public string? Description { get; init; }
 
+    /// <summary>The separate WebDAV DAV:description text; never merged with <see cref="Description"/>.</summary>
+    public string? DavDescription { get; init; }
+
+    /// <summary>Calendar Color as <c>#RRGGBB</c>; an Apple <c>#RRGGBBAA</c> alpha channel is discarded.</summary>
     public string? Color { get; init; }
 
     /// <summary>
@@ -21,6 +26,8 @@ public sealed record CalendarDescriptor
     /// and cheap change evidence only: never a revision, a precondition, or a sync token.
     /// </summary>
     public string? ChangeTag { get; init; }
+    /// <summary>Non-negative Apple calendar-order sort position, when the server reports one.</summary>
+    public int? Order { get; init; }
 
     public required EntityKindSupport EventSupport { get; init; }
 

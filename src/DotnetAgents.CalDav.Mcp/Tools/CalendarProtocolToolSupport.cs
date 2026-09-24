@@ -73,6 +73,9 @@ internal static class CalendarProtocolToolSupport
         };
         if (mutationState is { } state)
             content["mutationState"] = MutationStateName(state);
+        if (exception.RejectedProperties.Count > 0)
+            content["violations"] = JsonSerializer.SerializeToNode(CalendarErrorViolations.Normalize(
+                CalendarErrorViolations.FromRejectedProperties("/patch/", exception.RejectedProperties)));
         var result = new CallToolResult
         {
             IsError = true,

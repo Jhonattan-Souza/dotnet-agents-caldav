@@ -9,6 +9,10 @@ namespace DotnetAgents.CalDav.Core.Internal.Ical;
 internal static class CalendarCreateTimeZoneSerializer
 {
     private static readonly Instant MaximumSupportedInstant = Instant.FromUtc(9999, 12, 31, 23, 59);
+    // A Calendar collection time zone has no temporal values to bound it. Midday avoids local
+    // transition gaps at the window edges; the window covers the Unix era through this century.
+    private static readonly DateTime CollectionWindowStart = new(1970, 1, 1, 12, 0, 0, DateTimeKind.Unspecified);
+    private static readonly DateTime CollectionWindowEnd = new(2100, 1, 1, 12, 0, 0, DateTimeKind.Unspecified);
 
     public static void AppendForEvent(StringBuilder destination, CalendarEventCreateFields fields)
     {
@@ -21,6 +25,15 @@ internal static class CalendarCreateTimeZoneSerializer
         var recurrence = Analyze(fields.RecurrenceSet?.Rule, fields.Start);
         Append(destination, CollectTodo(fields, recurrence), fields.Start, recurrence);
     }
+
+    /// <summary>Serializes one tzdb zone as the VCALENDAR required by CALDAV:calendar-timezone.</summary>
+    public static string SerializeCollectionTimeZone(string timeZoneId) => new StringBuilder()
+        .Append("BEGIN:VCALENDAR\r\n")
+        .Append("VERSION:2.0\r\n")
+        .Append("PRODID:-//dotnet-agents-caldav//EN\r\n")
+        .Append(SerializeZone(timeZoneId, CollectionWindowStart, CollectionWindowEnd, unbounded: false))
+        .Append("END:VCALENDAR\r\n")
+        .ToString();
 
     private static void Append(
         StringBuilder destination,

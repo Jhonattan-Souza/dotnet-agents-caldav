@@ -16,7 +16,8 @@ internal static class CalendarMetadataProtocol
         Dav + "supported-report-set", Dav + "current-user-privilege-set",
         CalDav + "max-resource-size", CalDav + "max-instances", CalDav + "max-attendees-per-instance",
         CalDav + "min-date-time", CalDav + "max-date-time", CalDav + "calendar-timezone",
-        DavResponseParser.ChangeTagProperty
+        DavResponseParser.ChangeTagProperty,
+        Dav + "description", CalendarCollectionPropertyValues.ColorName, CalendarCollectionPropertyValues.OrderName
     ];
 
     internal static string InspectBody() => new XElement(Dav + "propfind",
@@ -54,7 +55,10 @@ internal static class CalendarMetadataProtocol
             TimeZoneIds(Value(properties, CalDav + "calendar-timezone"), cancellationToken),
             Properties.Select(name => new CalendarPropertyObservation(
                 name.NamespaceName, name.LocalName, properties.GetValueOrDefault(name)?.StatusCode)).ToArray(),
-            new CalendarSchedulingObservation("unknown", null))
+            new CalendarSchedulingObservation("unknown", null),
+            Value(properties, Dav + "description")?.Value,
+            CalendarCollectionPropertyValues.ReadColor(Value(properties, CalendarCollectionPropertyValues.ColorName)?.Value),
+            CalendarCollectionPropertyValues.ReadOrder(Value(properties, CalendarCollectionPropertyValues.OrderName)?.Value)
         {
             ChangeTag = DavResponseParser.ReadChangeTag(Value(properties, DavResponseParser.ChangeTagProperty))
         });
@@ -181,7 +185,7 @@ internal static class CalendarMetadataProtocol
             ? parsed.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture) : throw ProtocolError();
     }
 
-    private static IReadOnlyList<string> TimeZoneIds(XElement? property, CancellationToken cancellationToken) =>
+    internal static IReadOnlyList<string> TimeZoneIds(XElement? property, CancellationToken cancellationToken) =>
         property is null ? [] : CalendarMetadataTimeZoneReader.Read(property.Value, cancellationToken);
 
     internal static void RequireStatus(CalendarProtocolResponse response, int expected)

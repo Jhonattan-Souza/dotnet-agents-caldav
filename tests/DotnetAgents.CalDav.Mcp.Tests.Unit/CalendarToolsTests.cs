@@ -190,6 +190,9 @@ public sealed class CalendarToolsTests
                 Href = "https://cal.example/derived/",
                 DisplayNameProvenance = DisplayNameProvenance.DerivedFromHref,
                 Color = "#aAbBcC",
+                Order = 2,
+                Description = "CalDAV text",
+                DavDescription = "WebDAV text",
                 EventSupport = EntityKindSupport.Unknown,
                 TodoSupport = EntityKindSupport.Advertised
             },
@@ -241,6 +244,11 @@ public sealed class CalendarToolsTests
         result.Items[4].ChangeTag.ShouldBe("\"d025819f\"");
         result.Items[0].DisplayNameProvenance.ShouldBe("derived-from-href");
         result.Items[0].Color.ShouldBe("#aAbBcC");
+        result.Items[0].Order.ShouldBe(2);
+        result.Items[0].Description.ShouldBe("CalDAV text");
+        result.Items[0].DavDescription.ShouldBe("WebDAV text");
+        result.Items[1].Order.ShouldBeNull();
+        result.Items[1].DavDescription.ShouldBeNull();
         result.Items[0].EntityKinds.Event.State.ShouldBe("unknown");
         result.Items[0].EntityKinds.Todo.State.ShouldBe("advertised");
         result.Items[1].DisplayNameProvenance.ShouldBe("missing");

@@ -17,7 +17,7 @@ using Xunit;
 namespace DotnetAgents.CalDav.Mcp.Tests.Unit;
 
 [Collection("TelemetryActivityCollection")]
-public sealed class CalendarCollectionToolsTests
+public sealed partial class CalendarCollectionToolsTests
 {
     [Theory]
     [InlineData("create")]

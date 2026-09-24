@@ -1,10 +1,13 @@
 namespace DotnetAgents.CalDav.Core.Models;
 
-/// <summary>Creates one CalDAV Calendar collection.</summary>
+/// <summary>Creates one CalDAV Calendar collection with optional initial Calendar Color, Order and Time Zone.</summary>
 public sealed record CalendarCollectionCreateRequest(
     string DisplayName,
     IReadOnlyList<CalendarEntityKind> EntityKinds,
-    string? DestinationHref = null);
+    string? DestinationHref = null,
+    string? Color = null,
+    int? Order = null,
+    string? TimeZoneId = null);
 
 /// <summary>Closed outcomes for Calendar collection creation.</summary>
 public enum CalendarCollectionCreateCode
@@ -33,6 +36,9 @@ public sealed record CalendarCollectionCreateResult(
     bool Retryable = false,
     int? RetryAfterMilliseconds = null)
 {
+    /// <summary>Requested properties the server rejected in its atomic MKCALENDAR failure body.</summary>
+    public IReadOnlyList<CalendarPropertyRejection> RejectedProperties { get; init; } = [];
+
     public static CalendarCollectionCreateResult Success(CalendarDescriptor calendar) => new(
         CalendarCollectionCreateCode.Success,
         CalendarMutationState.Committed,

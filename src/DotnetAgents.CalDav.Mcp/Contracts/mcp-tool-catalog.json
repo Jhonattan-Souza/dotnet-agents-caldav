@@ -3060,7 +3060,7 @@
         "idempotentHint": false,
         "openWorldHint": true
       },
-      "description": "Create one CalDAV Calendar collection for Events, To-dos, or both using MKCALENDAR."
+      "description": "Create one CalDAV Calendar collection for Events, To-dos, or both using one atomic MKCALENDAR, optionally initializing its Calendar Color (#RRGGBB), Calendar Order and Calendar Time Zone (IANA identifier)."
     },
     {
       "name": "calendars.delete",
@@ -3459,7 +3459,7 @@
         "idempotentHint": true,
         "openWorldHint": true
       },
-      "description": "Set or remove display name or description on one exact Calendar href. Omitted properties are preserved. Metadata writes are unconditional: concurrent edits to the same addressed properties can be overwritten. A committed or uncertain failure requires inspection before another write."
+      "description": "Set or remove display name, description, Calendar Color (#RRGGBB), Calendar Order or Calendar Time Zone (IANA identifier) on one exact Calendar href with one atomic PROPPATCH. Omitted properties are preserved. Metadata writes are unconditional: concurrent edits to the same addressed properties can be overwritten. A committed or uncertain failure requires inspection before another write."
     },
     {
       "name": "calendars.free_busy",
@@ -4113,6 +4113,24 @@
         "destinationHref": {
           "type": "string",
           "format": "uri"
+        },
+        "color": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "description": "Calendar Color as #RRGGBB, stored as Apple calendar-color."
+        },
+        "order": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647,
+          "description": "Calendar Order: non-negative Apple calendar-order sort position."
+        },
+        "timeZone": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^[A-Za-z][A-Za-z0-9_+/-]*$",
+          "description": "Calendar Time Zone as an IANA identifier; stored as a generated CALDAV:calendar-timezone VTIMEZONE."
         }
       }
     },
@@ -9853,14 +9871,32 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "description": "CALDAV:calendar-description."
+        },
+        "davDescription": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "WebDAV DAV:description, distinct from description."
         },
         "color": {
           "type": [
             "string",
             "null"
           ],
-          "pattern": "^#[0-9A-Fa-f]{6}$"
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "description": "Calendar Color as #RRGGBB; an Apple #RRGGBBAA alpha channel is discarded."
+        },
+        "order": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 2147483647,
+          "description": "Calendar Order: Apple calendar-order sort position."
         },
         "changeTag": {
           "$ref": "#/$defs/calendarChangeTag"
@@ -11288,6 +11324,9 @@
         "displayName",
         "description",
         "descriptionLanguage",
+        "davDescription",
+        "color",
+        "order",
         "reportSupport",
         "reports",
         "privilegeSupport",
@@ -11322,6 +11361,29 @@
             "string",
             "null"
           ]
+        },
+        "davDescription": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "WebDAV DAV:description, distinct from the CALDAV:calendar-description in description."
+        },
+        "color": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "description": "Calendar Color as #RRGGBB; an Apple #RRGGBBAA alpha channel is discarded."
+        },
+        "order": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 2147483647
         },
         "reportSupport": {
           "enum": [
@@ -11363,7 +11425,7 @@
         },
         "properties": {
           "type": "array",
-          "maxItems": 12,
+          "maxItems": 15,
           "items": {
             "$ref": "#/$defs/calendarPropertyObservation"
           }
@@ -11401,6 +11463,9 @@
         "displayName",
         "description",
         "descriptionLanguage",
+        "davDescription",
+        "color",
+        "order",
         "reportSupport",
         "reports",
         "privilegeSupport",
@@ -11439,6 +11504,29 @@
             "null"
           ]
         },
+        "davDescription": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "WebDAV DAV:description, distinct from the CALDAV:calendar-description in description."
+        },
+        "color": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "description": "Calendar Color as #RRGGBB; an Apple #RRGGBBAA alpha channel is discarded."
+        },
+        "order": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 2147483647
+        },
         "reportSupport": {
           "enum": [
             "available",
@@ -11479,7 +11567,7 @@
         },
         "properties": {
           "type": "array",
-          "maxItems": 12,
+          "maxItems": 15,
           "items": {
             "$ref": "#/$defs/calendarPropertyObservation"
           }
@@ -11564,6 +11652,108 @@
         }
       ]
     },
+    "calendarColorPatch": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "value"
+          ],
+          "properties": {
+            "operation": {
+              "const": "set"
+            },
+            "value": {
+              "type": "string",
+              "pattern": "^#[0-9A-Fa-f]{6}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation"
+          ],
+          "properties": {
+            "operation": {
+              "const": "remove"
+            }
+          }
+        }
+      ]
+    },
+    "calendarOrderPatch": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "value"
+          ],
+          "properties": {
+            "operation": {
+              "const": "set"
+            },
+            "value": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation"
+          ],
+          "properties": {
+            "operation": {
+              "const": "remove"
+            }
+          }
+        }
+      ]
+    },
+    "calendarTimeZonePatch": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "value"
+          ],
+          "properties": {
+            "operation": {
+              "const": "set"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "pattern": "^[A-Za-z][A-Za-z0-9_+/-]*$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation"
+          ],
+          "properties": {
+            "operation": {
+              "const": "remove"
+            }
+          }
+        }
+      ]
+    },
     "calendarMetadataPatchInput": {
       "type": "object",
       "additionalProperties": false,
@@ -11589,10 +11779,19 @@
             },
             "description": {
               "$ref": "#/$defs/calendarDescriptionPatch"
+            },
+            "color": {
+              "$ref": "#/$defs/calendarColorPatch"
+            },
+            "order": {
+              "$ref": "#/$defs/calendarOrderPatch"
+            },
+            "timeZone": {
+              "$ref": "#/$defs/calendarTimeZonePatch"
             }
           },
           "minProperties": 1,
-          "description": "Unconditional replacement of addressed metadata properties. Omitted properties are preserved; same-property concurrent edits can be overwritten."
+          "description": "Unconditional replacement of addressed metadata properties in one atomic PROPPATCH. color is #RRGGBB, order is a non-negative integer and timeZone is an IANA identifier serialized as a VTIMEZONE. Omitted properties are preserved; same-property concurrent edits can be overwritten."
         }
       }
     },

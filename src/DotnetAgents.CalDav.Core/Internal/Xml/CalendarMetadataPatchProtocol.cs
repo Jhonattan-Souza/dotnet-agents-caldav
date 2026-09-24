@@ -1,4 +1,4 @@
-using System.Text;
+using System.Globalization;
 using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
@@ -8,15 +8,28 @@ namespace DotnetAgents.CalDav.Core.Internal.Xml;
 
 internal static partial class CalendarMetadataPatchProtocol
 {
-    internal static void Validate(CalendarMetadataPatch patch)
+    /// <summary>Validates the patch and returns its property instructions in request order.</summary>
+    internal static IReadOnlyList<CalendarMetadataPropertyChange> Plan(CalendarMetadataPatch patch)
     {
-        if (patch is null || patch.DisplayName is null && patch.Description is null)
-            throw InvalidInput();
-        ValidateProperty(patch.DisplayName, displayName: true);
-        ValidateProperty(patch.Description, displayName: false);
+        Validate(patch);
+        return Changes(patch).ToArray();
     }
 
-    private static void ValidateProperty(CalendarMetadataTextPatch? property, bool displayName)
+    private static void Validate(CalendarMetadataPatch patch)
+    {
+        if (patch is null || patch.DisplayName is null && patch.Description is null
+            && patch.Color is null && patch.Order is null && patch.TimeZone is null)
+            throw InvalidInput();
+        ValidateProperty(patch.DisplayName, ValidateDisplayName);
+        ValidateProperty(patch.Description, ValidateDescription);
+        ValidateProperty(patch.Color, property => property.Language is null
+            && CalendarCollectionPropertyValues.IsWritableColor(property.Value));
+        ValidateProperty(patch.TimeZone, property => property.Language is null
+            && CalendarCollectionPropertyValues.IsTimeZoneId(property.Value));
+        ValidateOrder(patch.Order);
+    }
+
+    private static void ValidateProperty(CalendarMetadataTextPatch? property, Func<CalendarMetadataTextPatch, bool> isValidSet)
     {
         if (property is null)
             return;
@@ -26,27 +39,43 @@ internal static partial class CalendarMetadataPatchProtocol
                 throw InvalidInput();
             return;
         }
-        if (property.Operation != "set" || property.Value is null)
+        if (property.Operation != "set" || property.Value is null || !isValidSet(property))
             throw InvalidInput();
-        ValidateValue(property, displayName);
     }
 
-    private static void ValidateValue(CalendarMetadataTextPatch property, bool displayName)
+    private static void ValidateOrder(CalendarMetadataOrderPatch? property)
     {
-        var value = property.Value!;
-        if (ExceedsTextLimit(value, displayName ? 256 : 4096)
-            || displayName && string.IsNullOrWhiteSpace(value)
-            || displayName && property.Language is not null)
+        if (property is null)
+            return;
+        var valid = property.Operation switch
+        {
+            "remove" => property.Value is null,
+            "set" => CalendarCollectionPropertyValues.IsWritableOrder(property.Value),
+            _ => false
+        };
+        if (!valid)
             throw InvalidInput();
-        if (property.Language is { } language && (language.Length > 64 || !LanguagePattern().IsMatch(language)))
-            throw InvalidInput();
+    }
+
+    private static bool ValidateDisplayName(CalendarMetadataTextPatch property) =>
+        property.Language is null && !string.IsNullOrWhiteSpace(property.Value) && IsBoundedXmlText(property.Value, 256);
+
+    private static bool ValidateDescription(CalendarMetadataTextPatch property) =>
+        IsBoundedXmlText(property.Value!, 4096)
+        && (property.Language is not { } language || language.Length <= 64 && LanguagePattern().IsMatch(language));
+
+    private static bool IsBoundedXmlText(string value, int maximum)
+    {
+        if (ExceedsTextLimit(value, maximum))
+            return false;
         try
         {
             XmlConvert.VerifyXmlChars(value);
+            return true;
         }
         catch (XmlException)
         {
-            throw InvalidInput();
+            return false;
         }
     }
 
@@ -63,26 +92,28 @@ internal static partial class CalendarMetadataPatchProtocol
         return false;
     }
 
-    internal static string Body(CalendarMetadataPatch patch) => new XElement(CalendarMetadataProtocol.Dav + "propertyupdate",
-        Changes(patch).Select(change => Instruction(change.Key, change.Value)))
+    internal static string Body(IReadOnlyList<CalendarMetadataPropertyChange> changes) => new XElement(
+        CalendarMetadataProtocol.Dav + "propertyupdate",
+        new XAttribute(XNamespace.Xmlns + "ical", CalendarCollectionPropertyValues.AppleIcal.NamespaceName),
+        changes.Select(Instruction))
         .ToString(SaveOptions.DisableFormatting);
 
-    private static XElement Instruction(XName name, CalendarMetadataTextPatch patch)
+    private static XElement Instruction(CalendarMetadataPropertyChange change)
     {
-        var property = new XElement(name);
-        if (patch.Operation == "set")
+        var property = new XElement(change.Name);
+        if (change.Value is not null)
         {
-            property.Value = patch.Value!;
-            if (patch.Language is not null)
-                property.Add(new XAttribute(XNamespace.Xml + "lang", patch.Language));
+            property.Value = change.Value;
+            if (change.Language is not null)
+                property.Add(new XAttribute(XNamespace.Xml + "lang", change.Language));
         }
-        return new XElement(CalendarMetadataProtocol.Dav + (patch.Operation == "set" ? "set" : "remove"),
+        return new XElement(CalendarMetadataProtocol.Dav + (change.Value is null ? "remove" : "set"),
             new XElement(CalendarMetadataProtocol.Dav + "prop", property));
     }
 
     internal static CalendarMetadataPatchDispatch ReadDispatch(
         string href,
-        CalendarMetadataPatch patch,
+        IReadOnlyList<CalendarMetadataPropertyChange> changes,
         CalendarProtocolResponse response)
     {
         if (response.StatusCode != 207)
@@ -90,7 +121,7 @@ internal static partial class CalendarMetadataPatchProtocol
         try
         {
             var properties = CalendarMetadataProtocol.ReadProperties(href, response.Body, response.CharSet);
-            return PropertyDispatch(patch, properties);
+            return PropertyDispatch(changes, properties);
         }
         catch (Exception exception) when (exception is CalendarProtocolException or XmlException)
         {
@@ -98,23 +129,31 @@ internal static partial class CalendarMetadataPatchProtocol
         }
     }
 
+    // RFC 4918 §9.2: PROPPATCH is atomic, so either every property succeeds or none does and
+    // the properties that did not fail report 424. Contradictory per-property truth stays uncertain.
     private static CalendarMetadataPatchDispatch PropertyDispatch(
-        CalendarMetadataPatch patch,
+        IReadOnlyList<CalendarMetadataPropertyChange> changes,
         IReadOnlyDictionary<XName, CalendarMetadataProperty> properties)
     {
-        var requested = Changes(patch).Select(change => change.Key).ToArray();
-        if (properties.Count != requested.Length || requested.Any(name => !properties.ContainsKey(name)))
+        if (properties.Count != changes.Count || changes.Any(change => !properties.ContainsKey(change.Name)))
             return Uncertain();
-        var statuses = requested.Select(name => properties[name].StatusCode).ToArray();
-        if (statuses.All(status => status is 200 or 201 or 204))
+        var statuses = changes.Select(change => (change.Member, Status: properties[change.Name].StatusCode)).ToArray();
+        if (statuses.All(item => item.Status is 200 or 201 or 204))
             return new(CalendarMutationState.Committed, null);
-        if (statuses.All(status => status >= 400))
+        var rejections = statuses.Where(item => item.Status >= 400)
+            .Select(item => new CalendarPropertyRejection(item.Member, item.Status)).ToArray();
+        if (rejections.Length == statuses.Length)
         {
-            var status = statuses.FirstOrDefault(value => value != 424, 424);
-            return new(CalendarMutationState.NotCommitted, CalendarMetadataProtocol.StatusFailure(status));
+            var status = statuses.Select(item => item.Status).FirstOrDefault(value => value != 424, 424);
+            return new(CalendarMutationState.NotCommitted, WithRejections(CalendarMetadataProtocol.StatusFailure(status), rejections));
         }
-        return Uncertain();
+        return new(CalendarMutationState.Unknown, WithRejections(Uncertain().Error!, rejections));
     }
+
+    private static CalendarProtocolException WithRejections(
+        CalendarProtocolException exception,
+        IReadOnlyList<CalendarPropertyRejection> rejections) =>
+        new(exception.Code, exception.Message, exception.Retryable) { RejectedProperties = rejections };
 
     private static CalendarMetadataPatchDispatch HttpDispatch(int status) => status switch
     {
@@ -123,36 +162,83 @@ internal static partial class CalendarMetadataPatchProtocol
         _ => Uncertain()
     };
 
-    internal static bool Matches(CalendarMetadataPatch patch, CalendarMetadataObservation observed) =>
-        Changes(patch).All(change => MatchesProperty(change.Value, observed.Properties.GetValueOrDefault(change.Key)));
+    internal static bool Matches(IReadOnlyList<CalendarMetadataPropertyChange> changes, CalendarMetadataObservation observed) =>
+        changes.All(change => MatchesProperty(change, observed.Properties.GetValueOrDefault(change.Name)));
 
-    private static bool MatchesProperty(CalendarMetadataTextPatch expected, CalendarMetadataProperty? observed)
+    private static bool MatchesProperty(CalendarMetadataPropertyChange expected, CalendarMetadataProperty? observed)
     {
         if (observed is null)
             return false;
-        if (expected.Operation == "remove")
+        if (expected.Value is null)
             return observed.StatusCode == 404;
-        if (observed.StatusCode != 200 || observed.Element.Elements().Any() || observed.Element.Value != expected.Value)
-            return false;
-        return string.Equals(CalendarMetadataProtocol.Language(observed.Element), expected.Language, StringComparison.OrdinalIgnoreCase);
+        return observed.StatusCode == 200 && !observed.Element.Elements().Any() && expected.Matches(observed.Element);
     }
 
-    private static IEnumerable<KeyValuePair<XName, CalendarMetadataTextPatch>> Changes(CalendarMetadataPatch patch)
+    private static IEnumerable<CalendarMetadataPropertyChange> Changes(CalendarMetadataPatch patch)
     {
         if (patch.DisplayName is not null)
-            yield return new(CalendarMetadataProtocol.Dav + "displayname", patch.DisplayName);
+            yield return Text("displayName", CalendarMetadataProtocol.Dav + "displayname", patch.DisplayName);
         if (patch.Description is not null)
-            yield return new(CalendarMetadataProtocol.CalDav + "calendar-description", patch.Description);
+            yield return Text("description", CalendarMetadataProtocol.CalDav + "calendar-description", patch.Description);
+        if (patch.Color is not null)
+            yield return Color(patch.Color.Value);
+        if (patch.Order is not null)
+            yield return Order(patch.Order.Value);
+        if (patch.TimeZone is not null)
+            yield return TimeZone(patch.TimeZone.Value);
+    }
+
+    private static CalendarMetadataPropertyChange Text(string member, XName name, CalendarMetadataTextPatch patch) =>
+        new(member, name, patch.Value, patch.Language, element => element.Value == patch.Value
+            && string.Equals(CalendarMetadataProtocol.Language(element), patch.Language, StringComparison.OrdinalIgnoreCase));
+
+    // A server may store an equivalent color with another hex case or an Apple alpha suffix.
+    private static CalendarMetadataPropertyChange Color(string? value) =>
+        new("color", CalendarCollectionPropertyValues.ColorName, value, null, element =>
+            string.Equals(CalendarCollectionPropertyValues.ReadColor(element.Value), value, StringComparison.OrdinalIgnoreCase));
+
+    private static CalendarMetadataPropertyChange Order(int? value) =>
+        new("order", CalendarCollectionPropertyValues.OrderName, value?.ToString(CultureInfo.InvariantCulture), null,
+            element => CalendarCollectionPropertyValues.ReadOrder(element.Value) == value);
+
+    // The generated VTIMEZONE is not compared lexically: readback verifies its single TZID.
+    private static CalendarMetadataPropertyChange TimeZone(string? value) =>
+        new("timeZone", CalendarCollectionPropertyValues.TimeZoneName,
+            value is null ? null : CalendarCollectionPropertyValues.SerializeTimeZone(value), null,
+            element => ReadsTimeZone(element, value!));
+
+    private static bool ReadsTimeZone(XElement element, string expected)
+    {
+        try
+        {
+            return CalendarMetadataProtocol.TimeZoneIds(element, CancellationToken.None).SequenceEqual([expected]);
+        }
+        catch (CalendarProtocolException)
+        {
+            return false;
+        }
     }
 
     internal static CalendarMetadataPatchDispatch Uncertain() => new(CalendarMutationState.Unknown,
         new CalendarProtocolException("indeterminate", "The property update may have committed. Inspect the Calendar before deciding another write."));
 
     private static CalendarProtocolException InvalidInput() => new("invalid_input",
-        "Set or remove at least one Calendar property. Sets require a bounded value; only description accepts a language tag.");
+        "Set or remove at least one Calendar property. Sets require a bounded value; only description accepts a language tag. "
+        + "color is #RRGGBB, order is a non-negative integer, and timeZone is an IANA time zone identifier.");
 
     [GeneratedRegex("^[A-Za-z]{1,8}(-[A-Za-z0-9]{1,8})*$", RegexOptions.CultureInvariant, 100)]
     private static partial Regex LanguagePattern();
 }
+
+/// <summary>
+/// One PROPPATCH instruction: a null <see cref="Value"/> removes the property. <see cref="Member"/>
+/// is the public patch member used to report per-property rejections.
+/// </summary>
+internal sealed record CalendarMetadataPropertyChange(
+    string Member,
+    XName Name,
+    string? Value,
+    string? Language,
+    Func<XElement, bool> Matches);
 
 internal sealed record CalendarMetadataPatchDispatch(CalendarMutationState State, CalendarProtocolException? Error);

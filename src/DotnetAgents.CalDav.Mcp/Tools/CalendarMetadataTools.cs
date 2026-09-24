@@ -20,7 +20,7 @@ public sealed class CalendarMetadataTools(ICalendarMetadataModule module)
 
     [McpServerTool(Name = "calendars.patch", ReadOnly = false, Destructive = false,
         Idempotent = true, OpenWorld = true, UseStructuredContent = true),
-     Description("Set or remove display name or description on one exact Calendar href. Omitted properties are preserved. Metadata writes are unconditional: concurrent edits to the same addressed properties can be overwritten. A committed or uncertain failure requires inspection before another write.")]
+     Description("Set or remove display name, description, Calendar Color (#RRGGBB), Calendar Order or Calendar Time Zone (IANA identifier) on one exact Calendar href with one atomic PROPPATCH. Omitted properties are preserved. Metadata writes are unconditional: concurrent edits to the same addressed properties can be overwritten. A committed or uncertain failure requires inspection before another write.")]
     public async Task<CallToolResult> PatchAsync(
         string calendarHref,
         CalendarMetadataPatch patch,

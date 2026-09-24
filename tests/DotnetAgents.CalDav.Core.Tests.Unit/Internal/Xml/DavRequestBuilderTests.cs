@@ -1,5 +1,6 @@
 using System.Xml.Linq;
 using DotnetAgents.CalDav.Core.Internal.Ical;
+using DotnetAgents.CalDav.Core.Internal;
 using DotnetAgents.CalDav.Core.Internal.Xml;
 using DotnetAgents.CalDav.Core.Models;
 using Shouldly;
@@ -92,6 +93,7 @@ public class DavRequestBuilderTests
         prop.Element(CalDav + "calendar-description").ShouldNotBeNull();
         prop.Element(Dav + "description").ShouldNotBeNull();
         prop.Element(AppleCs + "calendar-color").ShouldNotBeNull();
+        prop.Element(AppleCs + "calendar-order").ShouldNotBeNull();
         prop.Element(CalServer + "getctag").ShouldNotBeNull();
     }
 
@@ -136,4 +138,40 @@ public class DavRequestBuilderTests
         components.ShouldBe(["VEVENT", "VTODO"]);
     }
 
+    [Fact]
+    public void BuildMkCalendar_WithoutInitialPropertiesSetsOnlyNameAndComponents()
+    {
+        var prop = XDocument.Parse(DavRequestBuilder.BuildMkCalendar("Plain", [CalendarEntityKind.Event]))
+            .Descendants(Dav + "prop").Single();
+
+        prop.Elements().Select(element => element.Name).ShouldBe([
+            Dav + "displayname", CalDav + "supported-calendar-component-set"]);
+    }
+
+    [Fact]
+    public void BuildMkCalendar_InitializesColorOrderAndTimeZoneInTheSameAtomicSet()
+    {
+        const string timeZone = "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n";
+        var xml = DavRequestBuilder.BuildMkCalendar("Styled", [CalendarEntityKind.Todo],
+            new CalendarCollectionInitialProperties("#FF2968", 0, timeZone));
+        var document = XDocument.Parse(xml);
+        var set = document.Root!.Elements(Dav + "set").Single();
+
+        set.Descendants(AppleCs + "calendar-color").Single().Value.ShouldBe("#FF2968");
+        set.Descendants(AppleCs + "calendar-order").Single().Value.ShouldBe("0");
+        // XML end-of-line handling delivers the iCalendar lines to the server with LF endings.
+        set.Descendants(CalDav + "calendar-timezone").Single().Value.ShouldBe(timeZone.ReplaceLineEndings("\n"));
+    }
+
+    [Fact]
+    public void BuildMkCalendar_OmitsUnrequestedInitialProperties()
+    {
+        var xml = DavRequestBuilder.BuildMkCalendar("Ordered", [CalendarEntityKind.Event],
+            new CalendarCollectionInitialProperties(null, 7, null));
+        var prop = XDocument.Parse(xml).Descendants(Dav + "prop").Single();
+
+        prop.Element(AppleCs + "calendar-order")!.Value.ShouldBe("7");
+        prop.Element(AppleCs + "calendar-color").ShouldBeNull();
+        prop.Element(CalDav + "calendar-timezone").ShouldBeNull();
+    }
 }
