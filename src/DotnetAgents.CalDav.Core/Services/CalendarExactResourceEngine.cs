@@ -373,9 +373,11 @@ internal sealed class CalendarExactResourceEngine(
             CalendarResourceUpdateDispatchCode.UpstreamUnauthorized => CalendarExactResourceCode.UpstreamUnauthorized,
             CalendarResourceUpdateDispatchCode.UpstreamForbidden => CalendarExactResourceCode.UpstreamForbidden,
             CalendarResourceUpdateDispatchCode.UpstreamRateLimited => CalendarExactResourceCode.UpstreamRateLimited,
-            CalendarResourceUpdateDispatchCode.UpstreamUnavailable => CalendarExactResourceCode.UpstreamUnavailable,
+            CalendarResourceUpdateDispatchCode.UpstreamUnavailable
+                or CalendarResourceUpdateDispatchCode.RejectedBeforeSend => CalendarExactResourceCode.UpstreamUnavailable,
             _ => CalendarExactResourceCode.UpstreamProtocolError
-        }, dispatch.Code == CalendarResourceUpdateDispatchCode.UpstreamRateLimited,
+        }, dispatch.Code is CalendarResourceUpdateDispatchCode.UpstreamRateLimited
+            or CalendarResourceUpdateDispatchCode.RejectedBeforeSend,
         dispatch.RetryAfterMilliseconds);
 
     private static CalendarExactResourceResult MissingUpdateObservation(
@@ -549,6 +551,7 @@ internal sealed class CalendarExactResourceEngine(
             HttpRequestException http => FromHttpFailure(http.StatusCode, phase),
             XmlException or CalendarDiscoveryProtocolException =>
                 Failure(CalendarExactResourceCode.UpstreamProtocolError, phase),
+            // IsPhaseFailure admits only transient transport failures and upstream cancellation here.
             _ => Failure(CalendarExactResourceCode.UpstreamUnavailable, phase, retryable: true)
         };
 

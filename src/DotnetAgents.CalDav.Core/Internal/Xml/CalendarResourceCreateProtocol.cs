@@ -32,9 +32,8 @@ internal sealed class CalendarResourceCreateProtocol(HttpClient httpClient, Uri 
         }
         catch (Exception exception) when (CalendarTransportFailure.IsRejectedBeforeSend(exception))
         {
-            // The rejected attempt was not sent, and an earlier redirect response does not commit.
             return new CalendarResourceCreateResult(
-                CalendarResourceCreateCode.UpstreamUnavailable,
+                CalendarResourceCreateCode.RejectedBeforeSend,
                 resourceUri.AbsoluteUri);
         }
         catch (Exception exception) when (CalendarTransportFailure.IsPossiblySent(exception))

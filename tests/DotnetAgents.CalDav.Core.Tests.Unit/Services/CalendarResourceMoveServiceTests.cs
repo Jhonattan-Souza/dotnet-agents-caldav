@@ -596,6 +596,27 @@ public sealed class CalendarResourceMoveServiceTests
     }
 
     [Fact]
+    public async Task MoveResourceAsync_PreSendRejectionIsRetryableAndNotCommitted()
+    {
+        const string sourceHref = "https://cal.example/tasks/reviewed.ics";
+        var client = ConfiguredClient(sourceHref, "reviewed-move");
+        client.MoveCalendarResourceAsync(Arg.Any<CalendarResourceMoveDispatchRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceMoveDispatchResult(CalendarResourceMoveDispatchCode.RejectedBeforeSend));
+        var sut = CreateService(client);
+
+        var result = await sut.MoveResourceAsync(Request(sourceHref), CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceMoveCode.UpstreamUnavailable);
+        result.MutationState.ShouldBe(CalendarMutationState.NotCommitted);
+        result.Retryable.ShouldBeTrue();
+        result.RetryAfterMilliseconds.ShouldBeNull();
+        result.Phase.ShouldBe(CalendarResourceMovePhase.Execution);
+        await client.Received(1).MoveCalendarResourceAsync(
+            Arg.Any<CalendarResourceMoveDispatchRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task MoveResourceAsync_StaleSourceConflictReturnsCurrentSnapshot()
     {
         const string sourceHref = "https://cal.example/tasks/reviewed.ics";

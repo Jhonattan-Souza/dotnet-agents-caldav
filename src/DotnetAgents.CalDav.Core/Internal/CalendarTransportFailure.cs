@@ -29,7 +29,7 @@ internal static class CalendarTransportFailure
 
     /// <summary>
     /// Transient failures of a read that carries no HTTP status: I/O, timeouts, and every resilience
-    /// strategy rejection.
+    /// strategy rejection. The MCP collection tools keep a matching list for discovery failures.
     /// </summary>
     public static bool IsUnavailable(Exception exception) => exception is IOException
         or TimeoutException

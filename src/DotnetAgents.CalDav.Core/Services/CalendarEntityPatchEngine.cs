@@ -850,6 +850,7 @@ internal sealed class CalendarEntityPatchEngine(
             dispatch.RetryAfterMilliseconds,
             retryable: true),
         CalendarResourceUpdateDispatchCode.UpstreamProtocolError => Rejected(CalendarEntityPatchCode.UpstreamProtocolError),
+        CalendarResourceUpdateDispatchCode.RejectedBeforeSend => Rejected(CalendarEntityPatchCode.UpstreamUnavailable, retryable: true),
         _ => Rejected(CalendarEntityPatchCode.UpstreamUnavailable)
     };
 

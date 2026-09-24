@@ -277,7 +277,8 @@ internal sealed class CalendarCollectionTools
     }
 
     // Mutation dispatch and reconciliation failures are classified by the module, so these reach
-    // the tool only from discovery before the mutation is attempted.
+    // the tool only from discovery before the mutation is attempted. Keep this list in sync with
+    // Core's internal CalendarTransportFailure.IsUnavailable.
     private static bool IsDiscoveryUnavailable(Exception exception) => exception is IOException
         or TimeoutException
         or TimeoutRejectedException

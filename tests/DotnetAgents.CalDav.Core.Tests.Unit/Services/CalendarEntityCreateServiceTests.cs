@@ -1444,6 +1444,7 @@ public sealed class CalendarEntityCreateServiceTests
     [InlineData(CalendarResourceCreateCode.UpstreamRateLimited, CalendarEntityCreateCode.UpstreamRateLimited, CalendarMutationState.NotCommitted)]
     [InlineData(CalendarResourceCreateCode.UpstreamUnavailable, CalendarEntityCreateCode.UpstreamUnavailable, CalendarMutationState.NotCommitted)]
     [InlineData(CalendarResourceCreateCode.UpstreamProtocolError, CalendarEntityCreateCode.UpstreamProtocolError, CalendarMutationState.NotCommitted)]
+    [InlineData(CalendarResourceCreateCode.RejectedBeforeSend, CalendarEntityCreateCode.UpstreamUnavailable, CalendarMutationState.NotCommitted)]
     public async Task CreateEventAsync_MapsEveryDefiniteTransportFailureWithoutVerification(
         CalendarResourceCreateCode transportCode,
         CalendarEntityCreateCode expectedCode,

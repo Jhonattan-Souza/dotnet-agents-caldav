@@ -290,7 +290,8 @@ internal sealed class CalendarMoveDispatcher(
         retryAfterMilliseconds: dispatch.Code == CalendarResourceMoveDispatchCode.UpstreamRateLimited
             ? dispatch.RetryAfterMilliseconds
             : null,
-        retryable: dispatch.Code == CalendarResourceMoveDispatchCode.UpstreamRateLimited);
+        retryable: dispatch.Code is CalendarResourceMoveDispatchCode.UpstreamRateLimited
+            or CalendarResourceMoveDispatchCode.RejectedBeforeSend);
 
     private static CalendarResourceRead Attach(string calendarHref, CalendarResourceRead read) =>
         read.Code == CalendarResourceReadCode.Success

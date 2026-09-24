@@ -375,7 +375,7 @@ public sealed class CalDavServiceCollectionExtensionsTests
 
         var outcome = await DispatchMutationAsync(client, operation);
 
-        outcome.ShouldBe("UpstreamUnavailable");
+        outcome.ShouldBe("RejectedBeforeSend");
         handler.RequestCount.ShouldBe(sent);
         handler.Methods.ShouldAllBe(method => method == HttpMethod.Get);
     }

@@ -103,7 +103,13 @@ public enum CalendarResourceMoveDispatchCode
     UpstreamForbidden,
     UpstreamRateLimited,
     UpstreamUnavailable,
-    UpstreamProtocolError
+    UpstreamProtocolError,
+
+    /// <summary>
+    /// The client-side resilience pipeline (open circuit or rate limiter) rejected the attempt before
+    /// sending it. An earlier redirect response in the same dispatch does not commit the mutation.
+    /// </summary>
+    RejectedBeforeSend
 }
 
 /// <summary>Low-level result that preserves whether MOVE may have reached CalDAV.</summary>
