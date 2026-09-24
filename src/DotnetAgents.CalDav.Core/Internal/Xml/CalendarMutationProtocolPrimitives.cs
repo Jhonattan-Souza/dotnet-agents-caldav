@@ -26,7 +26,7 @@ internal static class CalendarMutationProtocolPrimitives
         && left.Port == right.Port;
 
     internal static bool TryResolveSameOriginRedirect(
-        Uri configuredBaseUri,
+        Uri originUri,
         Uri currentUri,
         Uri? location,
         Func<Uri, bool>? additionalValidation,
@@ -39,7 +39,7 @@ internal static class CalendarMutationProtocolPrimitives
             || location.OriginalString.Contains("%5C", StringComparison.OrdinalIgnoreCase)
             || !Uri.TryCreate(currentUri, location, out var candidate)
             || !IsSafeCanonicalUri(candidate, candidate.AbsoluteUri)
-            || !HasSameOrigin(configuredBaseUri, candidate)
+            || !HasSameOrigin(originUri, candidate)
             || additionalValidation?.Invoke(candidate) == false)
         {
             return false;

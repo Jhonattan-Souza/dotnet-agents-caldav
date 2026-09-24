@@ -63,6 +63,7 @@ client-specific commands.
 | `CALDAV_EVALUATION_TIME_ZONE` | Yes (installation) | Exact IANA zone used as the configured Temporal Evaluation Context for bounded Calendar Entity Starts and every Occurrence or To-do Start; invalid values fail startup and a caller `evaluationTimeZone` override wins. Manual runs may omit it when the call supplies an IANA identifier; To-do Starts require context even without a window |
 | `CALDAV_INTEROPERABILITY_PROFILE` | No | Set to `radicale-3.7.8` only for that verified runtime; otherwise server-authoritative Move fails closed with `unsupported_capability` |
 | `CALDAV_SCHEDULING_MODE` | No | `storage_only` (default when unset or empty) or `server_managed`; any other value fails startup. `storage_only` blocks participation-bearing writes and Calendar collection deletion unless fresh OPTIONS evidence shows the server does not advertise `calendar-auto-schedule`. `server_managed` also allows them when the server advertises it; the server may then send invitations, updates or cancellations, and affected outcomes report `schedulingSideEffects`. See [ADR 0009](docs/adr/0009-opt-in-server-managed-scheduling.md) |
+| `CALDAV_REDIRECT_HOSTS` | No | Comma-separated HTTPS host allowlist for providers that redirect or delegate to other hosts, such as `.icloud.com` for iCloud. An entry is an exact host name or a leading-dot suffix matching strict subdomains; schemes, ports, paths, wildcards and IP addresses fail startup, and `CALDAV_URL` must use HTTPS. Allowlisted hosts receive the configured credentials at the configured port; every other origin is refused before any request. Omit to keep every request on the `CALDAV_URL` origin |
 | `CALDAV_EXPOSE_EXACT_TOOLS` | No | Set to `true` to expose protected exact Calendar Object Resource tools |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | No | Non-empty OTLP endpoint that opts into telemetry export; no exporter is registered when omitted |
 | `OTEL_EXPORTER_OTLP_PROTOCOL` | No | Standard OTLP protocol such as `http/protobuf` or `grpc` |
@@ -259,6 +260,19 @@ Configure exact Calendar hrefs when unrelated collection branches reject
 discovery. Scoped traversal avoids those branches. For example, unrestricted
 discovery can fail on Nextcloud trash descendants that reject PROPFIND;
 the MCP returns that failure rather than claiming a complete Calendar list.
+
+Discovery probes `CALDAV_URL`, then `/.well-known/caldav`, then the
+`current-user-principal`; DNS SRV/TXT bootstrap is not implemented. Reads,
+PROPFIND and REPORT follow 301, 302, 307 and 308 redirects with the same
+method; conditional writes follow only 307 and 308. A 303 See Other is
+rejected without a further request. By default every redirect, discovered
+href and caller-supplied href must stay on the `CALDAV_URL` origin. Providers
+that place Calendar homes on other hosts, such as iCloud moving
+`caldav.icloud.com` to `pNN-caldav.icloud.com`, need
+`CALDAV_REDIRECT_HOSTS=.icloud.com`. Every operation then accepts hrefs on an
+allowlisted host and sends the configured credentials there. Collection
+members, resources and MOVE destinations must still share the origin of their
+Calendar or source resource.
 
 Calendar Entity, Occurrence, and compact To-do reads use `MCP adapter` → `ICalendarQueryModule` → the single narrow `ICalendarQueryTransport` → `CalDavClient`; unrelated discovery and mutation operations retain the `ICalendarService` path. `ICalendarQueryModule` exposes exactly those three query operations, and `ICalendarService` exposes none. Lossless iCalendar projection and bounded recurrence evaluation stay in Core's iCalendar modules.
 

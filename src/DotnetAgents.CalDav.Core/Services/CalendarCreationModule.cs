@@ -401,7 +401,7 @@ internal sealed class CalendarCreationModule(
             return false;
         }
 
-        return HasSameOrigin(new Uri(options.BaseUrl, UriKind.Absolute), candidate);
+        return CalDavAccountOrigins.From(options).Contains(candidate);
     }
 
     private bool TrySerializeEvent(string uid, CalendarEventCreateFields fields, out byte[] authoritativeUtf8) =>
@@ -857,7 +857,7 @@ internal sealed class CalendarCreationModule(
     private CalendarExactResourceResult? ValidateExactOriginAndScope(string href)
     {
         var resource = new Uri(href, UriKind.Absolute);
-        if (!HasSameOrigin(new Uri(options.BaseUrl, UriKind.Absolute), resource))
+        if (!CalDavAccountOrigins.From(options).Contains(resource))
         {
             return ExactFailure(
                 CalendarExactResourceCode.InvalidInput,

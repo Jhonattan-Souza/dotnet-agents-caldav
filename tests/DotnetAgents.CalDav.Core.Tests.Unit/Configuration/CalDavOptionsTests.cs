@@ -273,4 +273,132 @@ public class CalDavOptionsTests
             "CalDav:SchedulingMode must be 'storage_only' or 'server_managed' when specified.");
         CalDavSchedulingModes.IsServerManaged(options).ShouldBeFalse();
     }
+
+    [Theory]
+    [InlineData("*.icloud.com")]
+    [InlineData("https://caldav.icloud.com")]
+    [InlineData("caldav.icloud.com:443")]
+    [InlineData("caldav.icloud.com/")]
+    [InlineData(".com")]
+    [InlineData("localhost")]
+    [InlineData("192.0.2.10")]
+    [InlineData("[2001:db8::1]")]
+    [InlineData("caldav.icloud.com.")]
+    [InlineData("caldav..icloud.com")]
+    [InlineData("-caldav.icloud.com")]
+    [InlineData("caldav-.icloud.com")]
+    [InlineData("cal_dav.icloud.com")]
+    [InlineData("caldav.ícloud.com")]
+    [InlineData(".icloud.com,")]
+    [InlineData(".icloud.com,,caldav.example.com")]
+    [InlineData(" ")]
+    public void ValidateCalDavOptions_RejectsInvalidRedirectHosts(string redirectHosts)
+    {
+        var result = new ValidateCalDavOptions().Validate(null, new CalDavOptions
+        {
+            BaseUrl = "https://caldav.icloud.com",
+            Username = "user",
+            Password = "pass",
+            RedirectHosts = redirectHosts
+        });
+
+        result.Failed.ShouldBeTrue();
+        result.Failures.ShouldHaveSingleItem().ShouldContain("CalDav:RedirectHosts must be a comma-separated list");
+    }
+
+    [Fact]
+    public void ValidateCalDavOptions_RedirectHostsFailureDoesNotEchoTheValue()
+    {
+        const string privateValue = "private-host.internal:8443";
+
+        var result = new ValidateCalDavOptions().Validate(null, new CalDavOptions
+        {
+            BaseUrl = "https://caldav.icloud.com",
+            Username = "user",
+            Password = "pass",
+            RedirectHosts = privateValue
+        });
+
+        result.Failures.ShouldHaveSingleItem().ShouldNotContain("private-host");
+    }
+
+    [Fact]
+    public void ValidateCalDavOptions_RejectsOverlongRedirectHostLabelsAndNames()
+    {
+        var overlongLabel = new string('a', 64) + ".example.com";
+        var overlongName = string.Join('.', Enumerable.Repeat(new string('a', 63), 4)) + ".com";
+
+        foreach (var redirectHosts in new[] { overlongLabel, overlongName })
+        {
+            new ValidateCalDavOptions().Validate(null, new CalDavOptions
+            {
+                BaseUrl = "https://caldav.icloud.com",
+                Username = "user",
+                Password = "pass",
+                RedirectHosts = redirectHosts
+            }).Failed.ShouldBeTrue();
+        }
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(".icloud.com")]
+    [InlineData("p01-caldav.icloud.com")]
+    [InlineData(" P01-CalDAV.iCloud.com , .example.org ")]
+    [InlineData("xn--caldav-9ya.example.com")]
+    public void ValidateCalDavOptions_AcceptsAbsentOrDnsRedirectHosts(string? redirectHosts)
+    {
+        var result = new ValidateCalDavOptions().Validate(null, new CalDavOptions
+        {
+            BaseUrl = "https://caldav.icloud.com",
+            Username = "user",
+            Password = "pass",
+            RedirectHosts = redirectHosts
+        });
+
+        result.Succeeded.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void ValidateCalDavOptions_RedirectHostsRequireAnHttpsBaseUrl()
+    {
+        var result = new ValidateCalDavOptions().Validate(null, new CalDavOptions
+        {
+            BaseUrl = "http://caldav.example.com",
+            Username = "user",
+            Password = "pass",
+            RedirectHosts = ".example.com"
+        });
+
+        result.Failed.ShouldBeTrue();
+        result.Failures.ShouldHaveSingleItem().ShouldBe("CalDav:RedirectHosts requires an HTTPS CalDav:BaseUrl.");
+    }
+
+    [Fact]
+    public void ValidateCalDavOptions_EmptyRedirectHostsDoNotRequireHttps()
+    {
+        var result = new ValidateCalDavOptions().Validate(null, new CalDavOptions
+        {
+            BaseUrl = "http://caldav.example.com",
+            Username = "user",
+            Password = "pass",
+            RedirectHosts = string.Empty
+        });
+
+        result.Succeeded.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void ValidateCalDavOptions_MissingBaseUrlReportsOnlyTheBaseUrlForValidRedirectHosts()
+    {
+        var result = new ValidateCalDavOptions().Validate(null, new CalDavOptions
+        {
+            Username = "user",
+            Password = "pass",
+            RedirectHosts = ".icloud.com"
+        });
+
+        result.Failures.ShouldHaveSingleItem().ShouldBe("CalDav:BaseUrl is required.");
+    }
 }

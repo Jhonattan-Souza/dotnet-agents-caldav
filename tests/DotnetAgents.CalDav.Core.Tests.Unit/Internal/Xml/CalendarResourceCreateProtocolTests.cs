@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Core.Internal.Xml;
 using DotnetAgents.CalDav.Core.Models;
 using Shouldly;
@@ -49,7 +50,7 @@ public sealed class CalendarResourceCreateProtocolTests
                 }
                 : new HttpResponseMessage(HttpStatusCode.Created);
         }));
-        var sut = new CalendarResourceCreateProtocol(httpClient, new Uri("https://example.com"));
+        var sut = new CalendarResourceCreateProtocol(httpClient, new CalDavAccountOrigins(new Uri("https://example.com")));
 
         var result = await sut.CreateAsync(
             new CalendarResourceCreateRequest(

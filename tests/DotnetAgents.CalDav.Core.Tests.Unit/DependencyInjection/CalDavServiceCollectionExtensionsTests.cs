@@ -471,6 +471,74 @@ public sealed class CalDavServiceCollectionExtensionsTests
         return listener;
     }
 
+    [Fact]
+    public async Task AddCalDavCalendars_RedirectToAllowlistedHostCarriesTheConfiguredCredentials()
+    {
+        var handler = new RedirectingHandler("https://p01.cal.example/events/a.ics");
+        using var provider = BuildRedirectProvider(handler, ".cal.example");
+        var client = provider.GetRequiredService<ICalendarClient>();
+
+        var read = await client.GetCalendarResourceAsync("https://cal.example/events/a.ics", CancellationToken.None);
+
+        read.Code.ShouldBe(CalendarResourceReadCode.Success);
+        handler.Requests.Select(request => request.Uri).ShouldBe(
+            ["https://cal.example/events/a.ics", "https://p01.cal.example/events/a.ics"]);
+        handler.Requests.ShouldAllBe(request => request.Authorization == ExpectedBasicCredentials);
+    }
+
+    [Theory]
+    [InlineData("https://evil.example/events/a.ics", ".cal.example")]
+    [InlineData("http://p01.cal.example/events/a.ics", ".cal.example")]
+    [InlineData("https://p01.cal.example/events/a.ics", null)]
+    public async Task AddCalDavCalendars_RefusedCrossOriginRedirectNeverReceivesCredentials(
+        string location,
+        string? redirectHosts)
+    {
+        var handler = new RedirectingHandler(location);
+        using var provider = BuildRedirectProvider(handler, redirectHosts);
+        var client = provider.GetRequiredService<ICalendarClient>();
+
+        await Should.ThrowAsync<CalendarDiscoveryProtocolException>(() => client.GetCalendarResourceAsync(
+            "https://cal.example/events/a.ics", CancellationToken.None));
+
+        handler.Requests.ShouldHaveSingleItem().Uri.ShouldBe("https://cal.example/events/a.ics");
+    }
+
+    private static readonly string ExpectedBasicCredentials =
+        "Basic " + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("user:password"));
+
+    private static ServiceProvider BuildRedirectProvider(HttpMessageHandler handler, string? redirectHosts)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddCalDavCalendars(options =>
+        {
+            options.BaseUrl = "https://cal.example";
+            options.Username = "user";
+            options.Password = "password";
+            options.RedirectHosts = redirectHosts;
+        });
+        services.AddHttpClient<CalDavClient>().ConfigurePrimaryHttpMessageHandler(() => handler);
+        return services.BuildServiceProvider();
+    }
+
+    private sealed class RedirectingHandler(string location) : HttpMessageHandler
+    {
+        public List<(string Uri, string? Authorization)> Requests { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Requests.Add((request.RequestUri!.AbsoluteUri, request.Headers.Authorization?.ToString()));
+            return Task.FromResult(Requests.Count == 1
+                ? new HttpResponseMessage(HttpStatusCode.TemporaryRedirect) { Headers = { Location = new Uri(location) } }
+                : new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Headers = { ETag = new EntityTagHeaderValue("\"r1\"") },
+                    Content = new StringContent("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n")
+                });
+        }
+    }
+
     private sealed class CapturingHandlerFilter(Action<HttpMessageHandler> capture) : IHttpMessageHandlerBuilderFilter
     {
         public Action<HttpMessageHandlerBuilder> Configure(Action<HttpMessageHandlerBuilder> next) => builder =>

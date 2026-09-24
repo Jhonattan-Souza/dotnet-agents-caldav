@@ -154,6 +154,40 @@ real-agent continuation checks before opening the PR.
 Full scheduling, ACL mutation, vendor calendar sharing/color, managed
 attachments, DNS bootstrap, and VJOURNAL semantics remain outside this change.
 
+### Follow-up: discovery redirects and account origins
+
+Discovery keeps three probes: PROPFIND on the configured URL,
+`/.well-known/caldav`, then `current-user-principal`. DNS SRV/TXT bootstrap
+([RFC 6764 §3](https://www.rfc-editor.org/rfc/rfc6764.html#section-3)) remains backlog.
+
+- PROPFIND and REPORT replay the method, body and `Depth` after 301, 302, 307
+  and 308. [RFC 9110 §15.4.2–15.4.3](https://www.rfc-editor.org/rfc/rfc9110.html#section-15.4.2)
+  permits rewriting only POST to GET, so this matches the protocol. Conditional
+  writes follow only 307 and 308.
+- A 303 See Other is rejected with a typed discovery protocol error and no
+  further request. [RFC 9110 §15.4.4](https://www.rfc-editor.org/rfc/rfc9110.html#section-15.4.4)
+  defines only a GET retrieval of the Location. GET cannot return DAV
+  properties or report results. Replaying PROPFIND or REPORT would target a
+  resource the server did not name as their target. Read GETs reject 303 too,
+  keeping resource identity exact.
+- The default remains strictly same-origin. `CALDAV_REDIRECT_HOSTS` opts into
+  additional account origins for providers such as iCloud, whose
+  `caldav.icloud.com` endpoint delegates to `pNN-caldav.icloud.com`.
+  Entries are exact DNS host names or leading-dot suffixes matching strict
+  subdomains. Values with schemes, ports, paths, wildcards, IP literals or single
+  labels fail startup. A non-empty list also requires an HTTPS `CALDAV_URL`.
+  Allowlisted origins must use HTTPS on the configured port. Scheme downgrades
+  and port changes are never followed.
+- An allowlisted host is an account origin for every operation, not only for
+  the redirect. Discovered homes and Calendars on it are usable, and exact
+  hrefs, query candidates, multiget members, creates, updates, deletes and
+  MOVE use the same origin check. Those requests carry the configured
+  credentials. A non-allowlisted cross-origin redirect or href is refused
+  before any request, so it never receives credentials. Collection members,
+  resources, write redirects and MOVE destinations must share the origin of
+  their Calendar or source. A Move between Calendars on different account
+  origins fails origin authorization before dispatch as invalid input.
+
 ## Completion criteria
 
 1. Record the rubber-duck agent's objections, resolutions, and agreement.

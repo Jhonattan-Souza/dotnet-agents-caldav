@@ -1,4 +1,5 @@
 using System.Net;
+using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Core.Internal.Xml;
 using DotnetAgents.CalDav.Core.Models;
 using Shouldly;
@@ -34,7 +35,7 @@ public sealed class CalendarMutationProtocolRegressionTests
 
     private static async Task<string> ExecuteAsync(string operation, HttpClient client)
     {
-        var configuredBaseUri = new Uri("https://example.com");
+        var configuredBaseUri = new CalDavAccountOrigins(new Uri("https://example.com"));
         return operation switch
         {
             "create" => (await new CalendarResourceCreateProtocol(client, configuredBaseUri).CreateAsync(

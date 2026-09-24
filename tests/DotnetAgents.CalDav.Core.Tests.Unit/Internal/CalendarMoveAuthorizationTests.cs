@@ -357,6 +357,76 @@ public sealed class CalendarMoveAuthorizationTests
         failure.AuthorizedCandidates.ShouldBe([authorized]);
     }
 
+    [Theory]
+    [InlineData("https://p01.cal.example/tasks/", "https://p01.cal.example/archive/", true)]
+    [InlineData(SourceCalendarHref, "https://p01.cal.example/archive/", false)]
+    public async Task SemanticMoveRequiresSourceAndDestinationOnOneAccountOrigin(
+        string sourceCalendarHref,
+        string destinationCalendarHref,
+        bool authorized)
+    {
+        var source = TodoCalendar(sourceCalendarHref, "Tasks");
+        var destination = TodoCalendar(destinationCalendarHref, "Archive");
+        var fixture = Fixture(
+            [source, destination],
+            CalendarSelectionResult.Success(destination),
+            redirectHosts: ".cal.example",
+            calendarHrefs: $"{sourceCalendarHref},{destinationCalendarHref}");
+        var request = new CalendarResourceMoveRequest(
+            new CalendarResourceRevisionReference(
+                sourceCalendarHref + "reviewed.ics",
+                "reviewed",
+                CalendarEntityKind.Todo,
+                "\"r1\""),
+            CalendarMoveDestination.Default);
+
+        var result = await fixture.Module.AuthorizeAsync(request, TestContext.Current.CancellationToken);
+
+        if (authorized)
+        {
+            result.ShouldBeOfType<CalendarMoveAuthorizationResult.Authorized>()
+                .Target.DestinationCalendar.Href.ShouldBe(destinationCalendarHref);
+            return;
+        }
+        result.ShouldBeOfType<CalendarMoveAuthorizationResult.Rejected>()
+            .Failure.Reason.ShouldBe(CalendarMoveAuthorizationFailureReason.OriginMismatch);
+    }
+
+    [Theory]
+    [InlineData("https://p01.cal.example/archive/", true)]
+    [InlineData("https://p02.cal.example/archive/", false)]
+    public async Task ExactMoveRequiresSourceAndDestinationOnOneAccountOrigin(
+        string destinationCalendarHref,
+        bool authorized)
+    {
+        const string sourceCalendarHref = "https://p01.cal.example/tasks/";
+        var source = TodoCalendar(sourceCalendarHref, "Tasks");
+        var destination = TodoCalendar(destinationCalendarHref, "Archive");
+        var fixture = Fixture(
+            [source, destination],
+            CalendarSelectionResult.Success(destination),
+            redirectHosts: ".cal.example",
+            calendarHrefs: $"{sourceCalendarHref},{destinationCalendarHref}");
+        var request = new CalendarExactMoveRequest(
+            new CalendarResourceRevisionReference(
+                sourceCalendarHref + "reviewed.ics",
+                "reviewed",
+                CalendarEntityKind.Todo,
+                "\"r1\""),
+            destinationCalendarHref + "renamed.ics");
+
+        var result = await fixture.Module.AuthorizeAsync(request, TestContext.Current.CancellationToken);
+
+        if (authorized)
+        {
+            result.ShouldBeOfType<CalendarMoveAuthorizationResult.Authorized>();
+            return;
+        }
+        result.ShouldBeOfType<CalendarMoveAuthorizationResult.Rejected>()
+            .Failure.Reason.ShouldBe(CalendarMoveAuthorizationFailureReason.OriginMismatch);
+        fixture.Transport.DiscoveryCount.ShouldBe(0);
+    }
+
     private static CalendarMoveAuthorization Module(
         IReadOnlyList<CalendarDescriptor> calendars,
         CalendarSelectionResult todoDefault) => Fixture(calendars, todoDefault).Module;
@@ -364,15 +434,18 @@ public sealed class CalendarMoveAuthorizationTests
     private static AuthorizationFixture Fixture(
         IReadOnlyList<CalendarDescriptor> calendars,
         CalendarSelectionResult todoDefault,
-        string? interoperabilityProfile = CalDavInteroperabilityProfiles.Radicale_3_7_8)
+        string? interoperabilityProfile = CalDavInteroperabilityProfiles.Radicale_3_7_8,
+        string? redirectHosts = null,
+        string? calendarHrefs = null)
     {
         var options = new CalDavOptions
         {
             BaseUrl = "https://cal.example",
             Username = "user",
             Password = "secret",
-            CalendarHrefs = $"{SourceCalendarHref},{DestinationCalendarHref}",
-            InteroperabilityProfile = interoperabilityProfile
+            CalendarHrefs = calendarHrefs ?? $"{SourceCalendarHref},{DestinationCalendarHref}",
+            InteroperabilityProfile = interoperabilityProfile,
+            RedirectHosts = redirectHosts
         };
         var transport = new FixedDiscoveryTransport(calendars);
         var discovery = new CalendarOperationDiscovery(

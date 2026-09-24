@@ -2958,6 +2958,11 @@
       "description": "Scheduling model for participation-bearing writes and Calendar collection deletion; server_managed allows them on servers advertising calendar-auto-schedule and discloses schedulingSideEffects"
     },
     {
+      "name": "CALDAV_REDIRECT_HOSTS",
+      "required": false,
+      "description": "HTTPS host or leading-dot subdomain allowlist for cross-origin redirects and discovered hrefs; allowlisted hosts receive the configured credentials"
+    },
+    {
       "name": "CALDAV_EXPOSE_EXACT_TOOLS",
       "required": false,
       "type": "boolean"

@@ -1620,10 +1620,41 @@ public sealed class CalendarExactResourceServiceTests
         result.Limits!.Dimension.ShouldBe(CalendarEntityCreateLimitDimension.ElapsedTime);
     }
 
+    [Theory]
+    [InlineData(".cal.example", true)]
+    [InlineData(null, false)]
+    public async Task ExactCreateResourceAsync_AuthorizesAllowlistedAccountOriginOnly(
+        string? redirectHosts,
+        bool dispatched)
+    {
+        const string calendarHref = "https://p01.cal.example/events/";
+        const string destinationHref = calendarHref + "delegated.ics";
+        var client = PreparedCreateClient(calendarHref, destinationHref);
+        client.CreateCalendarResourceAsync(
+                Arg.Any<CalendarResourceCreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceCreateResult(CalendarResourceCreateCode.Dispatched, destinationHref));
+
+        var result = await CreateService(client, calendarHref, redirectHosts: redirectHosts).ExactCreateResourceAsync(
+            new CalendarExactCreateRequest(destinationHref, EventResource("delegated", "Delegated")),
+            CancellationToken.None);
+
+        if (dispatched)
+        {
+            await client.Received(1).CreateCalendarResourceAsync(
+                Arg.Is<CalendarResourceCreateRequest>(request => request.ResourceHref == destinationHref),
+                Arg.Any<CancellationToken>());
+            return;
+        }
+        result.Code.ShouldBe(CalendarExactResourceCode.InvalidInput);
+        result.Phase.ShouldBe(CalendarExactResourcePhase.OriginScopeAuthorization);
+        await client.DidNotReceive().GetCalendarsAsync(Arg.Any<CancellationToken>());
+    }
+
     private static CalendarService CreateService(
         ICalendarClient client,
         string calendarHref,
-        TimeProvider? timeProvider = null) => new(
+        TimeProvider? timeProvider = null,
+        string? redirectHosts = null) => new(
         client,
         Options.Create(new CalDavOptions
         {
@@ -1631,7 +1662,8 @@ public sealed class CalendarExactResourceServiceTests
             Username = "user",
             Password = "secret",
             CalendarHrefs = calendarHref,
-            InteroperabilityProfile = CalDavInteroperabilityProfiles.Radicale_3_7_8
+            InteroperabilityProfile = CalDavInteroperabilityProfiles.Radicale_3_7_8,
+            RedirectHosts = redirectHosts
         }),
         Substitute.For<ILogger<CalendarService>>(),
         timeProvider ?? TimeProvider.System,

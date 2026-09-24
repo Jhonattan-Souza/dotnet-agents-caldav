@@ -307,10 +307,7 @@ internal sealed class CalendarCollectionModule(
             || !uri.AbsolutePath.EndsWith("/", StringComparison.Ordinal))
             return false;
 
-        var origin = new Uri(options.Value.BaseUrl, UriKind.Absolute);
-        if (!string.Equals(uri.Scheme, origin.Scheme, StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(uri.Host, origin.Host, StringComparison.OrdinalIgnoreCase)
-            || uri.Port != origin.Port)
+        if (!CalDavAccountOrigins.From(options.Value).Contains(uri))
             return false;
         canonical = uri.AbsoluteUri;
         return true;

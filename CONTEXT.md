@@ -28,6 +28,10 @@ _Avoid_: Compatibility mode, generic server support
 The explicit set of Calendars eligible for an operation, identified by canonical href rather than partial href or inferred Calendar Name matches.
 _Avoid_: Task list filter, implicit all-calendars search
 
+**Account Origin**:
+The configured CalDAV URL's origin, or an HTTPS host explicitly allowlisted by `CALDAV_REDIRECT_HOSTS` at the configured port; only Account Origins receive requests and the configured credentials, and a collection member, resource, or MOVE destination shares the origin of its Calendar or source.
+_Avoid_: Trusted domain, same-site, redirect target
+
 **Default Calendar**:
 A Calendar selected for one Entity Kind only when an operation has no explicit Calendar selection; Event and To-do defaults are independent.
 _Avoid_: Global default list, fallback Calendar

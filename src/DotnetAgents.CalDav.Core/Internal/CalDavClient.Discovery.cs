@@ -82,7 +82,8 @@ internal sealed partial class CalDavClient
             return;
         var child = new Uri(href, UriKind.Absolute);
         var prefix = parent.AbsolutePath.TrimEnd('/') + '/';
-        var relative = child.AbsolutePath.StartsWith(prefix, StringComparison.Ordinal)
+        // Home-set and principal hrefs may name another account origin; a member never leaves its parent's origin.
+        var relative = HasSameOrigin(parent, child) && child.AbsolutePath.StartsWith(prefix, StringComparison.Ordinal)
             ? child.AbsolutePath[prefix.Length..].TrimEnd('/') : string.Empty;
         if (relative.Length == 0 || relative.Contains('/'))
             throw new CalendarDiscoveryProtocolException("A discovery member escaped its direct parent collection.");

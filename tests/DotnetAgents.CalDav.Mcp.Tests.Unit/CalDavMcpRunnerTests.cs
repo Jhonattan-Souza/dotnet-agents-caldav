@@ -209,4 +209,41 @@ public class CalDavMcpRunnerTests
         output.ShouldNotContain("Exception");   // No raw exception type names
         output.ShouldContain("CalDAV configuration error"); // Clean, human-readable header
     }
+
+    [Fact]
+    public async Task RunAsync_InvalidRedirectHostsFailStartupOnErrorOutputWithoutEchoingTheValue()
+    {
+        const string privateValue = "https://private-host.internal:8443";
+        var output = new StringWriter();
+
+        var exitCode = await new CalDavMcpRunner(output).RunAsync(options =>
+        {
+            options.BaseUrl = "https://caldav.example.com";
+            options.Username = "user";
+            options.Password = "pass";
+            options.RedirectHosts = privateValue;
+        }, TestContext.Current.CancellationToken);
+
+        exitCode.ShouldBe(1);
+        output.ToString().ShouldContain("CalDAV configuration error");
+        output.ToString().ShouldContain("CalDav:RedirectHosts");
+        output.ToString().ShouldNotContain("private-host");
+    }
+
+    [Fact]
+    public async Task RunAsync_RedirectHostsWithHttpEndpointFailStartup()
+    {
+        var output = new StringWriter();
+
+        var exitCode = await new CalDavMcpRunner(output).RunAsync(options =>
+        {
+            options.BaseUrl = "http://caldav.example.com";
+            options.Username = "user";
+            options.Password = "pass";
+            options.RedirectHosts = ".example.com";
+        }, TestContext.Current.CancellationToken);
+
+        exitCode.ShouldBe(1);
+        output.ToString().ShouldContain("CalDav:RedirectHosts requires an HTTPS CalDav:BaseUrl.");
+    }
 }
