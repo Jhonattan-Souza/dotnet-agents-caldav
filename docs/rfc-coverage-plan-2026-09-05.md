@@ -75,8 +75,12 @@ Checkpoints remain distinct from immutable query snapshot cursors.
   Calendar collections. Require an explicit creation destination when home
   selection is ambiguous.
 - Apply a storage-only scheduling policy to relevant create/update/delete
-  paths, checking both prior and proposed data for replacement and fresh
-  OPTIONS evidence for collection deletion. Preserve native calendar-to-calendar
+  paths, checking both prior and proposed data for replacement. Collection
+  deletion requires fresh OPTIONS evidence only when a bounded scan of its
+  direct members finds `ORGANIZER` or `ATTENDEE` data or cannot complete: one
+  Depth 1 PROPFIND of strong ETags, calendar-multiget batches, and a matching
+  second listing before the recursive DELETE, within the 5,000-resource and
+  32 MiB query budgets. Preserve native calendar-to-calendar
   MOVE, which RFC 6638 §3.2.3.4 defines as scheduling-neutral. Changing existing
   SCHEDULE-AGENT values can itself send cancellation, so existing resources
   must never be silently rewritten to suppress delivery.

@@ -49,10 +49,15 @@ internal sealed partial class CalDavClient
         {
             return CalendarSchedulingEvidence.Unknown;
         }
-        catch (Exception exception) when (exception is HttpRequestException or IOException or TimeoutException
-            or CalendarProtocolException or TimeoutRejectedException or BrokenCircuitException or RateLimiterRejectedException)
+        catch (Exception exception) when (IsUnprovenSchedulingEvidence(exception))
         {
             return CalendarSchedulingEvidence.Unknown;
         }
     }
+
+    private static bool IsUnprovenSchedulingEvidence(Exception exception) => exception is HttpRequestException
+        or IOException or TimeoutException or CalendarProtocolException or TimeoutRejectedException
+        or BrokenCircuitException or RateLimiterRejectedException or System.Xml.XmlException
+        or CalendarDiscoveryProtocolException or CalendarDiscoveryUnsupportedCapabilityException
+        or CalendarDiscoveryLimitException;
 }

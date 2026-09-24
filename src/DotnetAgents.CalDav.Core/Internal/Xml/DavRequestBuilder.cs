@@ -56,6 +56,21 @@ internal static class DavRequestBuilder
         return doc.ToString(SaveOptions.DisableFormatting);
     }
 
+    /// <summary>Builds a PROPFIND request body for direct member types and revisions.</summary>
+    public static string BuildPropFindMemberRevisions()
+    {
+        var doc = new XDocument(
+            new XDeclaration("1.0", "utf-8", null),
+            new XElement(Dav + "propfind",
+                new XElement(Dav + "prop",
+                    new XElement(Dav + "resourcetype"),
+                    new XElement(Dav + "getetag")
+                )
+            )
+        );
+        return doc.ToString(SaveOptions.DisableFormatting);
+    }
+
     /// <summary>Builds the RFC 4791 MKCALENDAR property initialization body.</summary>
     public static string BuildMkCalendar(
         string displayName,
