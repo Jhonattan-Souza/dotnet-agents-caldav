@@ -2933,18 +2933,40 @@
     {
       "name": "CALDAV_AUTH_SCHEME",
       "required": false,
-      "description": "HTTP authentication scheme: basic (default) or bearer"
+      "description": "HTTP authentication scheme: basic (default), bearer, or oauth2"
     },
     {
       "name": "CALDAV_USERNAME",
       "required": false,
-      "description": "Basic username; required for basic and must be omitted for bearer"
+      "description": "Basic username; required for basic and must be omitted for bearer and oauth2"
     },
     {
       "name": "CALDAV_PASSWORD",
-      "required": true,
+      "required": false,
       "secret": true,
-      "description": "Basic password, or the static bearer token"
+      "description": "Basic password, or the static bearer token; required for basic and bearer and must be omitted for oauth2"
+    },
+    {
+      "name": "CALDAV_OAUTH_TOKEN_ENDPOINT",
+      "required": false,
+      "description": "Absolute HTTPS token endpoint for the refresh-token grant; required for oauth2"
+    },
+    {
+      "name": "CALDAV_OAUTH_CLIENT_ID",
+      "required": false,
+      "description": "OAuth 2.0 client identifier; required for oauth2"
+    },
+    {
+      "name": "CALDAV_OAUTH_CLIENT_SECRET",
+      "required": false,
+      "secret": true,
+      "description": "Client secret for confidential oauth2 clients"
+    },
+    {
+      "name": "CALDAV_OAUTH_REFRESH_TOKEN",
+      "required": false,
+      "secret": true,
+      "description": "Refresh token exchanged for short-lived access tokens; required for oauth2"
     },
     {
       "name": "CALDAV_CALENDAR_HREFS",

@@ -57,9 +57,13 @@ client-specific commands.
 | Variable | Required | Description |
 | --- | --- | --- |
 | `CALDAV_URL` | Yes | Absolute CalDAV server endpoint or Calendar Home URL |
-| `CALDAV_AUTH_SCHEME` | No | HTTP authentication scheme: `basic` (default) or `bearer`; any other value fails startup |
-| `CALDAV_USERNAME` | For `basic` | Username for Basic auth; must be omitted for `bearer` |
-| `CALDAV_PASSWORD` | Yes | Password for Basic auth, or the static token sent as `Authorization: Bearer` for `bearer` |
+| `CALDAV_AUTH_SCHEME` | No | HTTP authentication scheme: `basic` (default), `bearer`, or `oauth2`; any other value fails startup |
+| `CALDAV_USERNAME` | For `basic` | Username for Basic auth; must be omitted for `bearer` and `oauth2` |
+| `CALDAV_PASSWORD` | For `basic` and `bearer` | Password for Basic auth, or the static token sent as `Authorization: Bearer` for `bearer`; must be omitted for `oauth2` |
+| `CALDAV_OAUTH_TOKEN_ENDPOINT` | For `oauth2` | Absolute HTTPS OAuth 2.0 token endpoint used for the refresh-token grant |
+| `CALDAV_OAUTH_CLIENT_ID` | For `oauth2` | OAuth 2.0 client identifier |
+| `CALDAV_OAUTH_CLIENT_SECRET` | No | Secret client credential for confidential `oauth2` clients; omit for public clients |
+| `CALDAV_OAUTH_REFRESH_TOKEN` | For `oauth2` | Secret OAuth 2.0 refresh token exchanged for short-lived access tokens |
 | `CALDAV_CALENDAR_HREFS` | No | Comma-separated exact canonical Calendar href allowlist; omit to discover every Calendar |
 | `CALDAV_DEFAULT_TODO_CALENDAR_NAME` | No | Display name of the default Calendar for To-do operations |
 | `CALDAV_DEFAULT_EVENT_CALENDAR_NAME` | No | Display name of the default Calendar for Event operations |
@@ -80,8 +84,11 @@ client-specific commands.
 
 - `basic` (default) sends `CALDAV_USERNAME` and `CALDAV_PASSWORD` as HTTP Basic credentials.
 - `bearer` sends `CALDAV_PASSWORD` unchanged as `Authorization: Bearer <token>` for gateways, proxies, and other static tokens. `CALDAV_USERNAME` must be omitted, and the token is never refreshed.
+- `oauth2` exchanges `CALDAV_OAUTH_REFRESH_TOKEN` at `CALDAV_OAUTH_TOKEN_ENDPOINT` (RFC 6749 refresh-token grant, client credentials in the form body) for Bearer access tokens, as servers such as Google Calendar's CalDAV API require. `CALDAV_USERNAME` and `CALDAV_PASSWORD` must be omitted.
 
-Credentials are attached only to requests on the `CALDAV_URL` origin. Redirects are followed manually and only within that origin, so a cross-origin `Location` never receives them. Digest and client-certificate (mTLS) authentication are not supported.
+With `oauth2`, the access token is held only in memory. The first CalDAV request obtains it; it is renewed before `expires_in` elapses (60 seconds early, or halfway through shorter lifetimes) and once when the CalDAV server answers 401, after which that request is resent exactly once. Concurrent requests share one token request, and each token request is limited to 5 seconds and 64 KiB of response. A refresh token issued in a token response replaces the configured one for the rest of the process; a restart uses the configured value again. The server never runs the interactive consent flow, so obtain the refresh token with the provider's tooling. A rejected grant (HTTP 400 or 401 from the token endpoint) becomes a typed `upstream_unauthorized` failure that is not retried; an unreachable endpoint becomes `upstream_unavailable`. Token endpoint responses, access tokens, refresh tokens, and client secrets never appear in results, logs, or telemetry.
+
+Credentials are attached only to requests on the `CALDAV_URL` origin. Redirects are followed manually and only within that origin, so a cross-origin `Location` never receives them; the token endpoint is contacted with its own client that follows no redirects. Digest and client-certificate (mTLS) authentication are not supported.
 
 ## Available tools
 

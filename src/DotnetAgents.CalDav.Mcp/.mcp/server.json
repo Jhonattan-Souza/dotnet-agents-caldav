@@ -21,18 +21,40 @@
         },
         {
           "name": "CALDAV_AUTH_SCHEME",
-          "description": "CalDAV HTTP authentication scheme: basic (default) or bearer (optional)",
+          "description": "CalDAV HTTP authentication scheme: basic (default), bearer, or oauth2 (optional)",
           "isRequired": false
         },
         {
           "name": "CALDAV_USERNAME",
-          "description": "Username for CalDAV Basic authentication; required for basic and must be omitted for bearer",
+          "description": "Username for CalDAV Basic authentication; required for basic and must be omitted for bearer and oauth2",
           "isRequired": false
         },
         {
           "name": "CALDAV_PASSWORD",
-          "description": "Password for CalDAV Basic authentication, or the static token for bearer",
-          "isRequired": true,
+          "description": "Password for CalDAV Basic authentication, or the static token for bearer; required for basic and bearer and must be omitted for oauth2",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "CALDAV_OAUTH_TOKEN_ENDPOINT",
+          "description": "Absolute HTTPS OAuth 2.0 token endpoint for the refresh-token grant; required for oauth2",
+          "isRequired": false
+        },
+        {
+          "name": "CALDAV_OAUTH_CLIENT_ID",
+          "description": "OAuth 2.0 client identifier; required for oauth2",
+          "isRequired": false
+        },
+        {
+          "name": "CALDAV_OAUTH_CLIENT_SECRET",
+          "description": "OAuth 2.0 client secret for confidential clients (optional; oauth2 only)",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "CALDAV_OAUTH_REFRESH_TOKEN",
+          "description": "OAuth 2.0 refresh token exchanged for short-lived access tokens; required for oauth2",
+          "isRequired": false,
           "isSecret": true
         },
         {

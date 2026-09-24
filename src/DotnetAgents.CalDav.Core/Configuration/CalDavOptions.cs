@@ -19,11 +19,26 @@ public sealed class CalDavOptions
     /// </summary>
     public string? AuthenticationScheme { get; set; }
 
-    /// <summary>Username for Basic authentication. Must be empty for Bearer authentication.</summary>
+    /// <summary>Username for Basic authentication. Must be empty for Bearer and OAuth 2.0 authentication.</summary>
     public string Username { get; set; } = string.Empty;
 
-    /// <summary>Password for Basic authentication, or the static token for Bearer authentication.</summary>
+    /// <summary>
+    /// Password for Basic authentication, or the static token for Bearer authentication.
+    /// Must be empty for OAuth 2.0 authentication.
+    /// </summary>
     public string Password { get; set; } = string.Empty;
+
+    /// <summary>Absolute HTTPS OAuth 2.0 token endpoint used for the refresh-token grant.</summary>
+    public string? OAuthTokenEndpoint { get; set; }
+
+    /// <summary>OAuth 2.0 client identifier sent with the refresh-token grant.</summary>
+    public string? OAuthClientId { get; set; }
+
+    /// <summary>Optional OAuth 2.0 client secret sent with the refresh-token grant.</summary>
+    public string? OAuthClientSecret { get; set; }
+
+    /// <summary>OAuth 2.0 refresh token exchanged for short-lived access tokens.</summary>
+    public string? OAuthRefreshToken { get; set; }
 
     /// <summary>Comma-separated exact canonical Calendar href allowlist. Empty means every discovered Calendar.</summary>
     public string? CalendarHrefs { get; set; }
@@ -116,13 +131,42 @@ internal sealed class ValidateCalDavOptions : IValidateOptions<CalDavOptions>
             case CalDavAuthenticationSchemes.Bearer:
                 ValidateBearerCredentials(options, failures);
                 break;
+            case CalDavAuthenticationSchemes.OAuth2:
+                ValidateOAuthCredentials(options, failures);
+                return;
             default:
                 failures.Add(
-                    $"CalDav:AuthenticationScheme must be '{CalDavAuthenticationSchemes.Basic}' or " +
-                    $"'{CalDavAuthenticationSchemes.Bearer}' when specified.");
-                break;
+                    $"CalDav:AuthenticationScheme must be '{CalDavAuthenticationSchemes.Basic}', " +
+                    $"'{CalDavAuthenticationSchemes.Bearer}', or '{CalDavAuthenticationSchemes.OAuth2}' when specified.");
+                return;
         }
+        if (HasAnyOAuthSetting(options))
+            failures.Add("CalDav:OAuthTokenEndpoint, OAuthClientId, OAuthClientSecret, and OAuthRefreshToken apply only when CalDav:AuthenticationScheme is 'oauth2'.");
     }
+
+    private static bool HasAnyOAuthSetting(CalDavOptions options) =>
+        !string.IsNullOrEmpty(options.OAuthTokenEndpoint)
+        || !string.IsNullOrEmpty(options.OAuthClientId)
+        || !string.IsNullOrEmpty(options.OAuthClientSecret)
+        || !string.IsNullOrEmpty(options.OAuthRefreshToken);
+
+    private static void ValidateOAuthCredentials(CalDavOptions options, ICollection<string> failures)
+    {
+        if (!string.IsNullOrEmpty(options.Username) || !string.IsNullOrEmpty(options.Password))
+            failures.Add("CalDav:Username and CalDav:Password must be empty when CalDav:AuthenticationScheme is 'oauth2'; access tokens come from the refresh-token grant.");
+        if (!IsSecureTokenEndpoint(options.OAuthTokenEndpoint))
+            failures.Add("CalDav:OAuthTokenEndpoint is required and must be an absolute HTTPS URL without credentials or a fragment when CalDav:AuthenticationScheme is 'oauth2'.");
+        if (string.IsNullOrWhiteSpace(options.OAuthClientId))
+            failures.Add("CalDav:OAuthClientId is required when CalDav:AuthenticationScheme is 'oauth2'.");
+        if (string.IsNullOrWhiteSpace(options.OAuthRefreshToken))
+            failures.Add("CalDav:OAuthRefreshToken is required when CalDav:AuthenticationScheme is 'oauth2'.");
+    }
+
+    private static bool IsSecureTokenEndpoint(string? endpoint) =>
+        Uri.TryCreate(endpoint, UriKind.Absolute, out var uri)
+        && uri.Scheme == Uri.UriSchemeHttps
+        && string.IsNullOrEmpty(uri.UserInfo)
+        && string.IsNullOrEmpty(uri.Fragment);
 
     private static void ValidateBearerCredentials(CalDavOptions options, ICollection<string> failures)
     {
@@ -209,6 +253,9 @@ public static class CalDavAuthenticationSchemes
 
     /// <summary>A static bearer token, such as one issued for a gateway or proxy.</summary>
     public const string Bearer = "bearer";
+
+    /// <summary>Bearer access tokens obtained and renewed through the OAuth 2.0 refresh-token grant.</summary>
+    public const string OAuth2 = "oauth2";
 }
 
 internal static class BearerTokenSyntax

@@ -71,6 +71,10 @@ public class McpMetadataTests
             "CALDAV_AUTH_SCHEME",
             "CALDAV_USERNAME",
             "CALDAV_PASSWORD",
+            "CALDAV_OAUTH_TOKEN_ENDPOINT",
+            "CALDAV_OAUTH_CLIENT_ID",
+            "CALDAV_OAUTH_CLIENT_SECRET",
+            "CALDAV_OAUTH_REFRESH_TOKEN",
             "CALDAV_CALENDAR_HREFS",
             "CALDAV_DEFAULT_TODO_CALENDAR_NAME",
             "CALDAV_DEFAULT_EVENT_CALENDAR_NAME",
@@ -98,14 +102,22 @@ public class McpMetadataTests
         var authScheme = envVars.EnumerateArray()
             .Single(item => item.GetProperty("name").GetString() == "CALDAV_AUTH_SCHEME");
         authScheme.GetProperty("isRequired").GetBoolean().ShouldBeFalse();
-        authScheme.GetProperty("description").GetString().ShouldNotBeNull().ShouldContain("basic (default) or bearer");
+        authScheme.GetProperty("description").GetString().ShouldNotBeNull().ShouldContain("basic (default), bearer, or oauth2");
         envVars.EnumerateArray()
             .Single(item => item.GetProperty("name").GetString() == "CALDAV_USERNAME")
             .GetProperty("isRequired").GetBoolean().ShouldBeFalse();
         var password = envVars.EnumerateArray()
             .Single(item => item.GetProperty("name").GetString() == "CALDAV_PASSWORD");
         password.GetProperty("isSecret").GetBoolean().ShouldBeTrue();
+        password.GetProperty("isRequired").GetBoolean().ShouldBeFalse();
         password.GetProperty("description").GetString().ShouldNotBeNull().ShouldContain("token for bearer");
+        envVars.EnumerateArray()
+            .Where(item => item.GetProperty("name").GetString() is "CALDAV_OAUTH_CLIENT_SECRET" or "CALDAV_OAUTH_REFRESH_TOKEN")
+            .Select(item => item.GetProperty("isSecret").GetBoolean())
+            .ShouldBe([true, true]);
+        envVars.EnumerateArray()
+            .Where(item => item.GetProperty("name").GetString()!.StartsWith("CALDAV_OAUTH_", StringComparison.Ordinal))
+            .ShouldAllBe(item => !item.GetProperty("isRequired").GetBoolean());
         envVars.EnumerateArray()
             .Single(item => item.GetProperty("name").GetString() == "CALDAV_EVALUATION_TIME_ZONE")
             .GetProperty("isRequired").GetBoolean().ShouldBeTrue();

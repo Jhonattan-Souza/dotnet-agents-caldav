@@ -62,9 +62,20 @@ public static class CalDavServiceCollectionExtensions
         // The authentication handler is innermost so every resilience attempt and every manually
         // followed redirect hop gets its credential applied, and only on the configured origin.
         services.AddTransient<CalendarHttpAttemptHandler>();
-        services.AddSingleton(serviceProvider => CalDavCredentialSource.Create(
-            serviceProvider.GetRequiredService<IOptions<CalDavOptions>>().Value));
+        services.AddSingleton(CalDavCredentialSource.Create);
         services.AddTransient<CalDavAuthenticationHandler>();
+
+        // The OAuth token endpoint is a different origin by design and gets its own client: no CalDAV
+        // credential handler, no redirects (the grant must never be re-posted elsewhere), no cookies,
+        // and no resilience pipeline. Its bounded timeout lives in CalDavOAuthCredentialSource, and a
+        // transient token failure is retried only as part of the enclosing CalDAV read attempt.
+        services.AddHttpClient(CalDavOAuthCredentialSource.HttpClientName)
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+            {
+                AllowAutoRedirect = false,
+                UseCookies = false,
+                PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+            });
         services.AddSingleton<CalendarQueryCapabilityState>();
         var calendarClientBuilder = services.AddHttpClient<CalDavClient>((serviceProvider, client) =>
         {
@@ -92,6 +103,7 @@ public static class CalDavServiceCollectionExtensions
             var standardShouldHandle = options.Retry.ShouldHandle;
             options.Retry.ShouldHandle = arguments =>
                 IsDefinitiveReportFailure(arguments.Outcome.Result)
+                || IsDefinitiveAuthenticationFailure(arguments.Outcome.Exception)
                     ? PredicateResult.False()
                     : standardShouldHandle(arguments);
             var standardCircuitShouldHandle = options.CircuitBreaker.ShouldHandle;
@@ -220,6 +232,9 @@ public static class CalDavServiceCollectionExtensions
         response?.RequestMessage?.Method.Method == "REPORT"
         && (response.StatusCode is HttpStatusCode.MethodNotAllowed or HttpStatusCode.NotImplemented
             || IsNativeReportLimit(response));
+
+    private static bool IsDefinitiveAuthenticationFailure(Exception? exception) =>
+        exception is CalDavAuthenticationException { Failure: not CalDavAuthenticationFailure.Unavailable };
 
     private static bool IsNativeReportLimit(HttpResponseMessage? response) =>
         response?.RequestMessage?.Method.Method == "REPORT"

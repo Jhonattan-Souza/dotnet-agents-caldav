@@ -43,6 +43,10 @@ internal sealed class CalendarQueryCursorKey
         string AuthenticationScheme,
         string Username,
         string Password,
+        string OAuthTokenEndpoint,
+        string OAuthClientId,
+        string OAuthClientSecret,
+        string OAuthRefreshToken,
         string CalendarScope,
         string DefaultEventCalendarName,
         string DefaultTodoCalendarName,
@@ -54,6 +58,10 @@ internal sealed class CalendarQueryCursorKey
             options.EffectiveAuthenticationScheme,
             options.Username,
             options.Password,
+            options.OAuthTokenEndpoint ?? string.Empty,
+            options.OAuthClientId ?? string.Empty,
+            options.OAuthClientSecret ?? string.Empty,
+            options.OAuthRefreshToken ?? string.Empty,
             string.Join(',', (options.CalendarHrefs ?? string.Empty)
                 .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .Distinct(StringComparer.Ordinal)

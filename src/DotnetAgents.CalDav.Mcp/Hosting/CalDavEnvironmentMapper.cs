@@ -26,6 +26,10 @@ public static class CalDavEnvironmentMapper
             options.AuthenticationScheme = getEnv("CALDAV_AUTH_SCHEME");
             options.Username = getEnv("CALDAV_USERNAME") ?? string.Empty;
             options.Password = getEnv("CALDAV_PASSWORD") ?? string.Empty;
+            options.OAuthTokenEndpoint = getEnv("CALDAV_OAUTH_TOKEN_ENDPOINT");
+            options.OAuthClientId = getEnv("CALDAV_OAUTH_CLIENT_ID");
+            options.OAuthClientSecret = getEnv("CALDAV_OAUTH_CLIENT_SECRET");
+            options.OAuthRefreshToken = getEnv("CALDAV_OAUTH_REFRESH_TOKEN");
             options.CalendarHrefs = getEnv("CALDAV_CALENDAR_HREFS");
             options.DefaultTodoCalendarName = getEnv("CALDAV_DEFAULT_TODO_CALENDAR_NAME");
             options.DefaultEventCalendarName = getEnv("CALDAV_DEFAULT_EVENT_CALENDAR_NAME");
