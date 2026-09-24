@@ -32,10 +32,17 @@ public sealed partial class RadicaleConformanceHarnessTests
                 .Status.ShouldBe(HttpStatusCode.Created);
         }
         var reports = new ConcurrentQueue<string>();
-        await using var provider = CreateTextSearchProvider(calendar.AbsoluteUri, reports);
-        var module = provider.GetRequiredService<ICalendarQueryModule>();
-
-        var pages = await ReadAllEntityPagesAsync(module, reports, new CalendarTextFilter("DENTIST"), pageSize: 20);
+        List<QueryReply<CalendarEntityQueryItem>.Page> pages;
+        // Each scenario uses a fresh client pipeline: the shared resilience circuit breaker samples 30 seconds
+        // of attempts, and this test deliberately issues many more requests than one agent operation.
+        await using (var provider = CreateTextSearchProvider(calendar.AbsoluteUri, reports))
+        {
+            pages = await ReadAllEntityPagesAsync(
+                provider.GetRequiredService<ICalendarQueryModule>(),
+                reports,
+                new CalendarTextFilter("DENTIST"),
+                pageSize: 20);
+        }
         var matchingUids = pages.SelectMany(page => page.Value.Items)
             .Select(item => item.Value.GetProperty("projection").GetProperty("uid").GetString())
             .ToArray();
@@ -51,33 +58,35 @@ public sealed partial class RadicaleConformanceHarnessTests
             .ShouldBe(["SUMMARY", "DESCRIPTION", "LOCATION", "CATEGORIES"]);
         MultigetHrefCount(reports).ShouldBe(MatchingEventCount + 1);
 
-        (await QueryEntityUidsAsync(module, new CalendarTextFilter(Categories: ["health"])))
+        (await QueryEntityUidsAsync(calendar, new CalendarTextFilter(Categories: ["health"])))
             .Length.ShouldBe(MatchingEventCount / 4 + DecoyEventCount / 2);
-        (await QueryEntityUidsAsync(module, new CalendarTextFilter("dentist", ["HEALTH"])))
+        (await QueryEntityUidsAsync(calendar, new CalendarTextFilter("dentist", ["HEALTH"])))
             .ShouldBe(Enumerable.Range(0, MatchingEventCount).Where(index => index % 4 == 3)
                 .Select(index => $"dentist-{index:D2}"));
-        (await QueryEntityUidsAsync(module, new CalendarTextFilter("odontológica"))).ShouldBe(["accent"]);
+        (await QueryEntityUidsAsync(calendar, new CalendarTextFilter("odontológica"))).ShouldBe(["accent"]);
 
-        var dentistOccurrences = await QueryTextOccurrencesAsync(module, new CalendarTextFilter("dentist"));
-        var planningOccurrences = await QueryTextOccurrencesAsync(module, new CalendarTextFilter("weekly planning"));
-        dentistOccurrences.ShouldBe(["2026-11-03T09:00:00Z"]);
-        planningOccurrences.ShouldBe([
+        (await QueryTextOccurrencesAsync(calendar, new CalendarTextFilter("dentist")))
+            .ShouldBe(["2026-11-03T09:00:00Z"]);
+        (await QueryTextOccurrencesAsync(calendar, new CalendarTextFilter("weekly planning"))).ShouldBe([
             "2026-11-02T09:00:00Z",
             "2026-11-04T09:00:00Z",
             "2026-11-05T09:00:00Z",
             "2026-11-06T09:00:00Z"
         ]);
 
-        var todos = (await module.QueryTodosAsync(
-            new CalendarTodoQueryRequest.Start(
-                new CalendarTodoQuery(
-                    CalendarEntityScope.All,
-                    EvaluationTimeZone: "UTC",
-                    TextFilter: new CalendarTextFilter("dentist")),
-                [CalendarTodoProjectionField.Summary]),
-            TestContext.Current.CancellationToken)).ShouldBeOfType<QueryReply<CalendarTodoQueryPageItem>.Page>();
-        todos.Value.Items.Select(item => item.Value.GetProperty("summary").GetString())
-            .ShouldBe(["Call dentist 0", "Call dentist 1", "Call dentist 2"]);
+        await using (var provider = CreateTextSearchProvider(calendar.AbsoluteUri, new ConcurrentQueue<string>()))
+        {
+            var todos = (await provider.GetRequiredService<ICalendarQueryModule>().QueryTodosAsync(
+                new CalendarTodoQueryRequest.Start(
+                    new CalendarTodoQuery(
+                        CalendarEntityScope.All,
+                        EvaluationTimeZone: "UTC",
+                        TextFilter: new CalendarTextFilter("dentist")),
+                    [CalendarTodoProjectionField.Summary]),
+                TestContext.Current.CancellationToken)).ShouldBeOfType<QueryReply<CalendarTodoQueryPageItem>.Page>();
+            todos.Value.Items.Select(item => item.Value.GetProperty("summary").GetString())
+                .ShouldBe(["Call dentist 0", "Call dentist 1", "Call dentist 2"]);
+        }
     }
 
     private static async Task<List<QueryReply<CalendarEntityQueryItem>.Page>> ReadAllEntityPagesAsync(
@@ -105,8 +114,10 @@ public sealed partial class RadicaleConformanceHarnessTests
         return pages;
     }
 
-    private static async Task<string[]> QueryEntityUidsAsync(ICalendarQueryModule module, CalendarTextFilter filter) =>
-        (await module.QueryEntitiesAsync(
+    private async Task<string[]> QueryEntityUidsAsync(Uri calendar, CalendarTextFilter filter)
+    {
+        await using var provider = CreateTextSearchProvider(calendar.AbsoluteUri, new ConcurrentQueue<string>());
+        return (await provider.GetRequiredService<ICalendarQueryModule>().QueryEntitiesAsync(
             new CalendarEntityQueryRequest.Start(
                 new CalendarEntityQuery(CalendarEntityScope.All, [CalendarEntityKind.Event], TextFilter: filter),
                 200),
@@ -114,9 +125,12 @@ public sealed partial class RadicaleConformanceHarnessTests
         .Value.Items.Select(item => item.Value.GetProperty("projection").GetProperty("uid").GetString()!)
         .Order(StringComparer.Ordinal)
         .ToArray();
+    }
 
-    private static async Task<string[]> QueryTextOccurrencesAsync(ICalendarQueryModule module, CalendarTextFilter filter) =>
-        (await module.QueryOccurrencesAsync(
+    private async Task<string[]> QueryTextOccurrencesAsync(Uri calendar, CalendarTextFilter filter)
+    {
+        await using var provider = CreateTextSearchProvider(calendar.AbsoluteUri, new ConcurrentQueue<string>());
+        return (await provider.GetRequiredService<ICalendarQueryModule>().QueryOccurrencesAsync(
             new CalendarOccurrenceQueryRequest.Start(
                 new CalendarOccurrenceQuery(
                     CalendarEntityScope.All,
@@ -129,6 +143,7 @@ public sealed partial class RadicaleConformanceHarnessTests
         .Value.Items.Select(item => item.Value.GetProperty("recurrenceIdentity").GetProperty("value")
             .GetProperty("value").GetString()!)
         .ToArray();
+    }
 
     private static int MultigetHrefCount(IEnumerable<string> reports) => reports
         .Where(body => body.Contains("calendar-multiget", StringComparison.Ordinal))
