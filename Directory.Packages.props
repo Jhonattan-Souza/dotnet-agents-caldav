@@ -19,6 +19,8 @@
   <!-- Core Dependencies -->
   <ItemGroup Label="Core">
     <PackageVersion Include="Ical.Net" Version="$(IcalNetVersion)" />
+    <!-- Pinned so an Ical.Net bump cannot silently change tzdb data or the Windows-to-IANA mapping. -->
+    <PackageVersion Include="NodaTime" Version="3.2.2" />
     <PackageVersion Include="Microsoft.Extensions.Http" Version="$(MicrosoftExtensionsVersion)" />
     <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.10.0" />
     <PackageVersion Include="Microsoft.Extensions.Options" Version="$(MicrosoftExtensionsVersion)" />

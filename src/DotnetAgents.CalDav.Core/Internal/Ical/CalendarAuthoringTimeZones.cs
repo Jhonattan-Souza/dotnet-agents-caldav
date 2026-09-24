@@ -7,6 +7,7 @@ namespace DotnetAgents.CalDav.Core.Internal.Ical;
 /// Replaces caller-authored Windows time zone identifiers with their mapped IANA identifiers so
 /// semantic writes always store IANA TZIDs. Identifiers that already name an IANA zone, and
 /// identifiers with no mapping, pass through unchanged for the existing validation to judge.
+/// Recurrence-set patch overrides assert existing stored overrides, so they are never rewritten.
 /// </summary>
 internal static class CalendarAuthoringTimeZones
 {
@@ -86,13 +87,7 @@ internal static class CalendarAuthoringTimeZones
             Value = patch.Value with
             {
                 RecurrenceDates = NormalizeAll(patch.Value.RecurrenceDates),
-                ExceptionDates = NormalizeAll(patch.Value.ExceptionDates),
-                Overrides = patch.Value.Overrides?.Select(item => item with
-                {
-                    RecurrenceIdentity = Normalize(item.RecurrenceIdentity),
-                    MovedStart = Normalize(item.MovedStart),
-                    MovedEnd = Normalize(item.MovedEnd)
-                }).ToArray()
+                ExceptionDates = NormalizeAll(patch.Value.ExceptionDates)
             }
         };
 

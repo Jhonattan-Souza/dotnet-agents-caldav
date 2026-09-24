@@ -215,9 +215,22 @@ before validation. Creates and patches emit a generated IANA VTIMEZONE for each
 zone they introduce, and TZIDs already present in the resource stay unchanged.
 The pinned Radicale 3.7.8 profile synthesizes its own VTIMEZONE for a bare IANA
 TZID but stores a Windows TZID unchanged. The live conformance test therefore
-covers external resolution with a Windows reference. Changing the zone of a
-recurring master remains unsupported. A recurring series stored under a Windows
-TZID cannot yet be rescheduled through a semantic start patch.
+covers external resolution with a Windows reference. Recurrence-set patch
+overrides assert existing stored overrides, so their identities are not mapped.
+
+A master stored under a Windows TZID still has these limitations, which predate
+this addendum. Semantic patches compare temporal families by exact TZID text,
+and the stored Windows text never equals a mapped IANA identifier. As a result:
+
+- A start patch is a zone change, and zone changes on a recurring master are
+  rejected.
+- Every recurrence-set patch fails the family check against the master start.
+  This covers RDATE and EXDATE additions, override assertions, and orphan
+  reconciliations.
+- Orphan-reconciliation identities are also validated by direct tzdb lookup,
+  which rejects the Windows text.
+
+Reads, queries, and non-temporal patches of such a resource work.
 
 ## Completion criteria
 

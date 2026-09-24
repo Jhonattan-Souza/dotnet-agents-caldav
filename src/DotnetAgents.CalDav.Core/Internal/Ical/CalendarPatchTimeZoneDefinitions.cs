@@ -19,10 +19,12 @@ internal static class CalendarPatchTimeZoneDefinitions
                 && DateTimeZoneProviders.Tzdb.GetZoneOrNull(timeZoneId) is not null)
             .Order(StringComparer.Ordinal)
             .ToArray();
-        if (introduced.Length == 0)
+        var definitions = string.Concat(introduced
+            .Select(timeZoneId => (TimeZoneId: timeZoneId, Values: LocalValues(edited, timeZoneId)))
+            .Where(zone => zone.Values.Length > 0)
+            .Select(zone => CalendarCreateTimeZoneSerializer.SerializeForLocalValues(zone.TimeZoneId, zone.Values)));
+        if (definitions.Length == 0)
             return editedUtf8;
-        var definitions = string.Concat(introduced.Select(timeZoneId =>
-            CalendarCreateTimeZoneSerializer.SerializeForLocalValues(timeZoneId, LocalValues(edited, timeZoneId))));
         var firstEntity = edited.Components.First(component => component.Path.Count == 2
             && component.Path[1].Name is "VEVENT" or "VTODO");
         return edited.InsertBeforeComponent(firstEntity.Path, definitions);
