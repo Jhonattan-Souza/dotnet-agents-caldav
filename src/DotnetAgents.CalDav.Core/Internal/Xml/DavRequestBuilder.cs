@@ -1,3 +1,5 @@
+using System.Text;
+using System.Xml;
 using System.Xml.Linq;
 using DotnetAgents.CalDav.Core.Internal.Ical;
 using DotnetAgents.CalDav.Core.Models;
@@ -92,7 +94,26 @@ internal static class DavRequestBuilder
                         new XElement(Dav + "displayname", displayName),
                         new XElement(CalDav + "supported-calendar-component-set", components),
                         InitialProperties(initialProperties)))));
-        return doc.ToString(SaveOptions.DisableFormatting);
+        return SerializePreservingLineBreaks(doc.Root!);
+    }
+
+    /// <summary>
+    /// Serializes a request body with carriage returns as <c>&amp;#xD;</c>. XML end-of-line
+    /// normalization (XML 1.0 §2.11) would otherwise turn embedded iCalendar CRLF into LF.
+    /// </summary>
+    internal static string SerializePreservingLineBreaks(XElement root)
+    {
+        var output = new StringBuilder();
+        using (var writer = XmlWriter.Create(output, new XmlWriterSettings
+               {
+                   OmitXmlDeclaration = true,
+                   Indent = false,
+                   NewLineHandling = NewLineHandling.Entitize
+               }))
+        {
+            root.WriteTo(writer);
+        }
+        return output.ToString();
     }
 
     private static IEnumerable<XElement> InitialProperties(CalendarCollectionInitialProperties? properties)

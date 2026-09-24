@@ -375,13 +375,30 @@ internal sealed class CalendarCollectionModule(
     }
 
     private static CalendarCollectionCreateResult? MapCreateDispatch(CalendarCollectionDispatchResult result) =>
-        result.RejectedProperties.Count > 0
-            // An MKCALENDAR is all-or-nothing, so named property failures prove nothing was created.
-            ? new(CalendarCollectionCreateCode.UnsupportedCapability, CalendarMutationState.NotCommitted)
-            {
-                RejectedProperties = result.RejectedProperties
-            }
-            : MapCreateDispatchStatus(result);
+        result.RejectedProperties.Count > 0 ? RejectedCreate(result.RejectedProperties) : MapCreateDispatchStatus(result);
+
+    // An MKCALENDAR is all-or-nothing, so named property failures prove nothing was created.
+    // The first non-424 property status selects the code, as for a failed PROPPATCH.
+    private static CalendarCollectionCreateResult RejectedCreate(IReadOnlyList<CalendarPropertyRejection> rejections)
+    {
+        var status = rejections.First(rejection => rejection.StatusCode != 424).StatusCode;
+        return new(RejectedPropertyCode(status), CalendarMutationState.NotCommitted, Retryable: status is 429 or (>= 500 and not 501))
+        {
+            RejectedProperties = rejections
+        };
+    }
+
+    private static CalendarCollectionCreateCode RejectedPropertyCode(int status) => status switch
+    {
+        401 => CalendarCollectionCreateCode.UpstreamUnauthorized,
+        403 => CalendarCollectionCreateCode.UpstreamForbidden,
+        405 or 501 => CalendarCollectionCreateCode.UnsupportedCapability,
+        409 or 412 => CalendarCollectionCreateCode.Conflict,
+        413 => CalendarCollectionCreateCode.PayloadTooLarge,
+        429 => CalendarCollectionCreateCode.UpstreamRateLimited,
+        >= 500 => CalendarCollectionCreateCode.UpstreamUnavailable,
+        _ => CalendarCollectionCreateCode.UpstreamProtocolError
+    };
 
     private static CalendarCollectionCreateResult? MapCreateDispatchStatus(CalendarCollectionDispatchResult result) => result.Code switch
     {

@@ -35,7 +35,10 @@ public sealed partial class CalendarMetadataModuleTests
         body.Elements(Dav + "set").Count().ShouldBe(3);
         body.Descendants(Ical + "calendar-color").Single().Value.ShouldBe("#FF2968");
         body.Descendants(Ical + "calendar-order").Single().Value.ShouldBe("3");
-        CalendarMetadataTimeZoneReaderIds(body.Descendants(Cal + "calendar-timezone").Single().Value).ShouldBe(["Europe/Berlin"]);
+        var timeZone = body.Descendants(Cal + "calendar-timezone").Single().Value;
+        CalendarMetadataTimeZoneReaderIds(timeZone).ShouldBe(["Europe/Berlin"]);
+        timeZone.ShouldBe(CalendarCollectionPropertyValues.SerializeTimeZone("Europe/Berlin"));
+        fixture.Bodies[1]!.ShouldContain("BEGIN:VCALENDAR&#xD;\n");
         var inspect = XElement.Parse(fixture.Bodies[0]!);
         inspect.Descendants(Ical + "calendar-color").ShouldHaveSingleItem();
         inspect.Descendants(Ical + "calendar-order").ShouldHaveSingleItem();

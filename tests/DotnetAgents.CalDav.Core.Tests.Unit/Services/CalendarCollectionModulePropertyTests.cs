@@ -114,21 +114,23 @@ public sealed partial class CalendarCollectionModuleTests
     }
 
     [Theory]
-    [InlineData("forbidden")]
-    [InlineData("conflict")]
-    [InlineData("unavailable")]
-    public async Task Create_NamedPropertyRejectionProvesNothingWasCreated(string failure)
+    [InlineData(403, "UpstreamForbidden", false)]
+    [InlineData(409, "Conflict", false)]
+    [InlineData(412, "Conflict", false)]
+    [InlineData(401, "UpstreamUnauthorized", false)]
+    [InlineData(405, "UnsupportedCapability", false)]
+    [InlineData(501, "UnsupportedCapability", false)]
+    [InlineData(413, "PayloadTooLarge", false)]
+    [InlineData(429, "UpstreamRateLimited", true)]
+    [InlineData(507, "UpstreamUnavailable", true)]
+    [InlineData(422, "UpstreamProtocolError", false)]
+    public async Task Create_NamedPropertyRejectionProvesNothingWasCreatedAndUsesThePropertyStatus(
+        int status, string expectedCode, bool retryable)
     {
-        var dispatchCode = failure switch
-        {
-            "forbidden" => CalendarCollectionDispatchCode.UpstreamForbidden,
-            "conflict" => CalendarCollectionDispatchCode.Conflict,
-            _ => CalendarCollectionDispatchCode.UpstreamUnavailable
-        };
-        CalendarPropertyRejection[] rejections = [new("displayName", 424), new("timeZone", 403)];
+        CalendarPropertyRejection[] rejections = [new("displayName", 424), new("timeZone", status)];
         var transport = new ScriptedTransport(Home)
         {
-            CreateDispatchCode = dispatchCode,
+            CreateDispatchCode = status >= 500 ? CalendarCollectionDispatchCode.UpstreamUnavailable : CalendarCollectionDispatchCode.UpstreamForbidden,
             SuppressCreatedItem = true,
             CreateRejectedProperties = rejections
         };
@@ -136,8 +138,9 @@ public sealed partial class CalendarCollectionModuleTests
         var result = await CreateModule(transport).CreateAsync(new CalendarCollectionCreateRequest(
             "Zoned", [CalendarEntityKind.Event], TimeZoneId: "Asia/Tokyo"), CancellationToken.None);
 
-        result.Code.ShouldBe(CalendarCollectionCreateCode.UnsupportedCapability);
+        result.Code.ToString().ShouldBe(expectedCode);
         result.MutationState.ShouldBe(CalendarMutationState.NotCommitted);
+        result.Retryable.ShouldBe(retryable);
         result.RejectedProperties.ShouldBe(rejections);
         transport.DiscoveryCount.ShouldBe(1);
     }
