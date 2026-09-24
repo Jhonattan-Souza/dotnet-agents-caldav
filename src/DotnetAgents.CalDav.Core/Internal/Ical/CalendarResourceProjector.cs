@@ -278,7 +278,7 @@ internal static class CalendarResourceProjector
                 master.Kind,
                 master.Uid,
                 DecodeText(GetOptionalValue(master.Properties, "SUMMARY")));
-            return new CalendarProjectionResult(projection, properties, []);
+            return new CalendarProjectionResult(projection, properties, DescribeExternalTimeZones(document.Properties));
         }
         catch (Exception exception) when (exception is FormatException or InvalidOperationException)
         {
@@ -525,12 +525,34 @@ internal static class CalendarResourceProjector
 
     private static bool HasEveryReferencedTimeZone(
         IReadOnlyList<CalendarContentProperty> properties,
-        IReadOnlySet<string> timeZoneIds) => properties
-        .SelectMany(property => property.Parameters)
-        .Where(parameter => parameter.Name.Equals("TZID", StringComparison.OrdinalIgnoreCase))
-        .SelectMany(parameter => parameter.Values)
-        .Distinct(StringComparer.Ordinal)
-        .All(timeZoneIds.Contains);
+        IReadOnlySet<string> timeZoneIds) => CalendarTimeZoneIdentifiers.ReferencedIn(properties)
+        .All(timeZoneId => timeZoneIds.Contains(timeZoneId)
+            || CalendarTimeZoneIdentifiers.ToIanaIdentifier(timeZoneId) is not null);
+
+    private static CalendarResourceDiagnostic[] DescribeExternalTimeZones(
+        IReadOnlyList<CalendarContentProperty> properties)
+    {
+        var defined = CalendarTimeZoneIdentifiers.DefinedIn(properties);
+        var external = CalendarTimeZoneIdentifiers.ReferencedIn(properties)
+            .Where(timeZoneId => !defined.Contains(timeZoneId))
+            .ToArray();
+        var diagnostics = new List<CalendarResourceDiagnostic>(2);
+        if (external.Any(CalendarTimeZoneIdentifiers.IsMappedWindowsIdentifier))
+        {
+            diagnostics.Add(new CalendarResourceDiagnostic(
+                "timezone_reference_resolved_externally",
+                "A TZID without an embedded VTIMEZONE is a Windows time zone identifier resolved through its IANA mapping.",
+                CalendarResourceDiagnosticSeverity.Info));
+        }
+        if (external.Any(timeZoneId => CalendarTimeZoneIdentifiers.ToIanaIdentifier(timeZoneId) is null))
+        {
+            diagnostics.Add(new CalendarResourceDiagnostic(
+                "timezone_reference_unresolved",
+                "A TZID has no embedded VTIMEZONE and is neither an IANA nor a mapped Windows time zone identifier; its date-times cannot be evaluated.",
+                CalendarResourceDiagnosticSeverity.Warning));
+        }
+        return diagnostics.ToArray();
+    }
 
     private static string? ValidateAlarms(
         IReadOnlyList<CalendarContentComponent> components,

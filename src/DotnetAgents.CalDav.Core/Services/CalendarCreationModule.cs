@@ -79,7 +79,7 @@ internal sealed class CalendarCreationModule(
     {
         if (!IsValidEventCreateRequest(request))
             return Failure(CalendarEntityCreateCode.InvalidInput);
-        var normalizedRequest = WithDefaultTimedEventDuration(request);
+        var normalizedRequest = CalendarAuthoringTimeZones.Normalize(WithDefaultTimedEventDuration(request));
         var prevalidation = PrevalidateEventRequest(normalizedRequest);
         if (prevalidation is not null)
             return prevalidation;
@@ -109,6 +109,7 @@ internal sealed class CalendarCreationModule(
         {
             return Failure(CalendarEntityCreateCode.InvalidInput);
         }
+        request = CalendarAuthoringTimeZones.Normalize(request);
         var prevalidation = PrevalidateTodoRequest(request);
         if (prevalidation is not null)
             return prevalidation;

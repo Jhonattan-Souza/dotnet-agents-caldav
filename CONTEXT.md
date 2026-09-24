@@ -203,6 +203,10 @@ _Avoid_: Current start, occurrence index
 A date or date-time that preserves whether it is date-only, floating, UTC, or associated with a named time zone.
 _Avoid_: Timestamp, normalized date-time
 
+**External Time Zone Reference**:
+A named-zone TZID with no resource-local VTIMEZONE, resolved as an IANA zone or through the Windows-to-IANA mapping; a resource-local VTIMEZONE always wins, and a reference that resolves neither way leaves its instants unresolved.
+_Avoid_: Default time zone, host time zone, missing time zone
+
 **Temporal Evaluation Context**:
 The explicit IANA time zone used to compare or expand floating and date-only Temporal Values without changing their preserved temporal kind. A caller context is distinct from a validated deployment configuration context; neither permits inference from Calendar, server, operating-system, process, host, locale, or location state.
 _Avoid_: Default time zone, host time zone

@@ -3923,7 +3923,8 @@
             },
             "timeZoneId": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "description": "Time zone identifier. Authored values use an IANA tzdb identifier such as America/New_York; a Windows identifier such as Eastern Standard Time is accepted and stored as its mapped IANA identifier, and other identifiers are rejected. Read values repeat the resource TZID verbatim, which can also be a Windows or custom identifier defined by an embedded VTIMEZONE; pass it back unchanged when it identifies an existing recurrence."
             }
           }
         }

@@ -290,6 +290,76 @@ public sealed partial class RadicaleConformanceHarnessTests(RadicaleConformanceF
         await DeleteAsync(unevaluable, TestContext.Current.CancellationToken);
     }
 
+    [Fact]
+    public async Task Pinned_profile_resolves_bare_time_zone_references_and_authors_mapped_iana_zones()
+    {
+        var calendarHref = $"{fixture.BaseUrl}/conformance/conformance/";
+        var iana = await PutAndGetAsync(calendarHref, "bare-iana.ics", Event(
+            "bare-iana", "DTSTART;TZID=Europe/Paris:20260328T100000\r\nDURATION:PT1H\r\nRRULE:FREQ=DAILY;COUNT=2\r\n"));
+        var windows = await PutAndGetAsync(calendarHref, "bare-windows.ics", Event(
+            "bare-windows",
+            "DTSTART;TZID=Romance Standard Time:20260328T110000\r\nDURATION:PT1H\r\nRRULE:FREQ=DAILY;COUNT=2\r\n"));
+        await using var provider = CreateProvider(fixture.BaseUrl, calendarHref);
+        var service = provider.GetRequiredService<ICalendarService>();
+        var queryModule = provider.GetRequiredService<ICalendarQueryModule>();
+
+        var page = await QueryOccurrencesPageAsync(queryModule, new CalendarOccurrenceQuery(
+            CalendarEntityScope.Selected(new CalendarReference(Href: calendarHref)),
+            DateTimeOffset.Parse("2026-03-28T00:00:00Z"),
+            DateTimeOffset.Parse("2026-03-30T00:00:00Z"),
+            "UTC"));
+        var ianaRead = await service.GetResourceAsync(iana.Href, TestContext.Current.CancellationToken);
+        var windowsRead = await service.GetResourceAsync(windows.Href, TestContext.Current.CancellationToken);
+        var replaced = await service.ExactReplaceResourceAsync(
+            new CalendarExactReplaceRequest(
+                new CalendarResourceRevisionReference(
+                    windows.Href, "bare-windows", CalendarEntityKind.Event, windows.EntityTag),
+                Encoding.UTF8.GetBytes(Event(
+                    "bare-windows",
+                    "DTSTART;TZID=Romance Standard Time:20260328T110000\r\nDURATION:PT1H\r\nSUMMARY:Replaced\r\n"))),
+            TestContext.Current.CancellationToken);
+        var patched = await service.PatchEventAsync(
+            new CalendarEventPatchRequest(
+                new CalendarResourceRevisionReference(
+                    windows.Href, "bare-windows", CalendarEntityKind.Event, replaced.Snapshot!.EntityTag),
+                new CalendarMutationTarget("master"),
+                new CalendarEventPatch(Start: new(
+                    CalendarScalarPatchOperation.Set,
+                    Zoned("2026-03-28T12:00:00", "Romance Standard Time")))),
+            TestContext.Current.CancellationToken);
+
+        page.Value.Items.Select(item => item.Value)
+            .Where(item => item.GetProperty("snapshot").GetProperty("projection").GetProperty("uid").GetString()
+                is "bare-iana" or "bare-windows")
+            .Select(item => (
+                item.GetProperty("snapshot").GetProperty("projection").GetProperty("uid").GetString(),
+                item.GetProperty("timing").GetProperty("evaluatedStartUtc").GetProperty("value").GetString()))
+            .OrderBy(item => item.Item2, StringComparer.Ordinal)
+            .ShouldBe([
+                ("bare-iana", "2026-03-28T09:00:00Z"),
+                ("bare-windows", "2026-03-28T10:00:00Z"),
+                ("bare-iana", "2026-03-29T08:00:00Z"),
+                ("bare-windows", "2026-03-29T09:00:00Z")
+            ]);
+        // The pinned server stores its own VTIMEZONE for a bare IANA TZID but keeps a Windows TZID bare.
+        Encoding.UTF8.GetString(ianaRead.AuthoritativeUtf8.Span).ShouldContain("BEGIN:VTIMEZONE\r\nTZID:Europe/Paris\r\n");
+        ianaRead.Snapshot!.Diagnostics.ShouldBeEmpty();
+        Encoding.UTF8.GetString(windowsRead.AuthoritativeUtf8.Span).ShouldNotContain("BEGIN:VTIMEZONE");
+        windowsRead.Snapshot!.Projection.Kind.ShouldBe(CalendarResourceProjectionKind.Event);
+        windowsRead.Snapshot.Diagnostics.Select(item => item.Code).ShouldBe(["timezone_reference_resolved_externally"]);
+        replaced.Code.ShouldBe(CalendarExactResourceCode.Success);
+        replaced.Snapshot.Projection.Summary.ShouldBe("Replaced");
+        patched.Code.ShouldBe(CalendarEntityPatchCode.Success);
+        var patchedContent = Encoding.UTF8.GetString(patched.Snapshot!.AuthoritativeUtf8.Span);
+        patchedContent.ShouldContain("BEGIN:VTIMEZONE\r\nTZID:Europe/Paris\r\n");
+        patchedContent.ShouldContain("DTSTART;TZID=Europe/Paris:20260328T120000");
+        patchedContent.ShouldNotContain("Romance Standard Time");
+        patched.Snapshot.Diagnostics.ShouldBeEmpty();
+
+        await DeleteAsync(iana, TestContext.Current.CancellationToken);
+        await fixture.DeleteResourceHrefAsync(windows.Href, patched.Snapshot.EntityTag, TestContext.Current.CancellationToken);
+    }
+
     private static async Task<QueryReply<CalendarOccurrenceQueryItem>.Page> QueryOccurrencesPageAsync(
         ICalendarQueryModule queryModule,
         CalendarOccurrenceQuery query) => (await queryModule.QueryOccurrencesAsync(

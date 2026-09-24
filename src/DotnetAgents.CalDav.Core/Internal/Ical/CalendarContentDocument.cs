@@ -302,6 +302,17 @@ internal sealed partial class CalendarContentDocument
         return ReplaceRange(insertion, 0, propertyName + ":" + rawEncodedValue + lineEnding);
     }
 
+    public byte[] InsertBeforeComponent(
+        IReadOnlyList<CalendarComponentPathSegment> componentPath,
+        string crlfSlice)
+    {
+        var component = Components.Single(candidate => PathsEqual(candidate.Path, componentPath));
+        var slice = component.EndSlice.EndsWith("\r\n", StringComparison.Ordinal)
+            ? crlfSlice
+            : crlfSlice.Replace("\r\n", "\n", StringComparison.Ordinal);
+        return ReplaceRange(component.Start, 0, slice);
+    }
+
     public byte[] EditProperties(
         IReadOnlyList<CalendarComponentPathSegment> componentPath,
         IReadOnlyDictionary<CalendarContentProperty, string?> replacements,

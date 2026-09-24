@@ -122,6 +122,12 @@ Credentials are attached only to the `CALDAV_URL` origin and HTTPS hosts authori
 
 The default semantic catalog contains these 23 tools in the order shown. Each tool also advertises a short human-readable `title` and a private cache hint (`ttlMs`, `cacheScope`) under the `io.github.jhonattan-souza/cache` `_meta` key. The catalog is fixed for the process configuration, so `tools/list` advertises `ttlMs: 3600000` with `cacheScope: private`.
 
+### Time zones
+
+A `zonedDateTime` input names an IANA tzdb zone such as `America/New_York`. A Windows zone identifier such as `Eastern Standard Time` is also accepted; the server stores its CLDR-mapped IANA identifier together with a generated IANA `VTIMEZONE`, so semantic writes never author a Windows or custom `TZID`. Other identifiers keep failing with the existing typed validation error. Semantic patches that introduce a new IANA zone also add its `VTIMEZONE`.
+
+Reads and queries resolve each `TZID` from the resource's own `VTIMEZONE` first. A `TZID` without one, which RFC 7809 servers and many clients produce, resolves as an IANA zone or through the Windows-to-IANA mapping. The resource keeps its original `TZID` text, and a mapped Windows reference carries the informational diagnostic `timezone_reference_resolved_externally`. A `TZID` that resolves neither way leaves the resource readable and patchable, adds the warning `timezone_reference_unresolved`, and keeps queries that need its instants failing with `temporal_unresolved`. Exact tools apply the same rule: a complete resource may reference a `TZID` without a `VTIMEZONE` only when it resolves in one of these two ways. None of this uses the installation time zone from `CALDAV_EVALUATION_TIME_ZONE`, which applies only to floating and date-only values.
+
 ### Exact Calendar resource tools
 
 - `calendar_resources.exact_get` — Opt-in byte-preserving exact read through a protected MCP blob resource link.

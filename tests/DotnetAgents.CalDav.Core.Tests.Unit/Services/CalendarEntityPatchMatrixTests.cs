@@ -595,6 +595,50 @@ public sealed class CalendarEntityPatchMatrixTests
     }
 
     [Fact]
+    public async Task Windows_time_zone_patch_values_are_stored_as_mapped_iana_identifiers()
+    {
+        var eventExecution = await ExecuteEventAsync(new CalendarEventPatch(
+            Start: Set(Zoned("2026-08-21T10:30:00", "E. South America Standard Time")),
+            End: Set(Zoned("2026-08-21T11:30:00", "E. South America Standard Time"))));
+        var todoExecution = await ExecuteTodoAsync(new CalendarTodoPatch(
+            Due: Set(Zoned("2026-08-21T12:00:00", "GMT Standard Time"))));
+        var customExecution = await ExecuteEventAsync(new CalendarEventPatch(
+            Start: Set(Zoned("2026-08-21T10:30:00", "Custom Standard Time"))));
+
+        eventExecution.Result.Code.ShouldBe(CalendarEntityPatchCode.Success);
+        eventExecution.Outbound.ShouldContain(
+            "PRODID:-//fixture//EN\r\nBEGIN:VTIMEZONE\r\nTZID:America/Sao_Paulo\r\nBEGIN:STANDARD\r\n"
+            + "DTSTART:20260821T103000\r\nTZOFFSETFROM:-0300\r\nTZOFFSETTO:-0300\r\nTZNAME:-03\r\n"
+            + "END:STANDARD\r\nEND:VTIMEZONE\r\nBEGIN:VEVENT\r\n");
+        eventExecution.Outbound.ShouldContain("DTSTART;TZID=America/Sao_Paulo:20260821T103000\r\n");
+        eventExecution.Outbound.ShouldContain("DTEND;TZID=America/Sao_Paulo:20260821T113000\r\n");
+        todoExecution.Result.Code.ShouldBe(CalendarEntityPatchCode.Success);
+        todoExecution.Outbound.ShouldContain("DUE;TZID=Europe/London:20260821T120000\r\n");
+        todoExecution.Outbound.ShouldContain("BEGIN:VTIMEZONE\r\nTZID:Europe/London\r\nBEGIN:DAYLIGHT\r\n");
+        customExecution.Result.Code.ShouldBe(CalendarEntityPatchCode.InvalidInput);
+        customExecution.Outbound.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Unrelated_patch_preserves_an_externally_resolved_windows_time_zone()
+    {
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:matrix\r\nDTSTAMP:20260816T100000Z\r\nDTSTART;TZID=Eastern Standard Time:20260307T100000\r\nDTEND;TZID=Eastern Standard Time:20260308T100000\r\nSUMMARY:Before\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var client = Client(EventHref, original, out var outbound);
+
+        var result = await Service(client).PatchEventAsync(EventRequest(
+            new CalendarEventPatch(Summary: Set("After"))), CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityPatchCode.Success);
+        result.Snapshot!.Diagnostics.Select(item => item.Code).ShouldBe(["timezone_reference_resolved_externally"]);
+        outbound().ShouldContain("DTSTART;TZID=Eastern Standard Time:20260307T100000\r\n");
+        outbound().ShouldContain("DTEND;TZID=Eastern Standard Time:20260308T100000\r\n");
+        outbound().ShouldNotContain("VTIMEZONE");
+    }
+
+    private static CalendarTemporalValue Zoned(string value, string timeZoneId) =>
+        new(CalendarTemporalKind.ZonedDateTime, value, timeZoneId);
+
+    [Fact]
     public async Task Post_write_property_reordering_is_success_but_unknown_drift_is_fidelity_failure()
     {
         var normalized = EventOriginal.Replace(
