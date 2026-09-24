@@ -15,16 +15,18 @@ python3 scripts/observations/tools-list-size/measure.py \
 ```
 
 Observed on 2026-09-24 before and after contract 0.3.0 removed the Calendar
-Snapshot from failure shapes that never carry one and added the `tools/list`
-caching hint:
+Snapshot from failure shapes that never carry one, restricted `todos.query`
+recurrence overrides to To-do fields, and added the `tools/list` caching hint:
 
 | Catalog | Tools | `tools/list` bytes before | after | Output schemas before | after |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Default | 23 | 641,101 | 516,152 | 506,148 | 381,443 |
-| With exact tools | 27 | 728,268 | 585,758 | 590,025 | 447,794 |
+| Default | 23 | 641,101 | 515,059 | 506,148 | 380,350 |
+| With exact tools | 27 | 728,268 | 584,665 | 590,025 | 446,701 |
 
 `server/discover` stayed at 289 and 304 bytes. Most of the remaining output
 schema bytes come from the tools whose success or conflict results carry a
 complete Calendar Snapshot: 15 default tools account for 325,096 bytes, and 18
 tools for 387,673 bytes with exact tools. Each embeds about 17 KB of snapshot
-and projection definitions.
+and projection definitions. `todos.query` (20,290 bytes) no longer embeds the
+Calendar Snapshot or Event override fields, but its To-do recurrence overrides
+still carry the shared structured-data model.

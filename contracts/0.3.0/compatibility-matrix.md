@@ -7,6 +7,7 @@
 | `calendars.create`, `calendars.delete` failure | Not present | `calendarCollectionMutationErrorOutcome`: the mutation failure shape without `currentSnapshot` |
 | `calendars.patch` failure | Not present | `calendarMetadataPatchErrorOutcome` without `currentSnapshot` |
 | Read output schemas | Every tool embedded the Calendar Snapshot projection through its failure branch | `calendars.list`, `calendars.inspect`, `calendars.free_busy`, `calendar_resources.changes`, `calendar_resources.exact_get`, and the collection tools no longer embed it |
+| `todos.query` `recurrence` | Shared `recurrenceSet`; overrides may declare Event or To-do fields | `todoQueryRecurrenceSet`; overrides are `entityKind: todo` with To-do fields only, as VTODO overrides always were |
 | `tools/list` caching hint | SDK default `ttlMs: 0`, `cacheScope: private` | `ttlMs: 3600000`, `cacheScope: private` from `transport.toolsListCache` |
 | `server/discover` caching hint | SDK default `ttlMs: 0`, `cacheScope: private` | Unchanged |
 | Per-tool `_meta.cache` | Tool-specific hints | Unchanged |

@@ -333,6 +333,36 @@ public sealed class ContractCatalogTests
         }
     }
 
+    [Fact]
+    public void Todo_query_recurrence_mirrors_the_shared_recurrence_set_restricted_to_todo_overrides()
+    {
+        var definitions = ReadJson("mcp-tool-catalog.json")["$defs"]!;
+        definitions["todoQueryItem"]!["properties"]!["recurrence"]!["$ref"]!.GetValue<string>()
+            .ShouldBe("#/$defs/todoQueryRecurrenceSet");
+
+        var expectedSet = definitions["recurrenceSet"]!.DeepClone();
+        expectedSet["properties"]!["overrides"]!["items"] =
+            new JsonObject { ["$ref"] = "#/$defs/todoQueryRecurrenceOverride" };
+        JsonNode.DeepEquals(definitions["todoQueryRecurrenceSet"], expectedSet).ShouldBeTrue();
+
+        var expectedOverride = definitions["recurrenceOverride"]!.DeepClone().AsObject();
+        expectedOverride.Remove("allOf");
+        expectedOverride["properties"]!["entityKind"] = new JsonObject { ["const"] = "todo" };
+        expectedOverride["properties"]!["fields"] = new JsonObject { ["$ref"] = "#/$defs/todoQueryOverrideFields" };
+        JsonNode.DeepEquals(definitions["todoQueryRecurrenceOverride"], expectedOverride).ShouldBeTrue();
+
+        var expectedFields = definitions["todoFields"]!.DeepClone();
+        expectedFields["properties"]!.AsObject().Remove("recurrenceSet");
+        JsonNode.DeepEquals(definitions["todoQueryOverrideFields"], expectedFields).ShouldBeTrue();
+
+        var advertised = JsonNode.Parse(CalendarToolContract.GetOutputSchema("todos.query").GetRawText())!["$defs"]!
+            .AsObject();
+        advertised.ShouldNotContainKey("eventFields");
+        advertised.ShouldNotContainKey("eventOverrideFields");
+        advertised.ShouldNotContainKey("recurrenceOverride");
+        advertised.ShouldContainKey("structuredData");
+    }
+
     [Theory]
     [InlineData("calendars.list")]
     [InlineData("calendars.create")]

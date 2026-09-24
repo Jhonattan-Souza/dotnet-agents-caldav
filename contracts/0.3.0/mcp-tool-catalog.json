@@ -4402,7 +4402,7 @@
           "type": "string"
         },
         "recurrence": {
-          "$ref": "#/$defs/recurrenceSet"
+          "$ref": "#/$defs/todoQueryRecurrenceSet"
         },
         "completionTarget": {
           "$ref": "#/$defs/todoCompletionTarget"
@@ -4412,6 +4412,135 @@
           "items": {
             "$ref": "#/$defs/diagnostic"
           }
+        }
+      }
+    },
+    "todoQueryRecurrenceSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evaluationState",
+        "rrules",
+        "rdates",
+        "exdates",
+        "overrides"
+      ],
+      "properties": {
+        "evaluationState": {
+          "enum": [
+            "evaluable",
+            "unevaluable"
+          ]
+        },
+        "rrules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/recurrenceRule"
+          }
+        },
+        "rdates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/recurrenceDateInput"
+          }
+        },
+        "exdates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/temporalValue"
+          }
+        },
+        "overrides": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/todoQueryRecurrenceOverride"
+          }
+        }
+      }
+    },
+    "todoQueryRecurrenceOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recurrenceIdentity",
+        "entityKind",
+        "status",
+        "fields"
+      ],
+      "properties": {
+        "recurrenceIdentity": {
+          "$ref": "#/$defs/recurrenceIdentity"
+        },
+        "entityKind": {
+          "const": "todo"
+        },
+        "range": {
+          "enum": [
+            "this-and-prior",
+            "this-and-future"
+          ]
+        },
+        "status": {
+          "enum": [
+            "active",
+            "cancelled"
+          ]
+        },
+        "fields": {
+          "$ref": "#/$defs/todoQueryOverrideFields"
+        },
+        "movedStart": {
+          "$ref": "#/$defs/temporalValue"
+        },
+        "movedEnd": {
+          "$ref": "#/$defs/temporalValue"
+        }
+      }
+    },
+    "todoQueryOverrideFields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "summary": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "start": {
+          "$ref": "#/$defs/temporalValue"
+        },
+        "due": {
+          "$ref": "#/$defs/temporalValue"
+        },
+        "duration": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/openEnumValue"
+        },
+        "classification": {
+          "$ref": "#/$defs/openEnumValue"
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9
+        },
+        "percentComplete": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "categories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "structuredData": {
+          "$ref": "#/$defs/structuredData"
         }
       }
     },
