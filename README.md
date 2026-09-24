@@ -61,7 +61,7 @@ client-specific commands.
 | `CALDAV_DEFAULT_TODO_CALENDAR_NAME` | No | Display name of the default Calendar for To-do operations |
 | `CALDAV_DEFAULT_EVENT_CALENDAR_NAME` | No | Display name of the default Calendar for Event operations |
 | `CALDAV_EVALUATION_TIME_ZONE` | Yes (installation) | Exact IANA zone used as the configured Temporal Evaluation Context for bounded Calendar Entity Starts and every Occurrence or To-do Start; invalid values fail startup and a caller `evaluationTimeZone` override wins. Manual runs may omit it when the call supplies an IANA identifier; To-do Starts require context even without a window |
-| `CALDAV_INTEROPERABILITY_PROFILE` | No | Set to `radicale-3.7.8` only for that verified runtime; otherwise server-authoritative Move fails closed with `unsupported_capability` |
+| `CALDAV_INTEROPERABILITY_PROFILE` | No | Set to `radicale-3.7.8` only for that verified runtime; otherwise server-authoritative Move fails closed with `unsupported_capability` and Radicale's non-RFC free/busy representation is rejected |
 | `CALDAV_SCHEDULING_MODE` | No | `storage_only` (default when unset or empty) or `server_managed`; any other value fails startup. `storage_only` blocks participation-bearing writes and Calendar collection deletion unless fresh OPTIONS evidence shows the server does not advertise `calendar-auto-schedule`. `server_managed` also allows them when the server advertises it; the server may then send invitations, updates or cancellations, and affected outcomes report `schedulingSideEffects`. See [ADR 0009](docs/adr/0009-opt-in-server-managed-scheduling.md) |
 | `CALDAV_EXPOSE_EXACT_TOOLS` | No | Set to `true` to expose protected exact Calendar Object Resource tools |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | No | Non-empty OTLP endpoint that opts into telemetry export; no exporter is registered when omitted |
@@ -74,7 +74,7 @@ client-specific commands.
 
 ### Semantic Calendar tools
 
-- `calendars.list` — Discover the configured Calendar Scope.
+- `calendars.list` — Discover the configured Calendar Scope, with an advisory Calendar Change Tag when the server reports one.
 - `calendars.create` — Create an Event-only, To-do-only, or mixed Calendar collection with native `MKCALENDAR`.
 - `calendars.delete` — Confirm and recursively delete one exact Calendar collection, including its resources.
 - `calendar_entities.query` — Start a persisted Event and To-do query across Calendar Scope, optionally selected by `text` and `categories`, or continue its immutable Query Result Snapshot without repeating CalDAV work. A bounded Start requires an explicit caller or configured IANA Temporal Evaluation Context and reports the frozen context on every page.
@@ -93,7 +93,7 @@ client-specific commands.
 - `calendar_occurrences.restore_cancellation` — Remove only cancelled status from one override.
 - `calendar_resources.move` — Move one reviewed resource with exact `If-Match`, `Overwrite: F`, server-authoritative UID collision truth, and bounded bilateral reconciliation; requires a verified interoperability profile.
 - `calendar_resources.delete` — Delete an entire resource from an explicitly supplied revision reference (href, UID, kind, and exact strong ETag) after MCP MRTR review and confirmation; success requires verified absence.
-- `calendars.inspect` — Inspect standard Calendar metadata, report and privilege advertisements, storage limits, timezone identifiers, and scheduling evidence.
+- `calendars.inspect` — Inspect standard Calendar metadata, report and privilege advertisements, storage limits, timezone identifiers, scheduling evidence, and any advisory Calendar Change Tag.
 - `calendars.patch` — Set or remove Calendar display name and description with one atomic, unconditional metadata update; preserve unaddressed properties.
 - `calendars.free_busy` — Read native server-computed busy intervals for one Calendar and a bounded UTC window without downloading Events.
 - `calendar_resources.changes` — Read an initial inventory or incremental href/ETag changes and removals from view, using session-bound synchronization checkpoints.
@@ -164,7 +164,7 @@ Exported spans show the MCP request, `caldav.operation`, the applicable `discove
 
 ## Supported servers
 
-The verified interoperability profile is the official Radicale 3.7.8 image pinned in the [Radicale 3.7.8 profile](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/main/contracts/0.3.0/radicale-3.7.8-profile.json). Set `CALDAV_INTEROPERABILITY_PROFILE=radicale-3.7.8` only for that runtime. Server-authoritative Semantic and Exact Move fail closed with `unsupported_capability` when the profile is omitted because atomic `If-Match`, `Overwrite: F`, and `CALDAV:no-uid-conflict` enforcement cannot be inferred from stored resources or generic DAV discovery. Other CalDAV servers remain unverified profiles even when capability negotiation allows other operations.
+The verified interoperability profile is the official Radicale 3.7.8 image pinned in the [Radicale 3.7.8 profile](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/main/contracts/0.3.0/radicale-3.7.8-profile.json). Set `CALDAV_INTEROPERABILITY_PROFILE=radicale-3.7.8` only for that runtime. Server-authoritative Semantic and Exact Move fail closed with `unsupported_capability` when the profile is omitted because atomic `If-Match`, `Overwrite: F`, and `CALDAV:no-uid-conflict` enforcement cannot be inferred from stored resources or generic DAV discovery. The profile also admits Radicale's non-RFC free/busy representation described under Architecture. Other CalDAV servers remain unverified profiles even when capability negotiation allows other operations.
 
 ## Architecture
 
@@ -191,8 +191,18 @@ revoked visibility. Query cursors and synchronization checkpoints are separate.
 
 Free/busy uses server permissions and temporal interpretation. It accepts
 whole-second UTC boundaries within 366 days and bounds the response to 5,000
-periods before merging. An empty successful report means no reported busy time;
-a failed report does not. Free/busy and established sync checkpoints use one logical REPORT per call,
+periods before merging. Periods from every VFREEBUSY component are clipped to
+the window and coalesced per busy type. An empty successful report means no
+reported busy time; a failed report does not. Radicale 3.7.8 returns one
+VFREEBUSY per busy period, with the period in `DTSTART`/`DTEND` (UTC, or
+`TZID`-qualified and resolved through the report's own VTIMEZONE, else tzdb;
+an unresolvable or inconsistent definition fails) and its type in a standalone `FBTYPE` property, and an empty
+VCALENDAR for a window without busy time. Only the `radicale-3.7.8` profile
+accepts that representation. Without it, the representation fails with
+`upstream_protocol_error`, as does, in every profile, a stray `FBTYPE` property
+(outside VFREEBUSY, repeated, beside `FREEBUSY`, or without exactly one
+`DTSTART` and `DTEND`) or any other misplaced or malformed busy information.
+Free/busy and established sync checkpoints use one logical REPORT per call,
 with up to three HTTP attempts under the existing read retry policy, a 4 MiB
 response limit and a 30-second deadline. Initial authorization can add
 discovery requests. Sync accepts at most the requested page size, capped at
@@ -204,6 +214,14 @@ for later changes, which still use one REPORT and the same client limits.
 In that mode the entire inventory or delta must fit the requested page size;
 overflow leaves the prior checkpoint usable for a retry with a larger page
 size, up to 500. The MCP does not blindly retry native REPORT 507 responses.
+
+`calendars.list` and `calendars.inspect` include `changeTag` only when the
+server reports the CalendarServer `getctag` property. It is an opaque, advisory
+Calendar Change Tag: compare it only for exact equality as cheap evidence that
+Calendar contents may have changed. It is not a revision, a precondition, or a
+synchronization checkpoint; use `calendar_resources.changes` for authoritative
+change tracking. A `calendars.list` result declares a 30-second client cache
+lifetime, so a cached listing's tag can lag.
 
 Calendar metadata updates set or remove only the addressed display name and
 description. Description accepts an optional language tag. The server applies

@@ -15,7 +15,8 @@ internal static class CalendarMetadataProtocol
         Dav + "resourcetype", Dav + "displayname", CalDav + "calendar-description",
         Dav + "supported-report-set", Dav + "current-user-privilege-set",
         CalDav + "max-resource-size", CalDav + "max-instances", CalDav + "max-attendees-per-instance",
-        CalDav + "min-date-time", CalDav + "max-date-time", CalDav + "calendar-timezone"
+        CalDav + "min-date-time", CalDav + "max-date-time", CalDav + "calendar-timezone",
+        DavResponseParser.ChangeTagProperty
     ];
 
     internal static string InspectBody() => new XElement(Dav + "propfind",
@@ -53,7 +54,10 @@ internal static class CalendarMetadataProtocol
             TimeZoneIds(Value(properties, CalDav + "calendar-timezone"), cancellationToken),
             Properties.Select(name => new CalendarPropertyObservation(
                 name.NamespaceName, name.LocalName, properties.GetValueOrDefault(name)?.StatusCode)).ToArray(),
-            new CalendarSchedulingObservation("unknown", null)));
+            new CalendarSchedulingObservation("unknown", null))
+        {
+            ChangeTag = DavResponseParser.ReadChangeTag(Value(properties, DavResponseParser.ChangeTagProperty))
+        });
     }
 
     internal static IReadOnlyDictionary<XName, CalendarMetadataProperty> ReadProperties(string href, byte[] body, string? charset = null)

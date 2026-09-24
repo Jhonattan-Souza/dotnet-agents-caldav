@@ -87,6 +87,51 @@ public sealed class CalendarMcpStdioIntegrationTests
         structured.GetProperty("items").GetArrayLength().ShouldBe(1);
         structured.GetProperty("items")[0].GetProperty("calendar").GetProperty("href").GetString()
             .ShouldBe($"{_fixture.BaseUrl}{_fixture.TodoCalendarHref}");
+        structured.GetProperty("items")[0].GetProperty("changeTag").GetString().ShouldNotBeNullOrWhiteSpace();
+        stderr.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task CalendarFreeBusy_MergesRadicalePeriodComponentsAndInspectReportsChangeTagOverStdio()
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        var calendarHref = $"{_fixture.BaseUrl}{_fixture.EventCalendarHref}";
+        foreach (var (name, start, end) in new[]
+        {
+            ("first", "20310304T100000Z", "20310304T110000Z"),
+            ("second", "20310304T103000Z", "20310304T120000Z")
+        })
+        {
+            await PutResourceAsync(_fixture.EventCalendarHref, $"free-busy-{name}-{suffix}.ics",
+                "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Integration//EN\r\nBEGIN:VEVENT\r\n"
+                + $"UID:free-busy-{name}-{suffix}\r\nDTSTAMP:20260817T120000Z\r\nDTSTART:{start}\r\nDTEND:{end}\r\n"
+                + "END:VEVENT\r\nEND:VCALENDAR\r\n");
+        }
+        var stderr = new ConcurrentQueue<string>();
+        await using var client = await CreateClientAsync(stderr, exposeExact: false, calendarHrefs: calendarHref);
+
+        var busy = await client.CallToolAsync(
+            "calendars.free_busy",
+            new Dictionary<string, object?>
+            {
+                ["calendarHref"] = calendarHref,
+                ["from"] = "2031-03-04T10:15:00Z",
+                ["to"] = "2031-03-05T00:00:00Z"
+            },
+            cancellationToken: TestContext.Current.CancellationToken);
+        var inspected = await client.CallToolAsync(
+            "calendars.inspect",
+            new Dictionary<string, object?> { ["calendarHref"] = calendarHref },
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        busy.IsError.ShouldBe(false, busy.StructuredContent?.ToString());
+        var periods = busy.StructuredContent!.Value.GetProperty("periods");
+        periods.GetArrayLength().ShouldBe(1);
+        periods[0].GetProperty("from").GetString().ShouldBe("2031-03-04T10:15:00Z");
+        periods[0].GetProperty("to").GetString().ShouldBe("2031-03-04T12:00:00Z");
+        periods[0].GetProperty("busyType").GetString().ShouldBe("BUSY");
+        inspected.IsError.ShouldBe(false, inspected.StructuredContent?.ToString());
+        inspected.StructuredContent!.Value.GetProperty("changeTag").GetString().ShouldNotBeNullOrWhiteSpace();
         stderr.ShouldBeEmpty();
     }
 

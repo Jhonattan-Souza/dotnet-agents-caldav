@@ -112,9 +112,11 @@ server limits. Seed that new lane before using it; its parent owns container
 cleanup.
 
 Radicale 3.7.8 returns nonconforming native free/busy content despite HTTP 200:
-multiple VFREEBUSY components contain standalone FBTYPE fields instead of
-FREEBUSY periods. The scenario requires `upstream_protocol_error` with no
-availability result. Baikal and Nextcloud supply the conformant success lanes.
+one VFREEBUSY per period, with `DTSTART`/`DTEND` and a standalone FBTYPE
+instead of FREEBUSY periods. Since 2026-09-24 the `radicale-3.7.8` profile
+accepts that representation, so the scenario requires success on every lane;
+Radicale additionally reports the cancelled Event as a `FREE` period. The
+2026-09-05 records predate this and show `upstream_protocol_error`.
 Radicale also synthesizes a display name after removal; the scenario records
 `committed_but_unverified` and verifies description-only removal separately.
 

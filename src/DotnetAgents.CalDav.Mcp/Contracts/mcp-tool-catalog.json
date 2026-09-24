@@ -2956,7 +2956,7 @@
     {
       "name": "CALDAV_INTEROPERABILITY_PROFILE",
       "required": false,
-      "description": "Verified server profile; radicale-3.7.8 enables server-authoritative MOVE"
+      "description": "Verified server profile; radicale-3.7.8 enables server-authoritative MOVE and its native free/busy representation"
     },
     {
       "name": "CALDAV_SCHEDULING_MODE",
@@ -9826,10 +9826,19 @@
           ],
           "pattern": "^#[0-9A-Fa-f]{6}$"
         },
+        "changeTag": {
+          "$ref": "#/$defs/calendarChangeTag"
+        },
         "entityKinds": {
           "$ref": "#/$defs/entityKinds"
         }
       }
+    },
+    "calendarChangeTag": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "description": "Advisory, opaque CalendarServer getctag value, present only when the server reports one. Compare it only for exact equality as cheap evidence that Calendar contents may have changed; never parse it or use it as a revision, precondition, or synchronization checkpoint."
     },
     "icalParameter": {
       "type": "object",
@@ -11318,13 +11327,16 @@
         },
         "properties": {
           "type": "array",
-          "maxItems": 11,
+          "maxItems": 12,
           "items": {
             "$ref": "#/$defs/calendarPropertyObservation"
           }
         },
         "scheduling": {
           "$ref": "#/$defs/calendarSchedulingObservation"
+        },
+        "changeTag": {
+          "$ref": "#/$defs/calendarChangeTag"
         }
       }
     },
@@ -11431,13 +11443,16 @@
         },
         "properties": {
           "type": "array",
-          "maxItems": 11,
+          "maxItems": 12,
           "items": {
             "$ref": "#/$defs/calendarPropertyObservation"
           }
         },
         "scheduling": {
           "$ref": "#/$defs/calendarSchedulingObservation"
+        },
+        "changeTag": {
+          "$ref": "#/$defs/calendarChangeTag"
         }
       }
     },

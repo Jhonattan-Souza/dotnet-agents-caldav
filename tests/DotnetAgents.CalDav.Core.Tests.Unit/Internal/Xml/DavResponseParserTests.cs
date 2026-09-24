@@ -141,6 +141,7 @@ public class DavResponseParserTests
     private static readonly XNamespace Dav = "DAV:";
     private static readonly XNamespace CalDav = "urn:ietf:params:xml:ns:caldav";
     private static readonly XNamespace AppleCs = "http://apple.com/ns/ical/";
+    private static readonly XNamespace CalServer = "http://calendarserver.org/ns/";
 
     [Fact]
     public void ParseCalendars_PreservesEveryCalendarAndIndependentComponentEvidence()
@@ -199,6 +200,32 @@ public class DavResponseParserTests
                 "supported-calendar-component-set",
                 404)
         ]);
+    }
+
+    [Fact]
+    public void ParseCalendars_KeepsTheChangeTagOpaqueAndAbsentWhenUnreported()
+    {
+        var resourceType = new XElement(Dav + "resourcetype", new XElement(CalDav + "calendar"));
+        var failed = BuildResponseElement("/calendars/user/failed/", resourceType);
+        failed.Add(new XElement(Dav + "propstat",
+            new XElement(Dav + "status", "HTTP/1.1 404 Not Found"),
+            new XElement(Dav + "prop", new XElement(CalServer + "getctag"))));
+        var xml = BuildMultistatusXml(document => document.Element(Dav + "multistatus")!.Add(
+            BuildResponseElement("/calendars/user/quoted/", resourceType, new XElement(CalServer + "getctag", "\n  \"3-145\"  \n")),
+            BuildResponseElement("/calendars/user/uri/", resourceType, new XElement(CalServer + "getctag", "http://radicale.org/ns/sync/7")),
+            BuildResponseElement("/calendars/user/missing/", resourceType),
+            BuildResponseElement("/calendars/user/empty/", resourceType, new XElement(CalServer + "getctag", " ")),
+            BuildResponseElement("/calendars/user/structured/", resourceType,
+                new XElement(CalServer + "getctag", new XElement(Dav + "href", "/x"))),
+            BuildResponseElement("/calendars/user/oversized/", resourceType, new XElement(CalServer + "getctag", new string('c', 1025))),
+            BuildResponseElement("/calendars/user/bounded/", resourceType, new XElement(CalServer + "getctag", new string('c', 1024))),
+            failed));
+
+        var result = DavResponseParser.ParseCalendars(xml);
+
+        result.Select(calendar => calendar.ChangeTag).ShouldBe(
+            ["\"3-145\"", "http://radicale.org/ns/sync/7", null, null, null, null, new string('c', 1024), null]);
+        result[^1].UnavailableProperties.ShouldBe([new CalendarUnavailableProperty("http://calendarserver.org/ns/", "getctag", 404)]);
     }
 
     [Fact]

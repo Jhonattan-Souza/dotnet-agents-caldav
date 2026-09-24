@@ -16,6 +16,12 @@ public sealed record CalendarDescriptor
 
     public string? Color { get; init; }
 
+    /// <summary>
+    /// Advisory CalendarServer <c>getctag</c> value when the server reports one. It is opaque
+    /// and cheap change evidence only: never a revision, a precondition, or a sync token.
+    /// </summary>
+    public string? ChangeTag { get; init; }
+
     public required EntityKindSupport EventSupport { get; init; }
 
     public required EntityKindSupport TodoSupport { get; init; }

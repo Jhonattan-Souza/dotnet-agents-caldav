@@ -34,7 +34,8 @@ internal sealed class CalendarReportModule(
         EnsureSuccessful(response, href, 200);
         if (!string.Equals(response.ContentType, "text/calendar", StringComparison.OrdinalIgnoreCase))
             throw new CalendarProtocolException("upstream_protocol_error", "The native free/busy report did not return text/calendar.");
-        var periods = CalendarFreeBusyReportParser.Parse(response.Body, request.From, request.To, deadline.Token);
+        var periods = CalendarFreeBusyReportParser.Parse(response.Body, request.From, request.To, deadline.Token,
+            string.Equals(options.Value.InteroperabilityProfile, CalDavInteroperabilityProfiles.Radicale_3_7_8, StringComparison.Ordinal));
         return new(href, CalendarFreeBusyReportParser.FormatUtc(request.From), CalendarFreeBusyReportParser.FormatUtc(request.To), periods);
     }
 

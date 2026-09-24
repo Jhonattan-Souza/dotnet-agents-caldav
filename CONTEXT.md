@@ -128,12 +128,16 @@ _Avoid_: Query cursor, durable history, mutation revision
 A changed resource href with its observed Entity Tag, or removal of a href from the caller's view. Removal can result from loss of visibility; the observation does not itself authorize mutation or establish an Entity Kind.
 _Avoid_: Deleted Event, semantic revision, audit log
 
+**Calendar Change Tag**:
+An opaque, advisory server value (CalendarServer `getctag`) that a server may change when a Calendar's contents change. Only exact equality is meaningful, and only as cheap change evidence; it never identifies a revision, conditions a mutation, or replaces a Synchronization Checkpoint.
+_Avoid_: Calendar revision, collection ETag, sync token
+
 **Calendar Metadata Patch**:
 Explicit set or remove instructions for Calendar collection properties, applied atomically by PROPPATCH with unconditional concurrency. Unaddressed properties remain unchanged.
 _Avoid_: Revision-bound Semantic Patch, resource replacement
 
 **Server Free/Busy Report**:
-Busy periods computed by the CalDAV server for an exact Calendar and UTC interval, under server access control and temporal interpretation. Busy types remain distinguishable; a failed report gives no free-time evidence.
+Busy periods computed by the CalDAV server for an exact Calendar and UTC interval, under server access control and temporal interpretation. Periods from every busy component are merged per busy type, and busy types remain distinguishable; a failed report gives no free-time evidence.
 _Avoid_: Event snapshot, invitation workflow, complete availability guarantee
 
 **Event**:

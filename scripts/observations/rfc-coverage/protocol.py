@@ -98,23 +98,22 @@ async def seed_and_busy(suite, href):
     for name,start,end,extra in corpus:
         put(suite,href+name+'.ics',event('rfc-'+name,start,end,extra))
     suite.phase='freebusy-known-intervals'
-    expected_outcome='upstream_protocol_error' if suite.state.get('server','radicale')=='radicale' else 'success'
+    # Since 2026-09-24 the radicale-3.7.8 profile accepts Radicale's per-period
+    # VFREEBUSY representation; Radicale reports the cancelled Event as FREE time.
     busy=await suite.call('calendars.free_busy',dict(calendarHref=href,**{'from':BUSY_WINDOW['from_'],'to':BUSY_WINDOW['to']}),
-                          _expected=expected_outcome)
+                          _expected='success')
     actual=[(period['from'],period['to'],period['busyType']) for period in busy.get('periods',[])]
     expected=[('2027-01-10T09:00:00Z','2027-01-10T09:30:00Z','BUSY'),
               ('2027-01-10T10:00:00Z','2027-01-10T11:00:00Z','BUSY'),
               ('2027-01-10T11:30:00Z','2027-01-10T12:00:00Z','BUSY-TENTATIVE')]
-    if expected_outcome=='success':
-        check(suite,'native_busy_periods_match_authored_busy_tentative_clipped',actual==expected)
-        check(suite,'native_busy_complete_server_authority',busy['complete'] and busy['temporalAuthority']=='server')
-    else:
-        check(suite,'nonconforming_native_freebusy_has_no_availability','periods' not in busy and 'complete' not in busy)
+    if suite.state.get('server','radicale')=='radicale':
+        expected.append(('2027-01-10T13:00:00Z','2027-01-10T14:00:00Z','FREE'))
+    check(suite,'native_busy_periods_match_authored_busy_tentative_clipped',actual==expected)
+    check(suite,'native_busy_complete_server_authority',busy['complete'] and busy['temporalAuthority']=='server')
     suite.phase='freebusy-empty'
     empty=await suite.call('calendars.free_busy',dict(calendarHref=href,**{'from':'2027-01-10T14:00:00Z','to':'2027-01-10T15:00:00Z'}),
-                           _expected=expected_outcome)
-    check(suite,'native_busy_empty_verified' if expected_outcome=='success' else 'invalid_empty_native_response_rejected',
-          empty.get('periods')==[] if expected_outcome=='success' else 'periods' not in empty)
+                           _expected='success')
+    check(suite,'native_busy_empty_verified',empty.get('periods')==[])
     suite.phase='freebusy-validation'
     await suite.call('calendars.free_busy',dict(calendarHref=href,**{'from':'2027-01-10T15:00:00Z','to':'2027-01-10T09:00:00Z'}),_expected='invalid_input')
     return {href+name+'.ics' for name,_,_,_ in corpus}

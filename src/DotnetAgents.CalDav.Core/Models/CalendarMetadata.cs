@@ -15,7 +15,16 @@ public sealed record CalendarMetadataSnapshot(
     [property: JsonPropertyName("limits")] CalendarAdvertisedLimits Limits,
     [property: JsonPropertyName("timeZoneIds")] IReadOnlyList<string> TimeZoneIds,
     [property: JsonPropertyName("properties")] IReadOnlyList<CalendarPropertyObservation> Properties,
-    [property: JsonPropertyName("scheduling")] CalendarSchedulingObservation Scheduling);
+    [property: JsonPropertyName("scheduling")] CalendarSchedulingObservation Scheduling)
+{
+    /// <summary>
+    /// Advisory CalendarServer <c>getctag</c> value; opaque cheap change evidence, never a
+    /// revision or sync token. Omitted when the server does not report one.
+    /// </summary>
+    [JsonPropertyName("changeTag")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ChangeTag { get; init; }
+}
 
 /// <summary>A namespace-qualified protocol name, retained as inert capability evidence.</summary>
 public sealed record CalendarProtocolName(

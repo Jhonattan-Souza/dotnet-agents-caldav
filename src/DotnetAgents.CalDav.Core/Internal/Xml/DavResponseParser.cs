@@ -14,6 +14,8 @@ internal static class DavResponseParser
     private static readonly XNamespace Dav = "DAV:";
     private static readonly XNamespace CalDav = "urn:ietf:params:xml:ns:caldav";
     private static readonly XNamespace AppleCs = "http://apple.com/ns/ical/";
+    internal static readonly XName ChangeTagProperty = XName.Get("getctag", "http://calendarserver.org/ns/");
+    private const int MaximumChangeTagLength = 1024;
 
     /// <summary>Parses every discovered Calendar collection with independent component evidence.</summary>
     public static IReadOnlyList<CalendarDescriptor> ParseCalendars(string multistatusXml)
@@ -341,6 +343,7 @@ internal static class DavResponseParser
             DisplayNameProvenance = provenance,
             Description = GetPropValue(response, CalDav + "calendar-description"),
             Color = GetPropValue(response, AppleCs + "calendar-color"),
+            ChangeTag = ReadChangeTag(GetSuccessfulProperty(response, ChangeTagProperty)),
             EventSupport = GetComponentSupport(componentsProperty, components, "VEVENT"),
             TodoSupport = GetComponentSupport(componentsProperty, components, "VTODO"),
             EventEvidence = GetComponentEvidence(componentsProperty, components),
@@ -409,6 +412,16 @@ internal static class DavResponseParser
         .ThenBy(item => item.LocalName, StringComparer.Ordinal)
         .ThenBy(item => item.StatusCode)
         .ToArray();
+
+    /// <summary>
+    /// Reads an advisory CalendarServer change tag as an opaque string. Only surrounding XML
+    /// whitespace is removed; an empty, structured, or oversized value is treated as absent.
+    /// </summary>
+    internal static string? ReadChangeTag(XElement? property)
+    {
+        var value = property is null || property.HasElements ? null : property.Value.Trim();
+        return value is { Length: > 0 and <= MaximumChangeTagLength } ? value : null;
+    }
 
     private static string? GetPropValue(XElement response, XName propertyName)
     {

@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Xml;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Models;
+using DotnetAgents.CalDav.Mcp.Hosting;
 using DotnetAgents.CalDav.Mcp.Tools;
 using ModelContextProtocol.Protocol;
 using NSubstitute;
@@ -219,6 +220,7 @@ public sealed class CalendarToolsTests
             {
                 Href = "https://cal.example/no-color/",
                 DisplayNameProvenance = DisplayNameProvenance.DavDisplayName,
+                ChangeTag = "\"d025819f\"",
                 EventSupport = EntityKindSupport.Advertised,
                 TodoSupport = EntityKindSupport.Advertised
             }
@@ -228,9 +230,15 @@ public sealed class CalendarToolsTests
             new CalendarDiagnostic("error", "Error.", CalendarDiagnosticSeverity.Error)
         ]));
 
-        var result = (await sut.ListAsync(CancellationToken.None)).StructuredContent!.Value
-            .Deserialize<CalendarListResult>()!;
+        var listed = await sut.ListAsync(CancellationToken.None);
+        var result = listed.StructuredContent!.Value.Deserialize<CalendarListResult>()!;
 
+        CalendarOutputSchemaGuard.Validate("calendars.list", listed);
+        var items = listed.StructuredContent.Value.GetProperty("items");
+        items[0].TryGetProperty("changeTag", out _).ShouldBeFalse();
+        items[4].GetProperty("changeTag").GetString().ShouldBe("\"d025819f\"");
+        result.Items[0].ChangeTag.ShouldBeNull();
+        result.Items[4].ChangeTag.ShouldBe("\"d025819f\"");
         result.Items[0].DisplayNameProvenance.ShouldBe("derived-from-href");
         result.Items[0].Color.ShouldBe("#aAbBcC");
         result.Items[0].EntityKinds.Event.State.ShouldBe("unknown");
