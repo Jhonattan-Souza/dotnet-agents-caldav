@@ -425,7 +425,7 @@ internal sealed class CalendarEntityPatchEngine(
                 CalendarEntityPatchCode.UnsupportedCapability,
                 phase: CalendarEntityPatchPhase.SelectionDiscoveryCapability));
         }
-        catch (Exception exception) when (exception is IOException or TimeoutException)
+        catch (Exception exception) when (CalendarTransportFailure.IsUnavailable(exception))
         {
             return (null, Failure(
                 CalendarEntityPatchCode.UpstreamUnavailable,

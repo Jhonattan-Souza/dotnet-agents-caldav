@@ -20,10 +20,12 @@ internal sealed class CalendarResourceUpdateProtocol(
         {
             return await SendAsync(resourceUri, entityTag, request.AuthoritativeUtf8, cancellationToken);
         }
-        catch (Exception exception) when (exception is HttpRequestException
-            or IOException
-            or TimeoutException
-            or OperationCanceledException)
+        catch (Exception exception) when (CalendarTransportFailure.IsRejectedBeforeSend(exception))
+        {
+            // The rejected attempt was not sent, and an earlier redirect response does not commit.
+            return new(CalendarResourceUpdateDispatchCode.UpstreamUnavailable);
+        }
+        catch (Exception exception) when (CalendarTransportFailure.IsPossiblySent(exception))
         {
             return new(CalendarResourceUpdateDispatchCode.PossiblyDispatched);
         }

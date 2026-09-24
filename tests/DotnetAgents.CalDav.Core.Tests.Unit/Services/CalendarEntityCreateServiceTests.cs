@@ -8,6 +8,9 @@ using DotnetAgents.CalDav.Core.Services;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using Polly.CircuitBreaker;
+using Polly.RateLimiting;
+using Polly.Timeout;
 using Shouldly;
 using Xunit;
 
@@ -20,6 +23,9 @@ public sealed class CalendarEntityCreateServiceTests
     [InlineData("xml", CalendarEntityCreateCode.UpstreamProtocolError)]
     [InlineData("unsupported", CalendarEntityCreateCode.UnsupportedCapability)]
     [InlineData("io", CalendarEntityCreateCode.UpstreamUnavailable)]
+    [InlineData("timeout_rejected", CalendarEntityCreateCode.UpstreamUnavailable)]
+    [InlineData("broken_circuit", CalendarEntityCreateCode.UpstreamUnavailable)]
+    [InlineData("rate_limiter", CalendarEntityCreateCode.UpstreamUnavailable)]
     [InlineData("cancel", CalendarEntityCreateCode.UpstreamUnavailable)]
     public async Task CreateEventAsync_MapsExpectedSelectionExceptionsBeforeDispatch(
         string failure,
@@ -33,6 +39,9 @@ public sealed class CalendarEntityCreateServiceTests
                 "xml" => new XmlException("secret malformed response"),
                 "unsupported" => new CalendarDiscoveryUnsupportedCapabilityException("secret unsupported response"),
                 "io" => new IOException("secret transport response"),
+                "timeout_rejected" => new TimeoutRejectedException(TimeSpan.FromSeconds(10)),
+                "broken_circuit" => new BrokenCircuitException(),
+                "rate_limiter" => new RateLimiterRejectedException(),
                 _ => new OperationCanceledException("secret upstream cancellation")
             });
         var sut = CreateService(client, "Events");
@@ -2579,10 +2588,14 @@ public sealed class CalendarEntityCreateServiceTests
     [InlineData(CalendarResourceCreateCode.Dispatched, "timeout", CalendarEntityCreateCode.CommittedButUnverified, CalendarMutationState.Committed)]
     [InlineData(CalendarResourceCreateCode.Dispatched, "io", CalendarEntityCreateCode.CommittedButUnverified, CalendarMutationState.Committed)]
     [InlineData(CalendarResourceCreateCode.Dispatched, "protocol", CalendarEntityCreateCode.CommittedButUnverified, CalendarMutationState.Committed)]
+    [InlineData(CalendarResourceCreateCode.Dispatched, "timeout_rejected", CalendarEntityCreateCode.CommittedButUnverified, CalendarMutationState.Committed)]
+    [InlineData(CalendarResourceCreateCode.Dispatched, "broken_circuit", CalendarEntityCreateCode.CommittedButUnverified, CalendarMutationState.Committed)]
     [InlineData(CalendarResourceCreateCode.PossiblyDispatched, "http", CalendarEntityCreateCode.Indeterminate, CalendarMutationState.Unknown)]
     [InlineData(CalendarResourceCreateCode.PossiblyDispatched, "timeout", CalendarEntityCreateCode.Indeterminate, CalendarMutationState.Unknown)]
     [InlineData(CalendarResourceCreateCode.PossiblyDispatched, "io", CalendarEntityCreateCode.Indeterminate, CalendarMutationState.Unknown)]
     [InlineData(CalendarResourceCreateCode.PossiblyDispatched, "protocol", CalendarEntityCreateCode.Indeterminate, CalendarMutationState.Unknown)]
+    [InlineData(CalendarResourceCreateCode.PossiblyDispatched, "timeout_rejected", CalendarEntityCreateCode.Indeterminate, CalendarMutationState.Unknown)]
+    [InlineData(CalendarResourceCreateCode.PossiblyDispatched, "rate_limiter", CalendarEntityCreateCode.Indeterminate, CalendarMutationState.Unknown)]
     public async Task CreateEventAsync_VerificationReadFailurePreservesMutationTruthWithoutRetry(
         CalendarResourceCreateCode transportCode,
         string failure,
@@ -2604,6 +2617,9 @@ public sealed class CalendarEntityCreateServiceTests
                 "http" => throw new HttpRequestException("safe verification failure"),
                 "timeout" => throw new TimeoutException("safe verification timeout"),
                 "io" => throw new IOException("safe verification I/O failure"),
+                "timeout_rejected" => throw new TimeoutRejectedException(TimeSpan.FromSeconds(10)),
+                "broken_circuit" => throw new BrokenCircuitException(),
+                "rate_limiter" => throw new RateLimiterRejectedException(),
                 _ => throw new CalendarDiscoveryProtocolException("safe verification protocol failure")
             });
 

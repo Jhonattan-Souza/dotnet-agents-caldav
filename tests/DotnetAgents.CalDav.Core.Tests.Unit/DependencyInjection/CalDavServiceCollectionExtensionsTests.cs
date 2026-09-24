@@ -356,6 +356,80 @@ public sealed class CalDavServiceCollectionExtensionsTests
         await Should.ThrowAsync<OperationCanceledException>(() => pending);
     }
 
+    [Theory]
+    [InlineData("create")]
+    [InlineData("update")]
+    [InlineData("delete")]
+    [InlineData("move")]
+    public async Task Open_circuit_rejects_a_resource_mutation_before_its_request_is_sent(string operation)
+    {
+        var handler = new CountingUnavailableHandler();
+        using var provider = BuildProvider(handler, immediateRetries: true);
+        var client = provider.GetRequiredService<CalDavClient>();
+        await OpenCircuitAsync(client);
+        var sent = handler.RequestCount;
+
+        var outcome = await DispatchMutationAsync(client, operation);
+
+        outcome.ShouldBe("UpstreamUnavailable");
+        handler.RequestCount.ShouldBe(sent);
+        handler.Methods.ShouldAllBe(method => method == HttpMethod.Get);
+    }
+
+    [Theory]
+    [InlineData("create")]
+    [InlineData("update")]
+    [InlineData("delete")]
+    [InlineData("move")]
+    public async Task Attempt_timeout_reports_an_in_flight_resource_mutation_as_possibly_dispatched(string operation)
+    {
+        var handler = new BlockingHandler();
+        var time = new ManualTimeProvider(DateTimeOffset.Parse("2026-08-17T12:00:00Z"));
+        using var provider = BuildProvider(handler, time);
+        var client = provider.GetRequiredService<CalDavClient>();
+
+        var pending = DispatchMutationAsync(client, operation);
+        await handler.Started.Task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+        time.Advance(TimeSpan.FromSeconds(10));
+        var outcome = await pending.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+
+        outcome.ShouldBe("PossiblyDispatched");
+        handler.CancellationCount.ShouldBe(1);
+    }
+
+    private static async Task OpenCircuitAsync(CalDavClient client)
+    {
+        var minimumThroughput = new HttpStandardResilienceOptions().CircuitBreaker.MinimumThroughput;
+        for (var read = 0; read < minimumThroughput; read++)
+        {
+            var failure = await Record.ExceptionAsync(() => client.GetCalendarResourceAsync(
+                "https://cal.example/events/unrelated.ics", TestContext.Current.CancellationToken));
+            if (failure is BrokenCircuitException)
+                return;
+        }
+        throw new InvalidOperationException("The shared circuit breaker did not open.");
+    }
+
+    private static async Task<string> DispatchMutationAsync(CalDavClient client, string operation)
+    {
+        const string calendarHref = "https://cal.example/events/";
+        const string resourceHref = "https://cal.example/events/a.ics";
+        var body = "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n"u8.ToArray();
+        var cancellationToken = TestContext.Current.CancellationToken;
+        return operation switch
+        {
+            "create" => (await client.CreateCalendarResourceAsync(
+                new CalendarResourceCreateRequest(calendarHref, resourceHref, body), cancellationToken)).Code.ToString(),
+            "update" => (await client.UpdateCalendarResourceAsync(
+                new CalendarResourceUpdateRequest(resourceHref, "\"r1\"", body), cancellationToken)).Code.ToString(),
+            "delete" => (await client.DeleteCalendarResourceAsync(
+                new CalendarResourceDeleteRequest(resourceHref, "\"r1\""), cancellationToken)).Code.ToString(),
+            _ => (await client.MoveCalendarResourceAsync(
+                new CalendarResourceMoveDispatchRequest(resourceHref, "https://cal.example/archive/a.ics", "\"r1\""),
+                cancellationToken)).Code.ToString()
+        };
+    }
+
     private static ServiceProvider BuildProvider(
         HttpMessageHandler handler, TimeProvider? timeProvider = null, bool immediateRetries = false)
     {

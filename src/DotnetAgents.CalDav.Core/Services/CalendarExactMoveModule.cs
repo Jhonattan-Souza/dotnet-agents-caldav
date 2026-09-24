@@ -71,7 +71,7 @@ internal sealed class CalendarExactMoveModule(
         {
             return FromHttpFailure(exception.StatusCode);
         }
-        catch (Exception exception) when (exception is IOException or TimeoutException)
+        catch (Exception exception) when (CalendarTransportFailure.IsUnavailable(exception))
         {
             return Failure(CalendarExactResourceCode.UpstreamUnavailable, retryable: true);
         }
@@ -117,7 +117,7 @@ internal sealed class CalendarExactMoveModule(
         {
             return ExactMovePreparation.Failed(FromHttpFailure(exception.StatusCode));
         }
-        catch (Exception exception) when (exception is IOException or TimeoutException)
+        catch (Exception exception) when (CalendarTransportFailure.IsUnavailable(exception))
         {
             return ExactMovePreparation.Failed(Failure(
                 CalendarExactResourceCode.UpstreamUnavailable,
@@ -293,7 +293,7 @@ internal sealed class CalendarExactMoveModule(
                 exception.StatusCode,
                 CalendarExactResourcePhase.TargetRevision));
         }
-        catch (Exception exception) when (exception is IOException or TimeoutException)
+        catch (Exception exception) when (CalendarTransportFailure.IsUnavailable(exception))
         {
             return ExactMoveSourceRead.Failed(Failure(
                 CalendarExactResourceCode.UpstreamUnavailable,
