@@ -144,8 +144,8 @@ public sealed class CalendarMcpStdioIntegrationTests
             },
             cancellationToken: TestContext.Current.CancellationToken);
 
-        result.IsError.ShouldNotBe(true);
         var structured = result.StructuredContent!.Value;
+        result.IsError.ShouldNotBe(true, structured.GetRawText());
         structured.GetProperty("mutationState").GetString().ShouldBe("committed");
         if (expected is null)
             structured.TryGetProperty("schedulingSideEffects", out _).ShouldBeFalse();
