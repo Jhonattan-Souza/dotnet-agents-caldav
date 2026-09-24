@@ -15,6 +15,8 @@ namespace DotnetAgents.CalDav.Mcp.Tests.Unit;
 
 public class CalDavHostBuilderTests
 {
+    private const string CacheMetadataKey = "io.github.jhonattan-souza/cache";
+
     private static Action<CalDavOptions> ValidOptions => options =>
     {
         options.BaseUrl = "https://caldav.example.com";
@@ -240,8 +242,8 @@ public class CalDavHostBuilderTests
         tool.ProtocolTool.Annotations.DestructiveHint.ShouldBe(destructive);
         tool.ProtocolTool.Annotations.IdempotentHint.ShouldBe(false);
         tool.ProtocolTool.Annotations.OpenWorldHint.ShouldBe(true);
-        tool.ProtocolTool.Meta!["cache"]!["ttlMs"]!.GetValue<int>().ShouldBe(0);
-        tool.ProtocolTool.Meta["cache"]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
+        tool.ProtocolTool.Meta![CacheMetadataKey]!["ttlMs"]!.GetValue<int>().ShouldBe(0);
+        tool.ProtocolTool.Meta[CacheMetadataKey]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
     }
 
     [Fact]
@@ -269,8 +271,8 @@ public class CalDavHostBuilderTests
         tool.ProtocolTool.Annotations.DestructiveHint.ShouldBe(false);
         tool.ProtocolTool.Annotations.IdempotentHint.ShouldBe(false);
         tool.ProtocolTool.Annotations.OpenWorldHint.ShouldBe(true);
-        tool.ProtocolTool.Meta!["cache"]!["ttlMs"]!.GetValue<int>().ShouldBe(0);
-        tool.ProtocolTool.Meta["cache"]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
+        tool.ProtocolTool.Meta![CacheMetadataKey]!["ttlMs"]!.GetValue<int>().ShouldBe(0);
+        tool.ProtocolTool.Meta[CacheMetadataKey]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
     }
 
     [Fact]
@@ -287,8 +289,8 @@ public class CalDavHostBuilderTests
         outputSchema["oneOf"]!.AsArray().Count.ShouldBe(2);
         outputSchema["$defs"]!.AsObject().ShouldContainKey("resourceSuccess");
         outputSchema["$defs"]!.AsObject().ShouldContainKey("errorOutcome");
-        tool.ProtocolTool.Meta!["cache"]!["ttlMs"]!.GetValue<int>().ShouldBe(0);
-        tool.ProtocolTool.Meta!["cache"]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
+        tool.ProtocolTool.Meta![CacheMetadataKey]!["ttlMs"]!.GetValue<int>().ShouldBe(0);
+        tool.ProtocolTool.Meta![CacheMetadataKey]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
     }
 
     [Fact]
@@ -320,8 +322,8 @@ public class CalDavHostBuilderTests
         outputSchema["$defs"]!["entityQueryPagination"]!["properties"]!["mode"]!["const"]!
             .GetValue<string>().ShouldBe("query_result_snapshot");
         outputSchema["$defs"]!.AsObject().ShouldContainKey("entityQueryErrorOutcome");
-        tool.ProtocolTool.Meta!["cache"]!["ttlMs"]!.GetValue<int>().ShouldBe(5000);
-        tool.ProtocolTool.Meta!["cache"]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
+        tool.ProtocolTool.Meta![CacheMetadataKey]!["ttlMs"]!.GetValue<int>().ShouldBe(5000);
+        tool.ProtocolTool.Meta![CacheMetadataKey]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
     }
 
     [Fact]
@@ -352,8 +354,8 @@ public class CalDavHostBuilderTests
         outputSchema["$defs"]!["entityQueryPagination"]!["properties"]!["mode"]!["const"]!
             .GetValue<string>().ShouldBe("query_result_snapshot");
         outputSchema["$defs"]!.AsObject().ShouldContainKey("entityQueryErrorOutcome");
-        tool.ProtocolTool.Meta!["cache"]!["ttlMs"]!.GetValue<int>().ShouldBe(5000);
-        tool.ProtocolTool.Meta!["cache"]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
+        tool.ProtocolTool.Meta![CacheMetadataKey]!["ttlMs"]!.GetValue<int>().ShouldBe(5000);
+        tool.ProtocolTool.Meta![CacheMetadataKey]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
     }
 
     [Fact]
@@ -381,8 +383,8 @@ public class CalDavHostBuilderTests
             .Select(item => item!.GetValue<string>()).ShouldContain("temporalEvaluationContext");
         definitions["entityQueryPagination"]!["properties"]!["mode"]!["const"]!
             .GetValue<string>().ShouldBe("query_result_snapshot");
-        tool.ProtocolTool.Meta!["cache"]!["ttlMs"]!.GetValue<int>().ShouldBe(5000);
-        tool.ProtocolTool.Meta!["cache"]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
+        tool.ProtocolTool.Meta![CacheMetadataKey]!["ttlMs"]!.GetValue<int>().ShouldBe(5000);
+        tool.ProtocolTool.Meta![CacheMetadataKey]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
     }
 
     [Theory]
@@ -410,8 +412,8 @@ public class CalDavHostBuilderTests
         tool.ProtocolTool.Annotations.DestructiveHint.ShouldBe(false);
         tool.ProtocolTool.Annotations.IdempotentHint.ShouldBe(false);
         tool.ProtocolTool.Annotations.OpenWorldHint.ShouldBe(true);
-        tool.ProtocolTool.Meta!["cache"]!["ttlMs"]!.GetValue<int>().ShouldBe(0);
-        tool.ProtocolTool.Meta!["cache"]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
+        tool.ProtocolTool.Meta![CacheMetadataKey]!["ttlMs"]!.GetValue<int>().ShouldBe(0);
+        tool.ProtocolTool.Meta![CacheMetadataKey]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
     }
 
     [Fact]
@@ -439,8 +441,8 @@ public class CalDavHostBuilderTests
         outputSchema["$defs"]!.AsObject().ShouldContainKey("calendarListSuccess");
         inputSchema["$defs"].ShouldBeNull();
         outputSchema["$defs"]!.AsObject().ShouldNotContainKey("deleteInput");
-        tool.ProtocolTool.Meta!["cache"]!["ttlMs"]!.GetValue<int>().ShouldBe(30000);
-        tool.ProtocolTool.Meta!["cache"]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
+        tool.ProtocolTool.Meta![CacheMetadataKey]!["ttlMs"]!.GetValue<int>().ShouldBe(30000);
+        tool.ProtocolTool.Meta![CacheMetadataKey]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
     }
 
     // An unpinned revision lets the SDK answer initialize for 2024-11-05 through 2025-11-25 and
@@ -477,8 +479,8 @@ public class CalDavHostBuilderTests
         outputSchema["oneOf"]!.AsArray().Count.ShouldBe(3);
         outputSchema["$defs"]!.AsObject().ShouldContainKey("deleteMutationSuccess");
         outputSchema["$defs"]!.AsObject().ShouldContainKey("mutationErrorOutcome");
-        tool.ProtocolTool.Meta!["cache"]!["ttlMs"]!.GetValue<int>().ShouldBe(0);
-        tool.ProtocolTool.Meta!["cache"]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
+        tool.ProtocolTool.Meta![CacheMetadataKey]!["ttlMs"]!.GetValue<int>().ShouldBe(0);
+        tool.ProtocolTool.Meta![CacheMetadataKey]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
         tool.ProtocolTool.Annotations!.ReadOnlyHint.ShouldBe(false);
         tool.ProtocolTool.Annotations.DestructiveHint.ShouldBe(true);
         tool.ProtocolTool.Annotations.IdempotentHint.ShouldBe(false);
@@ -504,8 +506,8 @@ public class CalDavHostBuilderTests
         outputSchema["oneOf"]!.AsArray().Count.ShouldBe(3);
         outputSchema["$defs"]!.AsObject().ShouldContainKey("snapshotMutationSuccess");
         outputSchema["$defs"]!.AsObject().ShouldContainKey("mutationErrorOutcome");
-        tool.ProtocolTool.Meta!["cache"]!["ttlMs"]!.GetValue<int>().ShouldBe(0);
-        tool.ProtocolTool.Meta!["cache"]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
+        tool.ProtocolTool.Meta![CacheMetadataKey]!["ttlMs"]!.GetValue<int>().ShouldBe(0);
+        tool.ProtocolTool.Meta![CacheMetadataKey]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
         tool.ProtocolTool.Annotations!.ReadOnlyHint.ShouldBe(false);
         tool.ProtocolTool.Annotations.DestructiveHint.ShouldBe(true);
         tool.ProtocolTool.Annotations.IdempotentHint.ShouldBe(false);
@@ -580,8 +582,8 @@ public class CalDavHostBuilderTests
         outputSchema["oneOf"]!.AsArray().Count.ShouldBe(2);
         outputSchema["$defs"]!.AsObject().ShouldContainKey("exactGetSuccess");
         outputSchema["$defs"]!.AsObject().ShouldContainKey("errorOutcome");
-        tool.ProtocolTool.Meta!["cache"]!["ttlMs"]!.GetValue<int>().ShouldBe(0);
-        tool.ProtocolTool.Meta!["cache"]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
+        tool.ProtocolTool.Meta![CacheMetadataKey]!["ttlMs"]!.GetValue<int>().ShouldBe(0);
+        tool.ProtocolTool.Meta![CacheMetadataKey]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
         tool.ProtocolTool.Annotations!.ReadOnlyHint.ShouldBe(true);
         tool.ProtocolTool.Annotations.OpenWorldHint.ShouldBe(true);
     }
@@ -669,15 +671,30 @@ public class CalDavHostBuilderTests
             registered.ShouldContainKey(name);
             var actual = registered[name].ProtocolTool;
             actual.Description.ShouldBe(expected["description"]!.GetValue<string>());
-            actual.Meta!["cache"]!["ttlMs"]!.GetValue<int>()
+            actual.Title.ShouldBe(expected["title"]!.GetValue<string>());
+            actual.Meta!.Select(property => property.Key).ShouldBe([CacheMetadataKey]);
+            actual.Meta![CacheMetadataKey]!["ttlMs"]!.GetValue<int>()
                 .ShouldBe(expected["cache"]!["ttlMs"]!.GetValue<int>());
-            actual.Meta!["cache"]!["cacheScope"]!.GetValue<string>()
+            actual.Meta![CacheMetadataKey]!["cacheScope"]!.GetValue<string>()
                 .ShouldBe(expected["cache"]!["cacheScope"]!.GetValue<string>());
             actual.Annotations!.ReadOnlyHint.ShouldBe(expected["annotations"]!["readOnlyHint"]!.GetValue<bool>());
             actual.Annotations.DestructiveHint.ShouldBe(expected["annotations"]!["destructiveHint"]!.GetValue<bool>());
             actual.Annotations.IdempotentHint.ShouldBe(expected["annotations"]!["idempotentHint"]!.GetValue<bool>());
             actual.Annotations.OpenWorldHint.ShouldBe(expected["annotations"]!["openWorldHint"]!.GetValue<bool>());
         }
+    }
+
+    [Fact]
+    public void BuildHost_AdvertisesCatalogServerInstructions()
+    {
+        var builder = CalDavHostBuilder.CreateBuilder();
+        builder.Services.ConfigureCalDav(ValidOptions);
+        using var host = builder.Build();
+        var catalog = JsonNode.Parse(File.ReadAllText(Path.Combine(
+            RepositoryRoot(), "src", "DotnetAgents.CalDav.Mcp", "Contracts", "mcp-tool-catalog.json")))!.AsObject();
+
+        host.Services.GetRequiredService<IOptions<ModelContextProtocol.Server.McpServerOptions>>()
+            .Value.ServerInstructions.ShouldBe(catalog["serverInstructions"]!.GetValue<string>());
     }
 
     [Theory]

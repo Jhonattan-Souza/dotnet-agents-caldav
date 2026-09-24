@@ -37,7 +37,7 @@ public sealed class CalendarTodoTools
         OpenWorld = true,
         UseStructuredContent = true,
         OutputSchemaType = typeof(CalendarTodoQuerySuccessResult)),
-     Description("Start one compact To-do query or continue its immutable Query Result Snapshot. Every Start, including queries without a window, requires an explicit IANA Temporal Evaluation Context from evaluationTimeZone or validated CALDAV_EVALUATION_TIME_ZONE configuration before CalDAV work and uses one VTODO-only authoritative corpus, optionally narrowed by text and categories; Continue repeats the frozen page context without CalDAV or semantic work.")]
+     Description("Start one compact To-do query or continue its immutable Query Result Snapshot. Every Start, including queries without a window, requires an explicit IANA Temporal Evaluation Context from evaluationTimeZone or validated CALDAV_EVALUATION_TIME_ZONE configuration before CalDAV work and uses one VTODO-only authoritative corpus, optionally narrowed by text and categories; Continue repeats the frozen page context without CalDAV or semantic work. Continue sends only the opaque cursor copied unchanged from pagination.nextCursor, plus optional pageSize. The process-local snapshot expires 10 minutes after its first page and is never extended; on cursor_expired, begin a new Start.")]
     public Task<CallToolResult> QueryAsync(
         RequestContext<CallToolRequestParams> requestContext,
         CancellationToken cancellationToken) => QueryRawAsync(requestContext.Params?.Arguments, cancellationToken);

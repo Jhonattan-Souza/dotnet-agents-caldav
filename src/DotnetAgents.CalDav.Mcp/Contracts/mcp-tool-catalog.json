@@ -8,6 +8,10 @@
     "2025-11-25",
     "2026-07-28"
   ],
+  "serverInstructions": "CalDAV Calendars, Events, and To-dos; structuredContent is authoritative. Reads: calendar_occurrences.query for agendas in a bounded window with expanded recurrences; todos.query for To-do lists and due or completion filters; calendar_entities.query for persisted Event or To-do snapshots, title search, and revision-bound edits; calendar_resources.get for one known absolute href; calendars.free_busy for busy periods; calendar_resources.changes for sync polling. Call calendars.list only when a Calendar name, href, capability, or default is needed and unknown. Send both endpoints of every window. Continue a query with only its unchanged cursor and optional pageSize; snapshots are process-local and expire 10 minutes after the first page, so cursor_expired needs a new Start. Writes: events.create and todos.create need an authorized destination Calendar. Before a patch, completion, Occurrence change, move, or delete, get a fresh strong revision from a query or calendar_resources.get and pass it exactly, with the returned recurrenceIdentity for one Occurrence; after a conflict, read again and reconfirm intent. A protected mutation may return input_required: present the review, then call the same tool with the unchanged requestState and inputResponses; if the client cannot continue, leave it uncommitted and do not retry around it. Exact tools (calendar_resources.exact_*), when exposed, are only for byte-preserving access and require explicit absolute hrefs and a complete caller-authored Calendar Object Resource; never fabricate one.",
+  "toolMetaKeys": {
+    "cache": "io.github.jhonattan-souza/cache"
+  },
   "createSemantics": {
     "authoritativeOperation": "conditional_put",
     "preflightEnumeration": false,
@@ -3013,6 +3017,7 @@
   "tools": [
     {
       "name": "calendars.list",
+      "title": "List Calendars",
       "cache": {
         "ttlMs": 30000,
         "cacheScope": "private"
@@ -3033,6 +3038,7 @@
     },
     {
       "name": "calendars.create",
+      "title": "Create Calendar",
       "cache": {
         "ttlMs": 0,
         "cacheScope": "private"
@@ -3053,6 +3059,7 @@
     },
     {
       "name": "calendars.delete",
+      "title": "Delete Calendar",
       "cache": {
         "ttlMs": 0,
         "cacheScope": "private"
@@ -3073,6 +3080,7 @@
     },
     {
       "name": "calendar_entities.query",
+      "title": "Query Calendar Entities",
       "cache": {
         "ttlMs": 5000,
         "cacheScope": "private"
@@ -3089,10 +3097,11 @@
         "idempotentHint": true,
         "openWorldHint": true
       },
-      "description": "Start one Calendar Entity query or continue its immutable Query Result Snapshot. A bounded Start requires an explicit IANA Temporal Evaluation Context from evaluationTimeZone or validated CALDAV_EVALUATION_TIME_ZONE configuration; optional text and categories select matching Calendar Entity content before pagination. Continue repeats the frozen context and filters without CalDAV or semantic work."
+      "description": "Start one Calendar Entity query or continue its immutable Query Result Snapshot. A bounded Start requires an explicit IANA Temporal Evaluation Context from evaluationTimeZone or validated CALDAV_EVALUATION_TIME_ZONE configuration; optional text and categories select matching Calendar Entity content before pagination. Continue repeats the frozen context and filters without CalDAV or semantic work. Continue sends only the opaque cursor copied unchanged from pagination.nextCursor, plus optional pageSize. The process-local snapshot expires 10 minutes after its first page and is never extended; on cursor_expired, begin a new Start."
     },
     {
       "name": "calendar_occurrences.query",
+      "title": "Query Occurrences",
       "cache": {
         "ttlMs": 5000,
         "cacheScope": "private"
@@ -3109,10 +3118,11 @@
         "idempotentHint": true,
         "openWorldHint": true
       },
-      "description": "Start one bounded Occurrence query or continue its immutable Query Result Snapshot. Start evaluates recurrence once under an explicit IANA Temporal Evaluation Context from evaluationTimeZone or validated CALDAV_EVALUATION_TIME_ZONE configuration and can select Occurrences by the text and categories of their effective component; Continue accepts only cursor and optional pageSize and performs no CalDAV or semantic work."
+      "description": "Start one bounded Occurrence query or continue its immutable Query Result Snapshot. Start evaluates recurrence once under an explicit IANA Temporal Evaluation Context from evaluationTimeZone or validated CALDAV_EVALUATION_TIME_ZONE configuration and can select Occurrences by the text and categories of their effective component; Continue accepts only cursor and optional pageSize and performs no CalDAV or semantic work. Copy the opaque cursor unchanged from pagination.nextCursor. The process-local snapshot expires 10 minutes after its first page and is never extended; on cursor_expired, begin a new Start."
     },
     {
       "name": "todos.query",
+      "title": "Query To-dos",
       "cache": {
         "ttlMs": 5000,
         "cacheScope": "private"
@@ -3129,10 +3139,11 @@
         "idempotentHint": true,
         "openWorldHint": true
       },
-      "description": "Start one compact To-do query or continue its immutable Query Result Snapshot. Every Start, including queries without a window, requires an explicit IANA Temporal Evaluation Context from evaluationTimeZone or validated CALDAV_EVALUATION_TIME_ZONE configuration before CalDAV work and uses one VTODO-only authoritative corpus, optionally narrowed by text and categories; Continue repeats the frozen page context without CalDAV or semantic work."
+      "description": "Start one compact To-do query or continue its immutable Query Result Snapshot. Every Start, including queries without a window, requires an explicit IANA Temporal Evaluation Context from evaluationTimeZone or validated CALDAV_EVALUATION_TIME_ZONE configuration before CalDAV work and uses one VTODO-only authoritative corpus, optionally narrowed by text and categories; Continue repeats the frozen page context without CalDAV or semantic work. Continue sends only the opaque cursor copied unchanged from pagination.nextCursor, plus optional pageSize. The process-local snapshot expires 10 minutes after its first page and is never extended; on cursor_expired, begin a new Start."
     },
     {
       "name": "calendar_resources.get",
+      "title": "Get Calendar Resource",
       "cache": {
         "ttlMs": 0,
         "cacheScope": "private"
@@ -3153,6 +3164,7 @@
     },
     {
       "name": "events.create",
+      "title": "Create Event",
       "cache": {
         "ttlMs": 0,
         "cacheScope": "private"
@@ -3173,6 +3185,7 @@
     },
     {
       "name": "events.patch",
+      "title": "Patch Event",
       "cache": {
         "ttlMs": 0,
         "cacheScope": "private"
@@ -3193,6 +3206,7 @@
     },
     {
       "name": "todos.create",
+      "title": "Create To-do",
       "cache": {
         "ttlMs": 0,
         "cacheScope": "private"
@@ -3213,6 +3227,7 @@
     },
     {
       "name": "todos.patch",
+      "title": "Patch To-do",
       "cache": {
         "ttlMs": 0,
         "cacheScope": "private"
@@ -3233,6 +3248,7 @@
     },
     {
       "name": "todos.complete",
+      "title": "Complete To-do",
       "cache": {
         "ttlMs": 0,
         "cacheScope": "private"
@@ -3253,6 +3269,7 @@
     },
     {
       "name": "calendar_occurrences.add",
+      "title": "Add Occurrence",
       "cache": {
         "ttlMs": 0,
         "cacheScope": "private"
@@ -3273,6 +3290,7 @@
     },
     {
       "name": "calendar_occurrences.exclude",
+      "title": "Exclude Occurrence",
       "cache": {
         "ttlMs": 0,
         "cacheScope": "private"
@@ -3293,6 +3311,7 @@
     },
     {
       "name": "calendar_occurrences.restore_exclusion",
+      "title": "Restore Excluded Occurrence",
       "cache": {
         "ttlMs": 0,
         "cacheScope": "private"
@@ -3313,6 +3332,7 @@
     },
     {
       "name": "calendar_occurrences.cancel",
+      "title": "Cancel Occurrence",
       "cache": {
         "ttlMs": 0,
         "cacheScope": "private"
@@ -3333,6 +3353,7 @@
     },
     {
       "name": "calendar_occurrences.restore_cancellation",
+      "title": "Restore Cancelled Occurrence",
       "cache": {
         "ttlMs": 0,
         "cacheScope": "private"
@@ -3353,6 +3374,7 @@
     },
     {
       "name": "calendar_resources.move",
+      "title": "Move Calendar Resource",
       "cache": {
         "ttlMs": 0,
         "cacheScope": "private"
@@ -3373,6 +3395,7 @@
     },
     {
       "name": "calendar_resources.delete",
+      "title": "Delete Calendar Resource",
       "cache": {
         "ttlMs": 0,
         "cacheScope": "private"
@@ -3393,6 +3416,7 @@
     },
     {
       "name": "calendars.inspect",
+      "title": "Inspect Calendar",
       "cache": {
         "ttlMs": 0,
         "cacheScope": "private"
@@ -3413,6 +3437,7 @@
     },
     {
       "name": "calendars.patch",
+      "title": "Patch Calendar Metadata",
       "cache": {
         "ttlMs": 0,
         "cacheScope": "private"
@@ -3433,6 +3458,7 @@
     },
     {
       "name": "calendars.free_busy",
+      "title": "Get Calendar Free/Busy",
       "cache": {
         "ttlMs": 0,
         "cacheScope": "private"
@@ -3453,6 +3479,7 @@
     },
     {
       "name": "calendar_resources.changes",
+      "title": "List Calendar Resource Changes",
       "cache": {
         "ttlMs": 0,
         "cacheScope": "private"
@@ -3473,6 +3500,7 @@
     },
     {
       "name": "calendar_resources.exact_get",
+      "title": "Exact Get Calendar Resource",
       "cache": {
         "ttlMs": 0,
         "cacheScope": "private"
@@ -3494,6 +3522,7 @@
     },
     {
       "name": "calendar_resources.exact_create",
+      "title": "Exact Create Calendar Resource",
       "cache": {
         "ttlMs": 0,
         "cacheScope": "private"
@@ -3515,6 +3544,7 @@
     },
     {
       "name": "calendar_resources.exact_replace",
+      "title": "Exact Replace Calendar Resource",
       "cache": {
         "ttlMs": 0,
         "cacheScope": "private"
@@ -3536,6 +3566,7 @@
     },
     {
       "name": "calendar_resources.exact_move",
+      "title": "Exact Move Calendar Resource",
       "cache": {
         "ttlMs": 0,
         "cacheScope": "private"

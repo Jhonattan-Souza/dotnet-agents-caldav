@@ -6,6 +6,7 @@ using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Core.Models;
 using DotnetAgents.CalDav.Mcp.Hosting;
 using DotnetAgents.CalDav.Mcp.Tools;
+using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using NSubstitute;
 using Microsoft.Extensions.Options;
@@ -2057,22 +2058,30 @@ public sealed class ExactCalendarResourceTests
             CalendarResourceRead.Success(changed.ResourceHref, changed.EntityTag, changed.AuthoritativeUtf8) with { Snapshot = changed });
         var link = ExactCalendarResourceLink.Create(linked);
 
-        await Should.ThrowAsync<InvalidOperationException>(() =>
+        var exception = await Should.ThrowAsync<McpProtocolException>(() =>
             ExactCalendarResourceHandler.ReadAsync(link.Uri, service, CancellationToken.None));
+
+        exception.ErrorCode.ShouldBe(McpErrorCode.InvalidParams);
     }
 
     [Theory]
-    [InlineData(CalendarResourceReadCode.NotFound)]
-    [InlineData(CalendarResourceReadCode.Success)]
-    public async Task ReadAsync_RejectsUnavailableTypedRead(CalendarResourceReadCode readCode)
+    [InlineData(CalendarResourceReadCode.NotFound, McpErrorCode.InvalidParams)]
+    [InlineData(CalendarResourceReadCode.InvalidInput, McpErrorCode.InvalidParams)]
+    [InlineData(CalendarResourceReadCode.OutsideScope, McpErrorCode.InvalidParams)]
+    [InlineData(CalendarResourceReadCode.Success, McpErrorCode.InternalError)]
+    [InlineData(CalendarResourceReadCode.UpstreamProtocolError, McpErrorCode.InternalError)]
+    [InlineData(CalendarResourceReadCode.ConcurrencyUnavailable, McpErrorCode.InternalError)]
+    public async Task ReadAsync_RejectsUnavailableTypedRead(CalendarResourceReadCode readCode, McpErrorCode expectedCode)
     {
         var linked = CreateSnapshot("\"r1\"");
         var service = Substitute.For<ICalendarService>();
         service.GetResourceAsync(linked.ResourceHref, Arg.Any<CancellationToken>()).Returns(new CalendarResourceRead(readCode));
         var link = ExactCalendarResourceLink.Create(linked);
 
-        await Should.ThrowAsync<InvalidOperationException>(() =>
+        var exception = await Should.ThrowAsync<McpProtocolException>(() =>
             ExactCalendarResourceHandler.ReadAsync(link.Uri, service, CancellationToken.None));
+
+        exception.ErrorCode.ShouldBe(expectedCode);
     }
 
     [Theory]
@@ -2093,9 +2102,10 @@ public sealed class ExactCalendarResourceTests
     {
         var service = Substitute.For<ICalendarService>();
 
-        await Should.ThrowAsync<InvalidOperationException>(() =>
+        var exception = await Should.ThrowAsync<McpProtocolException>(() =>
             ExactCalendarResourceHandler.ReadAsync(uri, service, CancellationToken.None));
 
+        exception.ErrorCode.ShouldBe(McpErrorCode.InvalidParams);
         await service.DidNotReceive().GetResourceAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
@@ -2112,9 +2122,10 @@ public sealed class ExactCalendarResourceTests
         var uri = $"caldav-exact://snapshot/{Encode(href)}?etag={Encode(entityTag)}";
         var service = Substitute.For<ICalendarService>();
 
-        await Should.ThrowAsync<InvalidOperationException>(() =>
+        var exception = await Should.ThrowAsync<McpProtocolException>(() =>
             ExactCalendarResourceHandler.ReadAsync(uri, service, CancellationToken.None));
 
+        exception.ErrorCode.ShouldBe(McpErrorCode.InvalidParams);
         await service.DidNotReceive().GetResourceAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
