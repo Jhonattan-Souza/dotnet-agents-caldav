@@ -67,9 +67,13 @@ python3 scripts/observations/rfc-coverage/performance.py /tmp/caldav-rfc-run \
 ```
 
 The other compatibility lanes use distinct manifests and pinned images.
-They reuse the RFC fixture's Aspire collector. Leave the Move interoperability
-profile unset on these lanes: Semantic and Exact Move must return
-`unsupported_capability` until a separate verified profile exists.
+They reuse the RFC fixture's Aspire collector. By default these lanes leave
+the Move interoperability profile unset, so Semantic and Exact Move must return
+`unsupported_capability`. `compat.py nextcloud ... --move-profile` configures
+the verified `nextcloud-34.0.3` profile instead; the functional lane then
+expects committed Semantic Moves and `unsupported_capability` for the
+same-Calendar Exact Move that Nextcloud rejects. Baikal 0.10.1 has no verified
+profile.
 Collection deletion and participation-bearing writes also fail without an
 attempt when OPTIONS advertises automatic scheduling.
 
@@ -138,6 +142,19 @@ report that limitation and clean only the resulting disposable resource.
 python3 scripts/observations/rfc-coverage/infra.py down /tmp/caldav-rfc-baikal
 python3 scripts/observations/rfc-coverage/infra.py down /tmp/caldav-rfc-nextcloud
 python3 scripts/observations/rfc-coverage/infra.py down /tmp/caldav-rfc-run
+```
+
+`move_preconditions.py` observes the raw `MOVE` guarantees a verified profile
+requires on any lane: a byte-preserving move between Calendars, `Overwrite: F`
+rejection, and same-kind and cross-kind UID rejection without a commit. It
+also records a stale `If-Match`, a same-Calendar rename, and, with
+`--attendee-root` naming a Nextcloud fresh-user manifest, scheduling side
+effects of `MOVE`. A profile is promoted only when every required case passes
+on its pinned image; record the result in a new dated document.
+
+```bash
+python3 scripts/observations/rfc-coverage/move_preconditions.py /tmp/caldav-rfc-nextcloud \
+  --output /tmp/caldav-rfc-nextcloud/move-preconditions.json
 ```
 
 Setup references: [Aspire standalone dashboard](https://aspire.dev/dashboard/standalone/)
