@@ -83,6 +83,35 @@ public sealed class CalendarExactMoveServiceTests
     }
 
     [Fact]
+    public async Task ReviewExactMoveResourceAsync_FailsClosedForSameCalendarRenameUnderNextcloudProfile()
+    {
+        const string calendarHref = "https://cal.example/events/";
+        const string sourceHref = "https://cal.example/events/source.ics";
+        const string destinationHref = "https://cal.example/events/destination.ics";
+        var client = CreateMoveClient();
+        var presence = (ICalendarMoveResourceTransport)client;
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref)]);
+        var service = CreateService(
+            client,
+            calendarHref,
+            interoperabilityProfile: CalDavInteroperabilityProfiles.Nextcloud_34_0_3);
+
+        var review = await service.ReviewExactMoveResourceAsync(
+            new CalendarExactMoveRequest(Revision(sourceHref), destinationHref),
+            TestContext.Current.CancellationToken);
+
+        var outcome = review.Outcome.ShouldNotBeNull();
+        outcome.Code.ShouldBe(CalendarExactResourceCode.UnsupportedCapability);
+        outcome.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        review.Binding.ShouldBeNull();
+        await client.DidNotReceive().GetCalendarResourceAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await presence.DidNotReceive().ProbeMoveResourcePresenceAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await client.DidNotReceive().MoveCalendarResourceAsync(
+            Arg.Any<CalendarResourceMoveDispatchRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task ExecuteConfirmedExactMoveResourceAsync_PerformsOneFreshReviewThenConsumesOnePlan()
     {
         const string calendarHref = "https://cal.example/events/";

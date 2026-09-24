@@ -1,0 +1,16 @@
+{
+  "profile": "nextcloud-34.0.3",
+  "image": "docker.io/library/nextcloud@sha256:b97df9e0e1ee3c8c6cc009cb3f12ddce915d624d543b3bb93882025fe323a407",
+  "ociIndexDigest": "sha256:b97df9e0e1ee3c8c6cc009cb3f12ddce915d624d543b3bb93882025fe323a407",
+  "platformManifests": {
+    "linux/amd64": "sha256:6db41df8956dc1d48616484837f73b2a202d57e67e240b1abbed465bc79ac915",
+    "linux/arm64": "sha256:d6b01a5fbcb1905ba70ddf4d5afed39aeafc3af3ecb2be4e67ee380ce9f1f0ce"
+  },
+  "runtime": { "nextcloud": "34.0.3", "php": "8.5.10", "sabre/dav": "4.7.0", "sabre/vobject": "4.5.6" },
+  "variants": [
+    { "name": "apache-sqlite", "timeZone": "UTC", "strictPreconditions": false }
+  ],
+  "selector": "scripts/observations/rfc-coverage/compat.py nextcloud",
+  "evidenceFixture": "scripts/observations/rfc-coverage/move_preconditions.py",
+  "legacyTaskFixturesAreEvidence": false
+}

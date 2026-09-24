@@ -67,6 +67,72 @@ public sealed class CalendarMoveAuthorizationTests
     }
 
     [Theory]
+    [InlineData(CalDavInteroperabilityProfiles.Radicale_3_7_8)]
+    [InlineData(CalDavInteroperabilityProfiles.Nextcloud_34_0_3)]
+    public async Task EveryVerifiedProfileAuthorizesMoveBetweenCalendars(string profile)
+    {
+        var source = TodoCalendar(SourceCalendarHref, "Tasks");
+        var destination = TodoCalendar(DestinationCalendarHref, "Archive");
+        var revision = new CalendarResourceRevisionReference(SourceHref, "reviewed", CalendarEntityKind.Todo, "\"r1\"");
+        var module = Fixture([source, destination], CalendarSelectionResult.Success(destination), profile).Module;
+
+        var semantic = await module.AuthorizeAsync(
+            new CalendarResourceMoveRequest(revision, CalendarMoveDestination.Default),
+            TestContext.Current.CancellationToken);
+        var exact = await module.AuthorizeAsync(
+            new CalendarExactMoveRequest(revision, DestinationCalendarHref + "renamed.ics"),
+            TestContext.Current.CancellationToken);
+
+        semantic.ShouldBeOfType<CalendarMoveAuthorizationResult.Authorized>()
+            .Target.DestinationHref.ShouldBe(DestinationHref);
+        exact.ShouldBeOfType<CalendarMoveAuthorizationResult.Authorized>()
+            .Target.DestinationHref.ShouldBe(DestinationCalendarHref + "renamed.ics");
+    }
+
+    [Theory]
+    [InlineData(CalDavInteroperabilityProfiles.Radicale_3_7_8, true)]
+    [InlineData(CalDavInteroperabilityProfiles.Nextcloud_34_0_3, false)]
+    public async Task ExactSameCalendarRenameRequiresAProfileThatCommitsIt(string profile, bool authorized)
+    {
+        var source = TodoCalendar(SourceCalendarHref, "Tasks");
+        var fixture = Fixture([source], CalendarSelectionResult.Success(source), profile);
+        var request = new CalendarExactMoveRequest(
+            new CalendarResourceRevisionReference(SourceHref, "reviewed", CalendarEntityKind.Todo, "\"r1\""),
+            SourceCalendarHref + "renamed.ics");
+
+        var result = await fixture.Module.AuthorizeAsync(request, TestContext.Current.CancellationToken);
+
+        if (authorized)
+        {
+            var target = result.ShouldBeOfType<CalendarMoveAuthorizationResult.Authorized>().Target;
+            AssertSameCalendar(source, target.SourceCalendar);
+            AssertSameCalendar(source, target.DestinationCalendar);
+        }
+        else
+        {
+            var failure = result.ShouldBeOfType<CalendarMoveAuthorizationResult.Rejected>().Failure;
+            failure.Reason.ShouldBe(CalendarMoveAuthorizationFailureReason.InteroperabilityProfileUnverified);
+            failure.AuthorizedCandidates.ShouldHaveSingleItem().Href.ShouldBe(SourceCalendarHref);
+        }
+        fixture.Transport.DiscoveryCount.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task ExactSameCalendarRenameReportsUnverifiedProfileBeforeRenameSupport()
+    {
+        var source = TodoCalendar(SourceCalendarHref, "Tasks");
+        var fixture = Fixture([source], CalendarSelectionResult.Success(source), interoperabilityProfile: null);
+        var request = new CalendarExactMoveRequest(
+            new CalendarResourceRevisionReference(SourceHref, "reviewed", CalendarEntityKind.Todo, "\"r1\""),
+            SourceCalendarHref + "renamed.ics");
+
+        var result = await fixture.Module.AuthorizeAsync(request, TestContext.Current.CancellationToken);
+
+        result.ShouldBeOfType<CalendarMoveAuthorizationResult.Rejected>().Failure.Reason
+            .ShouldBe(CalendarMoveAuthorizationFailureReason.InteroperabilityProfileUnverified);
+    }
+
+    [Theory]
     [InlineData(ExactLocalFailure.SourceNonCanonical)]
     [InlineData(ExactLocalFailure.DestinationNonCanonical)]
     [InlineData(ExactLocalFailure.SourceOrigin)]
