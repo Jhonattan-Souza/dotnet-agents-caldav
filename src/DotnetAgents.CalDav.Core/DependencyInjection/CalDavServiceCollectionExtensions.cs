@@ -46,8 +46,12 @@ public static class CalDavServiceCollectionExtensions
         // SocketsHttpHandler is used instead of HttpClientHandler for:
         // - PooledConnectionLifetime: proactively recycle stale connections before the server
         //   can drop them (prevents "response ended prematurely" / ResponseEnded errors)
-        // - PooledConnectionIdleTimeout: recycle idle connections before the pinned Radicale
-        //   profile's 30-second server timeout can close them
+        // - PooledConnectionIdleTimeout: recycle idle connections before a typical 30-second
+        //   server idle timeout can close them
+        //
+        // SocketsHttpHandler pools a connection even after an HTTP/1.0 response that ends it, as
+        // Radicale's built-in server sends for every request. CalendarConnectionPersistenceHandler
+        // sends requests to such origins through a handler that never reuses a connection.
         //
         // Auto-redirect is disabled because CalDAV uses non-standard HTTP methods (PROPFIND, REPORT,
         // MKCOL) that must be preserved across redirects. Disable automatic redirects explicitly
@@ -70,13 +74,9 @@ public static class CalDavServiceCollectionExtensions
             client.DefaultRequestHeaders.Authorization =
                 new AuthenticationHeaderValue("Basic", credentials);
         })
-        .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
-        {
-            AllowAutoRedirect = false,
-            AutomaticDecompression = DecompressionMethods.All,
-            PooledConnectionLifetime = TimeSpan.FromMinutes(2),
-            PooledConnectionIdleTimeout = TimeSpan.FromSeconds(20)
-        });
+        .ConfigurePrimaryHttpMessageHandler(() => new CalendarConnectionPersistenceHandler(
+            CreateSocketsHandler(pooledConnectionLifetime: TimeSpan.FromMinutes(2)),
+            CreateSocketsHandler(pooledConnectionLifetime: TimeSpan.Zero)));
         calendarClientBuilder.AddStandardResilienceHandler(options =>
         {
             // Three total attempts are available only to idempotent reads. A conditional write can
@@ -206,6 +206,14 @@ public static class CalDavServiceCollectionExtensions
 
         return services;
     }
+
+    private static SocketsHttpHandler CreateSocketsHandler(TimeSpan pooledConnectionLifetime) => new()
+    {
+        AllowAutoRedirect = false,
+        AutomaticDecompression = DecompressionMethods.All,
+        PooledConnectionLifetime = pooledConnectionLifetime,
+        PooledConnectionIdleTimeout = TimeSpan.FromSeconds(20)
+    };
 
     private static bool IsDefinitiveReportFailure(HttpResponseMessage? response) =>
         response?.RequestMessage?.Method.Method == "REPORT"
