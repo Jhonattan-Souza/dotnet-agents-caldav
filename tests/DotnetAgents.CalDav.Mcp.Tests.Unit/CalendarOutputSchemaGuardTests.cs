@@ -48,6 +48,41 @@ public sealed class CalendarOutputSchemaGuardTests
             Should.Throw<InvalidOperationException>(() => CalendarOutputSchemaGuard.Validate("todos.query", result));
     }
 
+    [Theory]
+    [InlineData("todo", true)]
+    [InlineData("event", false)]
+    public void Validate_AcceptsOnlyTodoOverridesInTodoQueryRecurrence(string entityKind, bool valid)
+    {
+        var item = JsonNode.Parse("""
+            {"resultKind":"entity","uid":"one","completionState":"open",
+             "recurrence":{"evaluationState":"evaluable","rrules":[{"text":"FREQ=DAILY;COUNT=3"}],
+               "rdates":[],"exdates":[],"overrides":[{
+                 "recurrenceIdentity":{"value":{"kind":"utcDateTime","value":"2026-08-19T09:00:00Z"}},
+                 "entityKind":"todo","status":"active","fields":{"summary":"Override"}}]},
+             "completionTarget":{"kind":"occurrence_required","entityRevision":{
+               "href":"https://cal.example/todos/one.ics","entityUid":"one",
+               "entityKind":"todo","entityTag":"\"strong\""}},"diagnostics":[]}
+            """)!;
+        item["recurrence"]!["overrides"]![0]!["entityKind"] = entityKind;
+        var result = Result(new JsonObject
+        {
+            ["outcome"] = "success",
+            ["items"] = new JsonArray(item),
+            ["diagnostics"] = new JsonArray(),
+            ["excludedIndeterminateCount"] = 0,
+            ["pagination"] = new JsonObject { ["mode"] = "query_result_snapshot", ["nextCursor"] = null },
+            ["temporalEvaluationContext"] = new JsonObject
+            {
+                ["timeZone"] = "UTC", ["source"] = "configuration"
+            }
+        }.ToJsonString());
+
+        if (valid)
+            Should.NotThrow(() => CalendarOutputSchemaGuard.Validate("todos.query", result));
+        else
+            Should.Throw<InvalidOperationException>(() => CalendarOutputSchemaGuard.Validate("todos.query", result));
+    }
+
     private static void CorruptLastItem(JsonNode item, string variation)
     {
         switch (variation)

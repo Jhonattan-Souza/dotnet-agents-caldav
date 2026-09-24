@@ -365,6 +365,65 @@ public sealed class CalendarMcpStdioIntegrationTests
     }
 
     [Fact]
+    public async Task TodoQuery_ReturnsTodoOnlyRecurrenceOverridesWithinTheAdvertisedSchema()
+    {
+        var calendarHref = _fixture.WorkCalendarHref;
+        const string content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Integration//EN\r\n"
+            + "BEGIN:VTODO\r\nUID:todo-query-recurrence-override\r\nDTSTAMP:20260815T120000Z\r\n"
+            + "DTSTART:20260818T090000Z\r\nDUE:20260818T100000Z\r\nRRULE:FREQ=DAILY;COUNT=3\r\n"
+            + "SUMMARY:Master\r\nEND:VTODO\r\n"
+            + "BEGIN:VTODO\r\nUID:todo-query-recurrence-override\r\nDTSTAMP:20260815T120000Z\r\n"
+            + "RECURRENCE-ID:20260819T090000Z\r\nDTSTART:20260819T110000Z\r\nDUE:20260819T120000Z\r\n"
+            + "SUMMARY:Override\r\nPERCENT-COMPLETE:40\r\nATTENDEE;CN=Ana:mailto:ana@example.com\r\n"
+            + "END:VTODO\r\nEND:VCALENDAR\r\n";
+        var href = await PutResourceAsync(calendarHref, "todo-query-recurrence-override.ics", content);
+        try
+        {
+            var stderr = new ConcurrentQueue<string>();
+            await using var client = await CreateClientAsync(
+                stderr,
+                exposeExact: false,
+                calendarHrefs: $"{_fixture.BaseUrl}{calendarHref}",
+                evaluationTimeZone: "UTC");
+
+            var result = await client.CallToolAsync(
+                "todos.query",
+                new Dictionary<string, object?>
+                {
+                    ["scope"] = new Dictionary<string, object?>
+                    {
+                        ["mode"] = "selected",
+                        ["calendar"] = new Dictionary<string, object?>
+                        {
+                            ["by"] = "href",
+                            ["href"] = $"{_fixture.BaseUrl}{calendarHref}"
+                        }
+                    },
+                    ["projection"] = new[] { "summary", "recurrence" }
+                },
+                cancellationToken: TestContext.Current.CancellationToken);
+
+            result.IsError.ShouldBe(false);
+            var item = result.StructuredContent!.Value.GetProperty("items").EnumerateArray()
+                .Single(candidate => candidate.GetProperty("uid").GetString() == "todo-query-recurrence-override");
+            var recurrence = item.GetProperty("recurrence");
+            recurrence.GetProperty("rrules").GetArrayLength().ShouldBe(1);
+            var recurrenceOverride = recurrence.GetProperty("overrides").EnumerateArray().ShouldHaveSingleItem();
+            recurrenceOverride.GetProperty("entityKind").GetString().ShouldBe("todo");
+            var fields = recurrenceOverride.GetProperty("fields");
+            fields.GetProperty("summary").GetString().ShouldBe("Override");
+            fields.GetProperty("percentComplete").GetInt32().ShouldBe(40);
+            fields.GetProperty("structuredData").GetProperty("attendees").GetArrayLength().ShouldBe(1);
+            fields.TryGetProperty("recurrenceSet", out _).ShouldBeFalse();
+            stderr.ShouldBeEmpty();
+        }
+        finally
+        {
+            await DeleteResourceAsync(href);
+        }
+    }
+
+    [Fact]
     public async Task CalendarOccurrenceQuery_ExpandsAuthoritativeRecurringTodoOverRealStdioAndRadicale()
     {
         const string content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Integration//EN\r\n"
