@@ -204,7 +204,7 @@ public class McpMetadataTests
         instructions.ShouldContain("input_required");
         instructions.ShouldContain("requestState");
         instructions.ShouldContain("explicit absolute hrefs");
-        instructions.ShouldContain("complete caller-authored Calendar Object Resource");
+        instructions.ShouldContain("exact writes a complete caller-authored Calendar Object Resource");
     }
 
     private const string MetaKeyPattern =
