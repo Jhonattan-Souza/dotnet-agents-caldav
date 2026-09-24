@@ -22,8 +22,7 @@ internal sealed class CalendarResourceUpdateProtocol(
         }
         catch (Exception exception) when (CalendarTransportFailure.IsRejectedBeforeSend(exception))
         {
-            // The rejected attempt was not sent, and an earlier redirect response does not commit.
-            return new(CalendarResourceUpdateDispatchCode.UpstreamUnavailable);
+            return new(CalendarResourceUpdateDispatchCode.RejectedBeforeSend);
         }
         catch (Exception exception) when (CalendarTransportFailure.IsPossiblySent(exception))
         {

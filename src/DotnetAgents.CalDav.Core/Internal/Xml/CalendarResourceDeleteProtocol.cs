@@ -22,8 +22,7 @@ internal sealed class CalendarResourceDeleteProtocol(
         }
         catch (Exception exception) when (CalendarTransportFailure.IsRejectedBeforeSend(exception))
         {
-            // The rejected attempt was not sent, and an earlier redirect response does not commit.
-            return new CalendarResourceDeleteDispatchResult(CalendarResourceDeleteDispatchCode.UpstreamUnavailable);
+            return new CalendarResourceDeleteDispatchResult(CalendarResourceDeleteDispatchCode.RejectedBeforeSend);
         }
         catch (Exception exception) when (CalendarTransportFailure.IsPossiblySent(exception))
         {

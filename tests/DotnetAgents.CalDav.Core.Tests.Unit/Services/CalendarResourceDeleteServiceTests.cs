@@ -163,6 +163,7 @@ public sealed class CalendarResourceDeleteServiceTests
     [InlineData(CalendarResourceDeleteDispatchCode.UpstreamRateLimited, CalendarResourceDeleteCode.UpstreamRateLimited)]
     [InlineData(CalendarResourceDeleteDispatchCode.UpstreamUnavailable, CalendarResourceDeleteCode.UpstreamUnavailable)]
     [InlineData(CalendarResourceDeleteDispatchCode.UpstreamProtocolError, CalendarResourceDeleteCode.UpstreamProtocolError)]
+    [InlineData(CalendarResourceDeleteDispatchCode.RejectedBeforeSend, CalendarResourceDeleteCode.UpstreamUnavailable)]
     public async Task DeleteResourceAsync_MapsDefinitiveDeleteRejectionAsNotCommitted(
         CalendarResourceDeleteDispatchCode dispatchCode,
         CalendarResourceDeleteCode expectedCode)
@@ -187,6 +188,8 @@ public sealed class CalendarResourceDeleteServiceTests
 
         result.Code.ShouldBe(expectedCode);
         result.MutationState.ShouldBe(CalendarMutationState.NotCommitted);
+        result.Retryable.ShouldBe(dispatchCode is CalendarResourceDeleteDispatchCode.UpstreamRateLimited
+            or CalendarResourceDeleteDispatchCode.RejectedBeforeSend);
         await client.Received(1).DeleteCalendarResourceAsync(
             Arg.Any<CalendarResourceDeleteRequest>(),
             Arg.Any<CancellationToken>());

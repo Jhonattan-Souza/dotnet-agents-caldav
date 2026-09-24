@@ -922,6 +922,7 @@ internal sealed class CalendarCreationModule(
             HttpRequestException http => FromExactHttpFailure(http.StatusCode, phase),
             XmlException or CalendarDiscoveryProtocolException =>
                 ExactFailure(CalendarExactResourceCode.UpstreamProtocolError, phase),
+            // IsExactPhaseFailure admits only transient transport failures and upstream cancellation here.
             _ => ExactFailure(CalendarExactResourceCode.UpstreamUnavailable, phase, retryable: true)
         };
 
@@ -972,10 +973,12 @@ internal sealed class CalendarCreationModule(
                 CalendarResourceCreateCode.UpstreamUnauthorized => CalendarExactResourceCode.UpstreamUnauthorized,
                 CalendarResourceCreateCode.UpstreamForbidden => CalendarExactResourceCode.UpstreamForbidden,
                 CalendarResourceCreateCode.UpstreamRateLimited => CalendarExactResourceCode.UpstreamRateLimited,
-                CalendarResourceCreateCode.UpstreamUnavailable => CalendarExactResourceCode.UpstreamUnavailable,
+                CalendarResourceCreateCode.UpstreamUnavailable
+                    or CalendarResourceCreateCode.RejectedBeforeSend => CalendarExactResourceCode.UpstreamUnavailable,
                 _ => CalendarExactResourceCode.UpstreamProtocolError
             },
-            dispatch.Code == CalendarResourceCreateCode.UpstreamRateLimited);
+            dispatch.Code is CalendarResourceCreateCode.UpstreamRateLimited
+                or CalendarResourceCreateCode.RejectedBeforeSend);
 
     private static CalendarExactResourceResult MissingExactObservation(CalendarResourceCreateCode dispatchCode) =>
         dispatchCode == CalendarResourceCreateCode.PossiblyDispatched

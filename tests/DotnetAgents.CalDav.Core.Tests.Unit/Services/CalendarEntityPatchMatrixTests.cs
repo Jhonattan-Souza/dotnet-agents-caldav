@@ -788,6 +788,7 @@ public sealed class CalendarEntityPatchMatrixTests
     [InlineData(CalendarResourceUpdateDispatchCode.UpstreamRateLimited, CalendarEntityPatchCode.UpstreamRateLimited)]
     [InlineData(CalendarResourceUpdateDispatchCode.UpstreamUnavailable, CalendarEntityPatchCode.UpstreamUnavailable)]
     [InlineData(CalendarResourceUpdateDispatchCode.UpstreamProtocolError, CalendarEntityPatchCode.UpstreamProtocolError)]
+    [InlineData(CalendarResourceUpdateDispatchCode.RejectedBeforeSend, CalendarEntityPatchCode.UpstreamUnavailable)]
     public async Task Definitive_put_rejections_preserve_not_committed_truth(
         CalendarResourceUpdateDispatchCode dispatch,
         CalendarEntityPatchCode expected)
@@ -799,6 +800,8 @@ public sealed class CalendarEntityPatchMatrixTests
 
         result.Code.ShouldBe(expected);
         result.MutationState.ShouldBe(CalendarMutationState.NotCommitted);
+        result.Retryable.ShouldBe(dispatch is CalendarResourceUpdateDispatchCode.UpstreamRateLimited
+            or CalendarResourceUpdateDispatchCode.RejectedBeforeSend);
         await client.Received(1).UpdateCalendarResourceAsync(
             Arg.Any<CalendarResourceUpdateRequest>(), Arg.Any<CancellationToken>());
         await client.Received(1).GetCalendarResourceAsync(EventHref, Arg.Any<CancellationToken>());

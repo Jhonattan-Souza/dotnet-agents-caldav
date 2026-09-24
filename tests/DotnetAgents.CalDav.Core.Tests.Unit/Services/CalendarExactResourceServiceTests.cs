@@ -1008,6 +1008,7 @@ public sealed class CalendarExactResourceServiceTests
     [InlineData(CalendarResourceCreateCode.UpstreamRateLimited, CalendarExactResourceCode.UpstreamRateLimited)]
     [InlineData(CalendarResourceCreateCode.UpstreamUnavailable, CalendarExactResourceCode.UpstreamUnavailable)]
     [InlineData(CalendarResourceCreateCode.UpstreamProtocolError, CalendarExactResourceCode.UpstreamProtocolError)]
+    [InlineData(CalendarResourceCreateCode.RejectedBeforeSend, CalendarExactResourceCode.UpstreamUnavailable)]
     public async Task ExactCreateResourceAsync_MapsRejectedDispatch(
         CalendarResourceCreateCode dispatchCode,
         CalendarExactResourceCode expectedCode)
@@ -1025,6 +1026,8 @@ public sealed class CalendarExactResourceServiceTests
 
         result.Code.ShouldBe(expectedCode);
         result.MutationState.ShouldBe(CalendarMutationState.NotCommitted);
+        result.Retryable.ShouldBe(dispatchCode is CalendarResourceCreateCode.UpstreamRateLimited
+            or CalendarResourceCreateCode.RejectedBeforeSend);
     }
 
     [Theory]
@@ -1179,6 +1182,7 @@ public sealed class CalendarExactResourceServiceTests
     [InlineData(CalendarResourceUpdateDispatchCode.UpstreamRateLimited, CalendarExactResourceCode.UpstreamRateLimited)]
     [InlineData(CalendarResourceUpdateDispatchCode.UpstreamUnavailable, CalendarExactResourceCode.UpstreamUnavailable)]
     [InlineData(CalendarResourceUpdateDispatchCode.UpstreamProtocolError, CalendarExactResourceCode.UpstreamProtocolError)]
+    [InlineData(CalendarResourceUpdateDispatchCode.RejectedBeforeSend, CalendarExactResourceCode.UpstreamUnavailable)]
     public async Task ExactReplaceResourceAsync_MapsRejectedDispatch(
         CalendarResourceUpdateDispatchCode dispatchCode,
         CalendarExactResourceCode expectedCode)
@@ -1199,6 +1203,8 @@ public sealed class CalendarExactResourceServiceTests
 
         result.Code.ShouldBe(expectedCode);
         result.MutationState.ShouldBe(CalendarMutationState.NotCommitted);
+        result.Retryable.ShouldBe(dispatchCode is CalendarResourceUpdateDispatchCode.UpstreamRateLimited
+            or CalendarResourceUpdateDispatchCode.RejectedBeforeSend);
     }
 
     [Theory]

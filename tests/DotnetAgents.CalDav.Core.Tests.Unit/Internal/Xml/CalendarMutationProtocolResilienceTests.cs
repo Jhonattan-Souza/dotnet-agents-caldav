@@ -16,9 +16,9 @@ public sealed class CalendarMutationProtocolResilienceTests
         var data = new TheoryData<string, string, string>();
         foreach (var operation in new[] { "create", "update", "delete", "move" })
         {
-            data.Add(operation, "broken_circuit", "upstream_unavailable");
-            data.Add(operation, "isolated_circuit", "upstream_unavailable");
-            data.Add(operation, "rate_limiter", "upstream_unavailable");
+            data.Add(operation, "broken_circuit", "rejected_before_send");
+            data.Add(operation, "isolated_circuit", "rejected_before_send");
+            data.Add(operation, "rate_limiter", "rejected_before_send");
             data.Add(operation, "timeout", "possibly_dispatched");
         }
         return data;
@@ -64,7 +64,7 @@ public sealed class CalendarMutationProtocolResilienceTests
 
         var outcome = await ExecuteAsync(operation, client);
 
-        outcome.ShouldBe("upstream_unavailable");
+        outcome.ShouldBe("rejected_before_send");
         sendCount.ShouldBe(2);
     }
 
@@ -111,7 +111,7 @@ public sealed class CalendarMutationProtocolResilienceTests
 
     private static string Name(string code) => code switch
     {
-        nameof(CalendarResourceUpdateDispatchCode.UpstreamUnavailable) => "upstream_unavailable",
+        nameof(CalendarResourceUpdateDispatchCode.RejectedBeforeSend) => "rejected_before_send",
         nameof(CalendarResourceUpdateDispatchCode.PossiblyDispatched) => "possibly_dispatched",
         _ => code
     };

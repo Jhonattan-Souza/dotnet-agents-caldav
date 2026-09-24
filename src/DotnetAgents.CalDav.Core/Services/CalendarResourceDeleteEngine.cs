@@ -250,6 +250,7 @@ internal sealed class CalendarResourceDeleteEngine(
             retryAfterMilliseconds: dispatch.RetryAfterMilliseconds,
             retryable: true),
         CalendarResourceDeleteDispatchCode.UpstreamProtocolError => Rejected(CalendarResourceDeleteCode.UpstreamProtocolError),
+        CalendarResourceDeleteDispatchCode.RejectedBeforeSend => Rejected(CalendarResourceDeleteCode.UpstreamUnavailable, retryable: true),
         _ => Rejected(CalendarResourceDeleteCode.UpstreamUnavailable)
     };
 
