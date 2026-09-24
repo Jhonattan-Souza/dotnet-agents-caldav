@@ -83,7 +83,7 @@ public sealed partial class RadicaleConformanceHarnessTests(RadicaleConformanceF
         var module = provider.GetRequiredService<ICalendarCollectionModule>();
 
         var blocked = await ReviewAndDeleteCollectionAsync(module, participation);
-        blocked.Code.ShouldBe(CalendarCollectionDeleteCode.UnsupportedCapability);
+        blocked.Code.ShouldBe(CalendarCollectionDeleteCode.SchedulingUnsafe);
         blocked.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
         trace.ShouldContain("REPORT:207");
         trace.ShouldNotContain(entry => entry.StartsWith("DELETE:", StringComparison.Ordinal));

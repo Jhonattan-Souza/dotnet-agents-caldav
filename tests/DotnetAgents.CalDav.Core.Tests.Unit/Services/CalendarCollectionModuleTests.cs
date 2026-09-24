@@ -686,6 +686,72 @@ public sealed class CalendarCollectionModuleTests
     }
 
     [Fact]
+    public async Task DeleteReportsASchedulingBlockedDeleteAsNotAttempted()
+    {
+        const string href = "https://cal.example/calendars/user/tasks/";
+        var transport = new ScriptedTransport("https://cal.example/calendars/user/")
+        {
+            DeleteDispatchCode = CalendarCollectionDispatchCode.SchedulingUnsafe
+        };
+        transport.Items.Add(Descriptor(href, "Tasks", todo: true));
+        var module = CreateModule(transport);
+        var review = await module.ReviewDeleteAsync(new CalendarCollectionDeleteRequest(href), CancellationToken.None);
+
+        var result = await module.ExecuteConfirmedDeleteAsync(
+            new CalendarCollectionDeleteRequest(href),
+            review.Binding!,
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarCollectionDeleteCode.SchedulingUnsafe);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        result.Retryable.ShouldBeFalse();
+        transport.DiscoveryCount.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task DeleteRethrowsCancellationThatStoppedThePreDispatchScan()
+    {
+        const string href = "https://cal.example/calendars/user/tasks/";
+        var transport = new ScriptedTransport("https://cal.example/calendars/user/")
+        {
+            DeleteDispatchCode = CalendarCollectionDispatchCode.CanceledBeforeDispatch
+        };
+        transport.Items.Add(Descriptor(href, "Tasks", todo: true));
+        var module = CreateModule(transport);
+        var review = await module.ReviewDeleteAsync(new CalendarCollectionDeleteRequest(href), CancellationToken.None);
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+
+        await Should.ThrowAsync<OperationCanceledException>(() => module.ExecuteConfirmedDeleteAsync(
+            new CalendarCollectionDeleteRequest(href),
+            review.Binding!,
+            cancellation.Token));
+        transport.DiscoveryCount.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task DeleteReportsAnUncancelledPreDispatchStopAsNotAttempted()
+    {
+        const string href = "https://cal.example/calendars/user/tasks/";
+        var transport = new ScriptedTransport("https://cal.example/calendars/user/")
+        {
+            DeleteDispatchCode = CalendarCollectionDispatchCode.CanceledBeforeDispatch
+        };
+        transport.Items.Add(Descriptor(href, "Tasks", todo: true));
+        var module = CreateModule(transport);
+        var review = await module.ReviewDeleteAsync(new CalendarCollectionDeleteRequest(href), CancellationToken.None);
+
+        var result = await module.ExecuteConfirmedDeleteAsync(
+            new CalendarCollectionDeleteRequest(href),
+            review.Binding!,
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarCollectionDeleteCode.UpstreamUnavailable);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        result.Retryable.ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task CreateDefinitiveDispatchPreservesCommittedStateWhenReconciliationFails()
     {
         var transport = new ScriptedTransport("https://cal.example/calendars/user/")

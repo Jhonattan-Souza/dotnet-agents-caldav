@@ -124,15 +124,22 @@ public partial class CalDavClientTests
         server.Methods.ShouldNotContain("DELETE");
     }
 
-    [Fact]
-    public async Task CollectionDelete_CallerCancellationDuringTheScanPropagates()
+    [Theory]
+    [InlineData("options_caller_cancellation", new[] { "OPTIONS" })]
+    [InlineData("propfind_caller_cancellation", new[] { "OPTIONS", "PROPFIND" })]
+    public async Task CollectionDelete_CancellationBeforeDispatchIsReportedAsNotDispatched(
+        string failure,
+        string[] methods)
     {
         using var cancellation = new CancellationTokenSource();
-        var server = new AutoScheduleCalendarServer { Failure = "propfind_caller_cancellation", Cancellation = cancellation };
+        var server = new AutoScheduleCalendarServer { Failure = failure, Cancellation = cancellation };
+        server.Add("ordinary.ics", "SUMMARY:Ordinary\r\n");
 
-        await Should.ThrowAsync<OperationCanceledException>(() => CreateSut(new StubHttpMessageHandler(server.Handle))
-            .DeleteCalendarCollectionAsync(AutoScheduleCalendarServer.CalendarHref, cancellation.Token));
-        server.Methods.ShouldNotContain("DELETE");
+        var result = await CreateSut(new StubHttpMessageHandler(server.Handle))
+            .DeleteCalendarCollectionAsync(AutoScheduleCalendarServer.CalendarHref, cancellation.Token);
+
+        result.Code.ShouldBe(CalendarCollectionDispatchCode.CanceledBeforeDispatch);
+        server.Methods.ShouldBe(methods);
     }
 
     [Theory]
@@ -270,8 +277,10 @@ public partial class CalDavClientTests
             };
         }
 
-        private static HttpResponseMessage Options()
+        private HttpResponseMessage Options()
         {
+            if (Failure == "options_caller_cancellation")
+                throw CancelCaller();
             var response = new HttpResponseMessage(HttpStatusCode.OK);
             response.Headers.TryAddWithoutValidation("DAV", "1, 3, calendar-access, calendar-auto-schedule");
             return response;

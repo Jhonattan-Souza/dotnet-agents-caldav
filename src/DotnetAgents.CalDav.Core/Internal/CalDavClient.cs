@@ -106,7 +106,18 @@ internal sealed partial class CalDavClient : ICalendarClient, ICalendarMoveResou
             return new(CalendarCollectionDispatchCode.ProtocolError);
         }
 
-        if (!await IsCollectionDeletionPermittedAsync(canonicalHref, cancellationToken).ConfigureAwait(false))
+        bool permitted;
+        try
+        {
+            permitted = await IsCollectionDeletionPermittedAsync(canonicalHref, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The member scan can outlast the operation deadline. No DELETE has been sent, so
+            // this is not an ambiguous dispatch failure.
+            return new(CalendarCollectionDispatchCode.CanceledBeforeDispatch);
+        }
+        if (!permitted)
             return new(CalendarCollectionDispatchCode.SchedulingUnsafe);
 
         using var message = new HttpRequestMessage(HttpMethod.Delete, canonicalHref);
