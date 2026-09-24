@@ -163,7 +163,7 @@ internal sealed class CalendarCollectionTools
     {
         var continuation = requestState is not null || inputResponses is not null;
         if (continuation && !mrtrSupported)
-            return Error(MrtrUnsupported(), "Calendar collection deletion requires MRTR confirmation support.",
+            return Error(MrtrUnsupported(), "Calendar collection deletion requires the client to support form elicitation for confirmation.",
                 CalendarMutationState.NotAttempted);
 
         using var deadline = new CancellationTokenSource(BeforeDispatchDeadline, _timeProvider);
@@ -177,7 +177,7 @@ internal sealed class CalendarCollectionTools
             {
                 if (!mrtrSupported)
                     return Error(MrtrUnsupported(),
-                        "Calendar collection deletion requires MRTR confirmation support.",
+                        "Calendar collection deletion requires the client to support form elicitation for confirmation.",
                         CalendarMutationState.NotAttempted);
                 var binding = review.Binding!;
                 var state = _stateProtector.ProtectCalendarCollectionDelete(binding);

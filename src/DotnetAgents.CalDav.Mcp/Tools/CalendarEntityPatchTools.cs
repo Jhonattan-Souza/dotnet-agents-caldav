@@ -623,7 +623,7 @@ internal sealed class CalendarEntityPatchTools
         CalendarTelemetryErrorCategory.CapabilityAndProjection,
         CalendarTelemetryErrorPhase.Mrtr,
         false),
-        "The client does not support required mutation confirmation.",
+        "This patch requires the client to support form elicitation for confirmation.",
         CalendarMutationState.NotAttempted).FinalizeResult();
 
     private static CallToolResult ConfirmationError(bool expired) => NamedError(new CalendarStructuredErrorFacts(

@@ -315,6 +315,8 @@ public sealed class CalendarCollectionToolsTests
 
         result.IsError.ShouldBe(true);
         result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("unsupported_capability");
+        result.StructuredContent.Value.GetProperty("message").GetString().ShouldBe(
+            "Calendar collection deletion requires the client to support form elicitation for confirmation.");
     }
 
     [Fact]

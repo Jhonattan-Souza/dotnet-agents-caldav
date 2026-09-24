@@ -1386,6 +1386,8 @@ public sealed class ExactCalendarResourceTests
             CreateArguments(destinationHref, ExactEvent("no-mrtr")), null, null, false, CancellationToken.None);
 
         result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("unsupported_capability");
+        result.StructuredContent.Value.GetProperty("message").GetString().ShouldBe(
+            "Exact writes require the client to support form elicitation for confirmation.");
         await service.DidNotReceive().ExactCreateResourceAsync(
             Arg.Any<CalendarReviewedExactCreate>(), Arg.Any<CancellationToken>());
     }
