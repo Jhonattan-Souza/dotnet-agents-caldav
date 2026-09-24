@@ -8,6 +8,9 @@ using DotnetAgents.CalDav.Core.Services;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using Polly.CircuitBreaker;
+using Polly.RateLimiting;
+using Polly.Timeout;
 using Shouldly;
 using Xunit;
 
@@ -1135,10 +1138,14 @@ public sealed class CalendarExactResourceServiceTests
     }
 
     [Theory]
-    [InlineData(CalendarResourceCreateCode.Dispatched, CalendarExactResourceCode.CommittedButUnverified, CalendarMutationState.Committed)]
-    [InlineData(CalendarResourceCreateCode.PossiblyDispatched, CalendarExactResourceCode.Indeterminate, CalendarMutationState.Unknown)]
+    [InlineData(CalendarResourceCreateCode.Dispatched, "http", CalendarExactResourceCode.CommittedButUnverified, CalendarMutationState.Committed)]
+    [InlineData(CalendarResourceCreateCode.PossiblyDispatched, "http", CalendarExactResourceCode.Indeterminate, CalendarMutationState.Unknown)]
+    [InlineData(CalendarResourceCreateCode.Dispatched, "timeout_rejected", CalendarExactResourceCode.CommittedButUnverified, CalendarMutationState.Committed)]
+    [InlineData(CalendarResourceCreateCode.Dispatched, "broken_circuit", CalendarExactResourceCode.CommittedButUnverified, CalendarMutationState.Committed)]
+    [InlineData(CalendarResourceCreateCode.PossiblyDispatched, "rate_limiter", CalendarExactResourceCode.Indeterminate, CalendarMutationState.Unknown)]
     public async Task ExactCreateResourceAsync_ClassifiesReadbackFailureByDispatchTruth(
         CalendarResourceCreateCode dispatchCode,
+        string failure,
         CalendarExactResourceCode expectedCode,
         CalendarMutationState expectedState)
     {
@@ -1149,7 +1156,7 @@ public sealed class CalendarExactResourceServiceTests
         client.GetCalendarResourceAsync(destinationHref, Arg.Any<CancellationToken>()).Returns(_ =>
             ++readCount == 1
                 ? Task.FromResult(new CalendarResourceRead(CalendarResourceReadCode.NotFound))
-                : Task.FromException<CalendarResourceRead>(new HttpRequestException("readback failed")));
+                : Task.FromException<CalendarResourceRead>(CreateFailure(failure)));
         client.CreateCalendarResourceAsync(
                 Arg.Any<CalendarResourceCreateRequest>(), Arg.Any<CancellationToken>())
             .Returns(new CalendarResourceCreateResult(dispatchCode, destinationHref));
@@ -1262,6 +1269,41 @@ public sealed class CalendarExactResourceServiceTests
 
         result.Code.ShouldBe(expectedCode);
         result.MutationState.ShouldBe(expectedState);
+    }
+
+    [Theory]
+    [InlineData(CalendarResourceUpdateDispatchCode.Dispatched, "timeout_rejected", CalendarExactResourceCode.CommittedButUnverified, CalendarMutationState.Committed)]
+    [InlineData(CalendarResourceUpdateDispatchCode.Dispatched, "broken_circuit", CalendarExactResourceCode.CommittedButUnverified, CalendarMutationState.Committed)]
+    [InlineData(CalendarResourceUpdateDispatchCode.PossiblyDispatched, "rate_limiter", CalendarExactResourceCode.Indeterminate, CalendarMutationState.Unknown)]
+    public async Task ExactReplaceResourceAsync_ClassifiesResilienceReadbackFailureByDispatchTruth(
+        CalendarResourceUpdateDispatchCode dispatchCode,
+        string failure,
+        CalendarExactResourceCode expectedCode,
+        CalendarMutationState expectedState)
+    {
+        const string calendarHref = "https://cal.example/events/";
+        const string resourceHref = "https://cal.example/events/readback-rejected.ics";
+        var current = EventResource("readback-rejected", "Before");
+        var client = Substitute.For<ICalendarClient>();
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref)]);
+        var readCount = 0;
+        client.GetCalendarResourceAsync(resourceHref, Arg.Any<CancellationToken>()).Returns(_ =>
+            ++readCount == 1
+                ? Task.FromResult(CalendarResourceRead.Success(resourceHref, "\"r1\"", current))
+                : Task.FromException<CalendarResourceRead>(CreateFailure(failure)));
+        client.UpdateCalendarResourceAsync(
+                Arg.Any<CalendarResourceUpdateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceUpdateDispatchResult(dispatchCode));
+
+        var result = await CreateService(client, calendarHref).ExactReplaceResourceAsync(
+            new CalendarExactReplaceRequest(
+                Revision(resourceHref, "readback-rejected"),
+                EventResource("readback-rejected", "After")),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(expectedCode);
+        result.MutationState.ShouldBe(expectedState);
+        readCount.ShouldBe(2);
     }
 
     [Theory]
@@ -1424,6 +1466,9 @@ public sealed class CalendarExactResourceServiceTests
     [InlineData("replace", "timeout", CalendarExactResourceCode.UpstreamUnavailable, true)]
     [InlineData("create", "cancel", CalendarExactResourceCode.UpstreamUnavailable, true)]
     [InlineData("replace", "cancel", CalendarExactResourceCode.UpstreamUnavailable, true)]
+    [InlineData("create", "broken_circuit", CalendarExactResourceCode.UpstreamUnavailable, true)]
+    [InlineData("replace", "timeout_rejected", CalendarExactResourceCode.UpstreamUnavailable, true)]
+    [InlineData("replace", "rate_limiter", CalendarExactResourceCode.UpstreamUnavailable, true)]
     [InlineData("create", "xml", CalendarExactResourceCode.UpstreamProtocolError, false)]
     [InlineData("create", "discovery", CalendarExactResourceCode.UpstreamProtocolError, false)]
     [InlineData("replace", "discovery", CalendarExactResourceCode.UpstreamProtocolError, false)]
@@ -1461,6 +1506,8 @@ public sealed class CalendarExactResourceServiceTests
     [InlineData("io", CalendarExactResourceCode.UpstreamUnavailable, true)]
     [InlineData("timeout", CalendarExactResourceCode.UpstreamUnavailable, true)]
     [InlineData("cancel", CalendarExactResourceCode.UpstreamUnavailable, true)]
+    [InlineData("broken_circuit", CalendarExactResourceCode.UpstreamUnavailable, true)]
+    [InlineData("timeout_rejected", CalendarExactResourceCode.UpstreamUnavailable, true)]
     [InlineData("xml", CalendarExactResourceCode.UpstreamProtocolError, false)]
     [InlineData("discovery", CalendarExactResourceCode.UpstreamProtocolError, false)]
     public async Task ExactWriteReview_AttributesNonHttpTargetGetFailureToRevisionPhase(
@@ -1493,6 +1540,10 @@ public sealed class CalendarExactResourceServiceTests
     [InlineData("replace", "io", CalendarExactResourceCode.UpstreamUnavailable, true)]
     [InlineData("create", "cancel", CalendarExactResourceCode.UpstreamUnavailable, true)]
     [InlineData("replace", "cancel", CalendarExactResourceCode.UpstreamUnavailable, true)]
+    [InlineData("create", "broken_circuit", CalendarExactResourceCode.UpstreamUnavailable, true)]
+    [InlineData("replace", "broken_circuit", CalendarExactResourceCode.UpstreamUnavailable, true)]
+    [InlineData("create", "rate_limiter", CalendarExactResourceCode.UpstreamUnavailable, true)]
+    [InlineData("replace", "timeout_rejected", CalendarExactResourceCode.UpstreamUnavailable, true)]
     [InlineData("create", "xml", CalendarExactResourceCode.UpstreamProtocolError, false)]
     [InlineData("replace", "xml", CalendarExactResourceCode.UpstreamProtocolError, false)]
     public async Task ExactWriteExecution_MapsPreDispatchFailure(
@@ -1620,6 +1671,9 @@ public sealed class CalendarExactResourceServiceTests
         "io" => new IOException("failure"),
         "timeout" => new TimeoutException("failure"),
         "cancel" => new OperationCanceledException(),
+        "timeout_rejected" => new TimeoutRejectedException(TimeSpan.FromSeconds(10)),
+        "broken_circuit" => new BrokenCircuitException(),
+        "rate_limiter" => new RateLimiterRejectedException(),
         "discovery" => new CalendarDiscoveryProtocolException("failure"),
         _ => new XmlException("failure")
     };

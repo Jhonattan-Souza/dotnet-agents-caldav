@@ -46,7 +46,7 @@ internal sealed class CalendarMoveModule(
         {
             return FromPreflightHttpFailure(exception.StatusCode, failurePhase);
         }
-        catch (Exception exception) when (exception is IOException or TimeoutException)
+        catch (Exception exception) when (CalendarTransportFailure.IsUnavailable(exception))
         {
             return Failure(CalendarResourceMoveCode.UpstreamUnavailable, retryable: true, phase: failurePhase);
         }

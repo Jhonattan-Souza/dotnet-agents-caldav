@@ -6,6 +6,9 @@ using DotnetAgents.CalDav.Core.Services;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using Polly.CircuitBreaker;
+using Polly.RateLimiting;
+using Polly.Timeout;
 using Shouldly;
 using Xunit;
 
@@ -366,6 +369,9 @@ public sealed class CalendarResourceDeleteServiceTests
 
     [Theory]
     [InlineData("io", CalendarResourceDeleteCode.UpstreamUnavailable)]
+    [InlineData("timeout_rejected", CalendarResourceDeleteCode.UpstreamUnavailable)]
+    [InlineData("broken_circuit", CalendarResourceDeleteCode.UpstreamUnavailable)]
+    [InlineData("rate_limiter", CalendarResourceDeleteCode.UpstreamUnavailable)]
     [InlineData("cancel", CalendarResourceDeleteCode.UpstreamUnavailable)]
     [InlineData("protocol", CalendarResourceDeleteCode.UpstreamProtocolError)]
     [InlineData("unsupported", CalendarResourceDeleteCode.UnsupportedCapability)]
@@ -378,6 +384,9 @@ public sealed class CalendarResourceDeleteServiceTests
             throw failure switch
             {
                 "io" => new IOException("secret io"),
+                "timeout_rejected" => new TimeoutRejectedException(TimeSpan.FromSeconds(10)),
+                "broken_circuit" => new BrokenCircuitException(),
+                "rate_limiter" => new RateLimiterRejectedException(),
                 "cancel" => new OperationCanceledException("secret cancel"),
                 "protocol" => new CalendarDiscoveryProtocolException("secret protocol"),
                 _ => new CalendarDiscoveryUnsupportedCapabilityException("secret unsupported")

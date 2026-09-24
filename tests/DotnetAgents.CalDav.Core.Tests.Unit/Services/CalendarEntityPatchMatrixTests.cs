@@ -7,6 +7,9 @@ using DotnetAgents.CalDav.Core.Services;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using Polly.CircuitBreaker;
+using Polly.RateLimiting;
+using Polly.Timeout;
 using Shouldly;
 using Xunit;
 
@@ -1026,6 +1029,36 @@ public sealed class CalendarEntityPatchMatrixTests
 
         result.Code.ShouldBe(expected);
         result.Retryable.ShouldBeFalse();
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        result.Phase.ShouldBe(CalendarEntityPatchPhase.SelectionDiscoveryCapability);
+        await client.DidNotReceive().UpdateCalendarResourceAsync(
+            Arg.Any<CalendarResourceUpdateRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("io")]
+    [InlineData("timeout")]
+    [InlineData("timeout_rejected")]
+    [InlineData("broken_circuit")]
+    [InlineData("rate_limiter")]
+    public async Task Preflight_transient_transport_failures_are_retryable_before_write(string failure)
+    {
+        var client = Substitute.For<ICalendarClient>();
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns<IReadOnlyList<CalendarDescriptor>>(_ =>
+            throw failure switch
+            {
+                "io" => new IOException("secret io"),
+                "timeout" => new TimeoutException("secret timeout"),
+                "timeout_rejected" => new TimeoutRejectedException(TimeSpan.FromSeconds(10)),
+                "broken_circuit" => new BrokenCircuitException(),
+                _ => new RateLimiterRejectedException()
+            });
+
+        var result = await Service(client).PatchEventAsync(EventRequest(
+            new CalendarEventPatch(Summary: Set("After"))), CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityPatchCode.UpstreamUnavailable);
+        result.Retryable.ShouldBeTrue();
         result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
         result.Phase.ShouldBe(CalendarEntityPatchPhase.SelectionDiscoveryCapability);
         await client.DidNotReceive().UpdateCalendarResourceAsync(

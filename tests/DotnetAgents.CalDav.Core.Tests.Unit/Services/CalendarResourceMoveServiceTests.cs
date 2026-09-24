@@ -8,6 +8,9 @@ using DotnetAgents.CalDav.Core.Services;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using Polly.CircuitBreaker;
+using Polly.RateLimiting;
+using Polly.Timeout;
 using Shouldly;
 using Xunit;
 
@@ -962,6 +965,33 @@ public sealed class CalendarResourceMoveServiceTests
         result.Code.ShouldBe(expectedCode);
         result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
         result.Retryable.ShouldBe(retryable);
+    }
+
+    [Theory]
+    [InlineData("timeout_rejected")]
+    [InlineData("broken_circuit")]
+    [InlineData("rate_limiter")]
+    public async Task MoveResourceAsync_MapsPreflightResilienceRejectionAsRetryableWithoutDispatch(string failure)
+    {
+        var client = MoveClient();
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns<IReadOnlyList<CalendarDescriptor>>(
+            _ => throw failure switch
+            {
+                "timeout_rejected" => new TimeoutRejectedException(TimeSpan.FromSeconds(10)),
+                "broken_circuit" => new BrokenCircuitException(),
+                _ => new RateLimiterRejectedException()
+            });
+        var sut = CreateService(client);
+
+        var result = await sut.MoveResourceAsync(
+            Request("https://cal.example/tasks/reviewed.ics"),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarResourceMoveCode.UpstreamUnavailable);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        result.Retryable.ShouldBeTrue();
+        await client.DidNotReceive().MoveCalendarResourceAsync(
+            Arg.Any<CalendarResourceMoveDispatchRequest>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]

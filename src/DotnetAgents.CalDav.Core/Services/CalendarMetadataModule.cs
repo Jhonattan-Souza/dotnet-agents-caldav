@@ -51,7 +51,7 @@ internal sealed class CalendarMetadataModule(CalDavClient client) : ICalendarMet
             var response = await client.SendProtocolRequestAsync(href, "PROPPATCH", body, null, cancellationToken).ConfigureAwait(false);
             return CalendarMetadataPatchProtocol.ReadDispatch(href, patch, response);
         }
-        catch (Exception exception) when (exception is BrokenCircuitException or RateLimiterRejectedException)
+        catch (Exception exception) when (CalendarTransportFailure.IsRejectedBeforeSend(exception))
         {
             // These strategies reject before the HTTP attempt. PROPPATCH is never retried,
             // so no earlier attempt in this invocation can have reached the server.

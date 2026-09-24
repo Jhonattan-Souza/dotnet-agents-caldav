@@ -9,6 +9,9 @@ using DotnetAgents.CalDav.Core.Services;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using Polly.CircuitBreaker;
+using Polly.RateLimiting;
+using Polly.Timeout;
 using Shouldly;
 using Xunit;
 
@@ -753,6 +756,8 @@ public sealed class CalendarExactMoveServiceTests
     [InlineData("protocol", CalendarExactResourceCode.UpstreamProtocolError, false)]
     [InlineData("http", CalendarExactResourceCode.UpstreamUnauthorized, false)]
     [InlineData("cancelled", CalendarExactResourceCode.UpstreamUnavailable, true)]
+    [InlineData("timeout_rejected", CalendarExactResourceCode.UpstreamUnavailable, true)]
+    [InlineData("broken_circuit", CalendarExactResourceCode.UpstreamUnavailable, true)]
     public async Task ExecuteConfirmedExactMoveResourceAsync_MapsFreshDiscoveryTypedFailures(
         string failure,
         CalendarExactResourceCode expectedCode,
@@ -998,6 +1003,37 @@ public sealed class CalendarExactMoveServiceTests
     }
 
     [Theory]
+    [InlineData("timeout_rejected")]
+    [InlineData("broken_circuit")]
+    [InlineData("rate_limiter")]
+    public async Task ReviewExactMoveResourceAsync_MapsResilienceSourceReadRejectionToTargetRevision(string failure)
+    {
+        const string calendarHref = "https://cal.example/events/";
+        const string sourceHref = "https://cal.example/events/source.ics";
+        const string destinationHref = "https://cal.example/events/destination.ics";
+        var client = PreparedClient(calendarHref, destinationHref);
+        client.GetCalendarResourceAsync(sourceHref, Arg.Any<CancellationToken>()).Returns(
+            _ => Task.FromException<CalendarResourceRead>(failure switch
+            {
+                "timeout_rejected" => new TimeoutRejectedException(TimeSpan.FromSeconds(10)),
+                "broken_circuit" => new BrokenCircuitException(),
+                _ => new RateLimiterRejectedException()
+            }));
+
+        var review = await CreateService(client, calendarHref).ReviewExactMoveResourceAsync(
+            new CalendarExactMoveRequest(Revision(sourceHref), destinationHref),
+            TestContext.Current.CancellationToken);
+
+        var outcome = review.Outcome.ShouldNotBeNull();
+        outcome.Code.ShouldBe(CalendarExactResourceCode.UpstreamUnavailable);
+        outcome.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        outcome.Retryable.ShouldBeTrue();
+        outcome.Phase.ShouldBe(CalendarExactResourcePhase.TargetRevision);
+        await client.DidNotReceive().MoveCalendarResourceAsync(
+            Arg.Any<CalendarResourceMoveDispatchRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
     [InlineData(CalendarResourceReadCode.Success, CalendarExactResourceCode.DestinationConflict)]
     [InlineData(CalendarResourceReadCode.ConcurrencyUnavailable, CalendarExactResourceCode.DestinationConflict)]
     [InlineData(CalendarResourceReadCode.PayloadTooLarge, CalendarExactResourceCode.DestinationConflict)]
@@ -1057,6 +1093,7 @@ public sealed class CalendarExactMoveServiceTests
     [Theory]
     [InlineData("unsupported", CalendarExactResourceCode.UnsupportedCapability)]
     [InlineData("limit", CalendarExactResourceCode.LimitExhausted)]
+    [InlineData("rate_limiter", CalendarExactResourceCode.UpstreamUnavailable)]
     public async Task ReviewExactMoveResourceAsync_MapsTypedDiscoveryFailures(
         string failure,
         CalendarExactResourceCode expectedCode)
@@ -1221,6 +1258,10 @@ public sealed class CalendarExactMoveServiceTests
             new CalendarDiscoveryProtocolException("protocol")),
         "http" => Task.FromException<IReadOnlyList<CalendarDescriptor>>(
             new HttpRequestException("unauthorized", null, HttpStatusCode.Unauthorized)),
+        "timeout_rejected" => Task.FromException<IReadOnlyList<CalendarDescriptor>>(
+            new TimeoutRejectedException(TimeSpan.FromSeconds(10))),
+        "broken_circuit" => Task.FromException<IReadOnlyList<CalendarDescriptor>>(new BrokenCircuitException()),
+        "rate_limiter" => Task.FromException<IReadOnlyList<CalendarDescriptor>>(new RateLimiterRejectedException()),
         _ => Task.FromException<IReadOnlyList<CalendarDescriptor>>(new OperationCanceledException())
     };
 

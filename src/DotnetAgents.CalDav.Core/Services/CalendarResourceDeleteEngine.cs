@@ -65,7 +65,7 @@ internal sealed class CalendarResourceDeleteEngine(
         {
             return (null, FromPreflightHttpFailure(exception.StatusCode));
         }
-        catch (Exception exception) when (exception is IOException or TimeoutException)
+        catch (Exception exception) when (CalendarTransportFailure.IsUnavailable(exception))
         {
             return (null, Failure(CalendarResourceDeleteCode.UpstreamUnavailable, retryable: true));
         }

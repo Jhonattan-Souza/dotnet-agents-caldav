@@ -8,6 +8,9 @@ using DotnetAgents.CalDav.Mcp.Tools;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.Protocol;
 using NSubstitute;
+using Polly.CircuitBreaker;
+using Polly.RateLimiting;
+using Polly.Timeout;
 using Shouldly;
 using Xunit;
 
@@ -577,7 +580,10 @@ public sealed class CalendarCollectionToolsTests
             (new XmlException("malformed"), "upstream_protocol_error"),
             (new CalendarDiscoveryProtocolException("invalid"), "upstream_protocol_error"),
             (new IOException("unavailable"), "upstream_unavailable"),
-            (new TimeoutException("timeout"), "upstream_unavailable")
+            (new TimeoutException("timeout"), "upstream_unavailable"),
+            (new TimeoutRejectedException(TimeSpan.FromSeconds(10)), "upstream_unavailable"),
+            (new BrokenCircuitException(), "upstream_unavailable"),
+            (new RateLimiterRejectedException(), "upstream_unavailable")
         };
 
         foreach (var (exception, expectedCode) in cases)
@@ -592,6 +598,34 @@ public sealed class CalendarCollectionToolsTests
             result.IsError.ShouldBe(true);
             result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe(expectedCode);
         }
+    }
+
+    [Theory]
+    [InlineData("timeout_rejected")]
+    [InlineData("broken_circuit")]
+    [InlineData("rate_limiter")]
+    public async Task DeleteRawAsync_MapsReviewResilienceRejectionAsNotAttempted(string rejection)
+    {
+        var module = Substitute.For<ICalendarCollectionModule>();
+        module.ReviewDeleteAsync(Arg.Any<CalendarCollectionDeleteRequest>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException<CalendarCollectionDeleteReviewResult>(rejection switch
+            {
+                "timeout_rejected" => new TimeoutRejectedException(TimeSpan.FromSeconds(10)),
+                "broken_circuit" => new BrokenCircuitException(),
+                _ => new RateLimiterRejectedException()
+            }));
+        var sut = CreateTool(module, new FixedTimeProvider(DateTimeOffset.Parse("2026-08-16T12:00:00Z")));
+
+        var result = await sut.DeleteRawAsync(
+            DeleteArguments("https://cal.example/calendars/user/tasks/"),
+            null,
+            null,
+            true,
+            CancellationToken.None);
+
+        result.IsError.ShouldBe(true);
+        result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("upstream_unavailable");
+        result.StructuredContent.Value.GetProperty("mutationState").GetString().ShouldBe("not_attempted");
     }
 
     [Fact]

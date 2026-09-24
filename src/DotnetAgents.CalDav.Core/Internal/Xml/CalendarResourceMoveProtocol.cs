@@ -41,10 +41,12 @@ internal sealed class CalendarResourceMoveProtocol(
         {
             return await SendAsync(sourceUri, sourceCalendarUri, destinationUri, entityTag, cancellationToken);
         }
-        catch (Exception exception) when (exception is HttpRequestException
-            or IOException
-            or TimeoutException
-            or OperationCanceledException)
+        catch (Exception exception) when (CalendarTransportFailure.IsRejectedBeforeSend(exception))
+        {
+            // The rejected attempt was not sent, and an earlier redirect response does not commit.
+            return new CalendarResourceMoveDispatchResult(CalendarResourceMoveDispatchCode.UpstreamUnavailable);
+        }
+        catch (Exception exception) when (CalendarTransportFailure.IsPossiblySent(exception))
         {
             return new CalendarResourceMoveDispatchResult(CalendarResourceMoveDispatchCode.PossiblyDispatched);
         }

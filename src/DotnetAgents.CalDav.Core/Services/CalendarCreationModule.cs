@@ -155,7 +155,7 @@ internal sealed class CalendarCreationModule(
         {
             return Failure(CalendarEntityCreateCode.UnsupportedCapability);
         }
-        catch (Exception exception) when (exception is HttpRequestException or IOException or TimeoutException)
+        catch (Exception exception) when (exception is HttpRequestException || CalendarTransportFailure.IsUnavailable(exception))
         {
             return Failure(CalendarEntityCreateCode.UpstreamUnavailable);
         }
@@ -337,11 +337,9 @@ internal sealed class CalendarCreationModule(
         {
             return VerificationDeadlineFailure(possiblyDispatched);
         }
-        catch (Exception exception) when (exception is HttpRequestException
-            or IOException
-            or TimeoutException
-            or CalendarDiscoveryProtocolException
-            or OperationCanceledException)
+        catch (Exception exception) when (CalendarTransportFailure.IsPossiblySent(exception)
+            || CalendarTransportFailure.IsRejectedBeforeSend(exception)
+            || exception is CalendarDiscoveryProtocolException)
         {
             return VerificationDeadlineFailure(possiblyDispatched);
         }
@@ -667,10 +665,8 @@ internal sealed class CalendarCreationModule(
         {
             return await transport.GetCalendarResourceAsync(href, verification.Token);
         }
-        catch (Exception exception) when (exception is HttpRequestException
-            or IOException
-            or TimeoutException
-            or OperationCanceledException)
+        catch (Exception exception) when (CalendarTransportFailure.IsPossiblySent(exception)
+            || CalendarTransportFailure.IsRejectedBeforeSend(exception))
         {
             return null;
         }
@@ -915,7 +911,8 @@ internal sealed class CalendarCreationModule(
     };
 
     private static bool IsExactPhaseFailure(Exception exception, CancellationToken cancellationToken) => exception is
-        HttpRequestException or IOException or TimeoutException or XmlException or CalendarDiscoveryProtocolException
+        HttpRequestException or XmlException or CalendarDiscoveryProtocolException
+        || CalendarTransportFailure.IsUnavailable(exception)
         || exception is OperationCanceledException && !cancellationToken.IsCancellationRequested;
 
     private static CalendarExactResourceResult FromExactPhaseFailure(
@@ -923,11 +920,9 @@ internal sealed class CalendarCreationModule(
         CalendarExactResourcePhase phase) => exception switch
         {
             HttpRequestException http => FromExactHttpFailure(http.StatusCode, phase),
-            OperationCanceledException or IOException or TimeoutException =>
-                ExactFailure(CalendarExactResourceCode.UpstreamUnavailable, phase, retryable: true),
             XmlException or CalendarDiscoveryProtocolException =>
                 ExactFailure(CalendarExactResourceCode.UpstreamProtocolError, phase),
-            _ => throw new InvalidOperationException("The exception is not a supported Exact Create failure.", exception)
+            _ => ExactFailure(CalendarExactResourceCode.UpstreamUnavailable, phase, retryable: true)
         };
 
     private static CalendarExactResourceResult FromExactHttpFailure(

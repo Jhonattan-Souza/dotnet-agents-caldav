@@ -1,3 +1,6 @@
+using Polly.CircuitBreaker;
+using Polly.RateLimiting;
+using Polly.Timeout;
 using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -141,7 +144,7 @@ internal sealed class CalendarCollectionTools
             return Error(DiscoveryProtocolError(), "Calendar discovery returned an invalid response.",
                 CalendarMutationState.NotAttempted);
         }
-        catch (Exception exception) when (exception is IOException or TimeoutException)
+        catch (Exception exception) when (IsDiscoveryUnavailable(exception))
         {
             return Error(DiscoveryUnavailable(), "Calendar discovery is temporarily unavailable.",
                 CalendarMutationState.NotAttempted);
@@ -260,7 +263,7 @@ internal sealed class CalendarCollectionTools
             return Error(DiscoveryProtocolError(), "Calendar discovery returned an invalid response.",
                 CalendarMutationState.NotAttempted);
         }
-        catch (Exception exception) when (exception is IOException or TimeoutException)
+        catch (Exception exception) when (IsDiscoveryUnavailable(exception))
         {
             return Error(DiscoveryUnavailable(), "Calendar discovery is temporarily unavailable.",
                 CalendarMutationState.NotAttempted);
@@ -272,6 +275,14 @@ internal sealed class CalendarCollectionTools
                 CalendarMutationState.NotAttempted);
         }
     }
+
+    // Mutation dispatch and reconciliation failures are classified by the module, so these reach
+    // the tool only from discovery before the mutation is attempted.
+    private static bool IsDiscoveryUnavailable(Exception exception) => exception is IOException
+        or TimeoutException
+        or TimeoutRejectedException
+        or BrokenCircuitException
+        or RateLimiterRejectedException;
 
     private bool TryReadContinuation(
         string? requestState,

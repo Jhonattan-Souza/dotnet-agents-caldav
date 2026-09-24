@@ -54,12 +54,16 @@ internal sealed class CalendarCollectionModule(
                 new CalendarCollectionCreateDispatchRequest(target, request.DisplayName.Trim(), normalizedKinds),
                 cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception exception) when (IsAmbiguousDispatchFailure(exception))
+        catch (Exception exception) when (CalendarTransportFailure.IsRejectedBeforeSend(exception))
+        {
+            return new(CalendarCollectionCreateCode.UpstreamUnavailable, CalendarMutationState.NotAttempted, Retryable: true);
+        }
+        catch (Exception exception) when (CalendarTransportFailure.IsPossiblySent(exception))
         {
             return new(
                 CalendarCollectionCreateCode.Indeterminate,
                 CalendarMutationState.Unknown,
-                Retryable: IsRetryable(exception));
+                Retryable: true);
         }
         catch (CalendarDiscoveryUnsupportedCapabilityException)
         {
@@ -174,13 +178,21 @@ internal sealed class CalendarCollectionModule(
         {
             dispatch = await transport.DeleteAsync(href, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception exception) when (IsAmbiguousDispatchFailure(exception))
+        catch (Exception exception) when (CalendarTransportFailure.IsRejectedBeforeSend(exception))
+        {
+            return new(
+                CalendarCollectionDeleteCode.UpstreamUnavailable,
+                CalendarMutationState.NotAttempted,
+                current,
+                Retryable: true);
+        }
+        catch (Exception exception) when (CalendarTransportFailure.IsPossiblySent(exception))
         {
             return new(
                 CalendarCollectionDeleteCode.Indeterminate,
                 CalendarMutationState.Unknown,
                 current,
-                Retryable: IsRetryable(exception));
+                Retryable: true);
         }
         catch (CalendarDiscoveryUnsupportedCapabilityException)
         {
@@ -371,27 +383,15 @@ internal sealed class CalendarCollectionModule(
     private static CalendarCollectionDeleteResult RejectedDelete(CalendarCollectionDeleteCode code) =>
         new(code, CalendarMutationState.NotCommitted);
 
-    private static bool IsReconciliationFailure(Exception exception) => exception is
-        HttpRequestException or
-        IOException or
-        TimeoutException or
+    private static bool IsReconciliationFailure(Exception exception) =>
+        IsRetryable(exception) || exception is
         System.Xml.XmlException or
         CalendarDiscoveryProtocolException or
         CalendarDiscoveryUnsupportedCapabilityException or
-        CalendarDiscoveryLimitException or
-        OperationCanceledException;
+        CalendarDiscoveryLimitException;
 
-    private static bool IsRetryable(Exception exception) => exception is
-        HttpRequestException or
-        IOException or
-        TimeoutException or
-        OperationCanceledException;
-
-    private static bool IsAmbiguousDispatchFailure(Exception exception) => exception is
-        HttpRequestException or
-        IOException or
-        TimeoutException or
-        OperationCanceledException;
+    private static bool IsRetryable(Exception exception) =>
+        CalendarTransportFailure.IsPossiblySent(exception) || CalendarTransportFailure.IsRejectedBeforeSend(exception);
 
     private static bool IsDefinitiveDispatchFailure(Exception exception) => exception is
         System.Xml.XmlException or

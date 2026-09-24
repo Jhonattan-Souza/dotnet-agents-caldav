@@ -45,7 +45,7 @@ internal sealed class CalendarExactResourceEngine(
         {
             return FromHttpFailure(exception.StatusCode);
         }
-        catch (Exception exception) when (exception is IOException or TimeoutException)
+        catch (Exception exception) when (CalendarTransportFailure.IsUnavailable(exception))
         {
             return Failure(CalendarExactResourceCode.UpstreamUnavailable, retryable: true);
         }
@@ -97,7 +97,7 @@ internal sealed class CalendarExactResourceEngine(
         {
             return FailedReview(Failure(CalendarExactResourceCode.UpstreamUnavailable, retryable: true));
         }
-        catch (Exception exception) when (exception is IOException or TimeoutException)
+        catch (Exception exception) when (CalendarTransportFailure.IsUnavailable(exception))
         {
             return FailedReview(Failure(CalendarExactResourceCode.UpstreamUnavailable, retryable: true));
         }
@@ -401,10 +401,8 @@ internal sealed class CalendarExactResourceEngine(
         }
     }
 
-    private static bool IsObservationFailure(Exception exception) => exception is HttpRequestException
-        or IOException
-        or TimeoutException
-        or OperationCanceledException;
+    private static bool IsObservationFailure(Exception exception) =>
+        CalendarTransportFailure.IsPossiblySent(exception) || CalendarTransportFailure.IsRejectedBeforeSend(exception);
 
     private static bool TryValidateResourceHrefSyntax(string href) =>
         Uri.TryCreate(href, UriKind.Absolute, out var resource) && HasSafeShape(resource, href);
@@ -540,7 +538,8 @@ internal sealed class CalendarExactResourceEngine(
     }
 
     private static bool IsPhaseFailure(Exception exception, CancellationToken cancellationToken) => exception is
-        HttpRequestException or IOException or TimeoutException or XmlException or CalendarDiscoveryProtocolException
+        HttpRequestException or XmlException or CalendarDiscoveryProtocolException
+        || CalendarTransportFailure.IsUnavailable(exception)
         || exception is OperationCanceledException && !cancellationToken.IsCancellationRequested;
 
     private static CalendarExactResourceResult FromPhaseFailure(
@@ -548,11 +547,9 @@ internal sealed class CalendarExactResourceEngine(
         CalendarExactResourcePhase phase) => exception switch
         {
             HttpRequestException http => FromHttpFailure(http.StatusCode, phase),
-            OperationCanceledException or IOException or TimeoutException =>
-                Failure(CalendarExactResourceCode.UpstreamUnavailable, phase, retryable: true),
             XmlException or CalendarDiscoveryProtocolException =>
                 Failure(CalendarExactResourceCode.UpstreamProtocolError, phase),
-            _ => throw new InvalidOperationException("The exception is not a supported phase failure.", exception)
+            _ => Failure(CalendarExactResourceCode.UpstreamUnavailable, phase, retryable: true)
         };
 
     private static CalendarExactResourceResult Failure(

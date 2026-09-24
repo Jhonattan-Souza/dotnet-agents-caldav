@@ -30,10 +30,14 @@ internal sealed class CalendarResourceCreateProtocol(HttpClient httpClient, Uri 
         {
             return await SendAsync(calendarUri, resourceUri, request.AuthoritativeUtf8, cancellationToken);
         }
-        catch (Exception exception) when (exception is HttpRequestException
-            or IOException
-            or TimeoutException
-            or OperationCanceledException)
+        catch (Exception exception) when (CalendarTransportFailure.IsRejectedBeforeSend(exception))
+        {
+            // The rejected attempt was not sent, and an earlier redirect response does not commit.
+            return new CalendarResourceCreateResult(
+                CalendarResourceCreateCode.UpstreamUnavailable,
+                resourceUri.AbsoluteUri);
+        }
+        catch (Exception exception) when (CalendarTransportFailure.IsPossiblySent(exception))
         {
             return new CalendarResourceCreateResult(
                 CalendarResourceCreateCode.PossiblyDispatched,

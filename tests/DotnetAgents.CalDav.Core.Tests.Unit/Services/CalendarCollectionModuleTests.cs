@@ -5,6 +5,9 @@ using DotnetAgents.CalDav.Core.Internal;
 using DotnetAgents.CalDav.Core.Models;
 using DotnetAgents.CalDav.Core.Services;
 using Microsoft.Extensions.Options;
+using Polly.CircuitBreaker;
+using Polly.RateLimiting;
+using Polly.Timeout;
 using Shouldly;
 using Xunit;
 
@@ -485,6 +488,9 @@ public sealed class CalendarCollectionModuleTests
             (new IOException("unavailable"), true),
             (new TimeoutException("timeout"), true),
             (new OperationCanceledException(), true),
+            (new TimeoutRejectedException(TimeSpan.FromSeconds(10)), true),
+            (new BrokenCircuitException(), true),
+            (new RateLimiterRejectedException(), true),
             (new XmlException("malformed"), false),
             (new CalendarDiscoveryProtocolException("invalid"), false),
             (new CalendarDiscoveryUnsupportedCapabilityException("unsupported"), false),
@@ -517,7 +523,8 @@ public sealed class CalendarCollectionModuleTests
             new HttpRequestException("unavailable"),
             new IOException("unavailable"),
             new TimeoutException("timeout"),
-            new OperationCanceledException()
+            new OperationCanceledException(),
+            new TimeoutRejectedException(TimeSpan.FromSeconds(10))
         };
         foreach (var exception in ambiguous)
         {
@@ -779,6 +786,92 @@ public sealed class CalendarCollectionModuleTests
         result.Retryable.ShouldBeTrue();
     }
 
+    [Theory]
+    [InlineData("broken_circuit")]
+    [InlineData("isolated_circuit")]
+    [InlineData("rate_limiter")]
+    public async Task CreateRejectedBeforeSendIsNotAttemptedAndRetryable(string rejection)
+    {
+        var transport = new ScriptedTransport("https://cal.example/calendars/user/")
+        {
+            CreateDispatchException = Rejection(rejection)
+        };
+
+        var result = await CreateModule(transport).CreateAsync(
+            new CalendarCollectionCreateRequest("Planning", [CalendarEntityKind.Event]),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarCollectionCreateCode.UpstreamUnavailable);
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        result.Retryable.ShouldBeTrue();
+        transport.DiscoveryCount.ShouldBe(1);
+    }
+
+    [Theory]
+    [InlineData("broken_circuit", CalendarCollectionDeleteCode.UpstreamUnavailable, CalendarMutationState.NotAttempted)]
+    [InlineData("isolated_circuit", CalendarCollectionDeleteCode.UpstreamUnavailable, CalendarMutationState.NotAttempted)]
+    [InlineData("rate_limiter", CalendarCollectionDeleteCode.UpstreamUnavailable, CalendarMutationState.NotAttempted)]
+    [InlineData("timeout", CalendarCollectionDeleteCode.Indeterminate, CalendarMutationState.Unknown)]
+    public async Task DeleteResilienceRejectionIsClassifiedByWhetherTheDeleteCouldHaveBeenSent(
+        string rejection,
+        CalendarCollectionDeleteCode code,
+        CalendarMutationState state)
+    {
+        const string href = "https://cal.example/calendars/user/tasks/";
+        var transport = new ScriptedTransport("https://cal.example/calendars/user/")
+        {
+            DeleteDispatchException = Rejection(rejection)
+        };
+        transport.Items.Add(Descriptor(href, "Tasks", todo: true));
+        var module = CreateModule(transport);
+        var review = await module.ReviewDeleteAsync(new CalendarCollectionDeleteRequest(href), CancellationToken.None);
+
+        var result = await module.ExecuteConfirmedDeleteAsync(
+            new CalendarCollectionDeleteRequest(href),
+            review.Binding!,
+            CancellationToken.None);
+
+        result.Code.ShouldBe(code);
+        result.MutationState.ShouldBe(state);
+        result.Retryable.ShouldBeTrue();
+        result.Calendar.ShouldNotBeNull().Href.ShouldBe(href);
+    }
+
+    [Theory]
+    [InlineData("broken_circuit")]
+    [InlineData("rate_limiter")]
+    [InlineData("timeout")]
+    public async Task DeleteReconciliationResilienceRejectionKeepsTheCommittedDelete(string rejection)
+    {
+        const string href = "https://cal.example/calendars/user/tasks/";
+        var transport = new ScriptedTransport("https://cal.example/calendars/user/")
+        {
+            FailDiscoveryAfterCount = 2,
+            ReconciliationException = Rejection(rejection)
+        };
+        transport.Items.Add(Descriptor(href, "Tasks", todo: true));
+        var module = CreateModule(transport);
+        var review = await module.ReviewDeleteAsync(new CalendarCollectionDeleteRequest(href), CancellationToken.None);
+
+        var result = await module.ExecuteConfirmedDeleteAsync(
+            new CalendarCollectionDeleteRequest(href),
+            review.Binding!,
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarCollectionDeleteCode.CommittedButUnverified);
+        result.MutationState.ShouldBe(CalendarMutationState.Committed);
+        result.Retryable.ShouldBeTrue();
+        transport.DeleteCount.ShouldBe(1);
+    }
+
+    private static Exception Rejection(string rejection) => rejection switch
+    {
+        "broken_circuit" => new BrokenCircuitException(),
+        "isolated_circuit" => new IsolatedCircuitException(),
+        "rate_limiter" => new RateLimiterRejectedException(),
+        _ => new TimeoutRejectedException(TimeSpan.FromSeconds(10))
+    };
+
     private static CalendarCollectionModule CreateModule(ScriptedTransport transport, string? scope = null) =>
         new(
             transport,
@@ -809,6 +902,7 @@ public sealed class CalendarCollectionModuleTests
         public CalendarCollectionCreateDispatchRequest? LastCreate { get; private set; }
         public Exception? FailDiscoveryAfterDispatch { get; init; }
         public int? FailDiscoveryAfterCount { get; init; }
+        public Exception? ReconciliationException { get; init; }
         public Exception? CreateDispatchException { get; init; }
         public Exception? DeleteDispatchException { get; init; }
         public CalendarCollectionDispatchCode CreateDispatchCode { get; init; } = CalendarCollectionDispatchCode.Dispatched;
@@ -824,7 +918,7 @@ public sealed class CalendarCollectionModuleTests
             if (FailDiscoveryAfterDispatch is not null && CreateCount > 0 && DiscoveryCount > 1)
                 throw FailDiscoveryAfterDispatch;
             if (FailDiscoveryAfterCount is { } count && DiscoveryCount > count)
-                throw new HttpRequestException("reconciliation unavailable");
+                throw ReconciliationException ?? new HttpRequestException("reconciliation unavailable");
             return Task.FromResult(new CalendarCollectionDiscoverySnapshot(homeSetHref, Items.ToArray()) { HomeSetHrefs = Homes ?? [homeSetHref] });
         }
 
