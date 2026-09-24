@@ -28,7 +28,7 @@ public sealed partial class RadicaleConformanceHarnessTests
         await using (var storageOnly = CreateSchedulingProvider(calendar, CalDavSchedulingModes.StorageOnly, trace))
         {
             var blocked = await CreateMeetingAsync(storageOnly, calendar, "storage-only-meeting");
-            blocked.Code.ShouldBe(CalendarEntityCreateCode.UnsupportedCapability);
+            blocked.Code.ShouldBe(CalendarEntityCreateCode.UnsupportedCapability, DescribeCreateResult(blocked, trace));
             blocked.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
             trace.ShouldNotContain(entry => entry.StartsWith("PUT:", StringComparison.Ordinal));
             (await SendProbeAsync(probe, HttpMethod.Get, new Uri(calendar, "storage-only-meeting.ics"))).Status
@@ -37,7 +37,7 @@ public sealed partial class RadicaleConformanceHarnessTests
 
         await using var serverManaged = CreateSchedulingProvider(calendar, CalDavSchedulingModes.ServerManaged, trace);
         var created = await WithSchedulingStateAsync(() => CreateMeetingAsync(serverManaged, calendar, "server-managed-meeting"));
-        created.Result.Code.ShouldBe(CalendarEntityCreateCode.Success);
+        created.Result.Code.ShouldBe(CalendarEntityCreateCode.Success, DescribeCreateResult(created.Result, trace));
         created.Result.MutationState.ShouldBe(CalendarMutationState.Committed);
         created.SideEffectsPossible.ShouldBeTrue();
         var snapshot = created.Result.Snapshot!;
