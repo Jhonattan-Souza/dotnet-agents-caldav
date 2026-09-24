@@ -224,7 +224,8 @@ deletion also proceed when fresh OPTIONS evidence advertises
 or cancellations on its own. Unknown or failed evidence still blocks.
 Confirmation reviews add a scheduling notice. Scheduling-governed outcomes whose
 `mutationState` is `committed` or `unknown` report `schedulingSideEffects`:
-`possible` when the server advertised automatic scheduling, otherwise `none`.
+`possible` when the call admitted a write on a server that advertised
+automatic scheduling, otherwise `none`.
 The default mode never emits the field. See
 [ADR 0009](docs/adr/0009-opt-in-server-managed-scheduling.md).
 

@@ -69,9 +69,29 @@ The lock governs `events.create`, `events.patch`, `todos.create`,
 `todos.patch`, `todos.complete`, the five `calendar_occurrences.*` mutations,
 `calendar_resources.delete`, `calendars.delete`,
 `calendar_resources.exact_create` and `calendar_resources.exact_replace`.
-Native MOVE (`calendar_resources.move`, `calendar_resources.exact_move`) stays
-scheduling-neutral as recorded in the RFC coverage plan. `calendars.create`
-and `calendars.patch` do not touch scheduling object resources.
+`calendars.create` and `calendars.patch` do not touch scheduling object
+resources.
+
+Native MOVE (`calendar_resources.move`, `calendar_resources.exact_move`) is not
+governed. The RFC coverage plan records MOVE as scheduling-neutral, but this
+decision does not rest on that citation alone. It rests on facts that can be
+checked:
+
+- Native MOVE runs only under a verified Interoperability Profile.
+  `CalendarMoveAuthorization` rejects every other configuration with
+  `unsupported_capability` before any request.
+- The only profile verified on this branch, Radicale 3.7.8, does not
+  advertise `calendar-auto-schedule`, so MOVE there cannot trigger server
+  scheduling.
+- A separate change, PR #189, which may merge before or after this one, adds
+  the verified `nextcloud-34.0.3` profile. Nextcloud does advertise
+  `calendar-auto-schedule`. Its dated record
+  (`docs/move-interoperability-profiles-2026-09-24.md` on that branch)
+  observed that MOVE of an organizer Event with a local attendee changed no
+  attendee resource and made no iMIP attempt.
+
+Each newly verified profile that advertises automatic scheduling needs the
+same evidence before promotion, as listed in the roadmap.
 
 ### What remains blocked or absent
 
@@ -101,9 +121,12 @@ Scheduling-governed mutation outcomes gain an optional closed property
    carry no disclosure because nothing reached the server.
 
 The value is `possible` when this call's lock admitted a write because the
-server advertised `calendar-auto-schedule`. Otherwise it is `none`: the write
-carried no participation data, or the server proved automatic scheduling
-absent. The field stays absent in `storage_only`, where it could only ever be
+server advertised `calendar-auto-schedule`. Otherwise it is `none`, which
+guarantees exactly one thing: this call admitted no write on a server that
+advertised `calendar-auto-schedule`. Typical causes are a write without
+participation data, a server that proved automatic scheduling absent, or a
+governed tool that reached its deadline (`unknown`) before the lock ran. The
+field stays absent in `storage_only`, where it could only ever be
 `none`. This keeps the default output byte-identical. Payload-limit replacement
 errors keep the disclosure, and compatibility text keeps matching
 `structuredContent` (ADR 0007).
@@ -180,23 +203,30 @@ allowed with `possible` in `server_managed`. Unknown evidence still blocks.
 
 ## Roadmap
 
-These later slices of item 2.9 are intentionally not implemented here:
+These later slices of item 2.9 are intentionally not implemented here. The
+first entry is the highest-priority next slice.
 
-1. Discover the principal's `schedule-inbox-URL`, `schedule-outbox-URL` and
+1. Highest priority: in `server_managed` mode, require MRTR confirmation, or
+   at least a disclosure warning before the write, for governed tools that
+   do not confirm today when participants are involved. That means
+   `events.create` and `todos.create` with ATTENDEE, ordinary patches and
+   Occurrence mutations.
+2. Re-evaluate MOVE governance for every newly verified Interoperability
+   Profile that advertises automatic scheduling. Require observed evidence
+   that MOVE has no scheduling side effects before promoting the profile.
+3. Discover the principal's `schedule-inbox-URL`, `schedule-outbox-URL` and
    `calendar-user-address-set`, and expose them in `calendars.inspect`
    scheduling evidence.
-2. Report `schedule-default-calendar-URL` and consider it for the default
+4. Report `schedule-default-calendar-URL` and consider it for the default
    Event destination.
-3. Model SCHEDULE-AGENT, SCHEDULE-FORCE-SEND and SCHEDULE-STATUS on organizer
+5. Model SCHEDULE-AGENT, SCHEDULE-FORCE-SEND and SCHEDULE-STATUS on organizer
    and attendee values, and expose server-reported SCHEDULE-STATUS after
    writes. This would refine `possible` into per-attendee evidence.
-4. Support Schedule-Tag and `If-Schedule-Tag-Match` for attendee-side updates.
-5. Add a free/busy POST through the scheduling outbox for other calendar users.
-6. Add an `events.respond` tool that changes only the current user's
+6. Support Schedule-Tag and `If-Schedule-Tag-Match` for attendee-side updates.
+7. Add a free/busy POST through the scheduling outbox for other calendar users.
+8. Add an `events.respond` tool that changes only the current user's
    PARTSTAT, with MRTR confirmation.
-7. Consider requiring MRTR confirmation for participation creates and ordinary
-   patches in `server_managed` mode.
-8. Read and act on scheduling inbox messages.
+9. Read and act on scheduling inbox messages.
 
 ## Consequences
 

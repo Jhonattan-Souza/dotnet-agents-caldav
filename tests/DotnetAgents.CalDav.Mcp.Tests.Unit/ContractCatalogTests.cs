@@ -48,6 +48,31 @@ public sealed class ContractCatalogTests
     }
 
     [Fact]
+    public void Scheduling_side_effect_disclosure_is_closed_and_describes_only_what_the_lock_guarantees()
+    {
+        var definitions = ReadJson("mcp-tool-catalog.json")["$defs"]!;
+        var disclosure = definitions["schedulingSideEffects"]!;
+
+        EnumValues(disclosure).ShouldBe(["none", "possible"]);
+        var description = disclosure["description"]!.GetValue<string>();
+        description.ShouldContain("CALDAV_SCHEDULING_MODE=server_managed");
+        description.ShouldContain(
+            "none: this call admitted no write on a server that advertised calendar-auto-schedule.");
+        description.ShouldNotContain("carried no participation data");
+        foreach (var name in new[]
+                 {
+                     "snapshotMutationSuccess", "deleteMutationSuccess", "calendarCollectionDeleteSuccess",
+                     "mutationErrorOutcome", "exactMutationErrorOutcome"
+                 })
+        {
+            definitions[name]!["properties"]!["schedulingSideEffects"]!["$ref"]!.GetValue<string>()
+                .ShouldBe("#/$defs/schedulingSideEffects");
+            definitions[name]!["required"]!.AsArray().Select(item => item!.GetValue<string>())
+                .ShouldNotContain("schedulingSideEffects");
+        }
+    }
+
+    [Fact]
     public void Calendar_entity_query_catalog_equals_the_closed_typed_failure_vocabulary()
     {
         var error = ReadJson("mcp-tool-catalog.json")["$defs"]!["entityQueryErrorOutcome"]!["properties"]!;
