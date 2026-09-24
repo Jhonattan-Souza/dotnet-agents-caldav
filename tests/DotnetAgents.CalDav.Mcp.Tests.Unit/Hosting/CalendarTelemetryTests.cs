@@ -470,26 +470,36 @@ public sealed class CalendarTelemetryTests
     }
 
     [Fact]
-    public void ExportAllowlist_StartClearsCallerTraceStateAndBaggageBeforeDescendantsInherit()
+    public void ExportAllowlist_ClearsRemoteTraceStateAtStartAndOwnBaggageAtEnd()
     {
         using var listener = ListenTo(OpenTelemetryHostConfiguration.McpInstrumentationName);
         using var source = new ActivitySource(OpenTelemetryHostConfiguration.McpInstrumentationName);
         var processor = new TelemetryActivityAllowlistProcessor();
-        using var call = source.StartActivity("tools/call");
+        var callerContext = new ActivityContext(
+            ActivityTraceId.CreateRandom(),
+            ActivitySpanId.CreateRandom(),
+            ActivityTraceFlags.Recorded,
+            "vendor=private-trace-state",
+            isRemote: true);
+        using var call = source.StartActivity("tools/call", ActivityKind.Server, callerContext);
         call.ShouldNotBeNull();
-        call.TraceStateString = "vendor=private-trace-state";
-        call.AddBaggage("user.id", "private-baggage");
-        call.AddBaggage("tenant", "private-tenant");
+        call.TraceStateString.ShouldBe("vendor=private-trace-state");
 
         processor.OnStart(call);
-        using var descendant = source.StartActivity("descendant");
+        using (var descendant = source.StartActivity("descendant"))
+        {
+            call.TraceStateString.ShouldBeNull();
+            descendant.ShouldNotBeNull();
+            descendant.Parent.ShouldBeSameAs(call);
+            descendant.TraceStateString.ShouldBeNull();
+        }
+        call.AddBaggage("user.id", "private-baggage");
+        call.AddBaggage("tenant", "private-tenant");
+        call.Stop();
+        processor.OnEnd(call);
 
         call.TraceStateString.ShouldBeNull();
         call.Baggage.ShouldBeEmpty();
-        descendant.ShouldNotBeNull();
-        descendant.Parent.ShouldBeSameAs(call);
-        descendant.TraceStateString.ShouldBeNull();
-        descendant.Baggage.ShouldBeEmpty();
     }
 
     [Fact]
