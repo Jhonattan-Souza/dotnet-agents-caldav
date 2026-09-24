@@ -7,6 +7,7 @@ namespace DotnetAgents.CalDav.Core.Configuration;
 /// </summary>
 internal sealed class CalDavAccountOrigins
 {
+    private static CachedOrigins? s_cache;
     private readonly Uri _configuredBaseUri;
     private readonly IReadOnlyList<CalDavRedirectHostRule> _redirectHosts;
 
@@ -16,10 +17,25 @@ internal sealed class CalDavAccountOrigins
         _redirectHosts = redirectHosts ?? [];
     }
 
-    /// <summary>Builds the account origins, failing closed to the configured origin for an invalid allowlist.</summary>
-    internal static CalDavAccountOrigins From(CalDavOptions options) => new(
-        new Uri(options.BaseUrl, UriKind.Absolute),
-        CalDavRedirectHostRule.TryParseList(options.RedirectHosts, out var rules) ? rules : []);
+    /// <summary>
+    /// Returns the account origins, failing closed to the configured origin for an invalid allowlist.
+    /// The last parsed configuration is reused so per-href checks do not re-parse the allowlist.
+    /// </summary>
+    internal static CalDavAccountOrigins From(CalDavOptions options)
+    {
+        var cached = Volatile.Read(ref s_cache);
+        if (cached is not null
+            && string.Equals(cached.BaseUrl, options.BaseUrl, StringComparison.Ordinal)
+            && string.Equals(cached.RedirectHosts, options.RedirectHosts, StringComparison.Ordinal))
+        {
+            return cached.Origins;
+        }
+        var origins = new CalDavAccountOrigins(
+            new Uri(options.BaseUrl, UriKind.Absolute),
+            CalDavRedirectHostRule.TryParseList(options.RedirectHosts, out var rules) ? rules : []);
+        Volatile.Write(ref s_cache, new CachedOrigins(options.BaseUrl, options.RedirectHosts, origins));
+        return origins;
+    }
 
     internal bool Contains(Uri candidate) => IsConfiguredOrigin(candidate) || IsRedirectHostOrigin(candidate);
 
@@ -29,12 +45,16 @@ internal sealed class CalDavAccountOrigins
         && candidate.Port == _configuredBaseUri.Port;
 
     // An allowlisted host never changes scheme or port: both the configured endpoint and the
-    // candidate must use HTTPS, and the candidate must use the configured port.
+    // candidate must use HTTPS, and the candidate must use the configured port. Rules match
+    // IdnHost, the ASCII wire form used for DNS, SNI and Host; the configured-origin check keeps
+    // Host, so a Unicode/punycode mismatch between the two can only refuse, never widen, access.
     private bool IsRedirectHostOrigin(Uri candidate) =>
         string.Equals(_configuredBaseUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
         && string.Equals(candidate.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
         && candidate.Port == _configuredBaseUri.Port
         && _redirectHosts.Any(rule => rule.Matches(candidate.IdnHost));
+
+    private sealed record CachedOrigins(string BaseUrl, string? RedirectHosts, CalDavAccountOrigins Origins);
 }
 
 /// <summary>

@@ -38,7 +38,7 @@ internal sealed partial class CalDavClient
         CancellationToken cancellationToken)
     {
         if (!TryValidateAbsoluteResourceHref(href, out var uri))
-            throw new CalendarProtocolException("invalid_input", "The operation requires a canonical href on the configured origin.");
+            throw new CalendarProtocolException("invalid_input", "The operation requires a canonical href on an account origin.");
 
         using var request = new HttpRequestMessage(new HttpMethod(method), uri);
         if (request.Method.Method == "REPORT")
