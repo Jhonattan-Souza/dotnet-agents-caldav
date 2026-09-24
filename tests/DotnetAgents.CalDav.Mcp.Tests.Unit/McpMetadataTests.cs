@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Json.Schema;
 using Shouldly;
 using Xunit;
@@ -146,6 +147,70 @@ public class McpMetadataTests
         schema.Evaluate(document.RootElement).IsValid.ShouldBeTrue();
     }
 
+    // ─── live tool catalog metadata ────────────────────────────────────────────
+
+    [Fact]
+    public void ToolCatalog_PrefixesToolMetaWithTheRegistryNamespace()
+    {
+        var projectDirectory = GetMcpProjectDir();
+        using var server = JsonDocument.Parse(File.ReadAllText(Path.Combine(projectDirectory, ".mcp", "server.json")));
+        using var catalog = JsonDocument.Parse(File.ReadAllText(Path.Combine(projectDirectory, "Contracts", "mcp-tool-catalog.json")));
+        var registryNamespace = server.RootElement.GetProperty("name").GetString()!.Split('/')[0];
+
+        var cacheKey = catalog.RootElement.GetProperty("toolMetaKeys").GetProperty("cache").GetString();
+
+        cacheKey.ShouldBe($"{registryNamespace}/cache");
+        Regex.IsMatch(cacheKey!, MetaKeyPattern).ShouldBeTrue();
+        cacheKey!.Split('/')[0].Split('.')[1].ShouldNotBeOneOf("modelcontextprotocol", "mcp");
+    }
+
+    [Fact]
+    public void ToolCatalog_GivesEveryToolADistinctShortTitle()
+    {
+        using var catalog = JsonDocument.Parse(File.ReadAllText(Path.Combine(GetMcpProjectDir(), "Contracts", "mcp-tool-catalog.json")));
+        var titles = catalog.RootElement.GetProperty("tools").EnumerateArray().ToDictionary(
+            tool => tool.GetProperty("name").GetString()!,
+            tool => tool.GetProperty("title").GetString()!);
+
+        titles.Count.ShouldBe(27);
+        titles.Values.Distinct(StringComparer.OrdinalIgnoreCase).Count().ShouldBe(27);
+        titles.Values.ShouldAllBe(title => title.Length <= 40 && Regex.IsMatch(title, TitlePattern));
+        titles["calendar_resources.get"].ShouldBe("Get Calendar Resource");
+        titles["calendar_resources.exact_get"].ShouldBe("Exact Get Calendar Resource");
+        titles["calendar_resources.move"].ShouldBe("Move Calendar Resource");
+        titles["calendar_resources.exact_move"].ShouldBe("Exact Move Calendar Resource");
+        titles["calendar_occurrences.exclude"].ShouldBe("Exclude Occurrence");
+        titles["calendar_occurrences.restore_exclusion"].ShouldBe("Restore Excluded Occurrence");
+    }
+
+    [Fact]
+    public void ToolCatalog_ServerInstructionsRouteToExistingToolsWithinBudget()
+    {
+        using var catalog = JsonDocument.Parse(File.ReadAllText(Path.Combine(GetMcpProjectDir(), "Contracts", "mcp-tool-catalog.json")));
+        var toolNames = catalog.RootElement.GetProperty("tools").EnumerateArray()
+            .Select(tool => tool.GetProperty("name").GetString()!).ToHashSet(StringComparer.Ordinal);
+        var instructions = catalog.RootElement.GetProperty("serverInstructions").GetString()!;
+
+        System.Text.Encoding.UTF8.GetByteCount(instructions).ShouldBeLessThanOrEqualTo(1600);
+        Regex.Matches(instructions, @"\b(?:calendars|calendar_entities|calendar_occurrences|calendar_resources|events|todos)\.[a-z_]+\b")
+            .Select(match => match.Value).Where(name => !name.EndsWith('_'))
+            .ShouldAllBe(name => toolNames.Contains(name));
+        instructions.ShouldContain("calendar_resources.exact_*");
+        foreach (var name in new[] { "calendar_occurrences.query", "todos.query", "calendar_entities.query", "calendars.list" })
+            instructions.ShouldContain(name);
+        instructions.ShouldContain("10 minutes after the first page");
+        instructions.ShouldContain("cursor_expired");
+        instructions.ShouldContain("fresh strong revision");
+        instructions.ShouldContain("input_required");
+        instructions.ShouldContain("requestState");
+        instructions.ShouldContain("explicit absolute hrefs");
+        instructions.ShouldContain("complete caller-authored Calendar Object Resource");
+    }
+
+    private const string MetaKeyPattern =
+        @"^(?:[A-Za-z](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)*[A-Za-z](?:[A-Za-z0-9-]*[A-Za-z0-9])?/[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$";
+
+    private const string TitlePattern = @"^[A-Z][A-Za-z/-]*(?: [A-Z][A-Za-z/-]*)*$";
 }
 
 internal static class McpRegistrySchema

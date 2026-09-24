@@ -34,7 +34,11 @@ public sealed class CalDavHostBuilder
         // Leaving the revision unpinned lets the SDK negotiate every revision it implements: initialize
         // handshakes for 2024-11-05 through 2025-11-25 and server/discover with per-request metadata for
         // 2026-07-28. Confirmation support is then decided per revision by CalendarMrtrCapabilityGuard.
-        var mcpBuilder = builder.Services.AddMcpServer(options => options.ProtocolVersion = null)
+        var mcpBuilder = builder.Services.AddMcpServer(options =>
+            {
+                options.ProtocolVersion = null;
+                options.ServerInstructions = CalendarToolContract.ServerInstructions;
+            })
             .WithStdioServerTransport()
             .WithMessageFilters(filters => filters.AddIncomingFilter(StrictToolInputGuard.Incoming))
             .WithRequestFilters(filters => filters
@@ -123,11 +127,12 @@ public sealed class CalDavHostBuilder
     {
         if (!tools.TryGetPrimitive(toolName, out var tool))
             return;
+        tool.ProtocolTool.Title = CalendarToolContract.GetTitle(toolName);
         tool.ProtocolTool.InputSchema = CalendarToolContract.GetInputSchema(toolName);
         tool.ProtocolTool.OutputSchema = CalendarToolContract.GetOutputSchema(toolName);
         tool.ProtocolTool.Meta = new System.Text.Json.Nodes.JsonObject
         {
-            ["cache"] = CalendarToolContract.GetCacheMetadata(toolName)
+            [CalendarToolContract.CacheMetadataKey] = CalendarToolContract.GetCacheMetadata(toolName)
         };
     }
 }

@@ -5,7 +5,7 @@ using ModelContextProtocol.Protocol;
 
 namespace DotnetAgents.CalDav.Mcp.Hosting;
 
-/// <summary>Loads the live schemas and cache metadata for the Calendar tracer bullet.</summary>
+/// <summary>Loads the live schemas, titles, cache metadata, and server instructions for the Calendar tracer bullet.</summary>
 internal static class CalendarToolContract
 {
     private const string ResourceName = "DotnetAgents.CalDav.Mcp.CalendarToolCatalog.json";
@@ -25,6 +25,13 @@ internal static class CalendarToolContract
             TimeSpan.FromMilliseconds(cache["ttlMs"]!.GetValue<int>()),
             Enum.Parse<CacheScope>(cache["cacheScope"]!.GetValue<string>(), ignoreCase: true));
     }
+    /// <summary>Gets the prefixed per-tool <c>_meta</c> key that carries the catalog cache metadata.</summary>
+    public static string CacheMetadataKey { get; } = Catalog["toolMetaKeys"]!["cache"]!.GetValue<string>();
+
+    /// <summary>Gets the routing summary advertised as MCP server instructions.</summary>
+    public static string ServerInstructions { get; } = Catalog["serverInstructions"]!.GetValue<string>();
+
+    public static string GetTitle(string toolName) => FindTool(toolName)["title"]!.GetValue<string>();
 
     private static JsonElement GetSchema(string toolName, string schemaProperty)
     {

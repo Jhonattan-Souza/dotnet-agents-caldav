@@ -17,6 +17,8 @@ namespace DotnetAgents.CalDav.IntegrationTests;
 [Collection("RadicaleCollection")]
 public sealed class CalendarMcpStdioIntegrationTests
 {
+    private const string CacheMetadataKey = "io.github.jhonattan-souza/cache";
+
     private readonly RadicaleFixture _fixture;
 
     public CalendarMcpStdioIntegrationTests(RadicaleFixture fixture)
@@ -75,8 +77,11 @@ public sealed class CalendarMcpStdioIntegrationTests
         calendarTool.InputSchema.GetProperty("type").GetString().ShouldBe("object");
         calendarTool.InputSchema.GetProperty("additionalProperties").GetBoolean().ShouldBeFalse();
         calendarTool.OutputSchema!.Value.GetProperty("oneOf").GetArrayLength().ShouldBe(2);
-        calendarTool.Meta!["cache"]!["ttlMs"]!.GetValue<int>().ShouldBe(30000);
-        calendarTool.Meta!["cache"]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
+        calendarTool.Meta![CacheMetadataKey]!["ttlMs"]!.GetValue<int>().ShouldBe(30000);
+        calendarTool.Meta![CacheMetadataKey]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
+        calendarTool.Meta!.ContainsKey("cache").ShouldBeFalse();
+        calendarTool.Title.ShouldBe("List Calendars");
+        client.ServerInstructions.ShouldBe(DotnetAgents.CalDav.Mcp.Hosting.CalendarToolContract.ServerInstructions);
         calendarTool.OutputSchema!.Value.GetProperty("$defs").TryGetProperty("calendarSnapshot", out _).ShouldBeFalse();
         listedTools.TimeToLive.ShouldBe(TimeSpan.FromHours(1));
         listedTools.CacheScope.ShouldBe(CacheScope.Private);
@@ -473,8 +478,8 @@ public sealed class CalendarMcpStdioIntegrationTests
         advertised.InputSchema.GetProperty("oneOf")[0].GetProperty("required")
             .EnumerateArray().Select(item => item.GetString())
             .ShouldBe(["scope", "from", "to"]);
-        advertised.Meta!["cache"]!["ttlMs"]!.GetValue<int>().ShouldBe(5000);
-        advertised.Meta!["cache"]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
+        advertised.Meta![CacheMetadataKey]!["ttlMs"]!.GetValue<int>().ShouldBe(5000);
+        advertised.Meta![CacheMetadataKey]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
         stderr.ShouldBeEmpty();
     }
 
@@ -1588,8 +1593,9 @@ public sealed class CalendarMcpStdioIntegrationTests
             .ToArray().ShouldBe(observed.Utf8);
 
         await PutResourceAsync("exact-read-1.ics", content.Replace("Exact integration", "Changed revision", StringComparison.Ordinal));
-        await Should.ThrowAsync<ModelContextProtocol.McpException>(() =>
+        var changedRevision = await Should.ThrowAsync<ModelContextProtocol.McpProtocolException>(() =>
             client.ReadResourceAsync(link.Uri, cancellationToken: TestContext.Current.CancellationToken).AsTask());
+        changedRevision.ErrorCode.ShouldBe(ModelContextProtocol.McpErrorCode.InvalidParams);
         stderr.ShouldBeEmpty();
     }
 

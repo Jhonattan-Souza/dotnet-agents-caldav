@@ -33,7 +33,7 @@ public sealed class CalendarEntityTools
         OpenWorld = true,
         UseStructuredContent = true,
         OutputSchemaType = typeof(CalendarEntityQuerySuccessResult)),
-     Description("Start one Calendar Entity query or continue its immutable Query Result Snapshot. A bounded Start requires an explicit IANA Temporal Evaluation Context from evaluationTimeZone or validated CALDAV_EVALUATION_TIME_ZONE configuration; optional text and categories select matching Calendar Entity content before pagination. Continue repeats the frozen context and filters without CalDAV or semantic work.")]
+     Description("Start one Calendar Entity query or continue its immutable Query Result Snapshot. A bounded Start requires an explicit IANA Temporal Evaluation Context from evaluationTimeZone or validated CALDAV_EVALUATION_TIME_ZONE configuration; optional text and categories select matching Calendar Entity content before pagination. Continue repeats the frozen context and filters without CalDAV or semantic work. Continue sends only the opaque cursor copied unchanged from pagination.nextCursor, plus optional pageSize. The process-local snapshot expires 10 minutes after its first page and is never extended; on cursor_expired, begin a new Start.")]
     public Task<CallToolResult> QueryAsync(
         RequestContext<CallToolRequestParams> requestContext,
         CancellationToken cancellationToken) => QueryRawAsync(requestContext.Params?.Arguments, cancellationToken);

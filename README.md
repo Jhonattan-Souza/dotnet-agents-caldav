@@ -41,6 +41,8 @@ The NuGet package includes the harness-neutral Agent Skill at
 `skills/caldav-calendars/SKILL.md`. It teaches an agent to choose the semantic
 or exact tool that matches the request, avoid unnecessary discovery calls,
 bind updates to fresh revisions, and continue MCP confirmation exchanges.
+The server also returns a condensed routing summary as MCP server
+instructions for clients that do not load Agent Skills.
 
 A harness that discovers Agent Skills from installed packages can load that
 path directly. For a harness with a user-managed skill directory, extract or
@@ -98,7 +100,7 @@ client-specific commands.
 - `calendars.free_busy` — Read native server-computed busy intervals for one Calendar and a bounded UTC window without downloading Events.
 - `calendar_resources.changes` — Read an initial inventory or incremental href/ETag changes and removals from view, using session-bound synchronization checkpoints.
 
-The default semantic catalog contains these 23 tools in the order shown. The catalog is fixed for the process configuration, so `tools/list` advertises `ttlMs: 3600000` with `cacheScope: private`.
+The default semantic catalog contains these 23 tools in the order shown. Each tool also advertises a short human-readable `title` and a private cache hint (`ttlMs`, `cacheScope`) under the `io.github.jhonattan-souza/cache` `_meta` key. The catalog is fixed for the process configuration, so `tools/list` advertises `ttlMs: 3600000` with `cacheScope: private`.
 
 ### Exact Calendar resource tools
 
@@ -107,7 +109,7 @@ The default semantic catalog contains these 23 tools in the order shown. The cat
 - `calendar_resources.exact_replace` — Replace a strong-tagged resource with complete caller-authored Unicode text or canonical base64 bytes after MRTR confirmation.
 - `calendar_resources.exact_move` — Review and atomically move a strong-tagged complete resource to an explicit href with constant-work MRTR and authoritative-byte verification; requires the verified interoperability profile.
 
-The four exact tools are enabled with `CALDAV_EXPOSE_EXACT_TOOLS=true`; this flag controls the deterministic stdio catalog without contacting the server. The configured CalDAV credentials are the stdio authorization context, 401/403 responses become typed call failures, and exact writes require form elicitation support, confirmed as described in [Confirmed mutations](#confirmed-mutations). Exact Move uses headers-only GET absence probes, never scans destination members, never retries MOVE, and keeps its executable one-use plan inside Core.
+The four exact tools are enabled with `CALDAV_EXPOSE_EXACT_TOOLS=true`; this flag controls the deterministic stdio catalog without contacting the server. The configured CalDAV credentials are the stdio authorization context, 401/403 responses become typed call failures, and exact writes require form elicitation support, confirmed as described in [Confirmed mutations](#confirmed-mutations). Exact Move uses headers-only GET absence probes, never scans destination members, never retries MOVE, and keeps its executable one-use plan inside Core. `resources/list` is always empty; `resources/read` of a protected link whose href or revision is no longer available fails with JSON-RPC `-32602` (Invalid Params), and other read failures use `-32603`.
 
 ### Confirmed mutations
 

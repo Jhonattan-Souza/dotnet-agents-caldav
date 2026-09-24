@@ -31,7 +31,7 @@ public sealed class CalendarOccurrenceTools
         OpenWorld = true,
         UseStructuredContent = true,
         OutputSchemaType = typeof(CalendarOccurrenceQuerySuccessResult)),
-     Description("Start one bounded Occurrence query or continue its immutable Query Result Snapshot. Start evaluates recurrence once under an explicit IANA Temporal Evaluation Context from evaluationTimeZone or validated CALDAV_EVALUATION_TIME_ZONE configuration and can select Occurrences by the text and categories of their effective component; Continue accepts only cursor and optional pageSize and performs no CalDAV or semantic work.")]
+     Description("Start one bounded Occurrence query or continue its immutable Query Result Snapshot. Start evaluates recurrence once under an explicit IANA Temporal Evaluation Context from evaluationTimeZone or validated CALDAV_EVALUATION_TIME_ZONE configuration and can select Occurrences by the text and categories of their effective component; Continue accepts only cursor and optional pageSize and performs no CalDAV or semantic work. Copy the opaque cursor unchanged from pagination.nextCursor. The process-local snapshot expires 10 minutes after its first page and is never extended; on cursor_expired, begin a new Start.")]
     public Task<CallToolResult> QueryAsync(
         RequestContext<CallToolRequestParams> requestContext,
         CancellationToken cancellationToken) => QueryRawAsync(requestContext.Params?.Arguments, cancellationToken);
