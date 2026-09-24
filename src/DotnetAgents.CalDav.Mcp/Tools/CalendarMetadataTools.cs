@@ -13,7 +13,7 @@ public sealed class CalendarMetadataTools(ICalendarMetadataModule module)
 {
     [McpServerTool(Name = "calendars.inspect", ReadOnly = true, Destructive = false,
         Idempotent = true, OpenWorld = true, UseStructuredContent = true),
-     Description("Inspect one exact Calendar href for standard metadata, advertised reports, privileges, limits and scheduling evidence. Advertisement is evidence, not verified operation support or permission.")]
+     Description("Inspect one exact Calendar href for standard metadata, advertised reports, privileges, limits and scheduling evidence. Advertisement is evidence, not verified operation support or permission. An optional changeTag is opaque, advisory change evidence, never a revision or sync checkpoint.")]
     public Task<CallToolResult> InspectAsync(string calendarHref, CancellationToken cancellationToken) =>
         CalendarProtocolToolSupport.ExecuteReadAsync(async token =>
             await module.InspectAsync(calendarHref, token).ConfigureAwait(false), cancellationToken);

@@ -499,6 +499,9 @@ public sealed class ContractCatalogTests
         }
         foreach (var owner in new[] { "calendarInspectSuccess", "calendarMetadataSnapshot" })
             catalog["$defs"]![owner]!["properties"]!["properties"]!["maxItems"]!.GetValue<int>().ShouldBe(12);
+        foreach (var tool in new[] { "calendars.list", "calendars.inspect" })
+            FindTool(catalog, tool)["description"]!.GetValue<string>()
+                .ShouldEndWith("An optional changeTag is opaque, advisory change evidence, never a revision or sync checkpoint.");
     }
 
     [Fact]

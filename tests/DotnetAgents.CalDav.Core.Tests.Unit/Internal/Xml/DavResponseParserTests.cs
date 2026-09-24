@@ -214,7 +214,8 @@ public class DavResponseParserTests
             BuildResponseElement("/calendars/user/quoted/", resourceType, new XElement(CalServer + "getctag", "\n  \"3-145\"  \n")),
             BuildResponseElement("/calendars/user/uri/", resourceType, new XElement(CalServer + "getctag", "http://radicale.org/ns/sync/7")),
             BuildResponseElement("/calendars/user/missing/", resourceType),
-            BuildResponseElement("/calendars/user/empty/", resourceType, new XElement(CalServer + "getctag", " ")),
+            BuildResponseElement("/calendars/user/empty/", resourceType, new XElement(CalServer + "getctag", " \t\r\n")),
+            BuildResponseElement("/calendars/user/non-xml-space/", resourceType, new XElement(CalServer + "getctag", "\u00a0tag\u00a0")),
             BuildResponseElement("/calendars/user/structured/", resourceType,
                 new XElement(CalServer + "getctag", new XElement(Dav + "href", "/x"))),
             BuildResponseElement("/calendars/user/oversized/", resourceType, new XElement(CalServer + "getctag", new string('c', 1025))),
@@ -224,7 +225,7 @@ public class DavResponseParserTests
         var result = DavResponseParser.ParseCalendars(xml);
 
         result.Select(calendar => calendar.ChangeTag).ShouldBe(
-            ["\"3-145\"", "http://radicale.org/ns/sync/7", null, null, null, null, new string('c', 1024), null]);
+            ["\"3-145\"", "http://radicale.org/ns/sync/7", null, null, "\u00a0tag\u00a0", null, null, new string('c', 1024), null]);
         result[^1].UnavailableProperties.ShouldBe([new CalendarUnavailableProperty("http://calendarserver.org/ns/", "getctag", 404)]);
     }
 

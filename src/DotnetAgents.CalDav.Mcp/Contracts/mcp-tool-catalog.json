@@ -3018,7 +3018,7 @@
         "idempotentHint": true,
         "openWorldHint": true
       },
-      "description": "List every configured Calendar with independent Event and To-do capability evidence."
+      "description": "List every configured Calendar with independent Event and To-do capability evidence. An optional changeTag is opaque, advisory change evidence, never a revision or sync checkpoint."
     },
     {
       "name": "calendars.create",
@@ -3398,7 +3398,7 @@
         "idempotentHint": true,
         "openWorldHint": true
       },
-      "description": "Inspect one exact Calendar href for standard metadata, advertised reports, privileges, limits and scheduling evidence. Advertisement is evidence, not verified operation support or permission."
+      "description": "Inspect one exact Calendar href for standard metadata, advertised reports, privileges, limits and scheduling evidence. Advertisement is evidence, not verified operation support or permission. An optional changeTag is opaque, advisory change evidence, never a revision or sync checkpoint."
     },
     {
       "name": "calendars.patch",
