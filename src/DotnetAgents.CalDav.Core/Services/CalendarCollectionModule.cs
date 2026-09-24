@@ -385,6 +385,7 @@ internal sealed class CalendarCollectionModule(
     private static CalendarCollectionDeleteResult CanceledBeforeDispatch(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        // Defensive: reached only if a transport reports CanceledBeforeDispatch without a requested token.
         return new(CalendarCollectionDeleteCode.UpstreamUnavailable, CalendarMutationState.NotAttempted, Retryable: true);
     }
 
