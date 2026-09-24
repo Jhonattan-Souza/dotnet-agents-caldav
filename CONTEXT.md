@@ -96,6 +96,10 @@ _Avoid_: Success flag, HTTP status
 A committed Calendar Object Resource revision whose observed semantics differ from the mutation that produced it.
 _Avoid_: Rejected write, transport failure
 
+**Output Contract Violation**:
+A tool result that does not satisfy the output schema its tool advertises. A mutation reports it as an indeterminate post-write truth failure that keeps only its reported Mutation State; a read fails without a structured outcome.
+_Avoid_: Schema error, protocol error
+
 **Execution Budget**:
 The declared finite allowance for completing one operation across elapsed time, evaluated work, result count, and transferred data.
 _Avoid_: Timeout, page size, server capacity

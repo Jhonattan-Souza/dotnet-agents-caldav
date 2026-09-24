@@ -70,6 +70,45 @@ internal static class CalendarTelemetry
         ObserveMutationState(mutationState);
     }
 
+    /// <summary>
+    /// Records a result that violated its tool's advertised output schema. The output guard runs after
+    /// <c>caldav.operation</c> has ended, so the fact is its own span with only closed dimensions.
+    /// </summary>
+    internal static void ObserveOutputContractViolation(
+        string? toolName,
+        CalendarOutputContractViolation violation,
+        CalendarStructuredErrorFacts? replacementError = null,
+        CalendarMutationState? mutationState = null)
+    {
+        if (!Source.HasListeners())
+            return;
+
+        using var activity = Source.StartActivity("caldav.output_contract", ActivityKind.Internal);
+        if (activity is not { IsAllDataRequested: true })
+            return;
+
+        activity.SetTag("caldav.tool.name", NormalizeToolName(toolName));
+        activity.SetTag(
+            "caldav.output_contract.violation",
+            CalendarTelemetryVocabulary.OutputContractViolationName(violation));
+        activity.SetTag("caldav.outcome", "error");
+        if (mutationState is { } state)
+            activity.SetTag("caldav.mutation.state", CalendarTelemetryVocabulary.MutationStateName(state));
+        if (replacementError is { } error)
+        {
+            activity.SetTag("caldav.error.code", error.CodeName);
+            activity.SetTag("caldav.error.category", error.CategoryName);
+            activity.SetTag("caldav.error.phase", error.PhaseName);
+            activity.SetTag("caldav.error.retryable", error.Retryable);
+            activity.SetTag("error.type", $"caldav.{error.CodeName}");
+        }
+        else
+        {
+            activity.SetTag("error.type", "internal_error");
+        }
+        activity.SetStatus(ActivityStatusCode.Error);
+    }
+
     private static string EntityKindName(CalendarTelemetryEntityKind entityKind) => entityKind switch
     {
         CalendarTelemetryEntityKind.Event => "event",
@@ -93,6 +132,12 @@ internal enum CalendarTelemetryEntityKind
 {
     Event,
     Todo
+}
+
+internal enum CalendarOutputContractViolation
+{
+    MissingStructuredContent,
+    SchemaViolation
 }
 
 internal enum CalendarOperationOutcome
@@ -291,6 +336,17 @@ internal static class CalendarTelemetryVocabulary
     internal static string? SchedulingSideEffects(string? value) => value switch
     {
         "none" or "possible" => value,
+        _ => null
+    };
+
+    internal static string OutputContractViolationName(CalendarOutputContractViolation violation) =>
+        violation == CalendarOutputContractViolation.MissingStructuredContent
+            ? "missing_structured_content"
+            : "schema_violation";
+
+    internal static string? OutputContractViolation(string? value) => value switch
+    {
+        "missing_structured_content" or "schema_violation" => value,
         _ => null
     };
 

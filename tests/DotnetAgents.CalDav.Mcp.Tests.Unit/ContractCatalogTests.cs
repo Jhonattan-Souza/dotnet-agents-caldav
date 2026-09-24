@@ -112,6 +112,36 @@ public sealed class ContractCatalogTests
     }
 
     [Fact]
+    public void Output_contract_violation_declaration_matches_every_mutation_replacement()
+    {
+        var catalog = ReadJson("mcp-tool-catalog.json");
+        var declaration = catalog["outcomeContract"]!["outputContractViolation"]!;
+        var mutation = declaration["mutation"]!;
+        declaration["read"]!.GetValue<string>().ShouldBe("unstructured_tool_error");
+        mutation["mutationState"]!.GetValue<string>().ShouldBe("reported_or_unknown");
+
+        foreach (var tool in catalog["tools"]!.AsArray())
+        {
+            var name = tool!["name"]!.GetValue<string>();
+            var readOnly = tool["annotations"]!["readOnlyHint"]!.GetValue<bool>();
+            CalendarExecutionPolicy.IsMutation(name).ShouldBe(!readOnly, name);
+            if (readOnly)
+                continue;
+            foreach (var state in Enum.GetValues<CalendarMutationState>())
+            {
+                var replacement = CalendarOutputSchemaGuard.CreateMutationViolationResult(state);
+                var structured = replacement.StructuredContent!.Value;
+                replacement.IsError.ShouldBe(mutation["isError"]!.GetValue<bool>());
+                structured.GetProperty("code").GetString().ShouldBe(mutation["code"]!.GetValue<string>());
+                structured.GetProperty("category").GetString().ShouldBe(mutation["category"]!.GetValue<string>());
+                structured.GetProperty("phase").GetString().ShouldBe(mutation["phase"]!.GetValue<string>());
+                structured.GetProperty("retryable").GetBoolean().ShouldBe(mutation["retryable"]!.GetValue<bool>());
+                Should.NotThrow(() => CalendarOutputSchemaGuard.Validate(name, replacement), name);
+            }
+        }
+    }
+
+    [Fact]
     public void Mcp_catalog_freezes_the_semantic_and_exact_tool_contract()
     {
         var catalog = ReadJson("mcp-tool-catalog.json");

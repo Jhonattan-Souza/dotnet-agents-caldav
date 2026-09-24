@@ -21,6 +21,7 @@ internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activi
         "caldav.move.dispatch",
         "caldav.move.collision",
         "caldav.move.reconciliation",
+        "caldav.output_contract.violation",
         "caldav.http.request_purpose",
         "caldav.http.observation",
         "caldav.transport.recovered",
@@ -187,6 +188,8 @@ internal sealed class TelemetryActivityAllowlistProcessor : BaseProcessor<Activi
             activity.GetTagItem("caldav.move.collision") as string));
         activity.SetTag("caldav.move.reconciliation", CalendarTelemetryVocabulary.MoveReconciliation(
             activity.GetTagItem("caldav.move.reconciliation") as string));
+        activity.SetTag("caldav.output_contract.violation", CalendarTelemetryVocabulary.OutputContractViolation(
+            activity.GetTagItem("caldav.output_contract.violation") as string));
         activity.SetTag("caldav.transport.retry_count", NonNegativeCounter(
             activity.GetTagItem("caldav.transport.retry_count")));
         activity.SetTag("caldav.transport.recovered", BooleanTag(
