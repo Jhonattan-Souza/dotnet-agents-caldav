@@ -235,9 +235,14 @@ internal sealed class CalendarCollectionTools
         }
         catch (OperationCanceledException) when (deadline.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
+            // The module reports cancellation during or after DELETE dispatch as a result, so a
+            // cancellation that escapes it always happened before any DELETE was sent.
             return Error(new(CalendarTelemetryErrorCode.LimitExhausted,
                 CalendarTelemetryErrorCategory.LimitsAndAdmission, CalendarTelemetryErrorPhase.Execution, false),
-                "The Calendar mutation exhausted its elapsed_time execution budget.", CalendarMutationState.Unknown);
+                "The Calendar collection deletion exhausted its elapsed_time execution budget before any DELETE was sent, "
+                + "so nothing was deleted. A large Calendar on a server that does not prove automatic scheduling absent "
+                + "may not finish its member scan within that budget.",
+                CalendarMutationState.NotAttempted);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -430,6 +435,7 @@ internal sealed class CalendarCollectionTools
         CalendarCollectionDeleteCode.Conflict => "The Calendar collection changed before confirmation.",
         CalendarCollectionDeleteCode.ConfirmationMismatch => "The mutation confirmation does not match the reviewed collection.",
         CalendarCollectionDeleteCode.UnsupportedCapability => "The CalDAV server does not support Calendar collection deletion.",
+        CalendarCollectionDeleteCode.SchedulingUnsafe => "The Calendar collection was not deleted: the server did not prove that it performs no automatic scheduling, and a member contains organizer or attendee data or the bounded member scan could not complete.",
         CalendarCollectionDeleteCode.PayloadTooLarge => "The Calendar collection response exceeds the safe payload limit.",
         CalendarCollectionDeleteCode.UpstreamUnauthorized => "The Calendar collection operation was not authorized.",
         CalendarCollectionDeleteCode.UpstreamForbidden => "The Calendar collection operation was forbidden.",

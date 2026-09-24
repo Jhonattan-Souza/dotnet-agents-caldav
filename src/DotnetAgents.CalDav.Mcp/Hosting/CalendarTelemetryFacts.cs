@@ -159,7 +159,8 @@ internal static class CalendarTelemetryFacts
             CalendarCollectionDeleteCode.OutsideScope => CalendarTelemetryErrorCode.OutsideScope,
             CalendarCollectionDeleteCode.Conflict => CalendarTelemetryErrorCode.Conflict,
             CalendarCollectionDeleteCode.ConfirmationMismatch => CalendarTelemetryErrorCode.ConfirmationMismatch,
-            CalendarCollectionDeleteCode.UnsupportedCapability => CalendarTelemetryErrorCode.UnsupportedCapability,
+            CalendarCollectionDeleteCode.UnsupportedCapability or CalendarCollectionDeleteCode.SchedulingUnsafe =>
+                CalendarTelemetryErrorCode.UnsupportedCapability,
             CalendarCollectionDeleteCode.PayloadTooLarge => CalendarTelemetryErrorCode.PayloadTooLarge,
             CalendarCollectionDeleteCode.UpstreamUnauthorized => CalendarTelemetryErrorCode.UpstreamUnauthorized,
             CalendarCollectionDeleteCode.UpstreamForbidden => CalendarTelemetryErrorCode.UpstreamForbidden,
@@ -180,7 +181,7 @@ internal static class CalendarTelemetryFacts
                 CalendarTelemetryErrorCategory.Selection,
             CalendarCollectionDeleteCode.Conflict => CalendarTelemetryErrorCategory.State,
             CalendarCollectionDeleteCode.ConfirmationMismatch => CalendarTelemetryErrorCategory.Confirmation,
-            CalendarCollectionDeleteCode.UnsupportedCapability =>
+            CalendarCollectionDeleteCode.UnsupportedCapability or CalendarCollectionDeleteCode.SchedulingUnsafe =>
                 CalendarTelemetryErrorCategory.CapabilityAndProjection,
             CalendarCollectionDeleteCode.PayloadTooLarge => CalendarTelemetryErrorCategory.LimitsAndAdmission,
             CalendarCollectionDeleteCode.CommittedButUnverified or CalendarCollectionDeleteCode.Indeterminate

@@ -204,7 +204,7 @@ internal sealed class CalendarCollectionModule(
         }
         if (dispatch.Code is not CalendarCollectionDispatchCode.Dispatched
             and not CalendarCollectionDispatchCode.PossiblyDispatched)
-            return MapDeleteDispatch(dispatch);
+            return MapDeleteDispatch(dispatch, cancellationToken);
 
         CalendarOperationProgress.SetPhase(CalendarOperationPhase.Reconcile);
         CalendarCollectionDiscoverySnapshot after;
@@ -362,9 +362,12 @@ internal sealed class CalendarCollectionModule(
         _ => new(CalendarCollectionCreateCode.UpstreamProtocolError, CalendarMutationState.Unknown)
     };
 
-    private static CalendarCollectionDeleteResult MapDeleteDispatch(CalendarCollectionDispatchResult result) => result.Code switch
+    private static CalendarCollectionDeleteResult MapDeleteDispatch(
+        CalendarCollectionDispatchResult result,
+        CancellationToken cancellationToken) => result.Code switch
     {
-        CalendarCollectionDispatchCode.SchedulingUnsafe => new(CalendarCollectionDeleteCode.UnsupportedCapability, CalendarMutationState.NotAttempted),
+        CalendarCollectionDispatchCode.SchedulingUnsafe => new(CalendarCollectionDeleteCode.SchedulingUnsafe, CalendarMutationState.NotAttempted),
+        CalendarCollectionDispatchCode.CanceledBeforeDispatch => CanceledBeforeDispatch(cancellationToken),
         CalendarCollectionDispatchCode.Conflict => RejectedDelete(CalendarCollectionDeleteCode.Conflict),
         CalendarCollectionDispatchCode.UnsupportedCapability => RejectedDelete(CalendarCollectionDeleteCode.UnsupportedCapability),
         CalendarCollectionDispatchCode.PayloadTooLarge => RejectedDelete(CalendarCollectionDeleteCode.PayloadTooLarge),
@@ -376,6 +379,14 @@ internal sealed class CalendarCollectionModule(
         CalendarCollectionDispatchCode.ProtocolError => RejectedDelete(CalendarCollectionDeleteCode.UpstreamProtocolError),
         _ => new(CalendarCollectionDeleteCode.UpstreamProtocolError, CalendarMutationState.Unknown)
     };
+
+    // No DELETE was sent. Rethrowing the cancellation lets the caller's own deadline or
+    // cancellation handling report it, instead of the ambiguous-dispatch outcome.
+    private static CalendarCollectionDeleteResult CanceledBeforeDispatch(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return new(CalendarCollectionDeleteCode.UpstreamUnavailable, CalendarMutationState.NotAttempted, Retryable: true);
+    }
 
     private static CalendarCollectionDeleteResult FailureDelete(CalendarCollectionDeleteCode code) =>
         new(code, CalendarMutationState.NotAttempted);

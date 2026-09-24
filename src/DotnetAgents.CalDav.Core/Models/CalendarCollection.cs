@@ -60,6 +60,11 @@ public enum CalendarCollectionDeleteCode
     OutsideScope,
     Conflict,
     UnsupportedCapability,
+    /// <summary>
+    /// Not attempted: automatic scheduling was not proven absent, and a member carries
+    /// participation data or the bounded member scan could not complete.
+    /// </summary>
+    SchedulingUnsafe,
     PayloadTooLarge,
     UpstreamUnauthorized,
     UpstreamForbidden,

@@ -236,8 +236,12 @@ The DELETE proceeds only when no member contains an `ORGANIZER` or `ATTENDEE`
 property, including one inside an alarm. A nested collection, a missing or weak
 ETag, a redirect, more than 5,000 members or 32 MiB of data, a transport or
 parse failure, or a change between listings returns `unsupported_capability`
-before the DELETE. The second listing narrows, but cannot remove, the window
-for a member written concurrently before the recursive DELETE.
+with `not_attempted` and a message naming the scheduling boundary. If the
+30-second operation budget runs out before the DELETE is sent, for example
+while scanning a large Calendar, the result is `limit_exhausted` with
+`not_attempted` and is not retryable. The second listing narrows, but cannot
+remove, the window for a member written concurrently before the recursive
+DELETE.
 
 Discovery follows all advertised Calendar homes and nested ordinary
 collections, stopping at Calendar collections. It fails without partial results

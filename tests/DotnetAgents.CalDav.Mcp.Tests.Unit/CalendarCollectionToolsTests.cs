@@ -350,6 +350,89 @@ public sealed class CalendarCollectionToolsTests
     }
 
     [Fact]
+    public async Task DeleteRawAsync_SchedulingBlockedDeleteExplainsTheScanWithoutClaimingNoDeleteSupport()
+    {
+        const string href = "https://cal.example/calendars/user/tasks/";
+        var module = Substitute.For<ICalendarCollectionModule>();
+        module.ReviewDeleteAsync(Arg.Any<CalendarCollectionDeleteRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CalendarCollectionDeleteReviewResult(null, new(href, "digest"), Descriptor(href)));
+        module.ExecuteConfirmedDeleteAsync(
+                Arg.Any<CalendarCollectionDeleteRequest>(),
+                Arg.Any<CalendarCollectionDeleteReviewBinding>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new CalendarCollectionDeleteResult(
+                CalendarCollectionDeleteCode.SchedulingUnsafe,
+                CalendarMutationState.NotAttempted));
+        var sut = CreateTool(module, new FixedTimeProvider(DateTimeOffset.Parse("2026-08-16T12:00:00Z")));
+
+        var result = await ConfirmDeleteAsync(sut, href, CancellationToken.None);
+
+        var structured = result.StructuredContent!.Value;
+        structured.GetProperty("code").GetString().ShouldBe("unsupported_capability");
+        structured.GetProperty("mutationState").GetString().ShouldBe("not_attempted");
+        var message = structured.GetProperty("message").GetString()!;
+        message.ShouldContain("organizer or attendee data");
+        message.ShouldContain("member scan could not complete");
+        message.ShouldNotContain("does not support");
+    }
+
+    [Fact]
+    public async Task DeleteRawAsync_DeadlineBeforeDispatchReportsNotAttempted()
+    {
+        const string href = "https://cal.example/calendars/user/tasks/";
+        var module = Substitute.For<ICalendarCollectionModule>();
+        module.ReviewDeleteAsync(Arg.Any<CalendarCollectionDeleteRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CalendarCollectionDeleteReviewResult(null, new(href, "digest"), Descriptor(href)));
+        module.ExecuteConfirmedDeleteAsync(
+                Arg.Any<CalendarCollectionDeleteRequest>(),
+                Arg.Any<CalendarCollectionDeleteReviewBinding>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                // Stands in for a member scan that is still running when the deadline fires.
+                var token = call.ArgAt<CancellationToken>(2);
+                var scan = new TaskCompletionSource<CalendarCollectionDeleteResult>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                _ = token.Register(() => scan.TrySetCanceled(token));
+                return scan.Task;
+            });
+        var sut = CreateTool(module, new ExpiredDeadlineTimeProvider(DateTimeOffset.Parse("2026-08-16T12:00:00Z")));
+
+        var result = await ConfirmDeleteAsync(sut, href, CancellationToken.None);
+
+        var structured = result.StructuredContent!.Value;
+        structured.GetProperty("code").GetString().ShouldBe("limit_exhausted");
+        structured.GetProperty("mutationState").GetString().ShouldBe("not_attempted");
+        structured.GetProperty("retryable").GetBoolean().ShouldBeFalse();
+        structured.GetProperty("message").GetString()!.ShouldContain("before any DELETE was sent");
+    }
+
+    private static async Task<CallToolResult> ConfirmDeleteAsync(
+        CalendarCollectionTools sut,
+        string href,
+        CancellationToken cancellationToken)
+    {
+        var first = await Should.ThrowAsync<InputRequiredException>(() => sut.DeleteRawAsync(
+            DeleteArguments(href), null, null, true, cancellationToken));
+        return await sut.DeleteRawAsync(
+            DeleteArguments(href),
+            first.Result.RequestState,
+            new Dictionary<string, InputResponse>
+            {
+                ["confirm_delete"] = InputResponse.FromElicitResult(new ElicitResult
+                {
+                    Action = "accept",
+                    Content = new Dictionary<string, JsonElement>
+                    {
+                        ["confirm"] = JsonSerializer.SerializeToElement(true)
+                    }
+                })
+            },
+            true,
+            cancellationToken);
+    }
+
+    [Fact]
     public async Task DeleteRawAsync_ContinuationShapeChecksReturnConfirmationMismatch()
     {
         const string href = "https://cal.example/calendars/user/tasks/";
@@ -674,6 +757,7 @@ public sealed class CalendarCollectionToolsTests
             [CalendarCollectionDeleteCode.OutsideScope] = "outside_scope",
             [CalendarCollectionDeleteCode.Conflict] = "conflict",
             [CalendarCollectionDeleteCode.UnsupportedCapability] = "unsupported_capability",
+            [CalendarCollectionDeleteCode.SchedulingUnsafe] = "unsupported_capability",
             [CalendarCollectionDeleteCode.PayloadTooLarge] = "payload_too_large",
             [CalendarCollectionDeleteCode.UpstreamUnauthorized] = "upstream_unauthorized",
             [CalendarCollectionDeleteCode.UpstreamForbidden] = "upstream_forbidden",
@@ -883,6 +967,15 @@ public sealed class CalendarCollectionToolsTests
         EventSupport = eventKind ? EntityKindSupport.Advertised : EntityKindSupport.NotAdvertised,
         TodoSupport = todo ? EntityKindSupport.Advertised : EntityKindSupport.NotAdvertised
     };
+
+    /// <summary>Fixed clock whose timers fire at once, so the operation deadline has already expired.</summary>
+    private sealed class ExpiredDeadlineTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period) =>
+            System.CreateTimer(callback, state, TimeSpan.Zero, Timeout.InfiniteTimeSpan);
+    }
 
     private sealed class AdvancingTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {

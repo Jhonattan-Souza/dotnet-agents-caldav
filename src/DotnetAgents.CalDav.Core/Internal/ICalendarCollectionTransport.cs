@@ -38,6 +38,7 @@ internal enum CalendarCollectionDispatchCode
     Dispatched,
     PossiblyDispatched,
     SchedulingUnsafe,
+    CanceledBeforeDispatch,
     NotFound,
     Conflict,
     UnsupportedCapability,
