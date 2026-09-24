@@ -671,7 +671,7 @@ public sealed class CalendarTelemetryTests
     {
         foreach (var value in new[]
                  {
-                     "timeout", "connection_error", "response_ended", "protocol_error",
+                     "timeout", "connection_error", "authentication_error", "response_ended", "protocol_error",
                      "internal_error", "caldav.invalid_input", "503"
                  })
         {

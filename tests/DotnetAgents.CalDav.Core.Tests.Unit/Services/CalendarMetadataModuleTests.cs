@@ -397,6 +397,29 @@ public sealed partial class CalendarMetadataModuleTests
     }
 
     [Theory]
+    [InlineData(true, "upstream_unauthorized", false)]
+    [InlineData(false, "upstream_unavailable", true)]
+    public async Task Patch_without_an_obtainable_credential_is_not_attempted_and_does_not_reconcile(
+        bool rejected,
+        string expectedCode,
+        bool expectedRetryable)
+    {
+        using var fixture = new Fixture();
+        fixture.Enqueue(207, Metadata("Old", "Old").ToString());
+        fixture.EnqueueFailure(new CalDavAuthenticationException(
+            rejected ? CalDavAuthenticationFailure.Rejected : CalDavAuthenticationFailure.Unavailable,
+            "private token failure"));
+
+        var result = await fixture.Module.PatchAsync(Href, BothPatch(), CancellationToken.None);
+
+        result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        result.Error!.Code.ShouldBe(expectedCode);
+        result.Error.Retryable.ShouldBe(expectedRetryable);
+        result.Error.Message.ShouldNotContain("private");
+        fixture.Methods.ShouldBe(["PROPFIND", "PROPPATCH"]);
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task Patch_cancellation_after_dispatch_preserves_unknown_or_acknowledged_commit(bool acknowledged)

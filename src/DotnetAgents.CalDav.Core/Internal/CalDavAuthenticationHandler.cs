@@ -58,6 +58,9 @@ internal sealed class StaticCalDavCredentialSource(CalDavCredential credential) 
 /// CalDAV origin. Redirects are followed manually above this handler with same-origin validation;
 /// this check keeps credentials off any other origin even if a caller bypasses that validation.
 /// A renewable credential rejected with 401 is renewed and the request resent exactly once.
+/// <see cref="CalDavAuthenticationException"/> therefore escapes only before a request is sent:
+/// when renewal after a 401 fails, the 401 itself is the outcome, because it proves the server
+/// did not apply the request (RFC 9110 section 15.5.2).
 /// </summary>
 internal sealed class CalDavAuthenticationHandler(
     CalDavCredentialSource credentials,
@@ -83,6 +86,10 @@ internal sealed class CalDavAuthenticationHandler(
         try
         {
             renewed = await credentials.RenewAsync(credential, cancellationToken).ConfigureAwait(false);
+        }
+        catch (CalDavAuthenticationException)
+        {
+            return response;
         }
         catch
         {

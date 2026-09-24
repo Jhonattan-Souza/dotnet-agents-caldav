@@ -31,6 +31,14 @@ internal sealed class CalendarResourceCreateProtocol(HttpClient httpClient, CalD
         {
             return await SendAsync(calendarUri, resourceUri, request.AuthoritativeUtf8, cancellationToken);
         }
+        catch (CalDavAuthenticationException exception)
+        {
+            return new CalendarResourceCreateResult(
+                CalendarMutationProtocolPrimitives.IsCredentialRejection(exception)
+                    ? CalendarResourceCreateCode.UpstreamUnauthorized
+                    : CalendarResourceCreateCode.UpstreamUnavailable,
+                resourceUri.AbsoluteUri);
+        }
         catch (Exception exception) when (CalendarTransportFailure.IsRejectedBeforeSend(exception))
         {
             return new CalendarResourceCreateResult(
