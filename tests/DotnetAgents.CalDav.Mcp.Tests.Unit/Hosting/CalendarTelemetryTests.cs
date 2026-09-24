@@ -937,6 +937,9 @@ public sealed class CalendarTelemetryTests
                 HttpRequestError.ResponseEnded,
                 "secret partial body"), "response_ended"),
             (new HttpRequestException("secret endpoint"), "connection_error"),
+            (new DotnetAgents.CalDav.Core.Internal.CalDavAuthenticationException(
+                DotnetAgents.CalDav.Core.Internal.CalDavAuthenticationFailure.Rejected,
+                "secret token failure"), "authentication_error"),
             (new IOException("secret stream"), "connection_error"),
             (new CalendarDiscoveryProtocolException("secret response"), "protocol_error"),
             (new InvalidOperationException("secret message"), "internal_error")

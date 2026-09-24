@@ -21,9 +21,10 @@ internal static class CalendarMutationProtocolPrimitives
     }
 
     /// <summary>
-    /// A <see cref="CalDavAuthenticationException"/> is raised only before a request is sent, so a
-    /// mutation that meets one was never dispatched. A rejected grant maps to the unauthorized
-    /// outcome; any other token failure to the unavailable outcome.
+    /// A <see cref="CalDavAuthenticationException"/> is raised only before the attempt that would
+    /// apply the request is sent (an earlier 307/308 hop applies nothing), so a mutation that meets
+    /// one was never dispatched. A rejected grant maps to the unauthorized outcome; any other token
+    /// failure to the unavailable outcome.
     /// </summary>
     internal static bool IsCredentialRejection(CalDavAuthenticationException exception) =>
         exception.Failure == CalDavAuthenticationFailure.Rejected;

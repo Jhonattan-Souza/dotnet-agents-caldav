@@ -123,7 +123,12 @@ internal sealed class CalDavOAuthCredentialSource : CalDavCredentialSource
         {
             _lastFailure = exception;
             if (exception.Failure == CalDavAuthenticationFailure.Rejected)
+            {
+                // Drop the cached token too: it was either rejected by the CalDAV server or is
+                // stale, so during the backoff GetAsync fails fast instead of a doomed round trip.
+                Volatile.Write(ref _current, null);
                 _rejectedUntil = now + RejectionBackoff;
+            }
             throw;
         }
         finally

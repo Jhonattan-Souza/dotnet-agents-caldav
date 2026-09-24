@@ -502,6 +502,7 @@ internal sealed class CalendarTelemetryOperation : IDisposable
     private static string ClassifyException(Exception exception) => exception switch
     {
         TimeoutException or TaskCanceledException => "timeout",
+        _ when CalDavCredentialFailure.IsCredentialFailure(exception) => "authentication_error",
         HttpRequestException { HttpRequestError: HttpRequestError.ResponseEnded } => "response_ended",
         HttpRequestException or IOException => "connection_error",
         CalendarDiscoveryProtocolException => "protocol_error",
