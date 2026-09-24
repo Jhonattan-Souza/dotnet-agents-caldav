@@ -74,6 +74,8 @@ public static class CalDavServiceCollectionExtensions
             client.DefaultRequestHeaders.Authorization =
                 new AuthenticationHeaderValue("Basic", credentials);
         })
+        // The primary handler is not a SocketsHttpHandler, so the Microsoft.Extensions.Http metrics filter
+        // does not assign the DI IMeterFactory to the inner handlers; their System.Net.Http metrics use the default Meter.
         .ConfigurePrimaryHttpMessageHandler(() => new CalendarConnectionPersistenceHandler(
             CreateSocketsHandler(pooledConnectionLifetime: TimeSpan.FromMinutes(2)),
             CreateSocketsHandler(pooledConnectionLifetime: TimeSpan.Zero)));

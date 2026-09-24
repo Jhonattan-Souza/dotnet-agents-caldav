@@ -11,7 +11,7 @@ namespace DotnetAgents.CalDav.Core.Tests.Unit.Internal;
 public sealed class CalendarConnectionPersistenceHandlerTests
 {
     [Fact]
-    public async Task Pooled_sockets_handler_loses_a_put_sent_on_a_connection_an_http10_response_ended()
+    public async Task PooledSocketsHandler_LosesPutSentOnConnectionEndedByHttp10Response()
     {
         await using var server = LoopbackOrigin.Start(LoopbackResponseMode.Http10);
         using var client = new HttpMessageInvoker(CreateSocketsHandler(TimeSpan.FromMinutes(2)));
@@ -26,7 +26,7 @@ public sealed class CalendarConnectionPersistenceHandlerTests
     }
 
     [Fact]
-    public async Task Http10_origin_receives_every_request_on_its_own_connection()
+    public async Task SendAsync_GivesEveryHttp10OriginRequestItsOwnConnection()
     {
         await using var server = LoopbackOrigin.Start(LoopbackResponseMode.Http10);
         using var client = new HttpMessageInvoker(CreateHandler());
@@ -44,7 +44,7 @@ public sealed class CalendarConnectionPersistenceHandlerTests
     [Theory]
     [InlineData(LoopbackResponseMode.Http11)]
     [InlineData(LoopbackResponseMode.Http10KeepAlive)]
-    public async Task Persistent_origin_reuses_one_pooled_connection_after_its_first_response(LoopbackResponseMode mode)
+    public async Task SendAsync_ReusesOnePooledConnectionForPersistentOriginAfterFirstResponse(LoopbackResponseMode mode)
     {
         await using var server = LoopbackOrigin.Start(mode);
         using var client = new HttpMessageInvoker(CreateHandler());
@@ -60,7 +60,7 @@ public sealed class CalendarConnectionPersistenceHandlerTests
     }
 
     [Fact]
-    public async Task Disposing_the_handler_disposes_both_connection_handlers()
+    public async Task Dispose_DisposesBothConnectionHandlers()
     {
         var handler = CreateHandler();
 
