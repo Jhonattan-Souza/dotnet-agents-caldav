@@ -308,6 +308,118 @@ public sealed class CalendarTelemetryTests
     }
 
     [Fact]
+    public void OutputContractViolation_MutationSpanExportsReplacementOutcomeAndClosedViolation()
+    {
+        var stopped = new List<Activity>();
+        using var listener = ListenTo(CalendarTelemetry.InstrumentationName);
+        listener.ActivityStopped = stopped.Add;
+
+        Should.NotThrow(() => CalendarOutputSchemaGuard.Enforce(
+            "events.patch",
+            new CallToolResult
+            {
+                StructuredContent = JsonSerializer.SerializeToElement(new
+                {
+                    outcome = "success",
+                    mutationState = "committed",
+                    snapshot = "private-invalid-snapshot"
+                }),
+                Content = []
+            }));
+
+        var violation = stopped.Single(activity => activity.OperationName == "caldav.output_contract");
+        new TelemetryActivityAllowlistProcessor().OnEnd(violation);
+        violation.DisplayName.ShouldBe("caldav.output_contract");
+        violation.GetTagItem("caldav.tool.name").ShouldBe("events.patch");
+        violation.GetTagItem("caldav.output_contract.violation").ShouldBe("schema_violation");
+        violation.GetTagItem("caldav.outcome").ShouldBe("error");
+        violation.GetTagItem("caldav.mutation.state").ShouldBe("committed");
+        violation.GetTagItem("caldav.error.code").ShouldBe("indeterminate");
+        violation.GetTagItem("caldav.error.category").ShouldBe("postWriteTruth");
+        violation.GetTagItem("caldav.error.phase").ShouldBe("postWriteVerificationOrReconciliation");
+        violation.GetTagItem("caldav.error.retryable").ShouldBe(false);
+        violation.GetTagItem("error.type").ShouldBe("caldav.indeterminate");
+        violation.Status.ShouldBe(ActivityStatusCode.Error);
+        violation.Tags.ShouldNotContain(tag => tag.Value != null && tag.Value.Contains("private"));
+    }
+
+    [Fact]
+    public void OutputContractViolation_ReadSpanRecordsOnlyTheClosedViolation()
+    {
+        var stopped = new List<Activity>();
+        using var listener = ListenTo(CalendarTelemetry.InstrumentationName);
+        listener.ActivityStopped = stopped.Add;
+
+        Should.Throw<InvalidOperationException>(() => CalendarOutputSchemaGuard.Enforce(
+            "calendars.list",
+            new CallToolResult { Content = [] }));
+
+        var violation = stopped.Single(activity => activity.OperationName == "caldav.output_contract");
+        new TelemetryActivityAllowlistProcessor().OnEnd(violation);
+        violation.GetTagItem("caldav.tool.name").ShouldBe("calendars.list");
+        violation.GetTagItem("caldav.output_contract.violation").ShouldBe("missing_structured_content");
+        violation.GetTagItem("caldav.outcome").ShouldBe("error");
+        violation.GetTagItem("caldav.mutation.state").ShouldBeNull();
+        violation.GetTagItem("caldav.error.code").ShouldBeNull();
+        violation.GetTagItem("error.type").ShouldBe("internal_error");
+        violation.Status.ShouldBe(ActivityStatusCode.Error);
+    }
+
+    [Theory]
+    [InlineData(ActivitySamplingResult.None)]
+    [InlineData(ActivitySamplingResult.PropagationData)]
+    public void OutputContractViolation_WithoutRecordedDataAttachesNoDimensions(ActivitySamplingResult sampling)
+    {
+        var stopped = new List<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == CalendarTelemetry.InstrumentationName,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => sampling,
+            ActivityStopped = stopped.Add
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        CalendarTelemetry.ObserveOutputContractViolation(
+            "calendars.list",
+            CalendarOutputContractViolation.SchemaViolation);
+
+        stopped.ShouldAllBe(activity => !activity.TagObjects.Any());
+    }
+
+    [Fact]
+    public void OutputContractViolation_WithoutListenersIsANoOp()
+    {
+        Should.NotThrow(() => CalendarTelemetry.ObserveOutputContractViolation(
+            "calendars.list",
+            CalendarOutputContractViolation.MissingStructuredContent));
+    }
+
+    [Fact]
+    public void ExportAllowlist_KeepsOnlyClosedOutputContractViolations()
+    {
+        using var listener = ListenTo(CalendarTelemetry.InstrumentationName);
+        using var source = new ActivitySource(CalendarTelemetry.InstrumentationName);
+        var processor = new TelemetryActivityAllowlistProcessor();
+
+        foreach (var (value, expected) in new[]
+        {
+            ("missing_structured_content", "missing_structured_content"),
+            ("schema_violation", "schema_violation"),
+            ("private_violation_detail", null)
+        })
+        {
+            using var activity = source.StartActivity("caldav.output_contract");
+            activity.ShouldNotBeNull();
+            activity.SetTag("caldav.output_contract.violation", value);
+            activity.Stop();
+
+            processor.OnEnd(activity);
+
+            activity.GetTagItem("caldav.output_contract.violation").ShouldBe(expected);
+        }
+    }
+
+    [Fact]
     public void StartOperation_WithoutListeners_ReturnsNull()
     {
         CalendarTelemetry.StartOperation(

@@ -46,7 +46,18 @@
     "nonMutatingSuccesses": [
       "no_change",
       "confirmation_declined"
-    ]
+    ],
+    "outputContractViolation": {
+      "mutation": {
+        "isError": true,
+        "code": "indeterminate",
+        "category": "postWriteTruth",
+        "phase": "postWriteVerificationOrReconciliation",
+        "retryable": false,
+        "mutationState": "reported_or_unknown"
+      },
+      "read": "unstructured_tool_error"
+    }
   },
   "mrtrWireContract": {
     "toolsCallParams": {

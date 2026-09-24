@@ -254,6 +254,81 @@ public sealed class CalendarOutputSchemaGuardTests
         StructuredContent = JsonSerializer.SerializeToElement(error),
         Content = []
     };
+    [Fact]
+    public void Enforce_ReturnsSchemaValidOutputUnchanged()
+    {
+        var result = Result("""
+            {"outcome":"success","items":[],"diagnostics":[],"pagination":{"mode":"non_snapshot","nextCursor":null}}
+            """);
+
+        CalendarOutputSchemaGuard.Enforce("calendars.list", result).ShouldBeSameAs(result);
+    }
+
+    [Theory]
+    [InlineData("committed")]
+    [InlineData("not_committed")]
+    [InlineData("not_attempted")]
+    [InlineData("unknown")]
+    public void Enforce_MutationViolationBecomesIndeterminateAndKeepsReportedMutationState(string mutationState)
+    {
+        var result = Result($$"""
+            {"outcome":"success","mutationState":"{{mutationState}}","snapshot":"invalid","diagnostics":[]}
+            """);
+
+        var replacement = CalendarOutputSchemaGuard.Enforce("events.create", result);
+
+        AssertIndeterminate(replacement, "events.create", mutationState);
+    }
+
+    [Theory]
+    [InlineData("""{"outcome":"success","snapshot":"invalid"}""")]
+    [InlineData("""{"outcome":"success","mutationState":true}""")]
+    [InlineData("""{"outcome":"success","mutationState":"partially_committed"}""")]
+    [InlineData("""{"outcome":"success","mutationState":"committed","mutationState":"committed"}""")]
+    [InlineData("""["committed"]""")]
+    public void Enforce_MutationViolationWithoutOneClosedMutationStateIsUnknown(string json)
+    {
+        var replacement = CalendarOutputSchemaGuard.Enforce("calendar_resources.exact_replace", Result(json));
+
+        AssertIndeterminate(replacement, "calendar_resources.exact_replace", "unknown");
+    }
+
+    [Fact]
+    public void Enforce_MutationWithoutStructuredOutputIsIndeterminateWithUnknownState()
+    {
+        var replacement = CalendarOutputSchemaGuard.Enforce(
+            "calendar_resources.delete",
+            new CallToolResult { Content = [new TextContentBlock { Text = "unstructured" }] });
+
+        AssertIndeterminate(replacement, "calendar_resources.delete", "unknown");
+    }
+
+    [Theory]
+    [InlineData("calendars.list", """{"outcome":"success","calendars":"not-an-array"}""",
+        "A Calendar tool returned output that violates its advertised schema.")]
+    [InlineData("calendars.list", null, "A Calendar tool returned no structured output to validate.")]
+    [InlineData(null, "{}", "A Calendar tool returned no structured output to validate.")]
+    public void Enforce_ReadViolationStillFailsLoudly(string? toolName, string? json, string message)
+    {
+        var result = json is null ? new CallToolResult { Content = [] } : Result(json);
+
+        var exception = Should.Throw<InvalidOperationException>(() => CalendarOutputSchemaGuard.Enforce(toolName, result));
+
+        exception.Message.ShouldBe(message);
+    }
+
+    private static void AssertIndeterminate(CallToolResult result, string toolName, string mutationState)
+    {
+        result.IsError.ShouldBe(true);
+        var structured = result.StructuredContent.ShouldNotBeNull();
+        structured.GetProperty("code").GetString().ShouldBe("indeterminate");
+        structured.GetProperty("category").GetString().ShouldBe("postWriteTruth");
+        structured.GetProperty("phase").GetString().ShouldBe("postWriteVerificationOrReconciliation");
+        structured.GetProperty("retryable").GetBoolean().ShouldBeFalse();
+        structured.GetProperty("mutationState").GetString().ShouldBe(mutationState);
+        result.Content.OfType<TextContentBlock>().Single().Text.ShouldBe(structured.GetRawText());
+        Should.NotThrow(() => CalendarOutputSchemaGuard.Validate(toolName, result));
+    }
 
     private static CallToolResult Result(string json) => new()
     {

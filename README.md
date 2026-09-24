@@ -136,6 +136,8 @@ call ends as `confirmation_expired` with `mutationState` `not_attempted`.
 elicitation, receive the typed `unsupported_capability` result in phase `mrtr`
 with `mutationState` `not_attempted`, and the mutation is never attempted.
 
+Every tool result is checked against its advertised output schema before it is returned. A mutation whose result fails the check may already have committed, so it returns `isError` with the `indeterminate` code, `postWriteTruth` category and `postWriteVerificationOrReconciliation` phase, keeping the handler's reported `mutationState` (otherwise `unknown`); inspect the target before another write. A read that fails the check returns an unstructured tool error.
+
 ## Optional OpenTelemetry observability
 
 To enable telemetry, set `OTEL_EXPORTER_OTLP_ENDPOINT` and leave `OTEL_SDK_DISABLED` unset or `false`. The server exports MCP and outbound HTTP signals, CalDAV operation and phase spans, and correlated logs through an allowlist. Each OTLP export call has a 250-millisecond limit to bound shutdown time if the collector stops responding.
@@ -158,7 +160,7 @@ OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 OTEL_SERVICE_NAME=dotnet-agents-caldav
 ```
 
-Exported spans show the MCP request, `caldav.operation`, the applicable `discovery`, `fetch`, `filter`, `expand`, and `reconcile` phases, and individual HTTP attempts. The allowlist excludes credentials, OTLP headers, URLs/hrefs, Calendar Names, UIDs, Entity Tags, cursors, iCalendar/XML/HTTP bodies, MCP payloads/results, and exception messages or stack traces. Collector failure cannot change tool results or write telemetry diagnostics to stdout/stderr.
+Exported spans show the MCP request, `caldav.operation`, the applicable `discovery`, `fetch`, `filter`, `expand`, and `reconcile` phases, and individual HTTP attempts. A result that fails its output schema check also exports a `caldav.output_contract` span with the closed `caldav.output_contract.violation` kind. The allowlist excludes credentials, OTLP headers, URLs/hrefs, Calendar Names, UIDs, Entity Tags, cursors, iCalendar/XML/HTTP bodies, MCP payloads/results, and exception messages or stack traces. Collector failure cannot change tool results or write telemetry diagnostics to stdout/stderr.
 
 ## Supported servers
 
