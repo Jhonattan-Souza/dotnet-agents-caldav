@@ -1,6 +1,4 @@
 using System.Net;
-using System.Net.Http.Headers;
-using System.Text;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Core.Internal;
@@ -55,24 +53,24 @@ public static class CalDavServiceCollectionExtensions
         //
         // Auto-redirect is disabled because CalDAV uses non-standard HTTP methods (PROPFIND, REPORT,
         // MKCOL) that must be preserved across redirects. Disable automatic redirects explicitly
-        // so a cross-origin Location cannot receive the configured Basic credentials.
+        // so a cross-origin Location cannot receive the configured credentials.
         //
         // Standard resilience handler adds retry with exponential backoff (handles HttpRequestException
         // including HttpIOException/ResponseEnded from transient connection drops), circuit breaker,
         // attempt timeout, and total request timeout — all configured via Polly v8 resilience pipeline.
+        //
+        // The authentication handler is innermost so every resilience attempt and every manually
+        // followed redirect hop gets its credential applied, and only on the configured origin.
         services.AddTransient<CalendarHttpAttemptHandler>();
+        services.AddSingleton(serviceProvider => CalDavCredentialSource.Create(
+            serviceProvider.GetRequiredService<IOptions<CalDavOptions>>().Value));
+        services.AddTransient<CalDavAuthenticationHandler>();
         services.AddSingleton<CalendarQueryCapabilityState>();
         var calendarClientBuilder = services.AddHttpClient<CalDavClient>((serviceProvider, client) =>
         {
             var options = serviceProvider.GetRequiredService<IOptions<CalDavOptions>>().Value;
             client.BaseAddress = new Uri(options.BaseUrl.TrimEnd('/') + "/");
             client.Timeout = options.RequestTimeout;
-
-            // Configure Basic authentication
-            var credentials = Convert.ToBase64String(
-                Encoding.UTF8.GetBytes($"{options.Username}:{options.Password}"));
-            client.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Basic", credentials);
         })
         // The primary handler is not a SocketsHttpHandler, so the Microsoft.Extensions.Http metrics filter
         // does not assign the DI IMeterFactory to the inner handlers; their System.Net.Http metrics use the default Meter.
@@ -111,6 +109,7 @@ public static class CalDavServiceCollectionExtensions
             options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(30);
         });
         calendarClientBuilder.AddHttpMessageHandler<CalendarHttpAttemptHandler>();
+        calendarClientBuilder.AddHttpMessageHandler<CalDavAuthenticationHandler>();
 
         services.AddTransient<ICalendarClient>(serviceProvider => serviceProvider.GetRequiredService<CalDavClient>());
         services.AddTransient<ICalendarCollectionTransport>(serviceProvider => new CalDavCollectionTransport(

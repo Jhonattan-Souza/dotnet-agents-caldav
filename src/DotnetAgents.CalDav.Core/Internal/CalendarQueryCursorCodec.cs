@@ -40,6 +40,7 @@ internal sealed class CalendarQueryCursorKey
 
     private sealed record CursorContext(
         string BaseUrl,
+        string AuthenticationScheme,
         string Username,
         string Password,
         string CalendarScope,
@@ -50,6 +51,7 @@ internal sealed class CalendarQueryCursorKey
     {
         internal static CursorContext From(CalDavOptions options) => new(
             options.BaseUrl,
+            options.EffectiveAuthenticationScheme,
             options.Username,
             options.Password,
             string.Join(',', (options.CalendarHrefs ?? string.Empty)

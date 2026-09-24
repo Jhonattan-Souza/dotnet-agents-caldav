@@ -186,4 +186,20 @@ public class CalDavEnvironmentMapperTests
         options.RedirectHosts.ShouldBe(redirectHosts);
     }
 
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("basic")]
+    [InlineData("bearer")]
+    [InlineData("Bearer")]
+    public void MapFromEnvironment_MapsAuthenticationSchemeExactlyForStartupValidation(string? scheme)
+    {
+        var configure = CalDavEnvironmentMapper.MapFromEnvironment(name =>
+            name == "CALDAV_AUTH_SCHEME" ? scheme : null);
+        var options = new CalDavOptions();
+
+        configure(options);
+
+        options.AuthenticationScheme.ShouldBe(scheme);
+    }
 }

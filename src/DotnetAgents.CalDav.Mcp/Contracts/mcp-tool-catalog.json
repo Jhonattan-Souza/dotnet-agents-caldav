@@ -2931,13 +2931,20 @@
       "required": true
     },
     {
+      "name": "CALDAV_AUTH_SCHEME",
+      "required": false,
+      "description": "HTTP authentication scheme: basic (default) or bearer"
+    },
+    {
       "name": "CALDAV_USERNAME",
-      "required": true
+      "required": false,
+      "description": "Basic username; required for basic and must be omitted for bearer"
     },
     {
       "name": "CALDAV_PASSWORD",
       "required": true,
-      "secret": true
+      "secret": true,
+      "description": "Basic password, or the static bearer token"
     },
     {
       "name": "CALDAV_CALENDAR_HREFS",
