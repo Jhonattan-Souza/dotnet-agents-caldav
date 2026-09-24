@@ -33,6 +33,7 @@ public sealed class CalendarExactMoveServiceTests
                 (CalendarMoveAuthorizationFailureReason.DestinationSelectionNotFound, CalendarExactResourceCode.UpstreamProtocolError, CalendarExactResourcePhase.SelectionDiscoveryCapability),
                 (CalendarMoveAuthorizationFailureReason.DestinationSelectionAmbiguous, CalendarExactResourceCode.UpstreamProtocolError, CalendarExactResourcePhase.SelectionDiscoveryCapability),
                 (CalendarMoveAuthorizationFailureReason.InteroperabilityProfileUnverified, CalendarExactResourceCode.UnsupportedCapability, CalendarExactResourcePhase.SelectionDiscoveryCapability),
+                (CalendarMoveAuthorizationFailureReason.SameCalendarMoveUnsupported, CalendarExactResourceCode.UnsupportedCapability, CalendarExactResourcePhase.SelectionDiscoveryCapability),
                 (CalendarMoveAuthorizationFailureReason.SourceOwnershipMissing, CalendarExactResourceCode.OutsideScope, CalendarExactResourcePhase.OriginScopeAuthorization),
                 (CalendarMoveAuthorizationFailureReason.SourceOwnershipAmbiguous, CalendarExactResourceCode.OutsideScope, CalendarExactResourcePhase.OriginScopeAuthorization),
                 (CalendarMoveAuthorizationFailureReason.DestinationOwnershipMissing, CalendarExactResourceCode.OutsideScope, CalendarExactResourcePhase.OriginScopeAuthorization),

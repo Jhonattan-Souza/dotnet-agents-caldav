@@ -31,6 +31,7 @@ public sealed class CalendarMoveModuleTests
                 (CalendarMoveAuthorizationFailureReason.DestinationSelectionNotFound, CalendarResourceMoveCode.NotFound, CalendarResourceMovePhase.SelectionDiscoveryCapability),
                 (CalendarMoveAuthorizationFailureReason.DestinationSelectionAmbiguous, CalendarResourceMoveCode.Ambiguous, CalendarResourceMovePhase.SelectionDiscoveryCapability),
                 (CalendarMoveAuthorizationFailureReason.InteroperabilityProfileUnverified, CalendarResourceMoveCode.UnsupportedCapability, CalendarResourceMovePhase.SelectionDiscoveryCapability),
+                (CalendarMoveAuthorizationFailureReason.SameCalendarMoveUnsupported, CalendarResourceMoveCode.UnsupportedCapability, CalendarResourceMovePhase.SelectionDiscoveryCapability),
                 (CalendarMoveAuthorizationFailureReason.SourceOwnershipMissing, CalendarResourceMoveCode.OutsideScope, CalendarResourceMovePhase.OriginScopeAuthorization),
                 (CalendarMoveAuthorizationFailureReason.SourceOwnershipAmbiguous, CalendarResourceMoveCode.OutsideScope, CalendarResourceMovePhase.OriginScopeAuthorization),
                 (CalendarMoveAuthorizationFailureReason.DestinationOwnershipMissing, CalendarResourceMoveCode.OutsideScope, CalendarResourceMovePhase.OriginScopeAuthorization),

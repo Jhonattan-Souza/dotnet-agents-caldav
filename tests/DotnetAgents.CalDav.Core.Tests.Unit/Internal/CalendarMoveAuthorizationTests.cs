@@ -111,7 +111,7 @@ public sealed class CalendarMoveAuthorizationTests
         else
         {
             var failure = result.ShouldBeOfType<CalendarMoveAuthorizationResult.Rejected>().Failure;
-            failure.Reason.ShouldBe(CalendarMoveAuthorizationFailureReason.InteroperabilityProfileUnverified);
+            failure.Reason.ShouldBe(CalendarMoveAuthorizationFailureReason.SameCalendarMoveUnsupported);
             failure.AuthorizedCandidates.ShouldHaveSingleItem().Href.ShouldBe(SourceCalendarHref);
         }
         fixture.Transport.DiscoveryCount.ShouldBe(1);

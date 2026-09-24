@@ -248,7 +248,8 @@ internal sealed class CalendarMoveModule(
             CalendarMoveAuthorizationFailureReason.DestinationSelectionAmbiguous =>
                 (CalendarResourceMoveCode.Ambiguous, CalendarResourceMovePhase.SelectionDiscoveryCapability),
             CalendarMoveAuthorizationFailureReason.EntityKindNotAdvertised
-                or CalendarMoveAuthorizationFailureReason.InteroperabilityProfileUnverified =>
+                or CalendarMoveAuthorizationFailureReason.InteroperabilityProfileUnverified
+                or CalendarMoveAuthorizationFailureReason.SameCalendarMoveUnsupported =>
                 (CalendarResourceMoveCode.UnsupportedCapability, CalendarResourceMovePhase.SelectionDiscoveryCapability),
             CalendarMoveAuthorizationFailureReason.InvalidResolvedCalendar
                 or CalendarMoveAuthorizationFailureReason.ResolvedCalendarIdentityDivergent =>

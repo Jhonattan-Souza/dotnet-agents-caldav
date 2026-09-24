@@ -385,7 +385,8 @@ internal sealed class CalendarExactMoveModule(
                 or CalendarMoveAuthorizationFailureReason.DestinationOwnershipAmbiguous =>
                 (CalendarExactResourceCode.OutsideScope, CalendarExactResourcePhase.OriginScopeAuthorization),
             CalendarMoveAuthorizationFailureReason.EntityKindNotAdvertised
-                or CalendarMoveAuthorizationFailureReason.InteroperabilityProfileUnverified =>
+                or CalendarMoveAuthorizationFailureReason.InteroperabilityProfileUnverified
+                or CalendarMoveAuthorizationFailureReason.SameCalendarMoveUnsupported =>
                 (CalendarExactResourceCode.UnsupportedCapability, CalendarExactResourcePhase.SelectionDiscoveryCapability),
             CalendarMoveAuthorizationFailureReason.DestinationSelectionNotFound
                 or CalendarMoveAuthorizationFailureReason.DestinationSelectionAmbiguous

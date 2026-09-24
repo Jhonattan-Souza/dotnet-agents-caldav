@@ -235,7 +235,7 @@ internal sealed class CalendarMoveAuthorization
             return capability;
         }
         return CalendarResolution.Reject(Failure(
-            CalendarMoveAuthorizationFailureReason.InteroperabilityProfileUnverified,
+            CalendarMoveAuthorizationFailureReason.SameCalendarMoveUnsupported,
             [destination]));
     }
 
@@ -419,5 +419,6 @@ internal enum CalendarMoveAuthorizationFailureReason
     EntityKindNotAdvertised,
     InvalidResolvedCalendar,
     ResolvedCalendarIdentityDivergent,
-    SameCalendarNotAllowed
+    SameCalendarNotAllowed,
+    SameCalendarMoveUnsupported
 }
