@@ -69,8 +69,13 @@ public sealed class CalendarExecutionPolicyTests
         operation.Status.ShouldBe(ActivityStatusCode.Unset);
     }
 
-    [Fact]
-    public async Task PublicToolFilter_UndeclaredElicitationRecordsNotAttemptedWithTypedErrorFacts()
+    [Theory]
+    [InlineData("calendar_resources.delete", null, null)]
+    [InlineData("calendar_resources.exact_move", "not_attempted", "not_run")]
+    public async Task PublicToolFilter_UndeclaredElicitationRecordsNotAttemptedWithTypedErrorFacts(
+        string toolName,
+        string? expectedMoveDispatch,
+        string? expectedMoveReconciliation)
     {
         var stopped = new List<Activity>();
         using var listener = new ActivityListener
@@ -98,11 +103,16 @@ public sealed class CalendarExecutionPolicyTests
         var context = new RequestContext<CallToolRequestParams>(
             server,
             new JsonRpcRequest { Id = new RequestId(1L), Method = "tools/call" },
-            new CallToolRequestParams { Name = "calendar_resources.delete" });
+            new CallToolRequestParams { Name = toolName });
         var filtered = CalendarExecutionPolicy.CallTool((_, _) =>
-            throw new MissingRequiredClientCapabilityException(
-                CalendarMrtrCapabilityGuard.RequiredCapabilities(),
-                "private-capability-message"));
+        {
+            CalendarMrtrCapabilityGuard.RequireConfirmationCapability(
+                requestState: null,
+                inputResponses: null,
+                mrtrSupported: true,
+                clientCapabilities: null);
+            throw new InvalidOperationException("The capability guard must refuse the request.");
+        });
 
         await Should.ThrowAsync<MissingRequiredClientCapabilityException>(() =>
             filtered(context, TestContext.Current.CancellationToken).AsTask());
@@ -110,13 +120,18 @@ public sealed class CalendarExecutionPolicyTests
         var operation = stopped.Single(activity => activity.OperationName == "caldav.operation");
         operation.GetTagItem("caldav.outcome").ShouldBe("error");
         operation.GetTagItem("caldav.mutation.state").ShouldBe("not_attempted");
+        operation.GetTagItem("caldav.move.dispatch").ShouldBe(expectedMoveDispatch);
+        operation.GetTagItem("caldav.move.collision").ShouldBeNull();
+        operation.GetTagItem("caldav.move.reconciliation").ShouldBe(expectedMoveReconciliation);
         operation.GetTagItem("caldav.error.code").ShouldBe("unsupported_capability");
         operation.GetTagItem("caldav.error.category").ShouldBe("capabilityAndProjection");
         operation.GetTagItem("caldav.error.phase").ShouldBe("mrtr");
         operation.GetTagItem("error.type").ShouldBe("caldav.unsupported_capability");
         operation.GetTagItem("error.type").ShouldNotBe("internal_error");
         operation.Status.ShouldBe(ActivityStatusCode.Error);
-        operation.Tags.ShouldNotContain(tag => tag.Value == "private-capability-message");
+        operation.Tags.ShouldNotContain(tag => tag.Value != null && tag.Value.Contains(
+            "form elicitation",
+            StringComparison.Ordinal));
     }
 
     [Theory]

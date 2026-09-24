@@ -15,6 +15,10 @@ internal static class CalendarExecutionPolicy
     private static readonly TimeSpan InitialProgressDelay = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan ReadExecutionBudget = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan MutationExecutionBudget = TimeSpan.FromSeconds(60);
+    private static readonly CalendarMoveTelemetrySnapshot NotAttemptedMoveTelemetry = new(
+        CalendarMoveDispatchClassification.NotAttempted,
+        CalendarMoveCollisionClassification.Unspecified,
+        CalendarMoveReconciliationClassification.NotRun);
 
     public static McpRequestFilter<CallToolRequestParams, CallToolResult> CallTool => next =>
         async (request, cancellationToken) =>
@@ -115,7 +119,7 @@ internal static class CalendarExecutionPolicy
         }
         else if (exception is MissingRequiredClientCapabilityException)
         {
-            CompleteUndeclaredCapability(telemetry, mutation, moveTelemetry);
+            CompleteUndeclaredCapability(telemetry, mutation, moveTool, moveTelemetry);
         }
         else if (exception is OperationCanceledException && callerCancellationToken.IsCancellationRequested)
         {
@@ -133,9 +137,11 @@ internal static class CalendarExecutionPolicy
 
     // The guard refuses before the tool reaches its dispatch boundary, so the refusal carries the
     // same structured facts as the typed MRTR-unsupported result rather than a generic internal error.
+    // A refused move therefore reports the same pre-dispatch facts as a move cancelled before dispatch.
     private static void CompleteUndeclaredCapability(
         CalendarTelemetryOperation? telemetry,
         bool mutation,
+        bool moveTool,
         CalendarMoveTelemetrySnapshot? moveTelemetry)
     {
         if (mutation)
@@ -145,7 +151,9 @@ internal static class CalendarExecutionPolicy
             CalendarTelemetryErrorCategory.CapabilityAndProjection,
             CalendarTelemetryErrorPhase.Mrtr,
             false));
-        telemetry?.Complete(CalendarOperationOutcome.Error, moveTelemetry);
+        telemetry?.Complete(
+            CalendarOperationOutcome.Error,
+            moveTool ? NotAttemptedMoveTelemetry : moveTelemetry);
     }
 
     private static void CompleteCallerCancellation(
@@ -156,10 +164,7 @@ internal static class CalendarExecutionPolicy
         if (moveTool && moveTelemetry is null or { Dispatch: CalendarMoveDispatchClassification.Unspecified })
         {
             telemetry?.ObserveMutationStateIfAbsent(CalendarMutationState.NotAttempted);
-            moveTelemetry = new CalendarMoveTelemetrySnapshot(
-                CalendarMoveDispatchClassification.NotAttempted,
-                CalendarMoveCollisionClassification.Unspecified,
-                CalendarMoveReconciliationClassification.NotRun);
+            moveTelemetry = NotAttemptedMoveTelemetry;
         }
         else if (moveTool
             && moveTelemetry?.Dispatch == CalendarMoveDispatchClassification.NotAttempted)
