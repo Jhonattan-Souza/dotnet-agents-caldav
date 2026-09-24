@@ -102,17 +102,32 @@ public sealed class CalendarMrtrCapabilityGuardTests
         CalendarMrtrCapabilityGuard.UsesPerRequestCapabilities(protocolVersion).ShouldBe(expected);
     }
 
+    [Theory]
+    [InlineData("2025-06-18", true)]
+    [InlineData("2025-11-25", true)]
+    [InlineData("2026-07-28", true)]
+    [InlineData("2025-03-26", false)]
+    [InlineData("2024-11-05", false)]
+    [InlineData(null, false)]
+    public void DefinesElicitation_StartsAtTheFirstElicitationRevision(string? protocolVersion, bool expected)
+    {
+        CalendarMrtrCapabilityGuard.DefinesElicitation(protocolVersion).ShouldBe(expected);
+    }
+
     // 2026-07-28 keeps the MRTR answer and leaves an undeclared capability to the -32021 refusal. The
-    // initialize-handshake revisions confirm through a classic elicitation request, so only a session
-    // that declared form elicitation can open the round; any other session takes the typed result.
+    // initialize-handshake revisions confirm through a classic elicitation request, so only a 2025-06-18 or
+    // 2025-11-25 session that declared form elicitation can open the round; any other session, including
+    // one on a revision that predates elicitation, takes the typed result.
     [Theory]
     [InlineData("2026-07-28", true, false, true)]
     [InlineData("2026-07-28", false, true, false)]
     [InlineData("2025-06-18", true, true, true)]
     [InlineData("2025-11-25", true, false, false)]
     [InlineData("2025-11-25", false, true, false)]
+    [InlineData("2025-03-26", true, true, false)]
+    [InlineData("2024-11-05", true, true, false)]
     [InlineData(null, true, false, false)]
-    [InlineData(null, true, true, true)]
+    [InlineData(null, true, true, false)]
     public void IsConfirmationSupported_DecidesPerNegotiatedRevision(
         string? protocolVersion,
         bool mrtrSupported,

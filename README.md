@@ -124,13 +124,16 @@ with `data.requiredCapabilities` before it issues any CalDAV request, so the
 mutation is never attempted. That refusal is the one documented case where a
 tool answers with a JSON-RPC error instead of typed `structuredContent`.
 
-On the `initialize` revisions (`2024-11-05` through `2025-11-25`) a session that
-declared form elicitation receives the same confirmation form as a classic
-`elicitation/create` request inside the original `tools/call`, and the tool
-completes in that call; the protected continuation state never leaves the
-server. A session without form elicitation receives the typed
-`unsupported_capability` result in phase `mrtr` with `mutationState`
-`not_attempted`, and the mutation is never attempted.
+Elicitation exists from `2025-06-18`. On the `2025-06-18` and `2025-11-25`
+`initialize` revisions, a session that declared form elicitation receives the
+same confirmation form as a classic `elicitation/create` request inside the
+original `tools/call`, and the tool completes in that call; the protected
+continuation state never leaves the server. The server does not bound the wait
+for that answer, but the user must answer within 10 minutes of the review or the
+call ends as `confirmation_expired` with `mutationState` `not_attempted`.
+`2024-11-05` and `2025-03-26` sessions, and any session without form
+elicitation, receive the typed `unsupported_capability` result in phase `mrtr`
+with `mutationState` `not_attempted`, and the mutation is never attempted.
 
 ## Optional OpenTelemetry observability
 

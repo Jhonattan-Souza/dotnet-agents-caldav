@@ -166,7 +166,10 @@ public sealed class ContractCatalogTests
         missingCapability["description"]!.GetValue<string>().ShouldStartWith("On the 2026-07-28 revision");
         var legacyConfirmation = mrtr["initializeHandshakeConfirmation"]!.AsObject();
         legacyConfirmation["revisions"]!.AsArray().Select(item => item!.GetValue<string>())
-            .ShouldBe(["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"]);
+            .ShouldBe(["2025-06-18", "2025-11-25"]);
+        legacyConfirmation["unsupportedRevisions"]!.AsArray().Select(item => item!.GetValue<string>())
+            .ShouldBe(["2024-11-05", "2025-03-26"]);
+        legacyConfirmation["description"]!.GetValue<string>().ShouldContain("confirmation_expired");
         legacyConfirmation["method"]!.GetValue<string>().ShouldBe("elicitation/create");
         legacyConfirmation["requiredClientCapability"]!.GetValue<string>().ShouldBe("elicitation.form");
         legacyConfirmation["undeclaredOutcome"]!.GetValue<string>().ShouldBe("unsupported_capability");

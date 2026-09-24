@@ -2892,12 +2892,14 @@
       }
     },
     "initializeHandshakeConfirmation": {
-      "description": "Sessions negotiated through initialize (2024-11-05 through 2025-11-25) declare client capabilities once for the session and receive no inputRequests result. When the session declared elicitation with form support, including a blank elicitation object, the same confirmation form is sent as a classic server-to-client elicitation/create request inside the original tools/call and the tool completes in that call; requestState never leaves the server. A session without form elicitation receives the typed unsupported_capability result in phase mrtr with mutationState not_attempted instead of JSON-RPC error -32021, and the mutation is never attempted.",
+      "description": "Sessions negotiated through initialize (2024-11-05 through 2025-11-25) declare client capabilities once for the session and receive no inputRequests result. Elicitation exists from 2025-06-18: when a 2025-06-18 or 2025-11-25 session declared elicitation with form support, including a blank elicitation object, the same confirmation form is sent as a classic server-to-client elicitation/create request inside the original tools/call and the tool completes in that call; requestState never leaves the server. The server does not bound the wait for that answer, but a confirmation answered more than 10 minutes after the review ends as confirmation_expired with mutationState not_attempted. A 2024-11-05 or 2025-03-26 session, and any session without form elicitation, receives the typed unsupported_capability result in phase mrtr with mutationState not_attempted instead of JSON-RPC error -32021, and the mutation is never attempted.",
       "revisions": [
-        "2024-11-05",
-        "2025-03-26",
         "2025-06-18",
         "2025-11-25"
+      ],
+      "unsupportedRevisions": [
+        "2024-11-05",
+        "2025-03-26"
       ],
       "method": "elicitation/create",
       "requiredClientCapability": "elicitation.form",
