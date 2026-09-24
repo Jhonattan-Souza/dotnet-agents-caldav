@@ -49,6 +49,7 @@ public sealed partial class CalendarCollectionToolsTests
     [InlineData("color", "\" \"")]
     [InlineData("order", "\"3\"")]
     [InlineData("order", "1.5")]
+    [InlineData("order", "1.0")]
     [InlineData("order", "2147483648")]
     [InlineData("timeZone", "null")]
     [InlineData("timeZone", "\"\"")]
@@ -70,7 +71,7 @@ public sealed partial class CalendarCollectionToolsTests
     {
         var module = Substitute.For<ICalendarCollectionModule>();
         module.CreateAsync(Arg.Any<CalendarCollectionCreateRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new CalendarCollectionCreateResult(CalendarCollectionCreateCode.UnsupportedCapability,
+            .Returns(new CalendarCollectionCreateResult(CalendarCollectionCreateCode.UpstreamForbidden,
                 CalendarMutationState.NotCommitted)
             {
                 RejectedProperties = [new("timeZone", 403), new("displayName", 424)]
@@ -81,7 +82,7 @@ public sealed partial class CalendarCollectionToolsTests
 
         result.IsError.ShouldBe(true);
         var content = result.StructuredContent!.Value;
-        content.GetProperty("code").GetString().ShouldBe("unsupported_capability");
+        content.GetProperty("code").GetString().ShouldBe("upstream_forbidden");
         content.GetProperty("mutationState").GetString().ShouldBe("not_committed");
         content.GetProperty("message").GetString()!.ShouldContain("rejected one or more requested Calendar collection properties");
         var violations = content.GetProperty("violations").EnumerateArray()

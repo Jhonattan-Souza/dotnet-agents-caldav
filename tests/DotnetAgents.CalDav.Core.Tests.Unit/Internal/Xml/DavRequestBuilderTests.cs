@@ -159,8 +159,11 @@ public class DavRequestBuilderTests
 
         set.Descendants(AppleCs + "calendar-color").Single().Value.ShouldBe("#FF2968");
         set.Descendants(AppleCs + "calendar-order").Single().Value.ShouldBe("0");
-        // XML end-of-line handling delivers the iCalendar lines to the server with LF endings.
-        set.Descendants(CalDav + "calendar-timezone").Single().Value.ShouldBe(timeZone.ReplaceLineEndings("\n"));
+        // Entitized carriage returns survive XML end-of-line normalization, so the server
+        // receives the RFC 5545 CRLF line endings.
+        xml.ShouldContain("BEGIN:VCALENDAR&#xD;\nEND:VCALENDAR&#xD;\n");
+        set.Descendants(CalDav + "calendar-timezone").Single().Value.ShouldBe(timeZone);
+        xml.ShouldNotStartWith("<?xml");
     }
 
     [Fact]

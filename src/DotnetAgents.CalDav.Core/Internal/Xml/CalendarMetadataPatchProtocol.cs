@@ -92,11 +92,11 @@ internal static partial class CalendarMetadataPatchProtocol
         return false;
     }
 
-    internal static string Body(IReadOnlyList<CalendarMetadataPropertyChange> changes) => new XElement(
-        CalendarMetadataProtocol.Dav + "propertyupdate",
-        new XAttribute(XNamespace.Xmlns + "ical", CalendarCollectionPropertyValues.AppleIcal.NamespaceName),
-        changes.Select(Instruction))
-        .ToString(SaveOptions.DisableFormatting);
+    internal static string Body(IReadOnlyList<CalendarMetadataPropertyChange> changes) =>
+        DavRequestBuilder.SerializePreservingLineBreaks(new XElement(
+            CalendarMetadataProtocol.Dav + "propertyupdate",
+            new XAttribute(XNamespace.Xmlns + "ical", CalendarCollectionPropertyValues.AppleIcal.NamespaceName),
+            changes.Select(Instruction)));
 
     private static XElement Instruction(CalendarMetadataPropertyChange change)
     {

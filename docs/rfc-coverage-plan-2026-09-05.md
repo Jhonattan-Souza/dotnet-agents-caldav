@@ -188,6 +188,12 @@ Discovery keeps three probes: PROPFIND on the configured URL,
   their Calendar or source. A Move between Calendars on different account
   origins fails origin authorization before dispatch as invalid input.
 
+Follow-up backlog:
+
+- RFC 7986 collection-level `NAME`, `IMAGE`, `REFRESH-INTERVAL` and `SOURCE`
+  properties. Calendar Color, Order and Time Zone were added later through
+  Apple `calendar-color`/`calendar-order` and `CALDAV:calendar-timezone`.
+
 ## Completion criteria
 
 1. Record the rubber-duck agent's objections, resolutions, and agreement.

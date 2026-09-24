@@ -249,14 +249,15 @@ Collection properties use these representations:
 | `davDescription` | `DAV:description` | Not written | Text, independent of `description` |
 | `color` | Apple `calendar-color` (`http://apple.com/ns/ical/`) | `#RRGGBB` | `#RRGGBB`; an Apple `#RRGGBBAA` alpha channel is discarded; other values read as `null` |
 | `order` | Apple `calendar-order` | Integer 0 to 2147483647 | The same range; other values read as `null` |
-| `timeZone` / `timeZoneIds` | `CALDAV:calendar-timezone` | An IANA identifier, stored as a VCALENDAR with one VTIMEZONE generated from tzdb for 1970 to 2100 | The embedded `TZID` |
+| `timeZone` / `timeZoneIds` | `CALDAV:calendar-timezone` | An IANA identifier, stored as a VCALENDAR with one VTIMEZONE generated from tzdb for 1970 to 2100; carriage returns are sent as `&#xD;` so CRLF survives XML parsing | The embedded `TZID` |
 
 `calendars.create` sends requested color, order and time zone in the same
 atomic `MKCALENDAR`. Readback verifies color and order through discovery; the
 time zone relies on the server's definitive MKCALENDAR acknowledgement and is
 visible through `calendars.inspect`. When the server's failure body names
-rejected properties, the result is `unsupported_capability` with
-`not_committed` and per-property `violations`. RFC 7986 collection-level
+rejected properties, the result is `not_committed` with per-property
+`violations`, and its code comes from the first non-424 property status as for
+PROPPATCH (for example 403 `upstream_forbidden`, 409 `conflict`). RFC 7986 collection-level
 `NAME`, `IMAGE`, `REFRESH-INTERVAL` and `SOURCE` are not supported.
 
 Participation-bearing creates, updates and deletes require fresh OPTIONS
