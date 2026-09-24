@@ -61,6 +61,37 @@ public sealed class CalendarResourceDeleteToolsTests
             Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task DeleteRawAsync_ServerManagedConfirmationWarnsAboutSchedulingMessages()
+    {
+        var service = Substitute.For<ICalendarService>();
+        var snapshot = TodoSnapshot();
+        service.GetResourceAsync(snapshot.ResourceHref, Arg.Any<CancellationToken>()).Returns(
+            CalendarResourceRead.Success(snapshot.ResourceHref, snapshot.EntityTag, snapshot.AuthoritativeUtf8) with
+            {
+                Snapshot = snapshot
+            });
+        var timeProvider = new FixedTimeProvider(DateTimeOffset.Parse("2026-08-16T12:00:00Z"));
+        var protector = new CalendarMutationRequestStateProtector(
+            timeProvider,
+            Options.Create(CreateOptions()),
+            Enumerable.Range(0, 64).Select(value => (byte)value).ToArray());
+        var sut = new CalendarResourceDeleteTools(service, protector, timeProvider);
+
+        using var disclosure = CalendarSchedulingDisclosure.Attach(true);
+        var exception = await Should.ThrowAsync<InputRequiredException>(() => sut.DeleteRawAsync(
+            ValidArguments(),
+            requestState: null,
+            inputResponses: null,
+            mrtrSupported: true,
+            CancellationToken.None));
+
+        exception.Result.InputRequests.ShouldNotBeNull()["confirm_delete"].ElicitationParams.ShouldNotBeNull()
+            .Message.ShouldBe(
+                "Confirm calendar_resources.delete for href https://cal.example/tasks/a.ics, UID todo-1, kind todo, "
+                + "and expected ETag \"r1\". " + CalendarSchedulingDisclosure.ConfirmationWarning);
+    }
+
     [Theory]
     [InlineData(CalendarQueryToolSupport.MaximumHumanReadableBytes, true)]
     [InlineData(CalendarQueryToolSupport.MaximumHumanReadableBytes + 1, false)]

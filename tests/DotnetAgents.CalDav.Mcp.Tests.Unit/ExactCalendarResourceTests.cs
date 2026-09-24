@@ -1844,6 +1844,35 @@ public sealed class ExactCalendarResourceTests
     }
 
     [Fact]
+    public async Task ExactWrites_ServerManagedConfirmationWarnsAboutSchedulingMessages()
+    {
+        const string destinationHref = "https://cal.example/events/scheduled.ics";
+        var utf8 = ExactEvent("scheduled");
+        var binding = new CalendarExactCreateReviewBinding(
+            destinationHref, "scheduled", CalendarEntityKind.Event, new byte[32], "1");
+        var revision = new CalendarResourceRevisionReference(
+            "https://cal.example/events/replace.ics", "replace", CalendarEntityKind.Event, "\"r1\"");
+        var service = Substitute.For<ICalendarService>();
+        service.ReviewExactCreateResourceAsync(Arg.Any<CalendarExactCreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CalendarExactCreateReviewResult(null, binding, CreateReviewedExactCreate(binding, utf8)));
+        service.ReviewExactReplaceResourceAsync(Arg.Any<CalendarExactReplaceRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CalendarExactResourceReviewResult(null, revision, new byte[32]));
+        using var disclosure = CalendarSchedulingDisclosure.Attach(true);
+
+        var created = await Should.ThrowAsync<InputRequiredException>(() => CreateWriteTools(service).CreateRawAsync(
+            CreateArguments(destinationHref, utf8), null, null, true, CancellationToken.None));
+        var replaced = await Should.ThrowAsync<InputRequiredException>(() => CreateWriteTools(service).ReplaceRawAsync(
+            ReplaceArguments(revision, ExactEvent("replace")), null, null, true, CancellationToken.None));
+
+        created.Result.InputRequests.ShouldNotBeNull()["confirm_exact_write"].ElicitationParams.ShouldNotBeNull()
+            .Message.ShouldBe($"Confirm calendar_resources.exact_create for destination {destinationHref}, UID scheduled, "
+                + "and kind event. " + CalendarSchedulingDisclosure.ConfirmationWarning);
+        replaced.Result.InputRequests.ShouldNotBeNull()["confirm_exact_write"].ElicitationParams.ShouldNotBeNull()
+            .Message.ShouldBe($"Confirm calendar_resources.exact_replace for href {revision.Href}, UID replace, "
+                + "kind event, and expected ETag \"r1\". " + CalendarSchedulingDisclosure.ConfirmationWarning);
+    }
+
+    [Fact]
     public async Task ExactMoveRawAsync_PreviewNamesDestinationAndExpectedEntityTag()
     {
         var revision = new CalendarResourceRevisionReference(

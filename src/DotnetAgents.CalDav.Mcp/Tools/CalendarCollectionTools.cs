@@ -318,7 +318,8 @@ internal sealed class CalendarCollectionTools
             descriptor.EventSupport == EntityKindSupport.Advertised ? "event" : null,
             descriptor.TodoSupport == EntityKindSupport.Advertised ? "todo" : null
         }.OfType<string>());
-        return $"Delete Calendar collection '{descriptor.DisplayName ?? descriptor.Href}' at {descriptor.Href}, including all resources? Advertised kinds: {kinds}.";
+        return CalendarSchedulingDisclosure.WithConfirmationWarning(
+            $"Delete Calendar collection '{descriptor.DisplayName ?? descriptor.Href}' at {descriptor.Href}, including all resources? Advertised kinds: {kinds}.");
     }
 
     private static CallToolResult CreateSuccess(CalendarDescriptor descriptor) => new()

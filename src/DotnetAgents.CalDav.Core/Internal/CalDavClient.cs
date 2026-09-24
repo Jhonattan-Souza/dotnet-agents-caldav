@@ -106,7 +106,7 @@ internal sealed partial class CalDavClient : ICalendarClient, ICalendarMoveResou
             return new(CalendarCollectionDispatchCode.ProtocolError);
         }
 
-        if (!await ProveSchedulingAbsentAsync(canonicalHref, cancellationToken).ConfigureAwait(false))
+        if (!await IsSchedulingPermittedAsync(canonicalHref, cancellationToken).ConfigureAwait(false))
             return new(CalendarCollectionDispatchCode.SchedulingUnsafe);
 
         using var message = new HttpRequestMessage(HttpMethod.Delete, canonicalHref);

@@ -87,6 +87,74 @@ public sealed class CalendarMcpStdioIntegrationTests
         stderr.ShouldBeEmpty();
     }
 
+    // Radicale does not advertise calendar-auto-schedule, so a server-managed participation write is
+    // admitted by proven absence and discloses none; the default mode keeps the storage-only result shape.
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("storage_only", null)]
+    [InlineData("server_managed", "none")]
+    public async Task EventsCreate_DisclosesSchedulingSideEffectsOnlyInServerManagedModeOverStdio(
+        string? schedulingMode,
+        string? expected)
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        var mixedCalendarHref = $"{_fixture.BaseUrl}{_fixture.MixedCalendarHref}";
+        var stderr = new ConcurrentQueue<string>();
+        await using var client = await CreateClientAsync(
+            stderr,
+            exposeExact: false,
+            calendarHrefs: mixedCalendarHref,
+            schedulingMode: schedulingMode);
+
+        var result = await client.CallToolAsync(
+            "events.create",
+            new Dictionary<string, object?>
+            {
+                ["destination"] = new Dictionary<string, object?>
+                {
+                    ["mode"] = "selected",
+                    ["calendar"] = new Dictionary<string, object?> { ["by"] = "href", ["href"] = mixedCalendarHref }
+                },
+                ["entity"] = new Dictionary<string, object?>
+                {
+                    ["kind"] = "event",
+                    ["uid"] = $"scheduling-mode-{suffix}",
+                    ["fields"] = new Dictionary<string, object?>
+                    {
+                        ["summary"] = "Planning",
+                        ["start"] = new Dictionary<string, object?> { ["kind"] = "utcDateTime", ["value"] = "2026-09-30T13:00:00Z" },
+                        ["structuredData"] = new Dictionary<string, object?>
+                        {
+                            ["organizer"] = new Dictionary<string, object?>
+                            {
+                                ["uri"] = "mailto:owner@example.test",
+                                ["parameters"] = Array.Empty<object>()
+                            },
+                            ["attendees"] = new[]
+                            {
+                                new Dictionary<string, object?>
+                                {
+                                    ["uri"] = "mailto:guest@example.test",
+                                    ["parameters"] = Array.Empty<object>()
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        result.IsError.ShouldNotBe(true);
+        var structured = result.StructuredContent!.Value;
+        structured.GetProperty("mutationState").GetString().ShouldBe("committed");
+        if (expected is null)
+            structured.TryGetProperty("schedulingSideEffects", out _).ShouldBeFalse();
+        else
+            structured.GetProperty("schedulingSideEffects").GetString().ShouldBe(expected);
+        result.Content.OfType<TextContentBlock>().First().Text.ShouldBe(structured.GetRawText());
+        stderr.ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task CalendarEntityQuery_ReturnsSchemaValidSnapshotsAndTypedFailureOverStdio()
     {
@@ -1577,9 +1645,12 @@ public sealed class CalendarMcpStdioIntegrationTests
         string? calendarHrefs = null,
         bool confirmMutations = false,
         string? password = null,
-        string? evaluationTimeZone = null)
+        string? evaluationTimeZone = null,
+        string? schedulingMode = null)
     {
         var environment = CreateEnvironment();
+        if (schedulingMode is not null)
+            environment["CALDAV_SCHEDULING_MODE"] = schedulingMode;
         if (baseUrl is not null)
         {
             environment["CALDAV_URL"] = baseUrl;

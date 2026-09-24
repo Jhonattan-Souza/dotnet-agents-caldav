@@ -18,7 +18,7 @@ using Xunit;
 namespace DotnetAgents.CalDav.IntegrationTests;
 
 [Collection("RadicaleConformanceCollection")]
-public sealed class RadicaleConformanceHarnessTests(RadicaleConformanceFixture fixture, ITestOutputHelper output)
+public sealed partial class RadicaleConformanceHarnessTests(RadicaleConformanceFixture fixture, ITestOutputHelper output)
 {
     internal const string ConformanceUsername = RadicaleConformanceFixture.Username;
     internal const string ConformancePassword = RadicaleConformanceFixture.Password;

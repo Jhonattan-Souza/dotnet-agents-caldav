@@ -41,10 +41,19 @@ public static class CalendarOperationProgress
     public static CalendarMoveTelemetrySnapshot? CurrentMoveTelemetry =>
         CurrentState.Value?.MoveTelemetry;
 
+    internal static void SetSchedulingSideEffectsPossible() => CurrentState.Value?.MarkSchedulingSideEffectsPossible();
+
+    /// <summary>
+    /// Whether this operation permitted a write on a server that advertises automatic scheduling
+    /// under the opt-in server-managed scheduling mode.
+    /// </summary>
+    public static bool SchedulingSideEffectsPossible => CurrentState.Value?.SchedulingSideEffectsPossible == true;
+
     public sealed class State(CalendarOperationPhase phase, Action<CalendarOperationPhase>? phaseObserver = null)
     {
         private int _phase = (int)phase;
         private CalendarMoveTelemetryState _moveState = CalendarMoveTelemetryState.None.Instance;
+        private int _schedulingSideEffectsPossible;
 
         internal CalendarOperationPhase Phase => (CalendarOperationPhase)Volatile.Read(ref _phase);
 
@@ -53,6 +62,10 @@ public static class CalendarOperationProgress
         public CalendarMoveTelemetrySnapshot MoveTelemetry => Volatile.Read(ref _moveState).ToSnapshot();
 
         internal CalendarMoveTelemetryState MoveState => Volatile.Read(ref _moveState);
+
+        public bool SchedulingSideEffectsPossible => Volatile.Read(ref _schedulingSideEffectsPossible) != 0;
+
+        internal void MarkSchedulingSideEffectsPossible() => Volatile.Write(ref _schedulingSideEffectsPossible, 1);
 
         internal void SetMoveState(CalendarMoveTelemetryState state) =>
             Volatile.Write(ref _moveState, state);

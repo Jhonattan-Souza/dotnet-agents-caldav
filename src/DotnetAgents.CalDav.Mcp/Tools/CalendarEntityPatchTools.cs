@@ -479,6 +479,14 @@ internal sealed class CalendarEntityPatchTools
         CalendarResourceRevisionReference revision,
         CalendarMutationTarget target,
         IReadOnlyList<ReplaceAllField> fields,
+        bool changesRecurrenceDefinition) => CalendarSchedulingDisclosure.WithConfirmationWarning(
+            CreateReviewMessage(operation, revision, target, fields, changesRecurrenceDefinition));
+
+    private static string CreateReviewMessage(
+        string operation,
+        CalendarResourceRevisionReference revision,
+        CalendarMutationTarget target,
+        IReadOnlyList<ReplaceAllField> fields,
         bool changesRecurrenceDefinition)
     {
         var kind = revision.EntityKind == CalendarEntityKind.Event ? "event" : "todo";

@@ -56,6 +56,16 @@
           "isRequired": false
         },
         {
+          "name": "CALDAV_SCHEDULING_MODE",
+          "description": "Scheduling model: storage_only (default) blocks participant writes and collection deletion on auto-scheduling servers; server_managed allows them and discloses that the server may send invitations or cancellations (optional)",
+          "isRequired": false,
+          "default": "storage_only",
+          "choices": [
+            "storage_only",
+            "server_managed"
+          ]
+        },
+        {
           "name": "CALDAV_EXPOSE_EXACT_TOOLS",
           "description": "Set to true to expose protected exact Calendar Object Resource tools (optional)",
           "isRequired": false

@@ -458,6 +458,44 @@ public sealed class CalendarTelemetryTests
         }
     }
 
+    [Theory]
+    [InlineData("none", "none")]
+    [InlineData("possible", "possible")]
+    [InlineData("Possible", null)]
+    [InlineData("invitation_sent", null)]
+    public void ExportAllowlist_PreservesOnlyClosedSchedulingSideEffects(string value, string? expected)
+    {
+        using var listener = ListenTo(CalendarTelemetry.InstrumentationName);
+        using var source = new ActivitySource(CalendarTelemetry.InstrumentationName);
+        using var activity = source.StartActivity("caldav.operation");
+        activity.ShouldNotBeNull();
+        activity.SetTag("caldav.scheduling.side_effects", value);
+        activity.Stop();
+
+        new TelemetryActivityAllowlistProcessor().OnEnd(activity);
+
+        activity.GetTagItem("caldav.scheduling.side_effects").ShouldBe(expected);
+    }
+
+    [Fact]
+    public void Operation_EmitsObservedSchedulingSideEffectsOnly()
+    {
+        var stopped = new List<Activity>();
+        using var listener = ListenToOperation(stopped.Add);
+
+        using (var observed = CalendarTelemetry.StartOperation("events.create", CalendarTelemetryEntityKind.Event))
+        using (CalendarTelemetry.Attach(observed))
+        {
+            CalendarTelemetry.ObserveSchedulingSideEffects("possible");
+            observed!.Complete(CalendarOperationOutcome.Success);
+        }
+        using (var unobserved = CalendarTelemetry.StartOperation("events.create", CalendarTelemetryEntityKind.Event))
+            unobserved!.Complete(CalendarOperationOutcome.Success);
+
+        stopped.Select(activity => activity.GetTagItem("caldav.scheduling.side_effects"))
+            .ShouldBe(["possible", null]);
+    }
+
     [Fact]
     public void ExportAllowlist_NormalizesEverySupportedNumericRepresentation()
     {

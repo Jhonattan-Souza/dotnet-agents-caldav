@@ -118,6 +118,25 @@ public class CalDavMcpRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_UnknownSchedulingModeFailsStartupWithoutEchoingTheValue()
+    {
+        const string privateValue = "Server_Managed-private";
+        var output = new StringWriter();
+
+        var exitCode = await new CalDavMcpRunner(output).RunAsync(options =>
+        {
+            options.BaseUrl = "https://caldav.example.com";
+            options.Username = "user";
+            options.Password = "pass";
+            options.SchedulingMode = privateValue;
+        }, TestContext.Current.CancellationToken);
+
+        exitCode.ShouldBe(1);
+        output.ToString().ShouldContain("CalDav:SchedulingMode must be 'storage_only' or 'server_managed'");
+        output.ToString().ShouldNotContain(privateValue);
+    }
+
+    [Fact]
     public async Task RunAsync_MissingUsername_ReturnsExitCode1_WithUsernameInError()
     {
         var sw = new StringWriter();

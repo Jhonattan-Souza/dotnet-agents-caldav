@@ -572,13 +572,15 @@ internal sealed class ExactCalendarResourceWriteTools
         string? destinationHref)
     {
         var destination = destinationHref is null ? string.Empty : $", destination {destinationHref}";
-        return $"Confirm {operation} for href {revision.Href}{destination}, UID {revision.EntityUid}, "
-            + $"kind {Kind(revision.EntityKind)}, and expected ETag {revision.EntityTag}.";
+        return CalendarSchedulingDisclosure.WithConfirmationWarning(
+            $"Confirm {operation} for href {revision.Href}{destination}, UID {revision.EntityUid}, "
+            + $"kind {Kind(revision.EntityKind)}, and expected ETag {revision.EntityTag}.");
     }
 
     private static string ConfirmationMessage(CalendarExactCreateReviewBinding binding) =>
-        $"Confirm {CreateOperation} for destination {binding.DestinationHref}, UID {binding.EntityUid}, "
-        + $"and kind {Kind(binding.EntityKind)}.";
+        CalendarSchedulingDisclosure.WithConfirmationWarning(
+            $"Confirm {CreateOperation} for destination {binding.DestinationHref}, UID {binding.EntityUid}, "
+            + $"and kind {Kind(binding.EntityKind)}.");
 
     internal static bool IsConfirmationPreviewWithinBudget(string message) =>
         GetConfirmationPreviewByteCount(message) <= CalendarQueryToolSupport.MaximumHumanReadableBytes;

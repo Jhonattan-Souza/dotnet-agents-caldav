@@ -59,6 +59,9 @@ internal static class CalendarTelemetry
     internal static void ObserveMutationState(CalendarMutationState mutationState) =>
         CurrentOperation.Value?.ObserveMutationState(mutationState);
 
+    internal static void ObserveSchedulingSideEffects(string sideEffects) =>
+        CurrentOperation.Value?.ObserveSchedulingSideEffects(sideEffects);
+
     internal static void ObserveStructuredError(
         CalendarStructuredErrorFacts facts,
         CalendarMutationState mutationState)
@@ -285,6 +288,12 @@ internal static class CalendarTelemetryVocabulary
         _ => throw new ArgumentOutOfRangeException(nameof(state), state, null)
     };
 
+    internal static string? SchedulingSideEffects(string? value) => value switch
+    {
+        "none" or "possible" => value,
+        _ => null
+    };
+
     internal static string? MoveDispatch(string? value) => value switch
     {
         "not_attempted" or "rejected" or "dispatched" or "possibly_dispatched" => value,
@@ -329,6 +338,7 @@ internal sealed class CalendarTelemetryOperation : IDisposable
     private Activity? _phase;
     private CalendarStructuredErrorFacts? _structuredError;
     private CalendarMutationState? _mutationState;
+    private string? _schedulingSideEffects;
 
     internal CalendarTelemetryOperation(ActivitySource source, Activity operation)
     {
@@ -351,6 +361,8 @@ internal sealed class CalendarTelemetryOperation : IDisposable
     internal void ObserveMutationStateIfAbsent(CalendarMutationState mutationState) =>
         _mutationState ??= mutationState;
 
+    internal void ObserveSchedulingSideEffects(string sideEffects) => _schedulingSideEffects = sideEffects;
+
     internal void Complete(
         CalendarOperationOutcome outcome,
         CalendarMoveTelemetrySnapshot? moveTelemetry = null)
@@ -367,6 +379,9 @@ internal sealed class CalendarTelemetryOperation : IDisposable
             _mutationState is { } mutationState
                 ? CalendarTelemetryVocabulary.MutationStateName(mutationState)
                 : null);
+        _operation.SetTag(
+            "caldav.scheduling.side_effects",
+            CalendarTelemetryVocabulary.SchedulingSideEffects(_schedulingSideEffects));
         _operation.SetTag("caldav.move.dispatch", MoveDispatch(moveTelemetry));
         _operation.SetTag("caldav.move.collision", MoveCollision(moveTelemetry));
         _operation.SetTag("caldav.move.reconciliation", MoveReconciliation(moveTelemetry));
