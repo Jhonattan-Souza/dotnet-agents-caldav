@@ -22,6 +22,8 @@ public static class CalDavEnvironmentMapper
         return options =>
         {
             options.BaseUrl = getEnv("CALDAV_URL") ?? string.Empty;
+            // Omitted selects Basic; startup validation rejects any value outside the closed set.
+            options.AuthenticationScheme = getEnv("CALDAV_AUTH_SCHEME");
             options.Username = getEnv("CALDAV_USERNAME") ?? string.Empty;
             options.Password = getEnv("CALDAV_PASSWORD") ?? string.Empty;
             options.CalendarHrefs = getEnv("CALDAV_CALENDAR_HREFS");

@@ -68,6 +68,7 @@ public class McpMetadataTests
         envVarNames.ShouldBe(
         [
             "CALDAV_URL",
+            "CALDAV_AUTH_SCHEME",
             "CALDAV_USERNAME",
             "CALDAV_PASSWORD",
             "CALDAV_CALENDAR_HREFS",
@@ -94,6 +95,17 @@ public class McpMetadataTests
         envVars.EnumerateArray()
             .Single(item => item.GetProperty("name").GetString() == "OTEL_EXPORTER_OTLP_HEADERS")
             .GetProperty("isSecret").GetBoolean().ShouldBeTrue();
+        var authScheme = envVars.EnumerateArray()
+            .Single(item => item.GetProperty("name").GetString() == "CALDAV_AUTH_SCHEME");
+        authScheme.GetProperty("isRequired").GetBoolean().ShouldBeFalse();
+        authScheme.GetProperty("description").GetString().ShouldNotBeNull().ShouldContain("basic (default) or bearer");
+        envVars.EnumerateArray()
+            .Single(item => item.GetProperty("name").GetString() == "CALDAV_USERNAME")
+            .GetProperty("isRequired").GetBoolean().ShouldBeFalse();
+        var password = envVars.EnumerateArray()
+            .Single(item => item.GetProperty("name").GetString() == "CALDAV_PASSWORD");
+        password.GetProperty("isSecret").GetBoolean().ShouldBeTrue();
+        password.GetProperty("description").GetString().ShouldNotBeNull().ShouldContain("token for bearer");
         envVars.EnumerateArray()
             .Single(item => item.GetProperty("name").GetString() == "CALDAV_EVALUATION_TIME_ZONE")
             .GetProperty("isRequired").GetBoolean().ShouldBeTrue();
@@ -133,6 +145,31 @@ public class McpMetadataTests
 
         published.ShouldBe(["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25", "2026-07-28"]);
         published.ShouldBe(supported);
+    }
+
+    [Fact]
+    public void McpServerJson_CalendarEnvironmentMatchesTheLiveCatalog()
+    {
+        var projectDirectory = GetMcpProjectDir();
+        using var metadata = JsonDocument.Parse(File.ReadAllText(Path.Combine(projectDirectory, ".mcp", "server.json")));
+        using var catalog = JsonDocument.Parse(File.ReadAllText(Path.Combine(projectDirectory, "Contracts", "mcp-tool-catalog.json")));
+        var packaged = metadata.RootElement.GetProperty("packages")[0].GetProperty("environmentVariables")
+            .EnumerateArray()
+            .Where(item => item.GetProperty("name").GetString()!.StartsWith("CALDAV_", StringComparison.Ordinal))
+            .Select(item => (
+                Name: item.GetProperty("name").GetString()!,
+                Required: item.GetProperty("isRequired").GetBoolean(),
+                Secret: item.TryGetProperty("isSecret", out var secret) && secret.GetBoolean()))
+            .ToArray();
+        var live = catalog.RootElement.GetProperty("environment")
+            .EnumerateArray()
+            .Select(item => (
+                Name: item.GetProperty("name").GetString()!,
+                Required: item.GetProperty("required").GetBoolean(),
+                Secret: item.TryGetProperty("secret", out var secret) && secret.GetBoolean()))
+            .ToArray();
+
+        packaged.ShouldBe(live);
     }
 
     [Fact]

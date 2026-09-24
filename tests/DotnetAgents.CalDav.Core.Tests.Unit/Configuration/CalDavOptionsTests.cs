@@ -401,4 +401,120 @@ public class CalDavOptionsTests
 
         result.Failures.ShouldHaveSingleItem().ShouldBe("CalDav:BaseUrl is required.");
     }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("basic")]
+    public void ValidateCalDavOptions_OmittedOrBasicSchemeRequiresUsernameAndPassword(string? scheme)
+    {
+        var result = new ValidateCalDavOptions().Validate(null, new CalDavOptions
+        {
+            BaseUrl = "https://caldav.example.com",
+            AuthenticationScheme = scheme
+        });
+
+        result.Failed.ShouldBeTrue();
+        result.Failures.ShouldContain("CalDav:Username is required.");
+        result.Failures.ShouldContain("CalDav:Password is required.");
+    }
+
+    [Theory]
+    [InlineData("Bearer")]
+    [InlineData("BASIC")]
+    [InlineData("digest")]
+    [InlineData("bearer ")]
+    public void ValidateCalDavOptions_RejectsSchemeOutsideTheClosedSet(string scheme)
+    {
+        var result = new ValidateCalDavOptions().Validate(null, new CalDavOptions
+        {
+            BaseUrl = "https://caldav.example.com",
+            AuthenticationScheme = scheme,
+            Password = "token"
+        });
+
+        result.Failed.ShouldBeTrue();
+        result.Failures.ShouldBe(["CalDav:AuthenticationScheme must be 'basic' or 'bearer' when specified."]);
+    }
+
+    [Fact]
+    public void ValidateCalDavOptions_BearerSchemeAcceptsATokenWithoutUsername()
+    {
+        var result = new ValidateCalDavOptions().Validate(null, new CalDavOptions
+        {
+            BaseUrl = "https://caldav.example.com",
+            AuthenticationScheme = CalDavAuthenticationSchemes.Bearer,
+            Password = "eyJhbGciOiJIUzI1NiJ9.e30.ZRrHA1JJJW8opsbCGfG_HACGpVUMN_a9IV7pAx_Zmeo"
+        });
+
+        result.Succeeded.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void ValidateCalDavOptions_BearerSchemeRejectsAUsername()
+    {
+        var result = new ValidateCalDavOptions().Validate(null, new CalDavOptions
+        {
+            BaseUrl = "https://caldav.example.com",
+            AuthenticationScheme = CalDavAuthenticationSchemes.Bearer,
+            Username = "user",
+            Password = "token"
+        });
+
+        result.Failed.ShouldBeTrue();
+        result.Failures.ShouldBe([
+            "CalDav:Username must be empty when CalDav:AuthenticationScheme is 'bearer'; the token is sent without a username."
+        ]);
+    }
+
+    [Fact]
+    public void ValidateCalDavOptions_BearerSchemeRequiresAToken()
+    {
+        var result = new ValidateCalDavOptions().Validate(null, new CalDavOptions
+        {
+            BaseUrl = "https://caldav.example.com",
+            AuthenticationScheme = CalDavAuthenticationSchemes.Bearer,
+            Password = " "
+        });
+
+        result.Failed.ShouldBeTrue();
+        result.Failures.ShouldBe([
+            "CalDav:Password is required and holds the token when CalDav:AuthenticationScheme is 'bearer'."
+        ]);
+    }
+
+    [Theory]
+    [InlineData("two words")]
+    [InlineData("line\r\nX-Injected: 1")]
+    [InlineData("tab\tseparated")]
+    [InlineData("caf\u00e9")]
+    [InlineData("delete\u007f")]
+    public void ValidateCalDavOptions_BearerSchemeRejectsATokenThatIsNotHeaderSafe(string token)
+    {
+        var result = new ValidateCalDavOptions().Validate(null, new CalDavOptions
+        {
+            BaseUrl = "https://caldav.example.com",
+            AuthenticationScheme = CalDavAuthenticationSchemes.Bearer,
+            Password = token
+        });
+
+        result.Failed.ShouldBeTrue();
+        result.Failures.ShouldHaveSingleItem().ShouldContain("visible ASCII");
+        result.Failures.ShouldAllBe(failure => !failure.Contains(token, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void CalDavOptions_ToString_ReportsTheEffectiveSchemeWithoutTheToken()
+    {
+        var options = new CalDavOptions
+        {
+            BaseUrl = "https://caldav.example.com",
+            AuthenticationScheme = CalDavAuthenticationSchemes.Bearer,
+            Password = "static-token-secret"
+        };
+
+        options.ToString().ShouldContain("AuthenticationScheme = bearer");
+        options.ToString().ShouldNotContain("static-token-secret");
+        new CalDavOptions().ToString().ShouldContain("AuthenticationScheme = basic");
+    }
 }

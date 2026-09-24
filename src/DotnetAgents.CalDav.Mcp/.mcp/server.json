@@ -20,13 +20,18 @@
           "isRequired": true
         },
         {
+          "name": "CALDAV_AUTH_SCHEME",
+          "description": "CalDAV HTTP authentication scheme: basic (default) or bearer (optional)",
+          "isRequired": false
+        },
+        {
           "name": "CALDAV_USERNAME",
-          "description": "Username for CalDAV Basic authentication",
-          "isRequired": true
+          "description": "Username for CalDAV Basic authentication; required for basic and must be omitted for bearer",
+          "isRequired": false
         },
         {
           "name": "CALDAV_PASSWORD",
-          "description": "Password for CalDAV Basic authentication",
+          "description": "Password for CalDAV Basic authentication, or the static token for bearer",
           "isRequired": true,
           "isSecret": true
         },

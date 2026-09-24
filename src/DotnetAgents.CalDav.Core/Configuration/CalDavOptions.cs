@@ -13,10 +13,16 @@ public sealed class CalDavOptions
     /// <summary>Absolute CalDAV server endpoint or Calendar Home URL.</summary>
     public string BaseUrl { get; set; } = string.Empty;
 
-    /// <summary>Username for Basic / Bearer authentication.</summary>
+    /// <summary>
+    /// HTTP authentication scheme from <see cref="CalDavAuthenticationSchemes"/>.
+    /// Null or empty selects <see cref="CalDavAuthenticationSchemes.Basic"/>.
+    /// </summary>
+    public string? AuthenticationScheme { get; set; }
+
+    /// <summary>Username for Basic authentication. Must be empty for Bearer authentication.</summary>
     public string Username { get; set; } = string.Empty;
 
-    /// <summary>Password or token for authentication.</summary>
+    /// <summary>Password for Basic authentication, or the static token for Bearer authentication.</summary>
     public string Password { get; set; } = string.Empty;
 
     /// <summary>Comma-separated exact canonical Calendar href allowlist. Empty means every discovered Calendar.</summary>
@@ -51,7 +57,12 @@ public sealed class CalDavOptions
     public TimeSpan RequestTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     public override string ToString() =>
-        $"CalDavOptions {{ BaseUrl = {BaseUrl}, Username = {Username}, Password = *** }}";
+        $"CalDavOptions {{ BaseUrl = {BaseUrl}, AuthenticationScheme = {EffectiveAuthenticationScheme}, Username = {Username}, Password = *** }}";
+
+    /// <summary>The configured scheme, with an omitted value resolved to Basic.</summary>
+    internal string EffectiveAuthenticationScheme => string.IsNullOrEmpty(AuthenticationScheme)
+        ? CalDavAuthenticationSchemes.Basic
+        : AuthenticationScheme;
 }
 
 /// <summary>
@@ -77,11 +88,7 @@ internal sealed class ValidateCalDavOptions : IValidateOptions<CalDavOptions>
             failures.Add("CalDav:BaseUrl must be canonical and must not contain credentials, a query, a fragment, or encoded path traversal.");
         }
 
-        if (string.IsNullOrWhiteSpace(options.Username))
-            failures.Add("CalDav:Username is required.");
-
-        if (string.IsNullOrWhiteSpace(options.Password))
-            failures.Add("CalDav:Password is required.");
+        ValidateCredentials(options, failures);
 
         if (options.RequestTimeout <= TimeSpan.Zero)
             failures.Add("CalDav:RequestTimeout must be positive.");
@@ -94,6 +101,37 @@ internal sealed class ValidateCalDavOptions : IValidateOptions<CalDavOptions>
         return failures.Count > 0
             ? ValidateOptionsResult.Fail(failures)
             : ValidateOptionsResult.Success;
+    }
+
+    private static void ValidateCredentials(CalDavOptions options, ICollection<string> failures)
+    {
+        switch (options.EffectiveAuthenticationScheme)
+        {
+            case CalDavAuthenticationSchemes.Basic:
+                if (string.IsNullOrWhiteSpace(options.Username))
+                    failures.Add("CalDav:Username is required.");
+                if (string.IsNullOrWhiteSpace(options.Password))
+                    failures.Add("CalDav:Password is required.");
+                break;
+            case CalDavAuthenticationSchemes.Bearer:
+                ValidateBearerCredentials(options, failures);
+                break;
+            default:
+                failures.Add(
+                    $"CalDav:AuthenticationScheme must be '{CalDavAuthenticationSchemes.Basic}' or " +
+                    $"'{CalDavAuthenticationSchemes.Bearer}' when specified.");
+                break;
+        }
+    }
+
+    private static void ValidateBearerCredentials(CalDavOptions options, ICollection<string> failures)
+    {
+        if (!string.IsNullOrEmpty(options.Username))
+            failures.Add("CalDav:Username must be empty when CalDav:AuthenticationScheme is 'bearer'; the token is sent without a username.");
+        if (string.IsNullOrWhiteSpace(options.Password))
+            failures.Add("CalDav:Password is required and holds the token when CalDav:AuthenticationScheme is 'bearer'.");
+        else if (!BearerTokenSyntax.IsValid(options.Password))
+            failures.Add("CalDav:Password must be a single bearer token of visible ASCII characters without spaces when CalDav:AuthenticationScheme is 'bearer'.");
     }
 
     private static void ValidateEvaluationTimeZone(CalDavOptions options, ICollection<string> failures)
@@ -161,6 +199,23 @@ public static class CalDavSchedulingModes
     /// <summary>Whether validated options opted into server-managed scheduling.</summary>
     public static bool IsServerManaged(CalDavOptions options) =>
         string.Equals(options.SchedulingMode, ServerManaged, StringComparison.Ordinal);
+}
+
+/// <summary>Closed set of HTTP authentication schemes accepted by <see cref="CalDavOptions.AuthenticationScheme"/>.</summary>
+public static class CalDavAuthenticationSchemes
+{
+    /// <summary>HTTP Basic authentication with a username and password.</summary>
+    public const string Basic = "basic";
+
+    /// <summary>A static bearer token, such as one issued for a gateway or proxy.</summary>
+    public const string Bearer = "bearer";
+}
+
+internal static class BearerTokenSyntax
+{
+    /// <summary>A header-safe credential: one or more visible ASCII characters without whitespace.</summary>
+    internal static bool IsValid(string value) => value.Length > 0
+        && value.All(character => character is > ' ' and < '\u007f');
 }
 
 /// <summary>Closed set of server runtimes with verified atomic mutation preconditions.</summary>

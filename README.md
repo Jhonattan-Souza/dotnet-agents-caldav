@@ -57,8 +57,9 @@ client-specific commands.
 | Variable | Required | Description |
 | --- | --- | --- |
 | `CALDAV_URL` | Yes | Absolute CalDAV server endpoint or Calendar Home URL |
-| `CALDAV_USERNAME` | Yes | Username for Basic auth |
-| `CALDAV_PASSWORD` | Yes | Password for Basic auth |
+| `CALDAV_AUTH_SCHEME` | No | HTTP authentication scheme: `basic` (default) or `bearer`; any other value fails startup |
+| `CALDAV_USERNAME` | For `basic` | Username for Basic auth; must be omitted for `bearer` |
+| `CALDAV_PASSWORD` | Yes | Password for Basic auth, or the static token sent as `Authorization: Bearer` for `bearer` |
 | `CALDAV_CALENDAR_HREFS` | No | Comma-separated exact canonical Calendar href allowlist; omit to discover every Calendar |
 | `CALDAV_DEFAULT_TODO_CALENDAR_NAME` | No | Display name of the default Calendar for To-do operations |
 | `CALDAV_DEFAULT_EVENT_CALENDAR_NAME` | No | Display name of the default Calendar for Event operations |
@@ -72,6 +73,15 @@ client-specific commands.
 | `OTEL_EXPORTER_OTLP_HEADERS` | No | Secret OTLP authentication or routing headers; never included in exported telemetry |
 | `OTEL_SERVICE_NAME` | No | Service name override; defaults to `dotnet-agents-caldav` |
 | `OTEL_SDK_DISABLED` | No | Set to `true` to disable the SDK even when an endpoint is configured |
+
+## Authentication
+
+`CALDAV_AUTH_SCHEME` selects how each CalDAV request is authenticated:
+
+- `basic` (default) sends `CALDAV_USERNAME` and `CALDAV_PASSWORD` as HTTP Basic credentials.
+- `bearer` sends `CALDAV_PASSWORD` unchanged as `Authorization: Bearer <token>` for gateways, proxies, and other static tokens. `CALDAV_USERNAME` must be omitted, and the token is never refreshed.
+
+Credentials are attached only to requests on the `CALDAV_URL` origin. Redirects are followed manually and only within that origin, so a cross-origin `Location` never receives them. Digest and client-certificate (mTLS) authentication are not supported.
 
 ## Available tools
 

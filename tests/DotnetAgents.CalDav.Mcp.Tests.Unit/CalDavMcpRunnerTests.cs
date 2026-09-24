@@ -171,6 +171,43 @@ public class CalDavMcpRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_BearerSchemeWithUsernameFailsStartupWithoutEchoingTheToken()
+    {
+        const string token = "private-bearer-token";
+        var output = new StringWriter();
+
+        var exitCode = await new CalDavMcpRunner(output).RunAsync(CalDavEnvironmentMapper.MapFromEnvironment(name => name switch
+        {
+            "CALDAV_URL" => "https://caldav.example.com",
+            "CALDAV_AUTH_SCHEME" => "bearer",
+            "CALDAV_USERNAME" => "user",
+            "CALDAV_PASSWORD" => token,
+            _ => null
+        }), TestContext.Current.CancellationToken);
+
+        exitCode.ShouldBe(1);
+        output.ToString().ShouldContain("CalDav:Username must be empty when CalDav:AuthenticationScheme is 'bearer'");
+        output.ToString().ShouldNotContain(token);
+    }
+
+    [Fact]
+    public async Task RunAsync_UnknownAuthenticationSchemeFailsStartupWithTheClosedSet()
+    {
+        var output = new StringWriter();
+
+        var exitCode = await new CalDavMcpRunner(output).RunAsync(options =>
+        {
+            options.BaseUrl = "https://caldav.example.com";
+            options.AuthenticationScheme = "digest";
+            options.Username = "user";
+            options.Password = "pass";
+        }, TestContext.Current.CancellationToken);
+
+        exitCode.ShouldBe(1);
+        output.ToString().ShouldContain("CalDav:AuthenticationScheme must be 'basic' or 'bearer' when specified.");
+    }
+
+    [Fact]
     public async Task RunAsync_DoesNotThrowUnhandled_OptionsValidationException()
     {
         // Proves the runner catches OptionsValidationException rather than propagating it

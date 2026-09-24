@@ -69,6 +69,7 @@ internal sealed class CalendarQueryCapabilityState
             {
                 writer.WriteStartArray();
                 writer.WriteStringValue(options.BaseUrl);
+                writer.WriteStringValue(options.EffectiveAuthenticationScheme);
                 writer.WriteStringValue(options.Username);
                 writer.WriteStringValue(options.Password);
                 writer.WriteStringValue(options.CalendarHrefs);

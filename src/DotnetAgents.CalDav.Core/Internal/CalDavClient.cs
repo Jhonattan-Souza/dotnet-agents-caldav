@@ -1095,6 +1095,7 @@ internal sealed partial class CalDavClient : ICalendarClient, ICalendarMoveResou
 
     private static int GetConfigurationFingerprint(CalDavOptions options) => HashCode.Combine(
         options.BaseUrl,
+        options.EffectiveAuthenticationScheme,
         options.Username,
         options.Password,
         options.CalendarHrefs,
