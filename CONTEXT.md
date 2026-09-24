@@ -216,7 +216,7 @@ The opt-in Scheduling Mode in which the CalDAV server, not this system, may deli
 _Avoid_: Meeting invitations, send invite, scheduling support
 
 **Scheduling Side-effect Disclosure**:
-The typed `schedulingSideEffects` value, `possible` or `none`, on a scheduling-governed mutation outcome under Server-managed Scheduling whose write committed or may have committed; `possible` means the server advertised automatic scheduling and may have contacted participants.
+The typed `schedulingSideEffects` value, `possible` or `none`, on a scheduling-governed mutation outcome under Server-managed Scheduling whose write committed or may have committed. `possible` means this call admitted a write because the server advertised automatic scheduling, so the server may have contacted participants; `none` means this call admitted no write on a server that advertised automatic scheduling.
 _Avoid_: Invitation receipt, delivery status
 
 **Inert External Reference**:

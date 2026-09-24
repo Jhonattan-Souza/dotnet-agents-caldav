@@ -9887,7 +9887,7 @@
       }
     },
     "schedulingSideEffects": {
-      "description": "Present only under CALDAV_SCHEDULING_MODE=server_managed on scheduling-governed mutations whose mutationState is committed or unknown. possible: the server advertised calendar-auto-schedule and may have sent invitations, updates, replies or cancellations; none: the write carried no participation data or the server proved automatic scheduling absent.",
+      "description": "Present only under CALDAV_SCHEDULING_MODE=server_managed on scheduling-governed mutations whose mutationState is committed or unknown. possible: this call admitted a write because the server advertised calendar-auto-schedule, so the server may have sent invitations, updates, replies or cancellations; none: this call admitted no write on a server that advertised calendar-auto-schedule.",
       "enum": [
         "none",
         "possible"
