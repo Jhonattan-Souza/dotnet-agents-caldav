@@ -21,9 +21,10 @@ public sealed class CalDavServiceCollectionExtensionsTests
     [Fact]
     public void AddCalDavCalendars_DisablesAutomaticRedirectsOnTheConfiguredHandler()
     {
-        SocketsHttpHandler? handler = null;
+        CalendarConnectionPersistenceHandler? handler = null;
         var services = new ServiceCollection();
-        services.AddSingleton<IHttpMessageHandlerBuilderFilter>(new CapturingHandlerFilter(candidate => handler = candidate as SocketsHttpHandler));
+        services.AddSingleton<IHttpMessageHandlerBuilderFilter>(
+            new CapturingHandlerFilter(candidate => handler = candidate as CalendarConnectionPersistenceHandler));
         services.AddCalDavCalendars(options =>
         {
             options.BaseUrl = "https://cal.example";
@@ -35,16 +36,17 @@ public sealed class CalDavServiceCollectionExtensionsTests
         _ = provider.GetRequiredService<ICalendarClient>();
 
         handler.ShouldNotBeNull();
-        handler.AllowAutoRedirect.ShouldBeFalse();
+        handler.Pooled.AllowAutoRedirect.ShouldBeFalse();
+        handler.PerRequest.AllowAutoRedirect.ShouldBeFalse();
     }
 
     [Fact]
-    public void AddCalDavCalendars_RecyclesIdleConnectionsBeforePinnedRadicaleTimeout()
+    public void AddCalDavCalendars_RecyclesIdleConnectionsBeforeTypicalServerTimeout()
     {
-        SocketsHttpHandler? handler = null;
+        CalendarConnectionPersistenceHandler? handler = null;
         var services = new ServiceCollection();
         services.AddSingleton<IHttpMessageHandlerBuilderFilter>(
-            new CapturingHandlerFilter(candidate => handler = candidate as SocketsHttpHandler));
+            new CapturingHandlerFilter(candidate => handler = candidate as CalendarConnectionPersistenceHandler));
         services.AddCalDavCalendars(options =>
         {
             options.BaseUrl = "https://cal.example";
@@ -56,9 +58,11 @@ public sealed class CalDavServiceCollectionExtensionsTests
         _ = provider.GetRequiredService<ICalendarClient>();
 
         handler.ShouldNotBeNull();
-        handler.PooledConnectionIdleTimeout.ShouldBe(TimeSpan.FromSeconds(20));
-        handler.PooledConnectionIdleTimeout.ShouldBeLessThan(TimeSpan.FromSeconds(30));
-        handler.PooledConnectionLifetime.ShouldBe(TimeSpan.FromMinutes(2));
+        handler.Pooled.PooledConnectionIdleTimeout.ShouldBe(TimeSpan.FromSeconds(20));
+        handler.Pooled.PooledConnectionIdleTimeout.ShouldBeLessThan(TimeSpan.FromSeconds(30));
+        handler.Pooled.PooledConnectionLifetime.ShouldBe(TimeSpan.FromMinutes(2));
+        handler.PerRequest.PooledConnectionLifetime.ShouldBe(TimeSpan.Zero);
+        handler.PerRequest.AutomaticDecompression.ShouldBe(handler.Pooled.AutomaticDecompression);
     }
 
     [Fact]
