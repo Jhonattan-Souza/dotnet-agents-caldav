@@ -35,10 +35,10 @@ public sealed class CalendarMutationProtocolRegressionTests
 
     private static async Task<string> ExecuteAsync(string operation, HttpClient client)
     {
-        var configuredBaseUri = new CalDavAccountOrigins(new Uri("https://example.com"));
+        var accountOrigins = new CalDavAccountOrigins(new Uri("https://example.com"));
         return operation switch
         {
-            "create" => (await new CalendarResourceCreateProtocol(client, configuredBaseUri).CreateAsync(
+            "create" => (await new CalendarResourceCreateProtocol(client, accountOrigins).CreateAsync(
                 new CalendarResourceCreateRequest(
                     "https://example.com/calendars/events/",
                     "https://example.com/calendars/events/a.ics",
@@ -48,7 +48,7 @@ public sealed class CalendarMutationProtocolRegressionTests
                 CalendarResourceCreateCode.UpstreamProtocolError => "upstream_protocol_error",
                 _ => "unexpected"
             },
-            "update" => (await new CalendarResourceUpdateProtocol(client, configuredBaseUri).UpdateAsync(
+            "update" => (await new CalendarResourceUpdateProtocol(client, accountOrigins).UpdateAsync(
                 new CalendarResourceUpdateRequest(
                     "https://example.com/calendars/events/a.ics",
                     "\"r1\"",
@@ -58,7 +58,7 @@ public sealed class CalendarMutationProtocolRegressionTests
                 CalendarResourceUpdateDispatchCode.UpstreamProtocolError => "upstream_protocol_error",
                 _ => "unexpected"
             },
-            "delete" => (await new CalendarResourceDeleteProtocol(client, configuredBaseUri).DeleteAsync(
+            "delete" => (await new CalendarResourceDeleteProtocol(client, accountOrigins).DeleteAsync(
                 new CalendarResourceDeleteRequest(
                     "https://example.com/calendars/events/a.ics",
                     "\"r1\""),
@@ -67,7 +67,7 @@ public sealed class CalendarMutationProtocolRegressionTests
                 CalendarResourceDeleteDispatchCode.UpstreamProtocolError => "upstream_protocol_error",
                 _ => "unexpected"
             },
-            "move" => (await new CalendarResourceMoveProtocol(client, configuredBaseUri).MoveAsync(
+            "move" => (await new CalendarResourceMoveProtocol(client, accountOrigins).MoveAsync(
                 new CalendarResourceMoveDispatchRequest(
                     "https://example.com/calendars/events/a.ics",
                     "https://example.com/calendars/archive/a.ics",

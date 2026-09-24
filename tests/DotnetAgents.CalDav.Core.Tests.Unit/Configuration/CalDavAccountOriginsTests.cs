@@ -67,6 +67,24 @@ public sealed class CalDavAccountOriginsTests
     }
 
     [Fact]
+    public void From_ReusesOnlyTheMatchingConfiguration()
+    {
+        var delegated = new CalDavOptions { BaseUrl = "https://caldav.icloud.com/", RedirectHosts = ".icloud.com" };
+        var sameEndpoint = new CalDavOptions { BaseUrl = "https://caldav.icloud.com/" };
+        var otherEndpoint = new CalDavOptions { BaseUrl = "https://other.example/", RedirectHosts = ".icloud.com" };
+        var candidate = new Uri("https://p01-caldav.icloud.com/");
+
+        for (var round = 0; round < 2; round++)
+        {
+            CalDavAccountOrigins.From(delegated).Contains(candidate).ShouldBeTrue();
+            CalDavAccountOrigins.From(delegated).Contains(candidate).ShouldBeTrue();
+            CalDavAccountOrigins.From(sameEndpoint).Contains(candidate).ShouldBeFalse();
+            CalDavAccountOrigins.From(otherEndpoint).Contains(new Uri("https://other.example/x/")).ShouldBeTrue();
+            CalDavAccountOrigins.From(delegated).Contains(new Uri("https://other.example/x/")).ShouldBeFalse();
+        }
+    }
+
+    [Fact]
     public void TryParseList_NormalizesExactHostsAndStrictSubdomainSuffixes()
     {
         CalDavRedirectHostRule.TryParseList(" P01-CalDAV.iCloud.com ,.Example.org", out var rules).ShouldBeTrue();
