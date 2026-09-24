@@ -311,6 +311,72 @@ public sealed class ContractCatalogTests
     }
 
     [Fact]
+    public void Error_outcomes_advertise_a_current_snapshot_only_for_entity_mutations()
+    {
+        var definitions = ReadJson("mcp-tool-catalog.json")["$defs"]!;
+
+        definitions["errorOutcome"]!["properties"]!.AsObject().ShouldNotContainKey("currentSnapshot");
+        definitions["calendarMetadataPatchErrorOutcome"]!["properties"]!.AsObject()
+            .ShouldNotContainKey("currentSnapshot");
+        definitions["mutationErrorOutcome"]!["properties"]!["currentSnapshot"]!["$ref"]!.GetValue<string>()
+            .ShouldBe("#/$defs/calendarSnapshot");
+        var expectedCollectionError = definitions["mutationErrorOutcome"]!.DeepClone().AsObject();
+        expectedCollectionError["properties"]!.AsObject().Remove("currentSnapshot");
+        JsonNode.DeepEquals(definitions["calendarCollectionMutationErrorOutcome"], expectedCollectionError)
+            .ShouldBeTrue();
+        foreach (var outcome in new[] { "calendarCollectionCreateOutcome", "calendarCollectionDeleteOutcome" })
+        {
+            var branches = definitions[outcome]!["oneOf"]!.AsArray()
+                .Select(branch => branch!["$ref"]!.GetValue<string>()).ToArray();
+            branches.ShouldContain("#/$defs/calendarCollectionMutationErrorOutcome");
+            branches.ShouldNotContain("#/$defs/mutationErrorOutcome");
+        }
+    }
+
+    [Theory]
+    [InlineData("calendars.list")]
+    [InlineData("calendars.create")]
+    [InlineData("calendars.delete")]
+    [InlineData("calendars.inspect")]
+    [InlineData("calendars.patch")]
+    [InlineData("calendars.free_busy")]
+    [InlineData("calendar_resources.changes")]
+    [InlineData("calendar_resources.exact_get")]
+    [InlineData("todos.query")]
+    public void Tools_without_entity_snapshots_advertise_no_calendar_snapshot_schema(string toolName)
+    {
+        var schema = JsonNode.Parse(CalendarToolContract.GetOutputSchema(toolName).GetRawText())!;
+
+        schema["$defs"]!.AsObject().ShouldNotContainKey("calendarSnapshot");
+        schema["$defs"]!.AsObject().ShouldNotContainKey("eventProjection");
+    }
+
+    [Theory]
+    [InlineData("calendar_entities.query")]
+    [InlineData("calendar_resources.get")]
+    [InlineData("events.patch")]
+    [InlineData("calendar_resources.delete")]
+    public void Tools_returning_entity_snapshots_keep_the_complete_snapshot_schema(string toolName)
+    {
+        var schema = JsonNode.Parse(CalendarToolContract.GetOutputSchema(toolName).GetRawText())!;
+
+        schema["$defs"]!.AsObject().ShouldContainKey("calendarSnapshot");
+        schema["$defs"]!.AsObject().ShouldContainKey("eventProjection");
+    }
+
+    [Fact]
+    public void Tools_list_cache_hint_is_one_private_hour()
+    {
+        var cache = ReadJson("mcp-tool-catalog.json")["transport"]!["toolsListCache"]!.AsObject();
+
+        cache.Select(property => property.Key).ShouldBe(["ttlMs", "cacheScope"]);
+        cache["ttlMs"]!.GetValue<int>().ShouldBe(3_600_000);
+        cache["cacheScope"]!.GetValue<string>().ShouldBe("private");
+        CalendarToolContract.GetToolsListCache().ShouldBe(
+            (TimeSpan.FromHours(1), ModelContextProtocol.Protocol.CacheScope.Private));
+    }
+
+    [Fact]
     public void Mcp_catalog_freezes_kind_specific_create_recurrence_without_changing_read_or_patch_shapes()
     {
         var catalog = ReadJson("mcp-tool-catalog.json");

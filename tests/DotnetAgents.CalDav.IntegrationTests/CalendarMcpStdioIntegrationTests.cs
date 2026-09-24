@@ -77,6 +77,9 @@ public sealed class CalendarMcpStdioIntegrationTests
         calendarTool.OutputSchema!.Value.GetProperty("oneOf").GetArrayLength().ShouldBe(2);
         calendarTool.Meta!["cache"]!["ttlMs"]!.GetValue<int>().ShouldBe(30000);
         calendarTool.Meta!["cache"]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
+        calendarTool.OutputSchema!.Value.GetProperty("$defs").TryGetProperty("calendarSnapshot", out _).ShouldBeFalse();
+        listedTools.TimeToLive.ShouldBe(TimeSpan.FromHours(1));
+        listedTools.CacheScope.ShouldBe(CacheScope.Private);
         result.StructuredContent.ShouldNotBeNull();
         var structured = result.StructuredContent!.Value;
         structured.GetProperty("outcome").GetString().ShouldBe("success");

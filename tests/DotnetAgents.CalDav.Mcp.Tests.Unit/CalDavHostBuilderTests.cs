@@ -607,6 +607,35 @@ public class CalDavHostBuilderTests
             "Review, confirm, and atomically move one strong-revision-bound complete resource to an explicitly provided absolute destination href with constant work and authoritative-byte verification.");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task BuildHost_AdvertisesCatalogCacheHintsOnToolsList(bool exposeExactTools)
+    {
+        var builder = CalDavHostBuilder.CreateBuilder(exposeExactTools);
+        builder.Services.ConfigureCalDav(ValidOptions);
+        using var host = builder.Build();
+        var filters = host.Services
+            .GetRequiredService<IOptions<ModelContextProtocol.Server.McpServerOptions>>()
+            .Value.Filters.Request.ListToolsFilters;
+        var catalogCache = JsonNode.Parse(File.ReadAllText(Path.Combine(
+            RepositoryRoot(), "src", "DotnetAgents.CalDav.Mcp", "Contracts", "mcp-tool-catalog.json")))!
+            ["transport"]!["toolsListCache"]!;
+        ModelContextProtocol.Server.McpRequestHandler<
+            ModelContextProtocol.Protocol.ListToolsRequestParams,
+            ModelContextProtocol.Protocol.ListToolsResult> handler =
+                (_, _) => ValueTask.FromResult(new ModelContextProtocol.Protocol.ListToolsResult());
+        foreach (var filter in filters.Reverse())
+            handler = filter(handler);
+
+        var result = await handler(null!, TestContext.Current.CancellationToken);
+
+        result.TimeToLive.ShouldBe(TimeSpan.FromMilliseconds(catalogCache["ttlMs"]!.GetValue<int>()));
+        result.TimeToLive.ShouldBe(TimeSpan.FromHours(1));
+        result.CacheScope.ShouldBe(ModelContextProtocol.Protocol.CacheScope.Private);
+        catalogCache["cacheScope"]!.GetValue<string>().ShouldBe("private");
+    }
+
     [Fact]
     public void BuildHost_AllToolsMatchCatalogCacheAndAnnotationValues()
     {

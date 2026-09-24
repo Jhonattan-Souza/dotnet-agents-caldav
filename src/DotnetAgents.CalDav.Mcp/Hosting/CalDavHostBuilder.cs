@@ -35,6 +35,7 @@ public sealed class CalDavHostBuilder
             .WithStdioServerTransport()
             .WithMessageFilters(filters => filters.AddIncomingFilter(StrictToolInputGuard.Incoming))
             .WithRequestFilters(filters => filters
+                .AddListToolsFilter(CalendarToolListCache.ListTools)
                 .AddCallToolFilter(CalendarOutputSchemaGuard.CallTool)
                 .AddCallToolFilter(CalendarExecutionPolicy.CallTool)
                 .AddCallToolFilter(StrictToolInputGuard.CallTool))
