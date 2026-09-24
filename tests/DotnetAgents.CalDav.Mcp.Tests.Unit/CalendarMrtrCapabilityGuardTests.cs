@@ -6,6 +6,7 @@ using DotnetAgents.CalDav.Mcp.Tools;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
+using ModelContextProtocol.Server;
 using NSubstitute;
 using Shouldly;
 using Xunit;
@@ -88,6 +89,81 @@ public sealed class CalendarMrtrCapabilityGuardTests
         }).ShouldBeFalse();
         CalendarMrtrCapabilityGuard.DeclaresFormElicitation(
             CalendarMrtrCapabilityGuard.RequiredCapabilities()).ShouldBeTrue();
+    }
+
+    [Theory]
+    [InlineData("2026-07-28", true)]
+    [InlineData("2026-12-01", true)]
+    [InlineData("2025-11-25", false)]
+    [InlineData("2024-11-05", false)]
+    [InlineData(null, false)]
+    public void UsesPerRequestCapabilities_StartsAtTheHandshakeFreeRevision(string? protocolVersion, bool expected)
+    {
+        CalendarMrtrCapabilityGuard.UsesPerRequestCapabilities(protocolVersion).ShouldBe(expected);
+    }
+
+    // 2026-07-28 keeps the MRTR answer and leaves an undeclared capability to the -32021 refusal. The
+    // initialize-handshake revisions confirm through a classic elicitation request, so only a session
+    // that declared form elicitation can open the round; any other session takes the typed result.
+    [Theory]
+    [InlineData("2026-07-28", true, false, true)]
+    [InlineData("2026-07-28", false, true, false)]
+    [InlineData("2025-06-18", true, true, true)]
+    [InlineData("2025-11-25", true, false, false)]
+    [InlineData("2025-11-25", false, true, false)]
+    [InlineData(null, true, false, false)]
+    [InlineData(null, true, true, true)]
+    public void IsConfirmationSupported_DecidesPerNegotiatedRevision(
+        string? protocolVersion,
+        bool mrtrSupported,
+        bool declaresForm,
+        bool expected)
+    {
+        var capabilities = declaresForm ? CalendarMrtrCapabilityGuard.RequiredCapabilities() : new ClientCapabilities();
+
+        CalendarMrtrCapabilityGuard.IsConfirmationSupported(protocolVersion, mrtrSupported, capabilities)
+            .ShouldBe(expected);
+    }
+
+    [Fact]
+    public void IsConfirmationSupported_ReadsTheRequestRevisionBeforeTheSessionRevision()
+    {
+        var server = Substitute.For<McpServer>();
+        server.IsMrtrSupported.Returns(true);
+        server.NegotiatedProtocolVersion.Returns("2025-11-25");
+
+        CalendarMrtrCapabilityGuard.IsConfirmationSupported(CreateContext(server, "2026-07-28")).ShouldBeTrue();
+        CalendarMrtrCapabilityGuard.IsConfirmationSupported(CreateContext(server, null)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void RequireConfirmationCapability_RefusesAnUndeclaredPerRequestRevisionWithMinus32021()
+    {
+        var server = Substitute.For<McpServer>();
+        server.IsMrtrSupported.Returns(true);
+        server.ClientCapabilities.Returns(new ClientCapabilities());
+
+        var exception = Should.Throw<MissingRequiredClientCapabilityException>(() =>
+            CalendarMrtrCapabilityGuard.RequireConfirmationCapability(CreateContext(server, "2026-07-28")));
+
+        exception.RequiredCapabilities.Elicitation!.Form.ShouldNotBeNull();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RequireConfirmationCapability_NeverRefusesAnInitializeHandshakeSession(bool declaresForm)
+    {
+        var server = Substitute.For<McpServer>();
+        server.IsMrtrSupported.Returns(true);
+        server.NegotiatedProtocolVersion.Returns("2025-06-18");
+        server.ClientCapabilities.Returns(declaresForm
+            ? CalendarMrtrCapabilityGuard.RequiredCapabilities()
+            : new ClientCapabilities());
+        var context = CreateContext(server, null);
+
+        Should.NotThrow(() => CalendarMrtrCapabilityGuard.RequireConfirmationCapability(context));
+        CalendarMrtrCapabilityGuard.IsConfirmationSupported(context).ShouldBe(declaresForm);
     }
 
     [Fact]
@@ -202,6 +278,16 @@ public sealed class CalendarMrtrCapabilityGuardTests
 
         required.Result.RequestState.ShouldNotBeNullOrWhiteSpace();
     }
+
+    private static RequestContext<CallToolRequestParams> CreateContext(McpServer server, string? protocolVersion) => new(
+        server,
+        new JsonRpcRequest
+        {
+            Id = new RequestId(1L),
+            Method = "tools/call",
+            Context = protocolVersion is null ? null : new JsonRpcMessageContext { ProtocolVersion = protocolVersion }
+        },
+        new CallToolRequestParams { Name = "calendar_resources.delete" });
 
     private static ICalendarService ReviewedEventService()
     {

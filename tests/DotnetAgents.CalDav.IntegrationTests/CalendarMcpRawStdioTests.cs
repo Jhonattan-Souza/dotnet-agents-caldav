@@ -304,27 +304,210 @@ public sealed class CalendarMcpRawStdioTests
         stderr.ShouldBeEmpty();
     }
 
-    [Fact]
-    public async Task CalendarResourceDelete_LegacySdkIsRejectedAtProtocolHandshakeBeforeDelete()
+    // Initialize-handshake revisions connect and read. Without a declared elicitation the protected
+    // delete keeps its typed unsupported_capability result instead of the 2026-07-28-only -32021 error.
+    [Theory]
+    [InlineData("2025-06-18")]
+    [InlineData("2025-11-25")]
+    public async Task CalendarResourceDelete_LegacySdkWithoutElicitationReadsAndReturnsTypedUnsupportedCapability(
+        string protocolVersion)
     {
         await using var server = new DeleteServer();
         var stderr = new ConcurrentQueue<string>();
         var launch = CreateDeleteLaunch(server, stderr);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(20));
+        await using var client = await McpStdioClientFactory.ConnectAsync(
+            launch,
+            new McpClientOptions { ProtocolVersion = protocolVersion },
+            cancellationToken: timeout.Token);
+
+        client.NegotiatedProtocolVersion.ShouldBe(protocolVersion);
+        var read = await client.CallToolAsync(
+            "calendar_resources.get",
+            new Dictionary<string, object?> { ["href"] = server.ResourceHref },
+            cancellationToken: timeout.Token);
+        read.IsError.ShouldBe(false, read.StructuredContent?.ToString());
+        var result = await CallDeleteAsync(client, server.ResourceHref, timeout.Token);
+
+        result.IsError.ShouldBe(true);
+        var structured = result.StructuredContent!.Value;
+        structured.GetProperty("code").GetString().ShouldBe("unsupported_capability");
+        structured.GetProperty("phase").GetString().ShouldBe("mrtr");
+        structured.GetProperty("mutationState").GetString().ShouldBe("not_attempted");
+        server.DeleteCount.ShouldBe(0);
+        server.IsDeleted.ShouldBeFalse();
+        stderr.ShouldBeEmpty();
+    }
+
+    [Theory]
+    [InlineData("2025-06-18", "accept")]
+    [InlineData("2025-06-18", "decline")]
+    [InlineData("2025-11-25", "accept")]
+    [InlineData("2025-11-25", "decline")]
+    public async Task CalendarResourceDelete_LegacySdkWithElicitationConfirmsThroughClassicElicitation(
+        string protocolVersion,
+        string action)
+    {
+        await using var server = new DeleteServer();
+        var stderr = new ConcurrentQueue<string>();
+        var launch = CreateDeleteLaunch(server, stderr);
+        var elicitationCount = 0;
+        var deleteCountAtElicitation = -1;
         var options = new McpClientOptions
         {
-            ProtocolVersion = "2025-06-18",
-            DiscoverProbeTimeout = TimeSpan.FromSeconds(10)
+            ProtocolVersion = protocolVersion,
+            Handlers = new McpClientHandlers
+            {
+                ElicitationHandler = (request, _) =>
+                {
+                    Interlocked.Increment(ref elicitationCount);
+                    deleteCountAtElicitation = server.DeleteCount;
+                    request.ShouldNotBeNull().Message.ShouldContain("stdio-delete-1");
+                    request.RequestedSchema.ShouldNotBeNull().Properties.ShouldContainKey("confirm");
+                    return ValueTask.FromResult(action == "accept"
+                        ? new ElicitResult
+                        {
+                            Action = "accept",
+                            Content = new Dictionary<string, JsonElement>
+                            {
+                                ["confirm"] = JsonSerializer.SerializeToElement(true)
+                            }
+                        }
+                        : new ElicitResult { Action = action });
+                }
+            }
         };
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(20));
-        await Should.ThrowAsync<UnsupportedProtocolVersionException>(async () =>
+        await using var client = await McpStdioClientFactory.ConnectAsync(
+            launch,
+            options,
+            cancellationToken: timeout.Token);
+
+        client.NegotiatedProtocolVersion.ShouldBe(protocolVersion);
+        var result = await CallDeleteAsync(client, server.ResourceHref, timeout.Token);
+
+        elicitationCount.ShouldBe(1);
+        deleteCountAtElicitation.ShouldBe(0);
+        result.IsError.ShouldBe(false, result.StructuredContent?.ToString());
+        var structured = result.StructuredContent!.Value;
+        if (action == "accept")
         {
-            await using var client = await McpStdioClientFactory.ConnectAsync(
-                launch,
-                options,
-                cancellationToken: timeout.Token);
-        });
-        server.DeleteCount.ShouldBe(0);
+            structured.GetProperty("outcome").GetString().ShouldBe("success");
+            structured.GetProperty("mutationState").GetString().ShouldBe("committed");
+            server.DeleteCount.ShouldBe(1);
+            server.ObservedIfMatch.ShouldBe("\"r1\"");
+        }
+        else
+        {
+            structured.GetProperty("outcome").GetString().ShouldBe("confirmation_declined");
+            structured.GetProperty("mutationState").GetString().ShouldBe("not_attempted");
+            server.DeleteCount.ShouldBe(0);
+            server.IsDeleted.ShouldBeFalse();
+        }
+        stderr.ShouldBeEmpty();
+    }
+
+    // The classic path sends only the elicitation parameters; the protected continuation state stays
+    // inside the server process and never appears on the wire.
+    [Theory]
+    [InlineData("2025-06-18", "{\"elicitation\":{}}")]
+    [InlineData("2025-11-25", "{\"elicitation\":{\"form\":{}}}")]
+    public async Task CalendarResourceDelete_RawLegacyHandshakeConfirmsThroughElicitationCreate(
+        string protocolVersion,
+        string capabilities)
+    {
+        await using var server = new DeleteServer();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        using var process = StartServer(server.BaseUrl, server.CalendarHref);
+        try
+        {
+            var initialize = await InitializeLegacyAsync(process, protocolVersion, capabilities, timeout.Token);
+            initialize.GetProperty("result").GetProperty("protocolVersion").GetString().ShouldBe(protocolVersion);
+            await process.StandardInput.WriteLineAsync(
+                "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"calendar_resources.delete\",\"arguments\":"
+                + DeleteArguments(server.ResourceHref, "stdio-delete-1")
+                + "}}");
+            await process.StandardInput.FlushAsync(timeout.Token);
+
+            var elicitation = await ReadMessageAsync(
+                process,
+                message => message.TryGetProperty("method", out var method)
+                    && method.GetString() == "elicitation/create",
+                timeout.Token);
+            var parameters = elicitation.GetProperty("params");
+            parameters.GetProperty("message").GetString().ShouldNotBeNull().ShouldContain("stdio-delete-1");
+            parameters.GetProperty("requestedSchema").GetProperty("properties").TryGetProperty("confirm", out _)
+                .ShouldBeTrue(parameters.ToString());
+            elicitation.ToString().ShouldNotContain("requestState");
+            server.DeleteCount.ShouldBe(0);
+            await process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(new
+            {
+                jsonrpc = "2.0",
+                id = elicitation.GetProperty("id"),
+                result = new { action = "accept", content = new { confirm = true } }
+            }));
+            await process.StandardInput.FlushAsync(timeout.Token);
+            var response = await ReadResponseAsync(process, 2, timeout.Token);
+            process.StandardInput.Close();
+            await process.WaitForExitAsync(timeout.Token);
+
+            var structured = response.GetProperty("result").GetProperty("structuredContent");
+            structured.GetProperty("outcome").GetString().ShouldBe("success");
+            structured.GetProperty("mutationState").GetString().ShouldBe("committed");
+            response.ToString().ShouldNotContain("requestState");
+            server.DeleteCount.ShouldBe(1);
+            (await process.StandardError.ReadToEndAsync(timeout.Token)).ShouldBeEmpty();
+        }
+        finally
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("2024-11-05")]
+    [InlineData("2025-03-26")]
+    [InlineData("2025-06-18")]
+    [InlineData("2025-11-25")]
+    public async Task InitializeHandshake_AcceptsEveryInitializeRevisionTheSdkImplements(string protocolVersion)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var process = StartServer("http://127.0.0.1:1", "http://127.0.0.1:1/calendars/test/");
+        try
+        {
+            var response = await InitializeLegacyAsync(process, protocolVersion, "{}", timeout.Token);
+            process.StandardInput.Close();
+            await process.WaitForExitAsync(timeout.Token);
+
+            response.TryGetProperty("error", out _).ShouldBeFalse(response.ToString());
+            var result = response.GetProperty("result");
+            result.GetProperty("protocolVersion").GetString().ShouldBe(protocolVersion);
+            result.GetProperty("capabilities").TryGetProperty("tools", out _).ShouldBeTrue(result.ToString());
+            (await process.StandardError.ReadToEndAsync(timeout.Token)).ShouldBeEmpty();
+        }
+        finally
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
+        }
+    }
+
+    [Fact]
+    public async Task ServerDiscover_StillAdvertisesThePerRequestRevision()
+    {
+        const string request = """
+            {"jsonrpc":"2.0","id":2,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"raw-test","version":"1"},"io.modelcontextprotocol/clientCapabilities":{}}}}
+            """;
+
+        var response = await InvokeRawProtocolAsync(request);
+
+        var result = response.GetProperty("result");
+        result.GetProperty("supportedVersions").EnumerateArray().Select(version => version.GetString())
+            .ShouldBe(["2026-07-28"]);
+        result.GetProperty("capabilities").TryGetProperty("tools", out _).ShouldBeTrue(result.ToString());
     }
 
     [Theory]
@@ -858,6 +1041,39 @@ public sealed class CalendarMcpRawStdioTests
         }
     }
 
+    private static async Task<JsonElement> InitializeLegacyAsync(
+        Process process,
+        string protocolVersion,
+        string capabilities,
+        CancellationToken cancellationToken)
+    {
+        await process.StandardInput.WriteLineAsync(
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\""
+            + protocolVersion
+            + "\",\"capabilities\":"
+            + capabilities
+            + ",\"clientInfo\":{\"name\":\"raw-legacy-test\",\"version\":\"1\"}}}");
+        await process.StandardInput.FlushAsync(cancellationToken);
+        var response = await ReadResponseAsync(process, 1, cancellationToken);
+        await process.StandardInput.WriteLineAsync("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}");
+        await process.StandardInput.FlushAsync(cancellationToken);
+        return response;
+    }
+
+    private static async Task<JsonElement> ReadMessageAsync(
+        Process process,
+        Func<JsonElement, bool> predicate,
+        CancellationToken cancellationToken)
+    {
+        while (await process.StandardOutput.ReadLineAsync(cancellationToken) is { } line)
+        {
+            using var document = JsonDocument.Parse(line);
+            if (predicate(document.RootElement))
+                return document.RootElement.Clone();
+        }
+        throw new InvalidOperationException("The MCP server closed stdout before sending the expected message.");
+    }
+
     private static async Task<JsonElement> InvokeRawDeleteFirstRoundAsync(
         DeleteServer server,
         string clientCapabilities)
@@ -1084,7 +1300,10 @@ public sealed class CalendarMcpRawStdioTests
         while (await process.StandardOutput.ReadLineAsync(cancellationToken) is { } line)
         {
             using var document = JsonDocument.Parse(line);
-            if (document.RootElement.TryGetProperty("id", out var id) && id.GetInt32() == expectedId)
+            if (document.RootElement.TryGetProperty("id", out var id)
+                && id.ValueKind == JsonValueKind.Number
+                && id.GetInt32() == expectedId
+                && !document.RootElement.TryGetProperty("method", out _))
                 return document.RootElement.Clone();
         }
         throw new InvalidOperationException("The MCP server closed stdout before returning the expected response.");

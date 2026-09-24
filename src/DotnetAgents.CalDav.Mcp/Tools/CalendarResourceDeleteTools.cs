@@ -43,15 +43,14 @@ internal sealed class CalendarResourceDeleteTools
      Description("Confirm and delete one revision-bound Calendar Object Resource.")]
     public Task<CallToolResult> DeleteAsync(
         RequestContext<CallToolRequestParams> requestContext,
-        McpServer server,
         CancellationToken cancellationToken)
     {
-        CalendarMrtrCapabilityGuard.RequireConfirmationCapability(requestContext, server);
+        CalendarMrtrCapabilityGuard.RequireConfirmationCapability(requestContext);
         return DeleteRawAsync(
             requestContext.Params?.Arguments,
             requestContext.Params?.RequestState,
             requestContext.Params?.InputResponses,
-            server.IsMrtrSupported,
+            CalendarMrtrCapabilityGuard.IsConfirmationSupported(requestContext),
             cancellationToken);
     }
 

@@ -49,14 +49,13 @@ internal sealed class CalendarEntityPatchTools
      Description("Apply a revision-bound semantic patch to one Event resource at an explicitly supplied absolute snapshot href.")]
     public Task<CallToolResult> PatchEventAsync(
         RequestContext<CallToolRequestParams> requestContext,
-        McpServer server,
         CancellationToken cancellationToken) =>
         PatchEventRawAsync(
             requestContext.Params?.Arguments,
             requestContext.Params?.RequestState,
             requestContext.Params?.InputResponses,
-            server.IsMrtrSupported,
-            server.ClientCapabilities,
+            CalendarMrtrCapabilityGuard.IsConfirmationSupported(requestContext),
+            requestContext.Server.ClientCapabilities,
             cancellationToken);
 
     [McpServerTool(
@@ -70,14 +69,13 @@ internal sealed class CalendarEntityPatchTools
      Description("Apply a revision-bound semantic patch to one To-do resource at an explicitly supplied absolute snapshot href; completion is reserved for todos.complete.")]
     public Task<CallToolResult> PatchTodoAsync(
         RequestContext<CallToolRequestParams> requestContext,
-        McpServer server,
         CancellationToken cancellationToken) =>
         PatchTodoRawAsync(
             requestContext.Params?.Arguments,
             requestContext.Params?.RequestState,
             requestContext.Params?.InputResponses,
-            server.IsMrtrSupported,
-            server.ClientCapabilities,
+            CalendarMrtrCapabilityGuard.IsConfirmationSupported(requestContext),
+            requestContext.Server.ClientCapabilities,
             cancellationToken);
 
     internal async Task<CallToolResult> PatchEventRawAsync(

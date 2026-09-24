@@ -1,6 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "protocolRevision": "2026-07-28",
+  "supportedProtocolRevisions": [
+    "2024-11-05",
+    "2025-03-26",
+    "2025-06-18",
+    "2025-11-25",
+    "2026-07-28"
+  ],
   "createSemantics": {
     "authoritativeOperation": "conditional_put",
     "preflightEnumeration": false,
@@ -2835,7 +2842,7 @@
       ]
     },
     "missingRequiredClientCapabilityError": {
-      "description": "A confirmation round is only opened for a request whose _meta declares io.modelcontextprotocol/clientCapabilities.elicitation with form support. A blank elicitation object counts as form support under the revision's compatibility rule; an elicitation that names only the url mode does not. A capability that is undeclared for that request is refused as this JSON-RPC error instead of a typed structuredContent result, which is the only such exception, and the refusal precedes every CalDAV request so the mutation is never attempted. Tools that confirm unconditionally refuse before argument admission; events.patch and todos.patch refuse only for the recurrence-definition, this-and-future, entire-set, and replaceAll patches that require confirmation.",
+      "description": "On the 2026-07-28 revision a confirmation round is only opened for a request whose _meta declares io.modelcontextprotocol/clientCapabilities.elicitation with form support. A blank elicitation object counts as form support under the revision's compatibility rule; an elicitation that names only the url mode does not. A capability that is undeclared for that request is refused as this JSON-RPC error instead of a typed structuredContent result, which is the only such exception, and the refusal precedes every CalDAV request so the mutation is never attempted. Tools that confirm unconditionally refuse before argument admission; events.patch and todos.patch refuse only for the recurrence-definition, this-and-future, entire-set, and replaceAll patches that require confirmation.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -2883,6 +2890,18 @@
           }
         }
       }
+    },
+    "initializeHandshakeConfirmation": {
+      "description": "Sessions negotiated through initialize (2024-11-05 through 2025-11-25) declare client capabilities once for the session and receive no inputRequests result. When the session declared elicitation with form support, including a blank elicitation object, the same confirmation form is sent as a classic server-to-client elicitation/create request inside the original tools/call and the tool completes in that call; requestState never leaves the server. A session without form elicitation receives the typed unsupported_capability result in phase mrtr with mutationState not_attempted instead of JSON-RPC error -32021, and the mutation is never attempted.",
+      "revisions": [
+        "2024-11-05",
+        "2025-03-26",
+        "2025-06-18",
+        "2025-11-25"
+      ],
+      "method": "elicitation/create",
+      "requiredClientCapability": "elicitation.form",
+      "undeclaredOutcome": "unsupported_capability"
     }
   },
   "environment": [

@@ -105,6 +105,26 @@ public class McpMetadataTests
         description.ShouldNotContain("task management", Case.Insensitive);
     }
 
+    // The registry schema has no protocol field, so the negotiated revisions travel as publisher-provided
+    // metadata and must stay equal to the live catalog the runtime is gated against.
+    [Fact]
+    public void McpServerJson_PublishesTheNegotiatedProtocolRevisionsFromTheCatalog()
+    {
+        var projectDirectory = GetMcpProjectDir();
+        using var metadata = JsonDocument.Parse(File.ReadAllText(Path.Combine(projectDirectory, ".mcp", "server.json")));
+        using var catalog = JsonDocument.Parse(
+            File.ReadAllText(Path.Combine(projectDirectory, "Contracts", "mcp-tool-catalog.json")));
+
+        var published = metadata.RootElement.GetProperty("_meta")
+            .GetProperty("io.modelcontextprotocol.registry/publisher-provided")
+            .GetProperty("protocolVersions").EnumerateArray().Select(item => item.GetString()).ToArray();
+        var supported = catalog.RootElement.GetProperty("supportedProtocolRevisions")
+            .EnumerateArray().Select(item => item.GetString()).ToArray();
+
+        published.ShouldBe(["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25", "2026-07-28"]);
+        published.ShouldBe(supported);
+    }
+
     [Fact]
     public async Task McpServerJson_IsValidAgainstThePinnedRegistrySchema()
     {

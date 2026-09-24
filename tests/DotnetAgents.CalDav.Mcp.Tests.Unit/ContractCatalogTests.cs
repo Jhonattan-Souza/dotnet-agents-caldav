@@ -93,6 +93,8 @@ public sealed class ContractCatalogTests
 
         catalog.ShouldNotContainKey("contractVersion");
         catalog["protocolRevision"]!.GetValue<string>().ShouldBe("2026-07-28");
+        catalog["supportedProtocolRevisions"]!.AsArray().Select(item => item!.GetValue<string>())
+            .ShouldBe(["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25", "2026-07-28"]);
         catalog["discoveryOrder"]!.AsArray().Count.ShouldBe(23);
         catalog["exactTools"]!.AsArray().Count.ShouldBe(4);
         catalog["tools"]!.AsArray().Count.ShouldBe(27);
@@ -161,6 +163,14 @@ public sealed class ContractCatalogTests
             ["elicitation"]!["properties"]!.AsObject().ShouldContainKey("form");
         missingCapability["description"]!.GetValue<string>()
             .ShouldContain("only such exception");
+        missingCapability["description"]!.GetValue<string>().ShouldStartWith("On the 2026-07-28 revision");
+        var legacyConfirmation = mrtr["initializeHandshakeConfirmation"]!.AsObject();
+        legacyConfirmation["revisions"]!.AsArray().Select(item => item!.GetValue<string>())
+            .ShouldBe(["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"]);
+        legacyConfirmation["method"]!.GetValue<string>().ShouldBe("elicitation/create");
+        legacyConfirmation["requiredClientCapability"]!.GetValue<string>().ShouldBe("elicitation.form");
+        legacyConfirmation["undeclaredOutcome"]!.GetValue<string>().ShouldBe("unsupported_capability");
+        legacyConfirmation["description"]!.GetValue<string>().ShouldContain("requestState never leaves the server");
         catalog["$defs"]!["eventCreateInput"]!["properties"]!["entity"]!["$ref"]!.GetValue<string>()
             .ShouldBe("#/$defs/eventCreateEntity");
         catalog["$defs"]!["todoCreateInput"]!["properties"]!["entity"]!["$ref"]!.GetValue<string>()

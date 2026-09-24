@@ -92,7 +92,9 @@ Storage-only writes involving organizer or attendee data require evidence that t
 
 A protected mutation may return MCP `input_required`. Present the returned review, obtain the requested input, and continue the same tool with its opaque `requestState` and `inputResponses`. Keep `requestState` unchanged, single-use, and paired with the original arguments and revision.
 
-A JSON-RPC error `-32021` carrying `data.requiredCapabilities` means the harness did not declare form-capable `elicitation` for that request, so the server opened no confirmation and attempted nothing. A blank `elicitation` declaration counts as form support; one that names only `url` does not. Report that harness limitation instead of repeating the call unchanged.
+A harness connected through the `initialize` handshake (MCP `2025-11-25` or earlier) receives the same review as a classic elicitation request while the original call is still open; answering it completes that call, and there is no `requestState` to carry. If such a session did not declare form-capable `elicitation`, the protected mutation returns typed `unsupported_capability` in phase `mrtr` with `mutationState` `not_attempted`: report that harness limitation instead of repeating the call.
+
+On MCP `2026-07-28`, a JSON-RPC error `-32021` carrying `data.requiredCapabilities` means the harness did not declare form-capable `elicitation` for that request, so the server opened no confirmation and attempted nothing. A blank `elicitation` declaration counts as form support; one that names only `url` does not. Report that harness limitation instead of repeating the call unchanged.
 
 Expiry, mismatch, decline, a changed revision, or a continuation failure ends that exchange without a new write. If the active harness cannot continue MCP Multi Round-Trip Requests, report that limitation and leave the mutation uncommitted. Do not call the protected mutation or a verification query again to work around a missing continuation. A client hint such as `allow_input_required` is not a CalDAV tool argument unless the live input schema explicitly includes it.
 

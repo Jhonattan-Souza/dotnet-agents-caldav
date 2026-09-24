@@ -443,6 +443,20 @@ public class CalDavHostBuilderTests
         tool.ProtocolTool.Meta!["cache"]!["cacheScope"]!.GetValue<string>().ShouldBe("private");
     }
 
+    // An unpinned revision lets the SDK answer initialize for 2024-11-05 through 2025-11-25 and
+    // server/discover for 2026-07-28; a pinned 2026-07-28 would reject every initialize handshake.
+    [Fact]
+    public void BuildHost_LeavesTheProtocolRevisionToSdkNegotiation()
+    {
+        var builder = CalDavHostBuilder.CreateBuilder();
+        builder.Services.ConfigureCalDav(ValidOptions);
+        using var host = builder.Build();
+
+        var options = host.Services.GetRequiredService<IOptions<ModelContextProtocol.Server.McpServerOptions>>().Value;
+
+        options.ProtocolVersion.ShouldBeNull();
+    }
+
     [Fact]
     public void BuildHost_AdvertisesFrozenRevisionBoundDeleteContract()
     {

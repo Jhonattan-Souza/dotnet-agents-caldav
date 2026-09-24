@@ -56,15 +56,14 @@ internal sealed class CalendarCollectionTools
      Description("Confirm and delete one exact CalDAV Calendar collection, including its resources.")]
     public Task<CallToolResult> DeleteAsync(
         RequestContext<CallToolRequestParams> requestContext,
-        McpServer server,
         CancellationToken cancellationToken)
     {
-        CalendarMrtrCapabilityGuard.RequireConfirmationCapability(requestContext, server);
+        CalendarMrtrCapabilityGuard.RequireConfirmationCapability(requestContext);
         return DeleteRawAsync(
             requestContext.Params?.Arguments,
             requestContext.Params?.RequestState,
             requestContext.Params?.InputResponses,
-            server.IsMrtrSupported,
+            CalendarMrtrCapabilityGuard.IsConfirmationSupported(requestContext),
             cancellationToken);
     }
 
