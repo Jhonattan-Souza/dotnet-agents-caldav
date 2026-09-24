@@ -17,32 +17,37 @@ public sealed class CalendarTextCriteriaTests
     }
 
     [Theory]
-    [MemberData(nameof(InvalidFilters))]
-    public void InvalidFiltersAreRejected(CalendarTextFilter filter)
+    [MemberData(nameof(InvalidFilterNames))]
+    public void InvalidFiltersAreRejected(string name)
     {
-        CalendarTextCriteria.TryCreate(filter, out var criteria).ShouldBeFalse();
+        CalendarTextCriteria.TryCreate(InvalidFilters[name], out var criteria).ShouldBeFalse();
 
         criteria.ShouldBeNull();
     }
 
-    public static TheoryData<CalendarTextFilter> InvalidFilters() => new()
+    public static TheoryData<string> InvalidFilterNames() => new(InvalidFilters.Keys);
+
+    private static readonly Dictionary<string, CalendarTextFilter> InvalidFilters = new(StringComparer.Ordinal)
     {
-        new CalendarTextFilter(),
-        new CalendarTextFilter(" \t\n "),
-        new CalendarTextFilter(new string('a', CalendarTextCriteria.MaximumTextLength + 1)),
-        new CalendarTextFilter("dentist\u0001visit"),
-        new CalendarTextFilter(string.Join(' ', Enumerable.Repeat("a", CalendarTextCriteria.MaximumTerms + 1))),
-        new CalendarTextFilter(Categories: []),
-        new CalendarTextFilter(Categories: Enumerable.Range(0, CalendarTextCriteria.MaximumCategories + 1)
-            .Select(index => $"c{index}")
-            .ToArray()),
-        new CalendarTextFilter(Categories: ["Work", "Work"]),
-        new CalendarTextFilter(Categories: [" Work"]),
-        new CalendarTextFilter(Categories: [""]),
-        new CalendarTextFilter(Categories: [new string('c', CalendarTextCriteria.MaximumCategoryLength + 1)]),
-        new CalendarTextFilter(Categories: ["Wo\trk"]),
-        new CalendarTextFilter(Categories: [null!]),
-        new CalendarTextFilter("valid", ["Work", "Work"])
+        ["empty filter"] = new CalendarTextFilter(),
+        ["whitespace text"] = new CalendarTextFilter(" \t\n "),
+        ["overlong text"] = new CalendarTextFilter(new string('a', CalendarTextCriteria.MaximumTextLength + 1)),
+        ["control character in text"] = new CalendarTextFilter("dentist\u0001visit"),
+        ["too many terms"] = new CalendarTextFilter(
+            string.Join(' ', Enumerable.Repeat("a", CalendarTextCriteria.MaximumTerms + 1))),
+        ["no categories"] = new CalendarTextFilter(Categories: []),
+        ["too many categories"] = new CalendarTextFilter(
+            Categories: Enumerable.Range(0, CalendarTextCriteria.MaximumCategories + 1)
+                .Select(index => $"c{index}")
+                .ToArray()),
+        ["duplicate categories"] = new CalendarTextFilter(Categories: ["Work", "Work"]),
+        ["untrimmed category"] = new CalendarTextFilter(Categories: [" Work"]),
+        ["empty category"] = new CalendarTextFilter(Categories: [""]),
+        ["overlong category"] = new CalendarTextFilter(
+            Categories: [new string('c', CalendarTextCriteria.MaximumCategoryLength + 1)]),
+        ["control character in category"] = new CalendarTextFilter(Categories: ["Wo\trk"]),
+        ["null category"] = new CalendarTextFilter(Categories: [null!]),
+        ["valid text with duplicate categories"] = new CalendarTextFilter("valid", ["Work", "Work"])
     };
 
     [Fact]
