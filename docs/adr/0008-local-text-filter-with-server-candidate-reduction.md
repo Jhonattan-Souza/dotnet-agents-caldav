@@ -40,11 +40,22 @@ without it treat as a conjunction. Keeping text reports separate from the time-r
 component to satisfy both, which a strict server evaluates per component. Dropping resources without a matching
 component before evaluation makes failures independent of whether the server excluded them.
 
+The superset argument assumes that the server evaluates each prop-filter against every VEVENT or VTODO component
+of a resource, including Recurrence Overrides, as RFC 4791 section 9.7.1 requires and Radicale and sabre/dav do.
+A server that indexes only the master component would silently exclude resources whose only match is in an
+override; the pre-filter cannot detect that. It also assumes RFC 5545-valid TEXT escapes: local decoding is lenient
+on invalid escapes such as `a\tb`, which a server may compare differently.
+
 A 405 or 501 response, or a 400 or 403 response carrying `CALDAV:supported-filter` or
 `CALDAV:supported-collation`, is retained as unavailable text-match capability for that Calendar and Entity Kind
 within the existing authorization- and configuration-scoped capability observations. The query continues with the
-unreduced candidates. The closed `caldav.query.text_prefilter` operation attribute records `applied`,
-`unavailable`, or `ineligible`.
+unreduced candidates. A text REPORT that exceeds the bounded response read or is rejected with 413, or a 400 or 403
+without either precondition, also continues unreduced, because the ordinary candidate REPORT already succeeded
+and the local match is the truth; that attempt retains no capability state. Other failures still fail the query,
+and the ordinary kind or time-range REPORT keeps its existing failure rules. An empty pre-filter never reaches
+the server, and a Calendar without ordinary candidates sends no text REPORT. The closed
+`caldav.query.text_prefilter` operation attribute records the least reduced outcome across Calendars:
+`unavailable`, `unreduced`, `applied`, or `ineligible`.
 
 The folded criteria are frozen in the Query Result Snapshot. Version 3 cursors bind an HMAC of them, and Continue
 still accepts only `cursor` and `pageSize`.

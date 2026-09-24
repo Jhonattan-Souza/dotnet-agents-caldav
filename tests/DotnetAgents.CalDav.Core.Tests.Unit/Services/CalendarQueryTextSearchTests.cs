@@ -61,6 +61,46 @@ public sealed class CalendarQueryTextSearchTests
     }
 
     [Fact]
+    public async Task UnreducedAttemptKeepsIdenticalResultsAndOutranksAppliedTelemetry()
+    {
+        var reduced = new TextTransport(Corpus(), _ => [Href("dentist"), Href("series")]);
+        var unreduced = new TextTransport(Corpus(), _ => [], unreduced: true);
+        var stopped = new List<Activity>();
+        using var listener = ListenToQuery(stopped);
+        using var source = new ActivitySource(CalendarQueryTelemetry.InstrumentationName, "0.1.0");
+        await using var reducedProvider = CreateProvider(reduced);
+        await using var unreducedProvider = CreateProvider(unreduced);
+
+        QueryReply<CalendarEntityQueryItem>.Page reducedPage;
+        QueryReply<CalendarEntityQueryItem>.Page fallbackPage;
+        using (source.StartActivity("caldav.operation", ActivityKind.Internal))
+            reducedPage = await StartEntitiesAsync(reducedProvider, new CalendarTextFilter("dentist"));
+        using (source.StartActivity("caldav.operation", ActivityKind.Internal))
+            fallbackPage = await StartEntitiesAsync(unreducedProvider, new CalendarTextFilter("dentist"));
+
+        fallbackPage.Value.StructuredContent.GetProperty("items").GetRawText()
+            .ShouldBe(reducedPage.Value.StructuredContent.GetProperty("items").GetRawText());
+        unreduced.MultigetHrefs.Count.ShouldBe(Corpus().Count);
+        stopped.Where(activity => activity.OperationName == "caldav.operation")
+            .Select(activity => activity.GetTagItem("caldav.query.text_prefilter"))
+            .ShouldBe(["applied", "unreduced"]);
+    }
+
+    [Fact]
+    public async Task EmptyBaseCandidatesSkipTheTextReduction()
+    {
+        var transport = new TextTransport(
+            new Dictionary<string, string>(StringComparer.Ordinal),
+            _ => throw new InvalidOperationException("No text REPORT."));
+        await using var provider = CreateProvider(transport);
+
+        var page = await StartEntitiesAsync(provider, new CalendarTextFilter("dentist"));
+
+        page.Value.Items.ShouldBeEmpty();
+        transport.TextCalls.ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task IneligibleTextSkipsTheServerReductionAndStillFiltersLocally()
     {
         var transport = new TextTransport(Corpus(), _ => throw new InvalidOperationException("No text REPORT."));
@@ -396,7 +436,8 @@ public sealed class CalendarQueryTextSearchTests
 
     private sealed class TextTransport(
         IReadOnlyDictionary<string, string> resources,
-        Func<CalendarEntityKind, IReadOnlyList<string>>? textHrefs) : ICalendarQueryTransport
+        Func<CalendarEntityKind, IReadOnlyList<string>>? textHrefs,
+        bool unreduced = false) : ICalendarQueryTransport
     {
         internal List<string> MultigetHrefs { get; } = [];
 
@@ -440,6 +481,8 @@ public sealed class CalendarQueryTextSearchTests
         {
             TotalCalls++;
             TextCalls.Add((calendarHref, entityKind, prefilter.Branches.Count));
+            if (unreduced)
+                return Task.FromResult<CalendarTextCandidateResult>(new CalendarTextCandidateResult.Unreduced());
             return Task.FromResult<CalendarTextCandidateResult>(textHrefs is null
                 ? new CalendarTextCandidateResult.VerifiedUnavailable()
                 : new CalendarTextCandidateResult.Hrefs(textHrefs(entityKind).ToHashSet(StringComparer.Ordinal)));

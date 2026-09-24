@@ -946,6 +946,7 @@ public sealed class CalendarTelemetryTests
     [Theory]
     [InlineData("applied", "applied")]
     [InlineData("unavailable", "unavailable")]
+    [InlineData("unreduced", "unreduced")]
     [InlineData("ineligible", "ineligible")]
     [InlineData("dentist", null)]
     public void QueryTelemetryAllowlistKeepsOnlyClosedTextPrefilterFacts(string value, string? expected)
