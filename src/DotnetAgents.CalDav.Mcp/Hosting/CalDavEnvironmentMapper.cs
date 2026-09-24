@@ -30,6 +30,7 @@ public static class CalDavEnvironmentMapper
             // Installation requires this value; manual callers may supply evaluationTimeZone per call.
             options.EvaluationTimeZone = getEnv("CALDAV_EVALUATION_TIME_ZONE");
             options.InteroperabilityProfile = getEnv("CALDAV_INTEROPERABILITY_PROFILE");
+            options.SchedulingMode = getEnv("CALDAV_SCHEDULING_MODE");
         };
     }
 }

@@ -1,8 +1,10 @@
 using System.Text.Json;
+using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Core.Models;
 using DotnetAgents.CalDav.Core.Services;
 using DotnetAgents.CalDav.Mcp.Tools;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -34,6 +36,7 @@ internal static class CalendarExecutionPolicy
                 toolName,
                 EntityKind(requestedToolName));
             using var telemetryScope = CalendarTelemetry.Attach(telemetry);
+            using var schedulingDisclosure = AttachSchedulingDisclosure(services, requestedToolName);
             CalendarMoveTelemetrySnapshot? moveTelemetry = null;
             var report = request.Params?.ProgressToken is { } token
                 ? (Func<ProgressNotificationValue, CancellationToken, Task>)((progress, progressCancellationToken) =>
@@ -85,6 +88,13 @@ internal static class CalendarExecutionPolicy
                 throw;
             }
         };
+
+    private static CalendarSchedulingDisclosure.Scope AttachSchedulingDisclosure(
+        IServiceProvider services,
+        string? toolName) => CalendarSchedulingDisclosure.Attach(
+            CalendarSchedulingDisclosure.Governs(toolName)
+            && services.GetService<IOptions<CalDavOptions>>() is { } options
+            && CalDavSchedulingModes.IsServerManaged(options.Value));
 
     private static Func<ProgressNotificationValue, CancellationToken, Task>? LegacyProgressReport(
         string? toolName,

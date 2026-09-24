@@ -134,8 +134,25 @@ public class CalDavEnvironmentMapperTests
             "CALDAV_DEFAULT_TODO_CALENDAR_NAME",
             "CALDAV_DEFAULT_EVENT_CALENDAR_NAME",
             "CALDAV_EVALUATION_TIME_ZONE",
-            "CALDAV_INTEROPERABILITY_PROFILE"
+            "CALDAV_INTEROPERABILITY_PROFILE",
+            "CALDAV_SCHEDULING_MODE"
         ]);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("storage_only")]
+    [InlineData("server_managed")]
+    [InlineData("Server_Managed")]
+    public void MapFromEnvironment_MapsSchedulingModeWithoutInterpretingIt(string? mode)
+    {
+        var configure = CalDavEnvironmentMapper.MapFromEnvironment(name =>
+            name == "CALDAV_SCHEDULING_MODE" ? mode : null);
+        var options = new CalDavOptions();
+
+        configure(options);
+
+        options.SchedulingMode.ShouldBe(mode);
     }
 
     [Theory]

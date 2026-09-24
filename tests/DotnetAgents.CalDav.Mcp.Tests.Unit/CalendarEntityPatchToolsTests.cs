@@ -66,6 +66,29 @@ public sealed class CalendarEntityPatchToolsTests
     }
 
     [Fact]
+    public async Task Server_managed_patch_confirmation_warns_about_scheduling_messages()
+    {
+        var service = Substitute.For<ICalendarService>();
+        service.ReviewEventPatchAsync(Arg.Any<CalendarEventPatchRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CalendarEntityPatchReviewResult(
+                null,
+                Enumerable.Range(0, 32).Select(value => (byte)value).ToArray()));
+        var sut = CreateTool(service, new MutableTimeProvider(DateTimeOffset.Parse("2026-08-17T12:00:00Z")));
+        var arguments = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+            """
+            {"snapshot":{"href":"https://cal.example/events/event-1.ics","entityUid":"event-1","entityKind":"event","entityTag":"\"r1\""},"target":{"scope":"this-and-future","recurrenceIdentity":{"value":{"kind":"utcDateTime","value":"2026-08-21T10:00:00Z"}}},"patch":{"scalars":[{"field":"recurrenceSet","operation":"clear","orphanReconciliations":[]}]}}
+            """);
+
+        using var disclosure = CalendarSchedulingDisclosure.Attach(true);
+        var required = await Should.ThrowAsync<InputRequiredException>(() => sut.PatchEventRawAsync(
+            arguments, null, null, true, CancellationToken.None));
+
+        required.Result.InputRequests!["confirm_replace_all"].ElicitationParams!.Message.ShouldBe(
+            "Confirm events.patch for href https://cal.example/events/event-1.ics, UID event-1, kind event, scope this-and-future, original Recurrence Identity 2026-08-21T10:00:00Z, expected ETag \"r1\". High-impact change: recurrence definition and explicitly reconciled orphans. "
+            + CalendarSchedulingDisclosure.ConfirmationWarning);
+    }
+
+    [Fact]
     public async Task ThisAndFuture_patch_parses_exact_orphan_reconciliations_and_requires_dry_review()
     {
         var service = Substitute.For<ICalendarService>();

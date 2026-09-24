@@ -34,6 +34,12 @@ public sealed class CalDavOptions
     /// <summary>Explicit server runtime whose atomic mutation preconditions were verified.</summary>
     public string? InteroperabilityProfile { get; set; }
 
+    /// <summary>
+    /// Scheduling model for participation-bearing writes and collection deletion. Unset means
+    /// <see cref="CalDavSchedulingModes.StorageOnly"/>.
+    /// </summary>
+    public string? SchedulingMode { get; set; }
+
     /// <summary>Optional timeout for HTTP requests. Defaults to 30 seconds.</summary>
     public TimeSpan RequestTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
@@ -75,6 +81,7 @@ internal sealed class ValidateCalDavOptions : IValidateOptions<CalDavOptions>
 
         ValidateEvaluationTimeZone(options, failures);
         ValidateInteroperabilityProfile(options.InteroperabilityProfile, failures);
+        ValidateSchedulingMode(options.SchedulingMode, failures);
 
         return failures.Count > 0
             ? ValidateOptionsResult.Fail(failures)
@@ -106,6 +113,31 @@ internal sealed class ValidateCalDavOptions : IValidateOptions<CalDavOptions>
         if (!IsSupportedInteroperabilityProfile(profile))
             failures.Add($"CalDav:InteroperabilityProfile must be '{CalDavInteroperabilityProfiles.Radicale_3_7_8}' when specified.");
     }
+
+    private static void ValidateSchedulingMode(string? mode, ICollection<string> failures)
+    {
+        if (!CalDavSchedulingModes.IsSupported(mode))
+            failures.Add($"CalDav:SchedulingMode must be '{CalDavSchedulingModes.StorageOnly}' or '{CalDavSchedulingModes.ServerManaged}' when specified.");
+    }
+}
+
+/// <summary>Closed set of scheduling models. See ADR 0009.</summary>
+public static class CalDavSchedulingModes
+{
+    /// <summary>Default: participation writes require proof that the server does not schedule automatically.</summary>
+    public const string StorageOnly = "storage_only";
+
+    /// <summary>Opt-in: the server may schedule automatically; affected outcomes disclose possible side effects.</summary>
+    public const string ServerManaged = "server_managed";
+
+    internal static bool IsSupported(string? mode) =>
+        string.IsNullOrEmpty(mode)
+        || string.Equals(mode, StorageOnly, StringComparison.Ordinal)
+        || string.Equals(mode, ServerManaged, StringComparison.Ordinal);
+
+    /// <summary>Whether validated options opted into server-managed scheduling.</summary>
+    public static bool IsServerManaged(CalDavOptions options) =>
+        string.Equals(options.SchedulingMode, ServerManaged, StringComparison.Ordinal);
 }
 
 /// <summary>Closed set of server runtimes with verified atomic mutation preconditions.</summary>

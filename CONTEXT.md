@@ -204,8 +204,20 @@ A calendar value explicitly marked as derived from other data but without an ass
 _Avoid_: Computed field, synchronized copy
 
 **Storage-only Scheduling Data**:
-Organizer, Attendee, Participant, and related participation data preserved and explicitly mutable without invitation, reply, delivery, authority, or propagation behavior.
+Organizer, Attendee, Participant, and related participation data preserved and explicitly mutable without invitation, reply, delivery, authority, or propagation behavior by this system.
 _Avoid_: Scheduling workflow, meeting invitation
+
+**Scheduling Mode**:
+The configured model, `storage_only` by default or opt-in `server_managed`, that decides whether a participation-bearing write or a Calendar collection deletion may proceed on a Calendar whose server advertises automatic scheduling. Unknown scheduling evidence blocks in both modes.
+_Avoid_: Scheduling toggle, invitation setting
+
+**Server-managed Scheduling**:
+The opt-in Scheduling Mode in which the CalDAV server, not this system, may deliver invitations, updates, replies, or cancellations as a side effect of an admitted write; this system neither sends, suppresses, nor observes that delivery.
+_Avoid_: Meeting invitations, send invite, scheduling support
+
+**Scheduling Side-effect Disclosure**:
+The typed `schedulingSideEffects` value, `possible` or `none`, on a scheduling-governed mutation outcome under Server-managed Scheduling whose write committed or may have committed; `possible` means the server advertised automatic scheduling and may have contacted participants.
+_Avoid_: Invitation receipt, delivery status
 
 **Inert External Reference**:
 A URI-bearing Calendar Entity value that is preserved and exposed as data but is never automatically fetched, opened, joined, or executed.

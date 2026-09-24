@@ -227,4 +227,50 @@ public class CalDavOptionsTests
 
         result.Succeeded.ShouldBeTrue();
     }
+
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData("", false)]
+    [InlineData(CalDavSchedulingModes.StorageOnly, false)]
+    [InlineData(CalDavSchedulingModes.ServerManaged, true)]
+    public void ValidateCalDavOptions_AcceptsTheClosedSchedulingModes(string? mode, bool serverManaged)
+    {
+        var options = new CalDavOptions
+        {
+            BaseUrl = "https://caldav.example.com",
+            Username = "user",
+            Password = "pass",
+            SchedulingMode = mode
+        };
+
+        new ValidateCalDavOptions().Validate(null, options).Succeeded.ShouldBeTrue();
+        CalDavSchedulingModes.IsServerManaged(options).ShouldBe(serverManaged);
+    }
+
+    [Theory]
+    [InlineData("Server_Managed")]
+    [InlineData("SERVER_MANAGED")]
+    [InlineData(" server_managed")]
+    [InlineData("server_managed ")]
+    [InlineData("server-managed")]
+    [InlineData("storage-only")]
+    [InlineData("auto")]
+    [InlineData(" ")]
+    public void ValidateCalDavOptions_RejectsEveryOtherSchedulingMode(string mode)
+    {
+        var options = new CalDavOptions
+        {
+            BaseUrl = "https://caldav.example.com",
+            Username = "user",
+            Password = "pass",
+            SchedulingMode = mode
+        };
+
+        var result = new ValidateCalDavOptions().Validate(null, options);
+
+        result.Failed.ShouldBeTrue();
+        result.Failures.ShouldHaveSingleItem().ShouldBe(
+            "CalDav:SchedulingMode must be 'storage_only' or 'server_managed' when specified.");
+        CalDavSchedulingModes.IsServerManaged(options).ShouldBeFalse();
+    }
 }

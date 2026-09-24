@@ -2944,6 +2944,16 @@
       "description": "Verified server profile; radicale-3.7.8 enables server-authoritative MOVE"
     },
     {
+      "name": "CALDAV_SCHEDULING_MODE",
+      "required": false,
+      "enum": [
+        "storage_only",
+        "server_managed"
+      ],
+      "default": "storage_only",
+      "description": "Scheduling model for participation-bearing writes and Calendar collection deletion; server_managed allows them on servers advertising calendar-auto-schedule and discloses schedulingSideEffects"
+    },
+    {
       "name": "CALDAV_EXPOSE_EXACT_TOOLS",
       "required": false,
       "type": "boolean"
@@ -9876,6 +9886,13 @@
         }
       }
     },
+    "schedulingSideEffects": {
+      "description": "Present only under CALDAV_SCHEDULING_MODE=server_managed on scheduling-governed mutations whose mutationState is committed or unknown. possible: the server advertised calendar-auto-schedule and may have sent invitations, updates, replies or cancellations; none: the write carried no participation data or the server proved automatic scheduling absent.",
+      "enum": [
+        "none",
+        "possible"
+      ]
+    },
     "toolsCallMetadata": {
       "type": "object",
       "required": [
@@ -10117,6 +10134,9 @@
         },
         "mutationState": {
           "const": "committed"
+        },
+        "schedulingSideEffects": {
+          "$ref": "#/$defs/schedulingSideEffects"
         },
         "calendar": {
           "$ref": "#/$defs/calendarDescriptor"
@@ -10396,6 +10416,9 @@
             "committed",
             "unknown"
           ]
+        },
+        "schedulingSideEffects": {
+          "$ref": "#/$defs/schedulingSideEffects"
         }
       }
     },
@@ -10414,6 +10437,9 @@
         },
         "mutationState": {
           "const": "committed"
+        },
+        "schedulingSideEffects": {
+          "$ref": "#/$defs/schedulingSideEffects"
         },
         "snapshot": {
           "$ref": "#/$defs/calendarSnapshot"
@@ -10441,6 +10467,9 @@
         },
         "mutationState": {
           "const": "committed"
+        },
+        "schedulingSideEffects": {
+          "$ref": "#/$defs/schedulingSideEffects"
         },
         "deletionReceipt": {
           "$ref": "#/$defs/deletionReceipt"
@@ -10580,6 +10609,9 @@
             "committed",
             "unknown"
           ]
+        },
+        "schedulingSideEffects": {
+          "$ref": "#/$defs/schedulingSideEffects"
         },
         "currentSnapshot": {
           "$ref": "#/$defs/exactConflictSnapshot"

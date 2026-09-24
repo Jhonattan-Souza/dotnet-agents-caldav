@@ -104,5 +104,37 @@ internal static class CalendarSchedulingSafety
         HasParticipation(prior) || HasParticipation(proposed);
 
     internal static bool ProvesSchedulingAbsent(IReadOnlyList<string> headers) =>
-        DavComplianceHeader.TryRead(headers, out var automaticScheduling) && !automaticScheduling;
+        ReadEvidence(headers) == CalendarSchedulingEvidence.Absent;
+
+    internal static CalendarSchedulingEvidence ReadEvidence(IReadOnlyList<string> headers) =>
+        !DavComplianceHeader.TryRead(headers, out var automaticScheduling)
+            ? CalendarSchedulingEvidence.Unknown
+            : automaticScheduling ? CalendarSchedulingEvidence.Advertised : CalendarSchedulingEvidence.Absent;
+
+    /// <summary>
+    /// Decides whether a participation-bearing write or a collection deletion may proceed.
+    /// Unknown evidence blocks in every mode; see ADR 0009.
+    /// </summary>
+    internal static CalendarSchedulingDecision Decide(bool serverManaged, CalendarSchedulingEvidence evidence) =>
+        evidence switch
+        {
+            CalendarSchedulingEvidence.Absent => CalendarSchedulingDecision.Allowed,
+            CalendarSchedulingEvidence.Advertised when serverManaged => CalendarSchedulingDecision.AllowedWithServerScheduling,
+            _ => CalendarSchedulingDecision.Blocked
+        };
+}
+
+/// <summary>Fresh OPTIONS evidence about RFC 6638 automatic scheduling at one Calendar collection.</summary>
+internal enum CalendarSchedulingEvidence
+{
+    Unknown,
+    Absent,
+    Advertised
+}
+
+internal enum CalendarSchedulingDecision
+{
+    Blocked,
+    Allowed,
+    AllowedWithServerScheduling
 }

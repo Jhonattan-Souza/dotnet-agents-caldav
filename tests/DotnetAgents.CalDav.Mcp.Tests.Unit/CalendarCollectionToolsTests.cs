@@ -484,6 +484,32 @@ public sealed class CalendarCollectionToolsTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DeleteRawAsync_ServerManagedConfirmationWarnsAboutSchedulingMessages(bool serverManaged)
+    {
+        const string href = "https://cal.example/calendars/user/events/";
+        var module = Substitute.For<ICalendarCollectionModule>();
+        module.ReviewDeleteAsync(Arg.Any<CalendarCollectionDeleteRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CalendarCollectionDeleteReviewResult(
+                null,
+                new CalendarCollectionDeleteReviewBinding(href, "digest"),
+                Descriptor(href, eventKind: true, todo: false)));
+        var tool = CreateTool(module, new FixedTimeProvider(DateTimeOffset.Parse("2026-08-16T12:00:00Z")));
+
+        using var disclosure = CalendarSchedulingDisclosure.Attach(serverManaged);
+        var request = await Should.ThrowAsync<InputRequiredException>(() => tool.DeleteRawAsync(
+            DeleteArguments(href), null, null, true, CancellationToken.None));
+
+        var message = request.Result.InputRequests!["confirm_delete"].ElicitationParams!.Message;
+        message.ShouldStartWith($"Delete Calendar collection 'Tasks' at {href}, including all resources? Advertised kinds: event.");
+        if (serverManaged)
+            message.ShouldEndWith(" " + CalendarSchedulingDisclosure.ConfirmationWarning);
+        else
+            message.ShouldNotContain("Scheduling notice");
+    }
+
+    [Theory]
     [InlineData(HttpStatusCode.Unauthorized, "upstream_unauthorized")]
     [InlineData(HttpStatusCode.Forbidden, "upstream_forbidden")]
     [InlineData(HttpStatusCode.MethodNotAllowed, "unsupported_capability")]

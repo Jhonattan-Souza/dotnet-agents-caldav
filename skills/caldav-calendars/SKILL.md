@@ -88,6 +88,8 @@ Accept a committed semantic mutation's structured outcome as completion. Do not 
 
 Storage-only writes involving organizer or attendee data require evidence that the target does not perform automatic scheduling. Collection deletion requires the same evidence. If the tool reports `unsupported_capability` for that boundary, report the limitation; stripping participation data or switching to an exact write can itself cause scheduling side effects and cannot bypass the restriction.
 
+An installation may opt into server-managed scheduling. Its confirmation reviews then carry a scheduling notice, and affected outcomes carry `schedulingSideEffects`. Before a write that adds, changes, or removes organizer or attendee data, or deletes a resource or Calendar that may hold meetings, tell the user that the server may email invitations, updates, or cancellations to participants. When an outcome reports `schedulingSideEffects: possible`, tell the user that the server may have contacted participants; the server does not report whether it sent anything. `none` means no server scheduling was expected for that write. Never add, remove, or rewrite participation data or scheduling parameters to avoid or cause delivery unless the user explicitly asked for that data change.
+
 ## Continue confirmations faithfully
 
 A protected mutation may return MCP `input_required`. Present the returned review, obtain the requested input, and continue the same tool with its opaque `requestState` and `inputResponses`. Keep `requestState` unchanged, single-use, and paired with the original arguments and revision.

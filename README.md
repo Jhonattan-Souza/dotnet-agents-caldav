@@ -62,6 +62,7 @@ client-specific commands.
 | `CALDAV_DEFAULT_EVENT_CALENDAR_NAME` | No | Display name of the default Calendar for Event operations |
 | `CALDAV_EVALUATION_TIME_ZONE` | Yes (installation) | Exact IANA zone used as the configured Temporal Evaluation Context for bounded Calendar Entity Starts and every Occurrence or To-do Start; invalid values fail startup and a caller `evaluationTimeZone` override wins. Manual runs may omit it when the call supplies an IANA identifier; To-do Starts require context even without a window |
 | `CALDAV_INTEROPERABILITY_PROFILE` | No | Set to `radicale-3.7.8` only for that verified runtime; otherwise server-authoritative Move fails closed with `unsupported_capability` |
+| `CALDAV_SCHEDULING_MODE` | No | `storage_only` (default when unset or empty) or `server_managed`; any other value fails startup. `storage_only` blocks participation-bearing writes and Calendar collection deletion unless fresh OPTIONS evidence shows the server does not advertise `calendar-auto-schedule`. `server_managed` also allows them when the server advertises it; the server may then send invitations, updates or cancellations, and affected outcomes report `schedulingSideEffects`. See [ADR 0009](docs/adr/0009-opt-in-server-managed-scheduling.md) |
 | `CALDAV_EXPOSE_EXACT_TOOLS` | No | Set to `true` to expose protected exact Calendar Object Resource tools |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | No | Non-empty OTLP endpoint that opts into telemetry export; no exporter is registered when omitted |
 | `OTEL_EXPORTER_OTLP_PROTOCOL` | No | Standard OTLP protocol such as `http/protobuf` or `grpc` |
@@ -216,6 +217,16 @@ requires that evidence regardless of its current members. Unknown evidence or
 `calendar-auto-schedule` returns `unsupported_capability` before the write.
 Native Calendar-to-Calendar MOVE retains its scheduling-neutral RFC behavior.
 Invitation/reply delivery remains outside the tool contract.
+
+With `CALDAV_SCHEDULING_MODE=server_managed`, the same writes and collection
+deletion also proceed when fresh OPTIONS evidence advertises
+`calendar-auto-schedule`. The server may then send invitations, updates, replies
+or cancellations on its own. Unknown or failed evidence still blocks.
+Confirmation reviews add a scheduling notice. Scheduling-governed outcomes whose
+`mutationState` is `committed` or `unknown` report `schedulingSideEffects`:
+`possible` when the server advertised automatic scheduling, otherwise `none`.
+The default mode never emits the field. See
+[ADR 0009](docs/adr/0009-opt-in-server-managed-scheduling.md).
 
 Discovery follows all advertised Calendar homes and nested ordinary
 collections, stopping at Calendar collections. It fails without partial results

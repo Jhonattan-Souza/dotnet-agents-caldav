@@ -345,7 +345,8 @@ internal sealed class CalendarResourceDeleteTools
         string entityTag)
     {
         var kind = entityKind == CalendarEntityKind.Event ? "event" : "todo";
-        return $"Confirm calendar_resources.delete for href {href}, UID {entityUid}, kind {kind}, and expected ETag {entityTag}.";
+        return CalendarSchedulingDisclosure.WithConfirmationWarning(
+            $"Confirm calendar_resources.delete for href {href}, UID {entityUid}, kind {kind}, and expected ETag {entityTag}.");
     }
 
     private static bool IsConfirmationPreviewWithinBudget(string message) =>

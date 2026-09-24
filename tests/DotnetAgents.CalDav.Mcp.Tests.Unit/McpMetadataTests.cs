@@ -74,6 +74,7 @@ public class McpMetadataTests
             "CALDAV_DEFAULT_EVENT_CALENDAR_NAME",
             "CALDAV_EVALUATION_TIME_ZONE",
             "CALDAV_INTEROPERABILITY_PROFILE",
+            "CALDAV_SCHEDULING_MODE",
             "CALDAV_EXPOSE_EXACT_TOOLS",
             "OTEL_EXPORTER_OTLP_ENDPOINT",
             "OTEL_EXPORTER_OTLP_PROTOCOL",
@@ -81,6 +82,13 @@ public class McpMetadataTests
             "OTEL_SERVICE_NAME",
             "OTEL_SDK_DISABLED"
         ]);
+        var schedulingMode = envVars.EnumerateArray()
+            .Single(item => item.GetProperty("name").GetString() == "CALDAV_SCHEDULING_MODE");
+        schedulingMode.GetProperty("isRequired").GetBoolean().ShouldBeFalse();
+        schedulingMode.GetProperty("description").GetString().ShouldNotBeNull().ShouldContain("server_managed");
+        schedulingMode.GetProperty("default").GetString().ShouldBe("storage_only");
+        schedulingMode.GetProperty("choices").EnumerateArray().Select(item => item.GetString())
+            .ShouldBe(["storage_only", "server_managed"]);
         envVars.EnumerateArray()
             .Single(item => item.GetProperty("name").GetString() == "OTEL_EXPORTER_OTLP_HEADERS")
             .GetProperty("isSecret").GetBoolean().ShouldBeTrue();
