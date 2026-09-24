@@ -8,8 +8,10 @@ using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using Shouldly;
 using System.Diagnostics;
+using System.IO.Pipelines;
 using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Xunit;
 
 namespace DotnetAgents.CalDav.Mcp.Tests.Unit;
@@ -908,6 +910,82 @@ public sealed class CalendarExecutionPolicyTests
             "expand",
             "reconcile"]);
         cancellation.Cancel();
+    }
+
+    [Theory]
+    [InlineData("calendars.list", true, true, 2)]
+    [InlineData("calendars.list", false, false, 1)]
+    [InlineData("calendar_entities.query", true, false, 0)]
+    [InlineData("calendar_occurrences.query", true, false, 0)]
+    [InlineData("todos.query", true, false, 0)]
+    public async Task PublicToolFilter_SendsProgressOnlyForRequestedNonQueryCalls(
+        string toolName,
+        bool progressRequested,
+        bool progressExpected,
+        int policyTimers)
+    {
+        // Policy timers are the progress heartbeat delay and the outer execution budget. Query Starts
+        // own their deadline and send no progress (ADR 0004), so the policy schedules neither for them.
+        var time = new ManualTimeProvider(DateTimeOffset.Parse("2026-08-17T12:00:00Z"));
+        using var services = new ServiceCollection()
+            .AddSingleton<TimeProvider>(time)
+            .AddSingleton<CalendarOperationAdmission>()
+            .BuildServiceProvider();
+        var input = new Pipe();
+        var output = new Pipe();
+        using var outputReader = new StreamReader(output.Reader.AsStream());
+        await using var transport = new StreamServerTransport(
+            input.Reader.AsStream(),
+            output.Writer.AsStream(),
+            "progress-policy-test",
+            Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
+        await using var server = McpServer.Create(
+            transport,
+            new McpServerOptions(),
+            Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance,
+            services);
+        var running = server.RunAsync(TestContext.Current.CancellationToken);
+        var parameters = new CallToolRequestParams { Name = toolName };
+        if (progressRequested)
+            parameters.Meta = new JsonObject { ["progressToken"] = "progress-1" };
+        var context = new RequestContext<CallToolRequestParams>(
+            server,
+            new JsonRpcRequest { Id = new RequestId(1L), Method = "tools/call" },
+            parameters);
+        string? notification = null;
+        var scheduledTimers = -1;
+        var filtered = CalendarExecutionPolicy.CallTool(async (_, cancellationToken) =>
+        {
+            scheduledTimers = time.TimerCount;
+            time.Advance(TimeSpan.FromSeconds(1));
+            if (progressExpected)
+                notification = await outputReader.ReadLineAsync(cancellationToken);
+            return new CallToolResult { Content = [] };
+        });
+
+        var result = await filtered(context, TestContext.Current.CancellationToken);
+        await input.Writer.CompleteAsync();
+        await running;
+        await output.Writer.CompleteAsync();
+        var remaining = await outputReader.ReadToEndAsync(TestContext.Current.CancellationToken);
+
+        result.IsError.ShouldNotBe(true);
+        scheduledTimers.ShouldBe(policyTimers);
+        if (progressExpected)
+        {
+            using var document = JsonDocument.Parse(notification.ShouldNotBeNull());
+            document.RootElement.GetProperty("method").GetString().ShouldBe("notifications/progress");
+            var progress = document.RootElement.GetProperty("params");
+            progress.GetProperty("progressToken").GetString().ShouldBe("progress-1");
+            progress.GetProperty("progress").GetDouble().ShouldBe(1);
+            progress.GetProperty("message").GetString().ShouldBe("discovery");
+            progress.TryGetProperty("total", out _).ShouldBeFalse();
+        }
+        else
+        {
+            notification.ShouldBeNull();
+            remaining.ShouldBeEmpty();
+        }
     }
 
     [Fact]

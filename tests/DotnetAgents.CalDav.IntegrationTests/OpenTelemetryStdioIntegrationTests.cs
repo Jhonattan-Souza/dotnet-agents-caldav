@@ -6,6 +6,7 @@ using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using DotnetAgents.CalDav.IntegrationTests.Fixtures;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
@@ -1117,6 +1118,61 @@ public sealed class OpenTelemetryStdioIntegrationTests
         operation.StatusCode.ShouldBe(2);
         spans.ShouldAllBe(span => span.EventCount == 0);
         server.TransientFailureCount.ShouldBe(3);
+        stderr.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task CallerTraceContext_ParentsExportedToolCallWithoutTraceStateOrBaggage()
+    {
+        const string callerTraceId = "4bf92f3577b34da6a3ce929d0e0e4736";
+        const string callerSpanId = "00f067aa0ba902b7";
+        var suffix = Guid.NewGuid().ToString("N");
+        var privateTraceState = $"vendor=private-trace-state-{suffix}";
+        var privateBaggage = $"user.id=private-baggage-{suffix}";
+        await using var receiver = OtlpLoopbackReceiver.Start();
+        var stderr = new ConcurrentQueue<string>();
+
+        await using (var client = await CreateClientAsync(receiver.Endpoint, stderr))
+        {
+            var result = await client.CallToolAsync(
+                new CallToolRequestParams
+                {
+                    Name = "todos.query",
+                    Arguments = new Dictionary<string, JsonElement>(),
+                    Meta = new JsonObject
+                    {
+                        ["traceparent"] = $"00-{callerTraceId}-{callerSpanId}-01",
+                        ["tracestate"] = privateTraceState,
+                        ["baggage"] = privateBaggage
+                    }
+                },
+                TestContext.Current.CancellationToken);
+            result.IsError.ShouldBe(true, result.StructuredContent?.ToString());
+            result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("invalid_input");
+        }
+
+        await receiver.WaitForPathsAsync(["/v1/traces"], TestContext.Current.CancellationToken);
+        var deadline = TimeProvider.System.GetUtcNow() + TimeSpan.FromSeconds(15);
+        OtlpSpan[] trace;
+        do
+        {
+            trace = OtlpProtobufReader.ReadSpans(receiver.Requests)
+                .Where(span => Convert.ToHexStringLower(span.TraceId) == callerTraceId)
+                .ToArray();
+            if (trace.Length >= 2 || !await receiver.WaitForRequestAsync(TestContext.Current.CancellationToken))
+                break;
+        } while (TimeProvider.System.GetUtcNow() < deadline);
+
+        var call = trace.Single(span => span.ScopeName == "Experimental.ModelContextProtocol");
+        call.Name.ShouldBe("tools/call todos.query");
+        Convert.ToHexStringLower(call.ParentSpanId).ShouldBe(callerSpanId);
+        var operation = trace.Single(span => span.Name == "caldav.operation");
+        operation.ParentSpanId.ShouldBe(call.SpanId);
+        operation.Attributes.GetValueOrDefault("caldav.tool.name").ShouldBe("todos.query");
+        operation.Attributes.GetValueOrDefault("caldav.outcome").ShouldBe("error");
+        OtlpProtobufReader.ReadSpans(receiver.Requests).ShouldAllBe(span => span.TraceState.Length == 0);
+        foreach (var privateValue in new[] { privateTraceState, privateBaggage, suffix })
+            OtlpProtobufReader.ContainsUtf8(receiver.Requests, privateValue).ShouldBeFalse();
         stderr.ShouldBeEmpty();
     }
 
