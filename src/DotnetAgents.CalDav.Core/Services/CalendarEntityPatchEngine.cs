@@ -18,28 +18,28 @@ internal sealed class CalendarEntityPatchEngine(
     public Task<CalendarEntityPatchResult> PatchEventAsync(
         CalendarEventPatchRequest request,
         CancellationToken cancellationToken) => ExecuteWithinPreDispatchDeadlineAsync(
-            token => PatchAsync(request.Snapshot, request.Target, request.Patch, CalendarEntityKind.Event, token),
+            token => PatchAsync(request.Snapshot, request.Target, CalendarAuthoringTimeZones.Normalize(request.Patch), CalendarEntityKind.Event, token),
             DeadlineFailure,
             cancellationToken);
 
     public Task<CalendarEntityPatchResult> PatchTodoAsync(
         CalendarTodoPatchRequest request,
         CancellationToken cancellationToken) => ExecuteWithinPreDispatchDeadlineAsync(
-            token => PatchAsync(request.Snapshot, request.Target, EventPatch(request.Patch), CalendarEntityKind.Todo, token),
+            token => PatchAsync(request.Snapshot, request.Target, CalendarAuthoringTimeZones.Normalize(EventPatch(request.Patch)), CalendarEntityKind.Todo, token),
             DeadlineFailure,
             cancellationToken);
 
     public Task<CalendarEntityPatchReviewResult> ReviewEventPatchAsync(
         CalendarEventPatchRequest request,
         CancellationToken cancellationToken) => ExecuteWithinPreDispatchDeadlineAsync(
-            token => ReviewAsync(request.Snapshot, request.Target, request.Patch, CalendarEntityKind.Event, token),
+            token => ReviewAsync(request.Snapshot, request.Target, CalendarAuthoringTimeZones.Normalize(request.Patch), CalendarEntityKind.Event, token),
             ReviewDeadlineFailure,
             cancellationToken);
 
     public Task<CalendarEntityPatchReviewResult> ReviewTodoPatchAsync(
         CalendarTodoPatchRequest request,
         CancellationToken cancellationToken) => ExecuteWithinPreDispatchDeadlineAsync(
-            token => ReviewAsync(request.Snapshot, request.Target, EventPatch(request.Patch), CalendarEntityKind.Todo, token),
+            token => ReviewAsync(request.Snapshot, request.Target, CalendarAuthoringTimeZones.Normalize(EventPatch(request.Patch)), CalendarEntityKind.Todo, token),
             ReviewDeadlineFailure,
             cancellationToken);
 

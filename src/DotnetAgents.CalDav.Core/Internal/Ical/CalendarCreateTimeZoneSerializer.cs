@@ -69,6 +69,22 @@ internal static class CalendarCreateTimeZoneSerializer
         destination.Append(SerializeZone(zone.Key, earliest, latest, isMasterZone && recurrence?.IsUnbounded == true));
     }
 
+    /// <summary>
+    /// Serializes one IANA VTIMEZONE covering already-stored local values; resolved leniently
+    /// because they may be derived values rather than strictly validated caller input.
+    /// </summary>
+    public static string SerializeForLocalValues(string timeZoneId, IReadOnlyCollection<DateTime> localValues)
+    {
+        var zone = DateTimeZoneProviders.Tzdb[timeZoneId];
+        var earliest = LocalDateTime.FromDateTime(localValues.Min());
+        return SerializeZone(
+            timeZoneId,
+            zone,
+            earliest,
+            zone.AtLeniently(earliest).ToInstant(),
+            zone.AtLeniently(LocalDateTime.FromDateTime(localValues.Max())).ToInstant());
+    }
+
     private static string SerializeZone(
         string timeZoneId,
         DateTime earliest,
@@ -81,6 +97,16 @@ internal static class CalendarCreateTimeZoneSerializer
         var endInstant = unbounded
             ? MaximumSupportedInstant
             : zone.AtStrictly(LocalDateTime.FromDateTime(latest)).ToInstant();
+        return SerializeZone(timeZoneId, zone, earliestLocal, startInstant, endInstant);
+    }
+
+    private static string SerializeZone(
+        string timeZoneId,
+        DateTimeZone zone,
+        LocalDateTime earliestLocal,
+        Instant startInstant,
+        Instant endInstant)
+    {
         if (endInstant <= startInstant)
             endInstant = startInstant + Duration.FromSeconds(1);
 

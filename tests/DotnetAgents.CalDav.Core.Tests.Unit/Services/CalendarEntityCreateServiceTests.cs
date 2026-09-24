@@ -3096,6 +3096,103 @@ public sealed class CalendarEntityCreateServiceTests
     }
 
     [Fact]
+    public async Task CreateEventAsync_StoresMappedIanaIdentifiersForWindowsTimeZoneInput()
+    {
+        const string calendarHref = "https://cal.example/events/";
+        const string resourceHref = "https://cal.example/events/windows-zones.ics";
+        var client = Substitute.For<ICalendarClient>();
+        var sut = CreateService(client, defaultEventName: "Events");
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([EventCalendar(calendarHref, "Events")]);
+        CalendarResourceCreateRequest? dispatched = null;
+        client.CreateCalendarResourceAsync(
+                Arg.Do<CalendarResourceCreateRequest>(request => dispatched = request),
+                Arg.Any<CancellationToken>())
+            .Returns(CalendarResourceCreateResult.Dispatched(resourceHref));
+        client.GetCalendarResourceAsync(resourceHref, Arg.Any<CancellationToken>()).Returns(_ =>
+            CalendarResourceRead.Success(resourceHref, "\"windows-r1\"", dispatched!.AuthoritativeUtf8));
+        const string eastern = "Eastern Standard Time";
+        var recurrence = new CalendarEventRecurrenceSetCreate(
+            Rule: "FREQ=DAILY;COUNT=3",
+            RecurrenceDates: [new CalendarRecurrenceDateCreate(Value: Zoned("2026-03-10T09:00:00", eastern))],
+            ExceptionDates: [Zoned("2026-03-09T09:00:00", eastern)],
+            Overrides:
+            [
+                new CalendarEventRecurrenceOverrideCreate(
+                    Zoned("2026-03-08T09:00:00", eastern),
+                    CalendarRecurrenceOverrideStatus.Active,
+                    new CalendarEventCreateFields(
+                        Start: Zoned("2026-03-08T15:00:00", "Romance Standard Time"),
+                        End: Zoned("2026-03-08T16:00:00", "Romance Standard Time")))
+            ]);
+
+        var result = await sut.CreateEventAsync(
+            new CalendarEventCreateRequest(
+                CalendarCreateDestination.Default,
+                "windows-zones",
+                new CalendarEventCreateFields(
+                    Start: Zoned("2026-03-07T09:00:00", eastern),
+                    End: Zoned("2026-03-07T10:00:00", eastern),
+                    RecurrenceSet: recurrence)),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityCreateCode.Success);
+        var content = Encoding.UTF8.GetString(dispatched!.AuthoritativeUtf8.Span);
+        content.ShouldNotContain("Standard Time");
+        content.Split("BEGIN:VTIMEZONE\r\n", StringSplitOptions.None).Length.ShouldBe(3);
+        content.ShouldContain("TZID:America/New_York\r\n");
+        content.ShouldContain("TZID:Europe/Paris\r\n");
+        content.ShouldContain("DTSTART;TZID=America/New_York:20260307T090000\r\n");
+        content.ShouldContain("RDATE;TZID=America/New_York:20260310T090000\r\n");
+        content.ShouldContain("EXDATE;TZID=America/New_York:20260309T090000\r\n");
+        content.ShouldContain("RECURRENCE-ID;TZID=America/New_York:20260308T090000\r\n");
+        content.ShouldContain("DTSTART;TZID=Europe/Paris:20260308T150000\r\n");
+    }
+
+    [Fact]
+    public async Task CreateTodoAsync_StoresMappedIanaIdentifierAndStillRejectsUnmappedCustomZone()
+    {
+        const string calendarHref = "https://cal.example/tasks/";
+        const string resourceHref = "https://cal.example/tasks/windows-todo.ics";
+        var client = Substitute.For<ICalendarClient>();
+        var sut = CreateTodoService(client);
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([TodoCalendar(calendarHref, "Todos")]);
+        CalendarResourceCreateRequest? dispatched = null;
+        client.CreateCalendarResourceAsync(
+                Arg.Do<CalendarResourceCreateRequest>(request => dispatched = request),
+                Arg.Any<CancellationToken>())
+            .Returns(CalendarResourceCreateResult.Dispatched(resourceHref));
+        client.GetCalendarResourceAsync(resourceHref, Arg.Any<CancellationToken>()).Returns(_ =>
+            CalendarResourceRead.Success(resourceHref, "\"windows-todo-r1\"", dispatched!.AuthoritativeUtf8));
+
+        var created = await sut.CreateTodoAsync(
+            new CalendarTodoCreateRequest(
+                CalendarCreateDestination.Default,
+                "windows-todo",
+                new CalendarTodoCreateFields(
+                    Start: Zoned("2026-08-17T09:00:00", "Tokyo Standard Time"),
+                    Due: Zoned("2026-08-17T10:00:00", "Tokyo Standard Time"))),
+            CancellationToken.None);
+        var rejected = await sut.CreateTodoAsync(
+            new CalendarTodoCreateRequest(
+                CalendarCreateDestination.Default,
+                "custom-todo",
+                new CalendarTodoCreateFields(Due: Zoned("2026-08-17T10:00:00", "Custom Standard Time"))),
+            CancellationToken.None);
+
+        created.Code.ShouldBe(CalendarEntityCreateCode.Success);
+        var content = Encoding.UTF8.GetString(dispatched!.AuthoritativeUtf8.Span);
+        content.ShouldContain("TZID:Asia/Tokyo\r\n");
+        content.ShouldContain("DTSTART;TZID=Asia/Tokyo:20260817T090000\r\n");
+        content.ShouldContain("DUE;TZID=Asia/Tokyo:20260817T100000\r\n");
+        content.ShouldNotContain("Tokyo Standard Time");
+        rejected.Code.ShouldBe(CalendarEntityCreateCode.InvalidCalendarData);
+        rejected.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+    }
+
+    private static CalendarTemporalValue Zoned(string value, string timeZoneId) =>
+        new(CalendarTemporalKind.ZonedDateTime, value, timeZoneId);
+
+    [Fact]
     public async Task CreateEventAsync_SelectedHrefResolvesInsideScopeWithoutUsingTheDefault()
     {
         const string calendarHref = "https://cal.example/events/";

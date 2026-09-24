@@ -11,7 +11,10 @@ using IcalCalendar = Ical.Net.Calendar;
 
 namespace DotnetAgents.CalDav.Core.Internal.Ical;
 
-/// <summary>Resolves UTC and named-zone entity values without a host-zone fallback.</summary>
+/// <summary>
+/// Resolves UTC and named-zone entity values without a host-zone fallback. An embedded VTIMEZONE
+/// always wins; a TZID without one resolves through tzdb or its Windows mapping.
+/// </summary>
 internal sealed class CalendarTemporalResolver
 {
     private const int MaximumZoneTransitions = 10_000;
@@ -197,7 +200,7 @@ internal sealed class CalendarTemporalResolver
     private ResolvedCalendarInstant ResolveInEvaluationZone(DateTime local, bool generated = false) =>
         _evaluationTimeZone is null
             ? new(null, true)
-            : ResolveFromIana(
+            : ResolveFromTzdb(
                 DateTime.SpecifyKind(local, DateTimeKind.Unspecified), _evaluationTimeZone, generated);
 
     private ResolvedCalendarInstant ResolveLocal(DateTime local, string timeZoneId, bool generated = false)
@@ -207,7 +210,7 @@ internal sealed class CalendarTemporalResolver
         if (rawDefinitionCount > 1)
             return new(null, true);
         if (rawDefinitionCount == 0)
-            return ResolveFromIana(local, timeZoneId, generated);
+            return ResolveFromTzdb(local, timeZoneId, generated);
         var typedDefinitions = FindTypedLocalDefinitions(timeZoneId);
         return typedDefinitions.Count == 1
             ? ResolveFromLocalDefinition(local, typedDefinitions[0], generated, _cancellationToken)
@@ -230,16 +233,16 @@ internal sealed class CalendarTemporalResolver
         if (rawDefinitionCount > 1)
             return null;
         if (rawDefinitionCount == 0)
-            return ProjectFromIana(instant, timeZoneId);
+            return ProjectFromTzdb(instant, timeZoneId);
         var definitions = FindTypedLocalDefinitions(timeZoneId);
         return definitions.Count == 1
             ? ProjectFromLocalDefinition(instant, definitions[0], _cancellationToken)
             : null;
     }
 
-    private static DateTime? ProjectFromIana(DateTimeOffset instant, string timeZoneId)
+    private static DateTime? ProjectFromTzdb(DateTimeOffset instant, string timeZoneId)
     {
-        var zone = DateTimeZoneProviders.Tzdb.GetZoneOrNull(timeZoneId);
+        var zone = CalendarTimeZoneIdentifiers.FindZone(timeZoneId);
         return zone is null
             ? null
             : Instant.FromDateTimeOffset(instant).InZone(zone).LocalDateTime.ToDateTimeUnspecified();
@@ -281,14 +284,14 @@ internal sealed class CalendarTemporalResolver
     private static string FormatUtc(DateTimeOffset instant) =>
         instant.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
 
-    private static ResolvedCalendarInstant ResolveFromIana(
+    private static ResolvedCalendarInstant ResolveFromTzdb(
         DateTime local,
         string timeZoneId,
         bool generated = false)
     {
         try
         {
-            var zone = DateTimeZoneProviders.Tzdb.GetZoneOrNull(timeZoneId);
+            var zone = CalendarTimeZoneIdentifiers.FindZone(timeZoneId);
             if (zone is null)
                 return new(null, true);
             var mapping = zone.MapLocal(LocalDateTime.FromDateTime(local));

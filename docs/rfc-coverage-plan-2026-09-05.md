@@ -194,6 +194,31 @@ Follow-up backlog:
   properties. Calendar Color, Order and Time Zone were added later through
   Apple `calendar-color`/`calendar-order` and `CALDAV:calendar-timezone`.
 
+## Time zone references (addendum, 2026-09-24)
+
+[RFC 5545 §3.2.19](https://www.rfc-editor.org/rfc/rfc5545.html#section-3.2.19)
+requires a VTIMEZONE for every TZID, but
+[RFC 7809](https://www.rfc-editor.org/rfc/rfc7809.html) lets CalDAV servers and
+clients omit standard definitions, and many clients write Windows zone names.
+Reads, queries, occurrence expansion, semantic patches and exact validation
+share one resolver. A resource-local VTIMEZONE always wins. A TZID without one
+resolves from tzdb as IANA, then through the CLDR Windows mapping bundled with
+that tzdb data. It never uses the host or installation time zone. The resource
+keeps its original TZID text. A mapped Windows reference adds the informational
+`timezone_reference_resolved_externally` diagnostic. An unresolvable reference
+adds the `timezone_reference_unresolved` warning. The resource remains
+semantically readable, but dependent query instants stay `temporal_unresolved`.
+Exact create and replace accept such a TZID only when it resolves.
+
+Semantic authoring always writes IANA. A Windows `timeZoneId` input is mapped
+before validation. Creates and patches emit a generated IANA VTIMEZONE for each
+zone they introduce, and TZIDs already present in the resource stay unchanged.
+The pinned Radicale 3.7.8 profile synthesizes its own VTIMEZONE for a bare IANA
+TZID but stores a Windows TZID unchanged. The live conformance test therefore
+covers external resolution with a Windows reference. Changing the zone of a
+recurring master remains unsupported. A recurring series stored under a Windows
+TZID cannot yet be rescheduled through a semantic start patch.
+
 ## Completion criteria
 
 1. Record the rubber-duck agent's objections, resolutions, and agreement.

@@ -582,6 +582,20 @@ public sealed class ContractCatalogTests
     }
 
     [Fact]
+    public void Mcp_catalog_documents_named_zone_identifiers_in_the_temporal_value_schema()
+    {
+        var zoned = ReadJson("mcp-tool-catalog.json")["$defs"]!["temporalValue"]!["oneOf"]!.AsArray()
+            .Single(item => item!["properties"]!["kind"]!["const"]!.GetValue<string>() == "zonedDateTime")!;
+
+        var description = zoned["properties"]!["timeZoneId"]!["description"]!.GetValue<string>();
+
+        description.ShouldContain("IANA tzdb identifier");
+        description.ShouldContain("Windows identifier");
+        description.ShouldContain("stored as its mapped IANA identifier");
+        description.ShouldContain("embedded VTIMEZONE");
+    }
+
+    [Fact]
     public void Mcp_catalog_keeps_calendar_resource_entity_and_occurrence_identities_distinct()
     {
         var definitions = ReadJson("mcp-tool-catalog.json")["$defs"]!;

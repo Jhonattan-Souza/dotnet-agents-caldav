@@ -568,6 +568,7 @@ internal static class CalendarEntityPatchEditor
         var edited = existingLastModified is not null && IsDerivedProperty(existingLastModified)
             ? document.Replay()
             : document.SetOrClearSingleProperty(master.Path, "LAST-MODIFIED", lastModified);
+        edited = CalendarPatchTimeZoneDefinitions.AddIntroduced(snapshot.AuthoritativeUtf8.Span, edited);
         var projection = CalendarResourceProjector.Project(edited);
         if (projection.Projection.Kind == CalendarResourceProjectionKind.Opaque)
             return (null, Failure(CalendarEntityPatchCode.FidelityFailure, snapshot));
