@@ -66,6 +66,11 @@
           ]
         },
         {
+          "name": "CALDAV_REDIRECT_HOSTS",
+          "description": "Comma-separated HTTPS host allowlist for cross-origin redirects and discovered hrefs, such as .icloud.com; exact host names or leading-dot strict-subdomain suffixes that receive the configured credentials at the configured port (optional; omit to stay same-origin)",
+          "isRequired": false
+        },
+        {
           "name": "CALDAV_EXPOSE_EXACT_TOOLS",
           "description": "Set to true to expose protected exact Calendar Object Resource tools (optional)",
           "isRequired": false

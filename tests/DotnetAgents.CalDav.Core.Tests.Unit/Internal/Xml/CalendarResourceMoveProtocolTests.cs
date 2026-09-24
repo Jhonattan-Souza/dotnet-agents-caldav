@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Core.Internal.Xml;
 using DotnetAgents.CalDav.Core.Models;
 using Shouldly;
@@ -18,7 +19,7 @@ public sealed class CalendarResourceMoveProtocolTests
             observed = Clone(request);
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Created));
         }));
-        var sut = new CalendarResourceMoveProtocol(httpClient, new Uri("https://example.com"));
+        var sut = new CalendarResourceMoveProtocol(httpClient, new CalDavAccountOrigins(new Uri("https://example.com")));
 
         var result = await sut.MoveAsync(
             new CalendarResourceMoveDispatchRequest(
@@ -59,7 +60,7 @@ public sealed class CalendarResourceMoveProtocolTests
             sendCount++;
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Created));
         }));
-        var sut = new CalendarResourceMoveProtocol(httpClient, new Uri("https://example.com"));
+        var sut = new CalendarResourceMoveProtocol(httpClient, new CalDavAccountOrigins(new Uri("https://example.com")));
 
         var result = await sut.MoveAsync(
             new CalendarResourceMoveDispatchRequest(sourceHref, destinationHref, entityTag),
@@ -86,7 +87,7 @@ public sealed class CalendarResourceMoveProtocolTests
             sendCount++;
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Created));
         }));
-        var sut = new CalendarResourceMoveProtocol(httpClient, new Uri("https://example.com"));
+        var sut = new CalendarResourceMoveProtocol(httpClient, new CalDavAccountOrigins(new Uri("https://example.com")));
 
         var result = await sut.MoveAsync(
             Request(),
@@ -123,7 +124,7 @@ public sealed class CalendarResourceMoveProtocolTests
     {
         using var httpClient = new HttpClient(new Handler(_ =>
             Task.FromResult(new HttpResponseMessage(statusCode))));
-        var sut = new CalendarResourceMoveProtocol(httpClient, new Uri("https://example.com"));
+        var sut = new CalendarResourceMoveProtocol(httpClient, new CalDavAccountOrigins(new Uri("https://example.com")));
 
         var result = await sut.MoveAsync(
             Request(),
@@ -149,7 +150,7 @@ public sealed class CalendarResourceMoveProtocolTests
                     "<d:error xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\">" +
                     "<c:no-uid-conflict/></d:error>")
             })));
-        var sut = new CalendarResourceMoveProtocol(httpClient, new Uri("https://example.com"));
+        var sut = new CalendarResourceMoveProtocol(httpClient, new CalDavAccountOrigins(new Uri("https://example.com")));
 
         var result = await sut.MoveAsync(Request(), TestContext.Current.CancellationToken);
 
@@ -172,7 +173,7 @@ public sealed class CalendarResourceMoveProtocolTests
                 response.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromSeconds(delaySeconds));
             return Task.FromResult(response);
         }));
-        var sut = new CalendarResourceMoveProtocol(httpClient, new Uri("https://example.com"));
+        var sut = new CalendarResourceMoveProtocol(httpClient, new CalDavAccountOrigins(new Uri("https://example.com")));
 
         var result = await sut.MoveAsync(Request(), TestContext.Current.CancellationToken);
 
@@ -195,7 +196,7 @@ public sealed class CalendarResourceMoveProtocolTests
         }));
         var sut = new CalendarResourceMoveProtocol(
             httpClient,
-            new Uri("https://example.com"),
+            new CalDavAccountOrigins(new Uri("https://example.com")),
             new FrozenTimeProvider(now));
 
         var result = await sut.MoveAsync(Request(), TestContext.Current.CancellationToken);
@@ -212,7 +213,7 @@ public sealed class CalendarResourceMoveProtocolTests
             sendCount++;
             throw new HttpRequestException("private transport detail");
         }));
-        var sut = new CalendarResourceMoveProtocol(httpClient, new Uri("https://example.com"));
+        var sut = new CalendarResourceMoveProtocol(httpClient, new CalDavAccountOrigins(new Uri("https://example.com")));
 
         var result = await sut.MoveAsync(Request(), TestContext.Current.CancellationToken);
 
@@ -238,7 +239,7 @@ public sealed class CalendarResourceMoveProtocolTests
                 }
                 : new HttpResponseMessage(HttpStatusCode.Created));
         }));
-        var sut = new CalendarResourceMoveProtocol(httpClient, new Uri("https://example.com"));
+        var sut = new CalendarResourceMoveProtocol(httpClient, new CalDavAccountOrigins(new Uri("https://example.com")));
 
         var result = await sut.MoveAsync(Request(), TestContext.Current.CancellationToken);
 
@@ -261,7 +262,7 @@ public sealed class CalendarResourceMoveProtocolTests
                 Headers = { Location = new Uri("https://other.example/tasks/a.ics") }
             });
         }));
-        var sut = new CalendarResourceMoveProtocol(httpClient, new Uri("https://example.com"));
+        var sut = new CalendarResourceMoveProtocol(httpClient, new CalDavAccountOrigins(new Uri("https://example.com")));
 
         var result = await sut.MoveAsync(Request(), TestContext.Current.CancellationToken);
 
@@ -281,7 +282,7 @@ public sealed class CalendarResourceMoveProtocolTests
                 Headers = { Location = new Uri("https://example.com/private/a.ics") }
             });
         }));
-        var sut = new CalendarResourceMoveProtocol(httpClient, new Uri("https://example.com"));
+        var sut = new CalendarResourceMoveProtocol(httpClient, new CalDavAccountOrigins(new Uri("https://example.com")));
 
         var result = await sut.MoveAsync(Request(), TestContext.Current.CancellationToken);
 
@@ -301,7 +302,7 @@ public sealed class CalendarResourceMoveProtocolTests
                 Headers = { Location = new Uri("https://example.com/archive/a.ics") }
             });
         }));
-        var sut = new CalendarResourceMoveProtocol(httpClient, new Uri("https://example.com"));
+        var sut = new CalendarResourceMoveProtocol(httpClient, new CalDavAccountOrigins(new Uri("https://example.com")));
 
         var result = await sut.MoveAsync(Request(), TestContext.Current.CancellationToken);
 
@@ -323,7 +324,7 @@ public sealed class CalendarResourceMoveProtocolTests
                 }
                 : new HttpResponseMessage(HttpStatusCode.NoContent));
         }));
-        var sut = new CalendarResourceMoveProtocol(httpClient, new Uri("https://example.com"));
+        var sut = new CalendarResourceMoveProtocol(httpClient, new CalDavAccountOrigins(new Uri("https://example.com")));
 
         var result = await sut.MoveAsync(Request(), TestContext.Current.CancellationToken);
 
@@ -345,7 +346,7 @@ public sealed class CalendarResourceMoveProtocolTests
                 response.Headers.Location = new Uri("%2e%2e/private.ics", UriKind.Relative);
             return Task.FromResult(response);
         }));
-        var sut = new CalendarResourceMoveProtocol(httpClient, new Uri("https://example.com"));
+        var sut = new CalendarResourceMoveProtocol(httpClient, new CalDavAccountOrigins(new Uri("https://example.com")));
 
         var result = await sut.MoveAsync(Request(), TestContext.Current.CancellationToken);
 
@@ -365,7 +366,7 @@ public sealed class CalendarResourceMoveProtocolTests
                 Headers = { Location = new Uri($"https://example.com/tasks/redirect-{sendCount}.ics") }
             });
         }));
-        var sut = new CalendarResourceMoveProtocol(httpClient, new Uri("https://example.com"));
+        var sut = new CalendarResourceMoveProtocol(httpClient, new CalDavAccountOrigins(new Uri("https://example.com")));
 
         var result = await sut.MoveAsync(Request(), TestContext.Current.CancellationToken);
 

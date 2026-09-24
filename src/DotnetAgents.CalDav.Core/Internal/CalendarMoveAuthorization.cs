@@ -9,7 +9,7 @@ namespace DotnetAgents.CalDav.Core.Internal;
 internal sealed class CalendarMoveAuthorization
 {
     private readonly CalendarOperationDiscovery _discovery;
-    private readonly Uri _origin;
+    private readonly CalDavAccountOrigins _origins;
     private readonly IReadOnlyList<string> _scope;
     private readonly string? _interoperabilityProfile;
 
@@ -18,7 +18,7 @@ internal sealed class CalendarMoveAuthorization
         CalDavOptions options)
     {
         _discovery = discovery;
-        _origin = new Uri(options.BaseUrl, UriKind.Absolute);
+        _origins = CalDavAccountOrigins.From(options);
         _scope = ParseScope(options.CalendarHrefs);
         _interoperabilityProfile = options.InteroperabilityProfile;
     }
@@ -46,6 +46,9 @@ internal sealed class CalendarMoveAuthorization
         var destination = ((CalendarResolution.Resolved)destinationResolution).Calendar;
         if (string.Equals(source.Href, destination.Href, StringComparison.Ordinal))
             return Reject(CalendarMoveAuthorizationFailureReason.SameCalendarNotAllowed);
+        // MOVE cannot cross servers: Calendars on different account origins are not Move targets.
+        if (!HasSameOrigin(sourceUri, new Uri(destination.Href, UriKind.Absolute)))
+            return Reject(CalendarMoveAuthorizationFailureReason.OriginMismatch);
         return new CalendarMoveAuthorizationResult.Authorized(new CalendarMoveAuthorizedTarget(
             request.Revision.Href,
             CalendarResourceCreateProtocol.BuildResourceHref(destination.Href, request.Revision.EntityUid),
@@ -57,7 +60,7 @@ internal sealed class CalendarMoveAuthorization
     {
         if (!TryParseCanonicalHref(request.Revision.Href, requireTrailingSlash: false, out var sourceUri))
             return SemanticInputAuthorization.Reject(Failure(CalendarMoveAuthorizationFailureReason.NonCanonicalResourceHref));
-        if (!HasSameOrigin(_origin, sourceUri))
+        if (!_origins.Contains(sourceUri))
             return SemanticInputAuthorization.Reject(Failure(CalendarMoveAuthorizationFailureReason.OriginMismatch));
         if (_scope.Count > 0 && !_scope.Any(calendarHref => IsDirectResourceOf(sourceUri, calendarHref)))
             return SemanticInputAuthorization.Reject(Failure(CalendarMoveAuthorizationFailureReason.OutsideCalendarScope));
@@ -90,7 +93,7 @@ internal sealed class CalendarMoveAuthorization
         if (selection.Calendar is null)
             return CalendarResolution.Reject(Failure(CalendarMoveAuthorizationFailureReason.ResolvedCalendarIdentityDivergent));
         if (!TryParseCanonicalHref(selection.Calendar.Href, requireTrailingSlash: true, out var destinationUri)
-            || !HasSameOrigin(_origin, destinationUri))
+            || !_origins.Contains(destinationUri))
         {
             return CalendarResolution.Reject(Failure(CalendarMoveAuthorizationFailureReason.InvalidResolvedCalendar));
         }
@@ -115,7 +118,7 @@ internal sealed class CalendarMoveAuthorization
             return null;
         if (!TryParseCanonicalHref(destination.Calendar.Href, requireTrailingSlash: true, out var calendar))
             return CalendarMoveAuthorizationFailureReason.InvalidSelectedCalendar;
-        if (!HasSameOrigin(_origin, calendar))
+        if (!_origins.Contains(calendar))
             return CalendarMoveAuthorizationFailureReason.OriginMismatch;
         return _scope.Count > 0 && !_scope.Contains(destination.Calendar.Href, StringComparer.Ordinal)
             ? CalendarMoveAuthorizationFailureReason.OutsideCalendarScope
@@ -192,7 +195,9 @@ internal sealed class CalendarMoveAuthorization
         }
         if (string.Equals(request.Revision.Href, request.DestinationHref, StringComparison.Ordinal))
             return ExactInputAuthorization.Reject(Failure(CalendarMoveAuthorizationFailureReason.SameResourceHref));
-        if (!HasSameOrigin(_origin, sourceUri) || !HasSameOrigin(_origin, destinationUri))
+        if (!_origins.Contains(sourceUri)
+            || !_origins.Contains(destinationUri)
+            || !HasSameOrigin(sourceUri, destinationUri))
             return ExactInputAuthorization.Reject(Failure(CalendarMoveAuthorizationFailureReason.OriginMismatch));
         if (_scope.Count > 0
             && (!_scope.Any(calendarHref => IsDirectResourceOf(sourceUri, calendarHref))
@@ -223,7 +228,7 @@ internal sealed class CalendarMoveAuthorization
         IEnumerable<CalendarDescriptor> candidates) => candidates
         .Where(candidate =>
             TryParseCanonicalHref(candidate.Href, requireTrailingSlash: true, out var calendar)
-            && HasSameOrigin(_origin, calendar)
+            && _origins.Contains(calendar)
             && (_scope.Count == 0 || _scope.Contains(candidate.Href, StringComparer.Ordinal)))
         .ToImmutableArray();
 

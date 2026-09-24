@@ -294,8 +294,7 @@ internal sealed class CalendarService : ICalendarService
             return false;
         }
 
-        var origin = new Uri(_options.Value.BaseUrl, UriKind.Absolute);
-        if (!HasSameOrigin(origin, candidate))
+        if (!CalDavAccountOrigins.From(_options.Value).Contains(candidate))
             return false;
 
         resourceUri = candidate;

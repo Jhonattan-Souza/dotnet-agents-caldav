@@ -600,7 +600,7 @@ internal sealed partial class CalDavClient : ICalendarClient, ICalendarMoveResou
         return await ExecuteCapabilityOperationAsync(
             key,
             () => new CalendarResourceCreateResult(CalendarResourceCreateCode.UnsupportedCapability, request.ResourceHref),
-            () => new CalendarResourceCreateProtocol(_httpClient, new Uri(_options.Value.BaseUrl, UriKind.Absolute))
+            () => new CalendarResourceCreateProtocol(_httpClient, AccountOrigins)
                 .CreateAsync(request, cancellationToken),
             result => result.Code == CalendarResourceCreateCode.UnsupportedCapability,
             result => result.Code == CalendarResourceCreateCode.Dispatched);
@@ -612,7 +612,7 @@ internal sealed partial class CalDavClient : ICalendarClient, ICalendarMoveResou
         CancellationToken cancellationToken) => await ExecuteCapabilityOperationAsync(
             CapabilityKey.Mutation(_options.Value.BaseUrl, ParentHref(request.ResourceHref), request.ResourceHref, "delete"),
             () => new CalendarResourceDeleteDispatchResult(CalendarResourceDeleteDispatchCode.UnsupportedCapability),
-            () => new CalendarResourceDeleteProtocol(_httpClient, new Uri(_options.Value.BaseUrl, UriKind.Absolute))
+            () => new CalendarResourceDeleteProtocol(_httpClient, AccountOrigins)
                 .DeleteAsync(request, cancellationToken),
             result => result.Code == CalendarResourceDeleteDispatchCode.UnsupportedCapability,
             result => result.Code == CalendarResourceDeleteDispatchCode.Dispatched);
@@ -647,7 +647,7 @@ internal sealed partial class CalDavClient : ICalendarClient, ICalendarMoveResou
                 request.SourceHref,
                 "move"),
             () => new CalendarResourceMoveDispatchResult(CalendarResourceMoveDispatchCode.UnsupportedCapability),
-            () => new CalendarResourceMoveProtocol(_httpClient, new Uri(_options.Value.BaseUrl, UriKind.Absolute))
+            () => new CalendarResourceMoveProtocol(_httpClient, AccountOrigins)
                 .MoveAsync(request, sourceCalendarHref, destinationCalendarHref, cancellationToken),
             result => result.Code == CalendarResourceMoveDispatchCode.UnsupportedCapability,
             result => result.Code == CalendarResourceMoveDispatchCode.Dispatched);
@@ -658,7 +658,7 @@ internal sealed partial class CalDavClient : ICalendarClient, ICalendarMoveResou
         CancellationToken cancellationToken) => await ExecuteCapabilityOperationAsync(
             CapabilityKey.Mutation(_options.Value.BaseUrl, ParentHref(request.ResourceHref), request.ResourceHref, "update"),
             () => new CalendarResourceUpdateDispatchResult(CalendarResourceUpdateDispatchCode.UnsupportedCapability),
-            () => new CalendarResourceUpdateProtocol(_httpClient, new Uri(_options.Value.BaseUrl, UriKind.Absolute))
+            () => new CalendarResourceUpdateProtocol(_httpClient, AccountOrigins)
                 .UpdateAsync(request, cancellationToken),
             result => result.Code == CalendarResourceUpdateDispatchCode.UnsupportedCapability,
             result => result.Code == CalendarResourceUpdateDispatchCode.Dispatched);
@@ -839,8 +839,7 @@ internal sealed partial class CalDavClient : ICalendarClient, ICalendarMoveResou
         if (!Uri.TryCreate(href, UriKind.Absolute, out var candidate) || !IsSafeCanonicalUri(candidate, href))
             return false;
 
-        var origin = new Uri(_options.Value.BaseUrl, UriKind.Absolute);
-        if (!HasSameOrigin(origin, candidate))
+        if (!AccountOrigins.Contains(candidate))
             return false;
 
         resourceUri = candidate;
@@ -1004,7 +1003,9 @@ internal sealed partial class CalDavClient : ICalendarClient, ICalendarMoveResou
     /// Sends a request and follows redirect responses (301, 302, 307, 308)
     /// manually, preserving the original HTTP method and body.
     /// This is necessary because auto-redirect is disabled — CalDAV methods
-    /// like PROPFIND and REPORT must be preserved across redirects.
+    /// like PROPFIND and REPORT must be preserved across redirects. RFC 9110
+    /// permits changing only POST to GET after 301/302, so other methods are replayed.
+    /// A 303 is rejected without a further request, and every target must be an account origin.
     /// </summary>
     private async Task<HttpResponseMessage> SendWithRedirectHandlingAsync(
         HttpRequestMessage originalRequest,
@@ -1097,6 +1098,7 @@ internal sealed partial class CalDavClient : ICalendarClient, ICalendarMoveResou
         options.Username,
         options.Password,
         options.CalendarHrefs,
+        options.RedirectHosts,
         options.DefaultEventCalendarName,
         options.DefaultTodoCalendarName);
 
@@ -1159,6 +1161,9 @@ internal sealed partial class CalDavClient : ICalendarClient, ICalendarMoveResou
         int attempt,
         int maxRedirects)
     {
+        // RFC 9110 §15.4.4: 303 See Other directs the client to retrieve an indirect response
+        // with GET. PROPFIND and REPORT results cannot be obtained that way, and replaying the
+        // method and body would apply them to a resource the server did not name as their target.
         if (response.StatusCode == HttpStatusCode.RedirectMethod)
         {
             response.Dispose();
@@ -1204,8 +1209,7 @@ internal sealed partial class CalDavClient : ICalendarClient, ICalendarMoveResou
             HttpStatusCode.RedirectKeepVerb or
             HttpStatusCode.TemporaryRedirect or
             HttpStatusCode.MovedPermanently or
-            HttpStatusCode.Redirect or
-            HttpStatusCode.RedirectMethod))
+            HttpStatusCode.Redirect))
         {
             return null;
         }
@@ -1233,17 +1237,14 @@ internal sealed partial class CalDavClient : ICalendarClient, ICalendarMoveResou
             return false;
         }
 
-        var configuredBaseUri = new Uri(_options.Value.BaseUrl, UriKind.Absolute);
-        if (!string.Equals(candidate.Scheme, configuredBaseUri.Scheme, StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(candidate.Host, configuredBaseUri.Host, StringComparison.OrdinalIgnoreCase)
-            || candidate.Port != configuredBaseUri.Port)
-        {
+        if (!AccountOrigins.Contains(candidate))
             return false;
-        }
 
         canonicalHref = candidate.AbsoluteUri;
         return true;
     }
+
+    private CalDavAccountOrigins AccountOrigins => CalDavAccountOrigins.From(_options.Value);
 
     private static bool HasUnsafeEncodedPath(string href) =>
         href.Contains("%2e", StringComparison.OrdinalIgnoreCase)
@@ -1257,7 +1258,7 @@ internal sealed partial class CalDavClient : ICalendarClient, ICalendarMoveResou
             || href.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
         if (href.Contains("%2e", StringComparison.OrdinalIgnoreCase)
             || !Uri.TryCreate(calendarUri, href, out var candidate)
-            || !IsCanonicalReportCandidate(candidate, href, absoluteInput))
+            || !IsCanonicalReportCandidate(calendarUri, candidate, href, absoluteInput))
         {
             return false;
         }
@@ -1275,10 +1276,11 @@ internal sealed partial class CalDavClient : ICalendarClient, ICalendarMoveResou
         return true;
     }
 
-    private bool IsCanonicalReportCandidate(Uri candidate, string href, bool absoluteInput) =>
+    private bool IsCanonicalReportCandidate(Uri calendarUri, Uri candidate, string href, bool absoluteInput) =>
         IsSafeCanonicalUri(candidate, candidate.AbsoluteUri)
         && (!absoluteInput || string.Equals(candidate.AbsoluteUri, href, StringComparison.Ordinal))
-        && HasSameOrigin(new Uri(_options.Value.BaseUrl, UriKind.Absolute), candidate);
+        && HasSameOrigin(calendarUri, candidate)
+        && AccountOrigins.Contains(candidate);
 
     private static bool IsCollectionSelfHref(Uri calendarUri, string href) =>
         Uri.TryCreate(calendarUri, href, out var candidate)

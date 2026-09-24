@@ -135,7 +135,8 @@ public class CalDavEnvironmentMapperTests
             "CALDAV_DEFAULT_EVENT_CALENDAR_NAME",
             "CALDAV_EVALUATION_TIME_ZONE",
             "CALDAV_INTEROPERABILITY_PROFILE",
-            "CALDAV_SCHEDULING_MODE"
+            "CALDAV_SCHEDULING_MODE",
+            "CALDAV_REDIRECT_HOSTS"
         ]);
     }
 
@@ -168,6 +169,21 @@ public class CalDavEnvironmentMapperTests
         configure(options);
 
         options.EvaluationTimeZone.ShouldBe(zone);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(".icloud.com")]
+    [InlineData("p01-caldav.icloud.com, .example.org")]
+    public void MapFromEnvironment_MapsRedirectHostAllowlistExactly(string? redirectHosts)
+    {
+        var configure = CalDavEnvironmentMapper.MapFromEnvironment(name =>
+            name == "CALDAV_REDIRECT_HOSTS" ? redirectHosts : null);
+        var options = new CalDavOptions();
+
+        configure(options);
+
+        options.RedirectHosts.ShouldBe(redirectHosts);
     }
 
 }

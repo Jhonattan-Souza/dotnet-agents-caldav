@@ -2,11 +2,12 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
+using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Core.Models;
 
 namespace DotnetAgents.CalDav.Core.Internal.Xml;
 
-internal sealed class CalendarResourceCreateProtocol(HttpClient httpClient, Uri configuredBaseUri)
+internal sealed class CalendarResourceCreateProtocol(HttpClient httpClient, CalDavAccountOrigins accountOrigins)
 {
     internal static string BuildResourceHref(string calendarHref, string uid)
     {
@@ -96,8 +97,8 @@ internal sealed class CalendarResourceCreateProtocol(HttpClient httpClient, Uri 
         resourceUri = null!;
         return CalendarMutationProtocolPrimitives.TryValidateAbsoluteUri(request.CalendarHref, out calendarUri)
             && CalendarMutationProtocolPrimitives.TryValidateAbsoluteUri(request.ResourceHref, out resourceUri)
-            && CalendarMutationProtocolPrimitives.HasSameOrigin(configuredBaseUri, calendarUri)
-            && CalendarMutationProtocolPrimitives.HasSameOrigin(configuredBaseUri, resourceUri)
+            && accountOrigins.Contains(calendarUri)
+            && accountOrigins.Contains(resourceUri)
             && IsDirectResourceOf(calendarUri, resourceUri);
     }
 

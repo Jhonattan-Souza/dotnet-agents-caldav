@@ -320,7 +320,7 @@ internal sealed class CalendarQueryAcquisitionExecutor(
         if (!Uri.TryCreate(href, UriKind.Absolute, out var candidate))
             return false;
         return HasSafeCalendarShape(candidate, href)
-            && HasSameOrigin(new Uri(_options.BaseUrl, UriKind.Absolute), candidate);
+            && CalDavAccountOrigins.From(_options).Contains(candidate);
     }
 
     private static bool IsValid(CalendarQueryAcquisitionRequest request) => request.EntityKinds.Count is >= 1 and <= 2

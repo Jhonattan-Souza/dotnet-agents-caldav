@@ -1,4 +1,5 @@
 using System.Net;
+using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Core.Internal.Xml;
 using DotnetAgents.CalDav.Core.Models;
 using Shouldly;
@@ -26,7 +27,7 @@ public sealed class CalendarResourceDeleteProtocolTests
             sendCount++;
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NoContent));
         }));
-        var sut = new CalendarResourceDeleteProtocol(httpClient, new Uri("https://example.com"));
+        var sut = new CalendarResourceDeleteProtocol(httpClient, new CalDavAccountOrigins(new Uri("https://example.com")));
 
         var result = await sut.DeleteAsync(
             new CalendarResourceDeleteRequest(href, entityTag),
@@ -57,7 +58,7 @@ public sealed class CalendarResourceDeleteProtocolTests
     {
         using var httpClient = new HttpClient(new Handler(_ =>
             Task.FromResult(new HttpResponseMessage(statusCode))));
-        var sut = new CalendarResourceDeleteProtocol(httpClient, new Uri("https://example.com"));
+        var sut = new CalendarResourceDeleteProtocol(httpClient, new CalDavAccountOrigins(new Uri("https://example.com")));
 
         var result = await sut.DeleteAsync(
             new CalendarResourceDeleteRequest("https://example.com/tasks/a.ics", "\"r1\""),
@@ -75,7 +76,7 @@ public sealed class CalendarResourceDeleteProtocolTests
             sendCount++;
             throw new HttpRequestException("private transport detail");
         }));
-        var sut = new CalendarResourceDeleteProtocol(httpClient, new Uri("https://example.com"));
+        var sut = new CalendarResourceDeleteProtocol(httpClient, new CalDavAccountOrigins(new Uri("https://example.com")));
 
         var result = await sut.DeleteAsync(
             new CalendarResourceDeleteRequest("https://example.com/tasks/a.ics", "\"r1\""),
@@ -99,7 +100,7 @@ public sealed class CalendarResourceDeleteProtocolTests
                 TimeSpan.FromSeconds(delaySeconds));
             return Task.FromResult(response);
         }));
-        var sut = new CalendarResourceDeleteProtocol(httpClient, new Uri("https://example.com"));
+        var sut = new CalendarResourceDeleteProtocol(httpClient, new CalDavAccountOrigins(new Uri("https://example.com")));
 
         var result = await sut.DeleteAsync(
             new CalendarResourceDeleteRequest("https://example.com/tasks/a.ics", "\"r1\""),
@@ -127,7 +128,7 @@ public sealed class CalendarResourceDeleteProtocolTests
                 }
                 : new HttpResponseMessage(HttpStatusCode.NoContent));
         }));
-        var sut = new CalendarResourceDeleteProtocol(httpClient, new Uri("https://example.com"));
+        var sut = new CalendarResourceDeleteProtocol(httpClient, new CalDavAccountOrigins(new Uri("https://example.com")));
 
         var result = await sut.DeleteAsync(
             new CalendarResourceDeleteRequest(
@@ -154,7 +155,7 @@ public sealed class CalendarResourceDeleteProtocolTests
                 Headers = { Location = new Uri("https://other.example/tasks/a.ics") }
             });
         }));
-        var sut = new CalendarResourceDeleteProtocol(httpClient, new Uri("https://example.com"));
+        var sut = new CalendarResourceDeleteProtocol(httpClient, new CalDavAccountOrigins(new Uri("https://example.com")));
 
         var result = await sut.DeleteAsync(
             new CalendarResourceDeleteRequest("https://example.com/tasks/a.ics", "\"r1\""),
@@ -183,7 +184,7 @@ public sealed class CalendarResourceDeleteProtocolTests
                 }
                 : new HttpResponseMessage(HttpStatusCode.NoContent));
         }));
-        var sut = new CalendarResourceDeleteProtocol(httpClient, new Uri("https://example.com"));
+        var sut = new CalendarResourceDeleteProtocol(httpClient, new CalDavAccountOrigins(new Uri("https://example.com")));
 
         var result = await sut.DeleteAsync(
             new CalendarResourceDeleteRequest("https://example.com/tasks/a.ics", "\"r1\""),

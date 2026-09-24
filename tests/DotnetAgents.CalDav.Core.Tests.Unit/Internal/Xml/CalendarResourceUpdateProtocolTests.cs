@@ -1,4 +1,5 @@
 using System.Net;
+using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Core.Internal.Xml;
 using DotnetAgents.CalDav.Core.Models;
 using Shouldly;
@@ -26,7 +27,7 @@ public sealed class CalendarResourceUpdateProtocolTests
             sendCount++;
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NoContent));
         }));
-        var sut = new CalendarResourceUpdateProtocol(client, new Uri("https://example.com"));
+        var sut = new CalendarResourceUpdateProtocol(client, new CalDavAccountOrigins(new Uri("https://example.com")));
 
         var result = await sut.UpdateAsync(
             new CalendarResourceUpdateRequest(href, entityTag, new byte[] { 1 }),
@@ -45,7 +46,7 @@ public sealed class CalendarResourceUpdateProtocolTests
             sendCount++;
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NoContent));
         }));
-        var sut = new CalendarResourceUpdateProtocol(client, new Uri("https://example.com"));
+        var sut = new CalendarResourceUpdateProtocol(client, new CalDavAccountOrigins(new Uri("https://example.com")));
 
         var result = await sut.UpdateAsync(
             new CalendarResourceUpdateRequest(
@@ -69,7 +70,7 @@ public sealed class CalendarResourceUpdateProtocolTests
             body = await request.Content!.ReadAsByteArrayAsync(TestContext.Current.CancellationToken);
             return new HttpResponseMessage(HttpStatusCode.NoContent);
         }));
-        var sut = new CalendarResourceUpdateProtocol(client, new Uri("https://example.com"));
+        var sut = new CalendarResourceUpdateProtocol(client, new CalDavAccountOrigins(new Uri("https://example.com")));
         var authoritative = "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n"u8.ToArray();
 
         var result = await sut.UpdateAsync(
@@ -107,7 +108,7 @@ public sealed class CalendarResourceUpdateProtocolTests
         CalendarResourceUpdateDispatchCode expected)
     {
         using var client = new HttpClient(new Handler(_ => Task.FromResult(new HttpResponseMessage(status))));
-        var sut = new CalendarResourceUpdateProtocol(client, new Uri("https://example.com"));
+        var sut = new CalendarResourceUpdateProtocol(client, new CalDavAccountOrigins(new Uri("https://example.com")));
 
         var result = await sut.UpdateAsync(
             new CalendarResourceUpdateRequest("https://example.com/events/a.ics", "\"r1\"", new byte[] { 1 }),
@@ -133,7 +134,7 @@ public sealed class CalendarResourceUpdateProtocolTests
                 }
                 : new HttpResponseMessage(HttpStatusCode.NoContent);
         }));
-        var sut = new CalendarResourceUpdateProtocol(client, new Uri("https://example.com"));
+        var sut = new CalendarResourceUpdateProtocol(client, new CalDavAccountOrigins(new Uri("https://example.com")));
         var authoritative = "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n"u8.ToArray();
 
         var result = await sut.UpdateAsync(
@@ -163,7 +164,7 @@ public sealed class CalendarResourceUpdateProtocolTests
                 Headers = { Location = new Uri(location) }
             });
         }));
-        var sut = new CalendarResourceUpdateProtocol(client, new Uri("https://example.com"));
+        var sut = new CalendarResourceUpdateProtocol(client, new CalDavAccountOrigins(new Uri("https://example.com")));
 
         var result = await sut.UpdateAsync(
             new CalendarResourceUpdateRequest("https://example.com/events/a.ics", "\"r1\"", new byte[] { 1 }),
@@ -188,7 +189,7 @@ public sealed class CalendarResourceUpdateProtocolTests
                 Headers = { Location = new Uri("https://example.com/canonical/a.ics") }
             });
         }));
-        var sut = new CalendarResourceUpdateProtocol(client, new Uri("https://example.com"));
+        var sut = new CalendarResourceUpdateProtocol(client, new CalDavAccountOrigins(new Uri("https://example.com")));
 
         var result = await sut.UpdateAsync(
             new CalendarResourceUpdateRequest("https://example.com/events/a.ics", "\"r1\"", new byte[] { 1 }),
@@ -217,7 +218,7 @@ public sealed class CalendarResourceUpdateProtocolTests
                 }
                 : new HttpResponseMessage(HttpStatusCode.NoContent));
         }));
-        var sut = new CalendarResourceUpdateProtocol(client, new Uri("https://example.com"));
+        var sut = new CalendarResourceUpdateProtocol(client, new CalDavAccountOrigins(new Uri("https://example.com")));
 
         var result = await sut.UpdateAsync(
             new CalendarResourceUpdateRequest("https://example.com/events/a.ics", "\"r1\"", new byte[] { 1 }),
@@ -236,7 +237,7 @@ public sealed class CalendarResourceUpdateProtocolTests
             sendCount++;
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.TemporaryRedirect));
         }));
-        var sut = new CalendarResourceUpdateProtocol(client, new Uri("https://example.com"));
+        var sut = new CalendarResourceUpdateProtocol(client, new CalDavAccountOrigins(new Uri("https://example.com")));
 
         var result = await sut.UpdateAsync(
             new CalendarResourceUpdateRequest("https://example.com/events/a.ics", "\"r1\"", new byte[] { 1 }),
@@ -260,7 +261,7 @@ public sealed class CalendarResourceUpdateProtocolTests
                 TimeSpan.FromSeconds(delaySeconds));
             return Task.FromResult(response);
         }));
-        var sut = new CalendarResourceUpdateProtocol(client, new Uri("https://example.com"));
+        var sut = new CalendarResourceUpdateProtocol(client, new CalDavAccountOrigins(new Uri("https://example.com")));
 
         var result = await sut.UpdateAsync(
             new CalendarResourceUpdateRequest("https://example.com/events/a.ics", "\"r1\"", new byte[] { 1 }),
@@ -287,7 +288,7 @@ public sealed class CalendarResourceUpdateProtocolTests
         }));
         var sut = new CalendarResourceUpdateProtocol(
             client,
-            new Uri("https://example.com"),
+            new CalDavAccountOrigins(new Uri("https://example.com")),
             new FrozenTimeProvider(now));
 
         var result = await sut.UpdateAsync(
@@ -307,7 +308,7 @@ public sealed class CalendarResourceUpdateProtocolTests
             calls++;
             throw new HttpRequestException("connection lost");
         }));
-        var sut = new CalendarResourceUpdateProtocol(client, new Uri("https://example.com"));
+        var sut = new CalendarResourceUpdateProtocol(client, new CalDavAccountOrigins(new Uri("https://example.com")));
 
         var result = await sut.UpdateAsync(
             new CalendarResourceUpdateRequest("https://example.com/events/a.ics", "\"r1\"", new byte[] { 1 }),

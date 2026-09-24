@@ -40,6 +40,13 @@ public sealed class CalDavOptions
     /// </summary>
     public string? SchedulingMode { get; set; }
 
+    /// <summary>
+    /// Optional comma-separated HTTPS host allowlist for cross-origin redirects and discovered hrefs,
+    /// such as <c>p01-caldav.icloud.com</c> or the strict-subdomain suffix <c>.icloud.com</c>.
+    /// Empty keeps every request on the configured origin.
+    /// </summary>
+    public string? RedirectHosts { get; set; }
+
     /// <summary>Optional timeout for HTTP requests. Defaults to 30 seconds.</summary>
     public TimeSpan RequestTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
@@ -80,6 +87,7 @@ internal sealed class ValidateCalDavOptions : IValidateOptions<CalDavOptions>
             failures.Add("CalDav:RequestTimeout must be positive.");
 
         ValidateEvaluationTimeZone(options, failures);
+        ValidateRedirectHosts(options, failures);
         ValidateInteroperabilityProfile(options.InteroperabilityProfile, failures);
         ValidateSchedulingMode(options.SchedulingMode, failures);
 
@@ -92,6 +100,21 @@ internal sealed class ValidateCalDavOptions : IValidateOptions<CalDavOptions>
     {
         if (options.EvaluationTimeZone is not null && !IanaTimeZoneIds.IsValid(options.EvaluationTimeZone))
             failures.Add("CalDav:EvaluationTimeZone must be an exact IANA time-zone identifier when configured.");
+    }
+
+    private static void ValidateRedirectHosts(CalDavOptions options, ICollection<string> failures)
+    {
+        if (!CalDavRedirectHostRule.TryParseList(options.RedirectHosts, out var rules))
+        {
+            failures.Add("CalDav:RedirectHosts must be a comma-separated list of DNS host names or leading-dot domain suffixes, such as 'p01-caldav.icloud.com' or '.icloud.com', without schemes, ports, paths, wildcards, or IP addresses.");
+            return;
+        }
+        if (rules.Count > 0
+            && Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out var baseUri)
+            && baseUri.Scheme != Uri.UriSchemeHttps)
+        {
+            failures.Add("CalDav:RedirectHosts requires an HTTPS CalDav:BaseUrl.");
+        }
     }
 
     private static bool IsSafeCanonicalEndpoint(string original, Uri uri) =>

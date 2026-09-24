@@ -76,6 +76,7 @@ public class McpMetadataTests
             "CALDAV_EVALUATION_TIME_ZONE",
             "CALDAV_INTEROPERABILITY_PROFILE",
             "CALDAV_SCHEDULING_MODE",
+            "CALDAV_REDIRECT_HOSTS",
             "CALDAV_EXPOSE_EXACT_TOOLS",
             "OTEL_EXPORTER_OTLP_ENDPOINT",
             "OTEL_EXPORTER_OTLP_PROTOCOL",

@@ -1,12 +1,13 @@
 using System.Net;
 using System.Net.Http.Headers;
+using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Core.Models;
 
 namespace DotnetAgents.CalDav.Core.Internal.Xml;
 
 internal sealed class CalendarResourceDeleteProtocol(
     HttpClient httpClient,
-    Uri configuredBaseUri,
+    CalDavAccountOrigins accountOrigins,
     TimeProvider? timeProvider = null)
 {
     public async Task<CalendarResourceDeleteDispatchResult> DeleteAsync(
@@ -64,7 +65,7 @@ internal sealed class CalendarResourceDeleteProtocol(
         resourceUri = null!;
         entityTag = null!;
         if (!CalendarMutationProtocolPrimitives.TryValidateAbsoluteUri(request.ResourceHref, out resourceUri)
-            || !CalendarMutationProtocolPrimitives.HasSameOrigin(configuredBaseUri, resourceUri)
+            || !accountOrigins.Contains(resourceUri)
             || !CalendarMutationProtocolPrimitives.TryParseStrongEntityTag(request.EntityTag, out var parsedEntityTag))
         {
             return false;
@@ -76,7 +77,7 @@ internal sealed class CalendarResourceDeleteProtocol(
     private bool TryResolveRedirect(Uri currentUri, Uri? location, out Uri redirectUri)
     {
         return CalendarMutationProtocolPrimitives.TryResolveSameOriginRedirect(
-            configuredBaseUri,
+            currentUri,
             currentUri,
             location,
             additionalValidation: null,

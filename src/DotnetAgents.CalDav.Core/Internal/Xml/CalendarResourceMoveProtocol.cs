@@ -1,12 +1,13 @@
 using System.Net;
 using System.Net.Http.Headers;
+using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Core.Models;
 
 namespace DotnetAgents.CalDav.Core.Internal.Xml;
 
 internal sealed class CalendarResourceMoveProtocol(
     HttpClient httpClient,
-    Uri configuredBaseUri,
+    CalDavAccountOrigins accountOrigins,
     TimeProvider? timeProvider = null)
 {
     private static readonly HttpMethod MoveMethod = new("MOVE");
@@ -128,8 +129,9 @@ internal sealed class CalendarResourceMoveProtocol(
         destinationUri = null!;
         return CalendarMutationProtocolPrimitives.TryValidateAbsoluteUri(request.SourceHref, out sourceUri)
             && CalendarMutationProtocolPrimitives.TryValidateAbsoluteUri(request.DestinationHref, out destinationUri)
-            && CalendarMutationProtocolPrimitives.HasSameOrigin(configuredBaseUri, sourceUri)
-            && CalendarMutationProtocolPrimitives.HasSameOrigin(configuredBaseUri, destinationUri)
+            && accountOrigins.Contains(sourceUri)
+            && accountOrigins.Contains(destinationUri)
+            && CalendarMutationProtocolPrimitives.HasSameOrigin(sourceUri, destinationUri)
             && !string.Equals(sourceUri.AbsoluteUri, destinationUri.AbsoluteUri, StringComparison.Ordinal);
     }
 
@@ -147,7 +149,7 @@ internal sealed class CalendarResourceMoveProtocol(
         out Uri redirectUri)
     {
         return CalendarMutationProtocolPrimitives.TryResolveSameOriginRedirect(
-            configuredBaseUri,
+            currentUri,
             currentUri,
             location,
             candidate => IsDirectResourceOf(sourceCalendarUri, candidate)
@@ -161,7 +163,7 @@ internal sealed class CalendarResourceMoveProtocol(
         return calendarHref is not null
             && CalendarMutationProtocolPrimitives.TryValidateAbsoluteUri(calendarHref, out calendarUri)
             && calendarUri.AbsolutePath.EndsWith("/", StringComparison.Ordinal)
-            && CalendarMutationProtocolPrimitives.HasSameOrigin(configuredBaseUri, calendarUri)
+            && accountOrigins.Contains(calendarUri)
             && IsDirectResourceOf(calendarUri, resourceUri);
     }
 
