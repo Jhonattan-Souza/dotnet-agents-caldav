@@ -20,6 +20,14 @@ internal static class CalendarMutationProtocolPrimitives
         return true;
     }
 
+    /// <summary>
+    /// A <see cref="CalDavAuthenticationException"/> is raised only before a request is sent, so a
+    /// mutation that meets one was never dispatched. A rejected grant maps to the unauthorized
+    /// outcome; any other token failure to the unavailable outcome.
+    /// </summary>
+    internal static bool IsCredentialRejection(CalDavAuthenticationException exception) =>
+        exception.Failure == CalDavAuthenticationFailure.Rejected;
+
     internal static bool HasSameOrigin(Uri left, Uri right) =>
         string.Equals(left.Scheme, right.Scheme, StringComparison.OrdinalIgnoreCase)
         && string.Equals(left.Host, right.Host, StringComparison.OrdinalIgnoreCase)

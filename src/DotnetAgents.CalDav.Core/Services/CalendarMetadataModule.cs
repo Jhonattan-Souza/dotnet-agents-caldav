@@ -58,6 +58,14 @@ internal sealed class CalendarMetadataModule(CalDavClient client) : ICalendarMet
             return new(CalendarMutationState.NotAttempted,
                 new CalendarProtocolException("upstream_unavailable", "The property update was not dispatched because the Calendar transport is temporarily unavailable.", true));
         }
+        catch (CalDavAuthenticationException exception)
+        {
+            // Raised only before the PROPPATCH is sent: no credential could be obtained.
+            const string message = "The property update was not dispatched because no Calendar credential could be obtained.";
+            return new(CalendarMutationState.NotAttempted, CalendarMutationProtocolPrimitives.IsCredentialRejection(exception)
+                ? new CalendarProtocolException("upstream_unauthorized", message)
+                : new CalendarProtocolException("upstream_unavailable", message, true));
+        }
         catch (Exception exception) when (IsUncertainFailure(exception))
         {
             return CalendarMetadataPatchProtocol.Uncertain();

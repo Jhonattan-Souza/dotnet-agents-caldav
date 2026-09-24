@@ -373,7 +373,8 @@ internal static class CalendarTelemetryVocabulary
     {
         if (value is not string text)
             return null;
-        if (text is "timeout" or "connection_error" or "response_ended" or "protocol_error" or "internal_error")
+        if (text is "timeout" or "connection_error" or "authentication_error" or "response_ended" or "protocol_error"
+            or "internal_error")
             return text;
         if (text.StartsWith("caldav.", StringComparison.Ordinal)
             && ErrorCode(text["caldav.".Length..]) is not null)

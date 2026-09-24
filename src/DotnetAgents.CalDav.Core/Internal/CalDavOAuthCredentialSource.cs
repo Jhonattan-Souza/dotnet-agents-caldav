@@ -33,7 +33,9 @@ internal sealed class CalDavAuthenticationException(CalDavAuthenticationFailure 
 /// <summary>
 /// Obtains Bearer access tokens with the OAuth 2.0 refresh-token grant (RFC 6749 section 6).
 /// The access token lives only in memory, is renewed shortly before <c>expires_in</c> elapses and once
-/// after a CalDAV 401, and concurrent callers share a single in-flight token request.
+/// after a CalDAV 401, and concurrent callers share a single in-flight token request and its outcome.
+/// A rejected grant is remembered for <see cref="RejectionBackoff"/> so that a broken refresh token
+/// does not send every CalDAV request to the token endpoint.
 /// </summary>
 internal sealed class CalDavOAuthCredentialSource : CalDavCredentialSource
 {
@@ -41,6 +43,7 @@ internal sealed class CalDavOAuthCredentialSource : CalDavCredentialSource
     internal const int MaximumResponseBytes = 64 * 1024;
     internal static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
     internal static readonly TimeSpan MaximumExpirySkew = TimeSpan.FromSeconds(60);
+    internal static readonly TimeSpan RejectionBackoff = TimeSpan.FromSeconds(30);
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly TimeProvider _timeProvider;
@@ -50,6 +53,9 @@ internal sealed class CalDavOAuthCredentialSource : CalDavCredentialSource
     private readonly SemaphoreSlim _refreshGate = new(1, 1);
     private string _refreshToken;
     private AccessToken? _current;
+    private long _completedRefreshes;
+    private CalDavAuthenticationException? _lastFailure;
+    private DateTimeOffset _rejectedUntil;
 
     internal CalDavOAuthCredentialSource(
         CalDavOptions options,
@@ -79,25 +85,52 @@ internal sealed class CalDavOAuthCredentialSource : CalDavCredentialSource
 
     private async Task<CalDavCredential> RefreshAsync(CalDavCredential? rejected, CancellationToken cancellationToken)
     {
+        var observedRefreshes = Interlocked.Read(ref _completedRefreshes);
         await _refreshGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             // A caller that waited here reuses the token its predecessor obtained, unless that is
             // exactly the token the server has just rejected.
+            var now = _timeProvider.GetUtcNow();
             var current = _current;
-            if (current is not null
-                && current.IsFresh(_timeProvider.GetUtcNow())
-                && !ReferenceEquals(current.Credential, rejected))
-            {
+            if (current is not null && current.IsFresh(now) && !ReferenceEquals(current.Credential, rejected))
                 return current.Credential;
+            // A failure is shared with every caller that queued behind it, and a rejected grant
+            // with every caller until the backoff elapses.
+            if (_lastFailure is { } failure
+                && (observedRefreshes != _completedRefreshes || now < _rejectedUntil))
+            {
+                throw new CalDavAuthenticationException(failure.Failure, failure.Message);
             }
-            var issued = await RequestAsync(cancellationToken).ConfigureAwait(false);
-            Volatile.Write(ref _current, issued);
-            return issued.Credential;
+            return await RequestAndRecordAsync(now, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             _refreshGate.Release();
+        }
+    }
+
+    private async Task<CalDavCredential> RequestAndRecordAsync(DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var issued = await RequestAsync(cancellationToken).ConfigureAwait(false);
+            Volatile.Write(ref _current, issued);
+            _lastFailure = null;
+            return issued.Credential;
+        }
+        catch (CalDavAuthenticationException exception)
+        {
+            _lastFailure = exception;
+            if (exception.Failure == CalDavAuthenticationFailure.Rejected)
+                _rejectedUntil = now + RejectionBackoff;
+            throw;
+        }
+        finally
+        {
+            // Caller cancellation is not an outcome: it records nothing, so waiters retry.
+            if (!cancellationToken.IsCancellationRequested)
+                Interlocked.Increment(ref _completedRefreshes);
         }
     }
 
@@ -208,6 +241,10 @@ internal sealed class CalDavOAuthCredentialSource : CalDavCredentialSource
 
     private sealed record TokenResponse(string AccessToken, long? ExpiresIn, string? RefreshToken)
     {
+        // Records print their members; this one holds an access token and possibly a refresh token.
+        public override string ToString() =>
+            $"TokenResponse {{ AccessToken = ***, ExpiresIn = {ExpiresIn}, RefreshToken = {(RefreshToken is null ? "none" : "***")} }}";
+
         internal static TokenResponse Parse(byte[] body)
         {
             using var document = JsonDocument.Parse(body);

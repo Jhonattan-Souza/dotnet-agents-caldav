@@ -42,6 +42,13 @@ internal sealed class CalendarResourceMoveProtocol(
         {
             return await SendAsync(sourceUri, sourceCalendarUri, destinationUri, entityTag, cancellationToken);
         }
+        catch (CalDavAuthenticationException exception)
+        {
+            return new CalendarResourceMoveDispatchResult(
+                CalendarMutationProtocolPrimitives.IsCredentialRejection(exception)
+                    ? CalendarResourceMoveDispatchCode.UpstreamUnauthorized
+                    : CalendarResourceMoveDispatchCode.UpstreamUnavailable);
+        }
         catch (Exception exception) when (CalendarTransportFailure.IsRejectedBeforeSend(exception))
         {
             return new CalendarResourceMoveDispatchResult(CalendarResourceMoveDispatchCode.RejectedBeforeSend);

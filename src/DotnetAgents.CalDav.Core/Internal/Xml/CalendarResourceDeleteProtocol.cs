@@ -21,6 +21,13 @@ internal sealed class CalendarResourceDeleteProtocol(
         {
             return await SendAsync(resourceUri, entityTag, cancellationToken);
         }
+        catch (CalDavAuthenticationException exception)
+        {
+            return new CalendarResourceDeleteDispatchResult(
+                CalendarMutationProtocolPrimitives.IsCredentialRejection(exception)
+                    ? CalendarResourceDeleteDispatchCode.UpstreamUnauthorized
+                    : CalendarResourceDeleteDispatchCode.UpstreamUnavailable);
+        }
         catch (Exception exception) when (CalendarTransportFailure.IsRejectedBeforeSend(exception))
         {
             return new CalendarResourceDeleteDispatchResult(CalendarResourceDeleteDispatchCode.RejectedBeforeSend);

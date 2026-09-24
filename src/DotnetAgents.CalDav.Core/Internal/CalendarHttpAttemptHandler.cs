@@ -324,6 +324,7 @@ internal sealed class CalendarHttpAttemptHandler : DelegatingHandler
         Timeout,
         ResponseEnded,
         ConnectionError,
+        AuthenticationError,
         InternalError
     }
 
@@ -334,6 +335,8 @@ internal sealed class CalendarHttpAttemptHandler : DelegatingHandler
         OperationCanceledException when cancellationToken.IsCancellationRequested =>
             CalendarHttpFailureClassification.CallerCancellation,
         OperationCanceledException or TimeoutException => CalendarHttpFailureClassification.Timeout,
+        // No credential could be obtained, so nothing was sent to the CalDAV server.
+        CalDavAuthenticationException => CalendarHttpFailureClassification.AuthenticationError,
         HttpRequestException { HttpRequestError: HttpRequestError.ResponseEnded } =>
             CalendarHttpFailureClassification.ResponseEnded,
         HttpRequestException => CalendarHttpFailureClassification.ConnectionError,
@@ -347,6 +350,7 @@ internal sealed class CalendarHttpAttemptHandler : DelegatingHandler
         CalendarHttpFailureClassification.Timeout => "timeout",
         CalendarHttpFailureClassification.ResponseEnded => "response_ended",
         CalendarHttpFailureClassification.ConnectionError => "connection_error",
+        CalendarHttpFailureClassification.AuthenticationError => "authentication_error",
         CalendarHttpFailureClassification.InternalError => "internal_error",
         _ => throw new ArgumentOutOfRangeException(nameof(failure), failure, null)
     };

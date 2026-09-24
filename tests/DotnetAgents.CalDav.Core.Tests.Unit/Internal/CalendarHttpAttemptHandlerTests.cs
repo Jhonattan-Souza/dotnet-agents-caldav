@@ -203,6 +203,10 @@ public sealed class CalendarHttpAttemptHandlerTests
             CancellationToken.None,
             "response_ended");
         await AssertFailureAsync(new HttpRequestException("private connection"), CancellationToken.None, "connection_error");
+        await AssertFailureAsync(
+            new CalDavAuthenticationException(CalDavAuthenticationFailure.Rejected, "private token failure"),
+            CancellationToken.None,
+            "authentication_error");
         await AssertFailureAsync(new IOException("private response"), CancellationToken.None, "response_ended");
         await AssertFailureAsync(new InvalidOperationException("private failure"), CancellationToken.None, "internal_error");
     }

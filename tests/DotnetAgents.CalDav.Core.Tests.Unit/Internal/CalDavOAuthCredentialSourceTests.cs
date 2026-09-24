@@ -5,6 +5,7 @@ using System.Text;
 using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Core.DependencyInjection;
 using DotnetAgents.CalDav.Core.Internal;
+using DotnetAgents.CalDav.Core.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http;
 using Microsoft.Extensions.Http.Resilience;
@@ -385,22 +386,129 @@ public sealed class CalDavOAuthCredentialSourceTests
         calDav.Requests.ShouldHaveSingleItem().Authorization.ShouldBe("Bearer static-token");
     }
 
-    [Fact]
-    public async Task Renewal_failure_after_CalDav_401_surfaces_the_typed_failure()
+    [Theory]
+    [InlineData(HttpStatusCode.BadRequest)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    public async Task Renewal_failure_after_CalDav_401_keeps_the_401_as_the_outcome(HttpStatusCode tokenStatus)
     {
         var tokens = new TokenEndpointHandler(
             TokenResponse("access-1", 3600),
-            () => new HttpResponseMessage(HttpStatusCode.BadRequest));
+            () => new HttpResponseMessage(tokenStatus));
         var calDav = new CalDavHandler(_ => HttpStatusCode.Unauthorized);
         using var provider = BuildProvider(tokens, calDav);
 
-        var exception = await Should.ThrowAsync<CalDavAuthenticationException>(() => provider
-            .GetRequiredService<CalDavClient>().SendProtocolRequestAsync(
-                "https://apidata.example.com/caldav/v2/user/events/", "PROPFIND", "<propfind/>", 0,
-                TestContext.Current.CancellationToken));
+        var response = await provider.GetRequiredService<CalDavClient>().SendProtocolRequestAsync(
+            "https://apidata.example.com/caldav/v2/user/events/", "PROPPATCH", "<update/>", null,
+            TestContext.Current.CancellationToken);
 
-        exception.Failure.ShouldBe(CalDavAuthenticationFailure.Rejected);
+        response.StatusCode.ShouldBe(401);
+        tokens.Requests.Count.ShouldBe(2);
         calDav.Requests.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Rejected_grant_is_remembered_for_the_backoff_without_contacting_the_endpoint()
+    {
+        var tokens = new TokenEndpointHandler(
+            () => new HttpResponseMessage(HttpStatusCode.BadRequest),
+            TokenResponse("access-1", 3600));
+        var time = new ManualTimeProvider(Start);
+        var source = CreateSource(tokens, time);
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        (await Should.ThrowAsync<CalDavAuthenticationException>(() => source.GetAsync(cancellationToken).AsTask()))
+            .Failure.ShouldBe(CalDavAuthenticationFailure.Rejected);
+        time.Advance(CalDavOAuthCredentialSource.RejectionBackoff - TimeSpan.FromTicks(1));
+        var remembered = await Should.ThrowAsync<CalDavAuthenticationException>(() => source.GetAsync(cancellationToken).AsTask());
+        tokens.Requests.Count.ShouldBe(1);
+        time.Advance(TimeSpan.FromTicks(1));
+
+        remembered.Failure.ShouldBe(CalDavAuthenticationFailure.Rejected);
+        remembered.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        AssertCarriesNoSecret(remembered);
+        (await source.GetAsync(cancellationToken)).Parameter.ShouldBe("access-1");
+        tokens.Requests.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task Unavailable_failure_is_shared_with_queued_callers_but_not_cached()
+    {
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var calls = 0;
+        var tokens = new TokenEndpointHandler(async () =>
+        {
+            if (Interlocked.Increment(ref calls) > 1)
+                return TokenResponse("access-1", 3600)();
+            await release.Task;
+            return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+        });
+        var source = CreateSource(tokens);
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        // Each caller enters the refresh before the first token request can complete, so all eight
+        // queue behind that one request.
+        var callers = Enumerable.Range(0, 8).Select(_ => source.GetAsync(cancellationToken).AsTask()).ToArray();
+        await tokens.FirstRequest.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
+        release.SetResult();
+        var failures = await Task.WhenAll(callers.Select(caller =>
+            Should.ThrowAsync<CalDavAuthenticationException>(() => caller)));
+
+        tokens.Requests.Count.ShouldBe(1);
+        failures.ShouldAllBe(failure => failure.Failure == CalDavAuthenticationFailure.Unavailable);
+        (await source.GetAsync(cancellationToken)).Parameter.ShouldBe("access-1");
+        tokens.Requests.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public void Token_response_text_never_contains_tokens()
+    {
+        var type = typeof(CalDavOAuthCredentialSource).GetNestedType("TokenResponse", System.Reflection.BindingFlags.NonPublic)!;
+        var withRotation = Activator.CreateInstance(type, "access-token-sentinel", (long?)60, "refresh-token-sentinel")!;
+        var withoutRotation = Activator.CreateInstance(type, "access-token-sentinel", (long?)null, null)!;
+
+        withRotation.ToString().ShouldBe("TokenResponse { AccessToken = ***, ExpiresIn = 60, RefreshToken = *** }");
+        withoutRotation.ToString().ShouldBe("TokenResponse { AccessToken = ***, ExpiresIn = , RefreshToken = none }");
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.BadRequest, true)]
+    [InlineData(HttpStatusCode.ServiceUnavailable, false)]
+    public async Task Pre_dispatch_token_failure_is_a_definitive_not_sent_mutation_outcome(
+        HttpStatusCode tokenStatus,
+        bool rejected)
+    {
+        var tokens = new TokenEndpointHandler(() => new HttpResponseMessage(tokenStatus));
+        var calDav = new CalDavHandler(_ => HttpStatusCode.OK);
+        using var provider = BuildProvider(tokens, calDav);
+        var client = provider.GetRequiredService<DotnetAgents.CalDav.Core.Abstractions.ICalendarClient>();
+        var collections = provider.GetRequiredService<ICalendarCollectionTransport>();
+        var cancellationToken = TestContext.Current.CancellationToken;
+        const string calendar = "https://apidata.example.com/caldav/v2/user/events/";
+        var body = "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n"u8.ToArray();
+
+        var create = await client.CreateCalendarResourceAsync(
+            new CalendarResourceCreateRequest(calendar, calendar + "a.ics", body), cancellationToken);
+        var update = await client.UpdateCalendarResourceAsync(
+            new CalendarResourceUpdateRequest(calendar + "a.ics", "\"r1\"", body), cancellationToken);
+        var delete = await client.DeleteCalendarResourceAsync(
+            new CalendarResourceDeleteRequest(calendar + "a.ics", "\"r1\""), cancellationToken);
+        var move = await client.MoveCalendarResourceAsync(
+            new CalendarResourceMoveDispatchRequest(calendar + "a.ics", calendar + "b.ics", "\"r1\""), cancellationToken);
+        var createCollection = await collections.CreateAsync(
+            new CalendarCollectionCreateDispatchRequest(calendar + "new/", "New", [CalendarEntityKind.Event]),
+            cancellationToken);
+        var deleteCollection = await collections.DeleteAsync(calendar, cancellationToken);
+
+        calDav.Requests.ShouldBeEmpty();
+        create.Code.ShouldBe(rejected ? CalendarResourceCreateCode.UpstreamUnauthorized : CalendarResourceCreateCode.UpstreamUnavailable);
+        update.Code.ShouldBe(rejected ? CalendarResourceUpdateDispatchCode.UpstreamUnauthorized : CalendarResourceUpdateDispatchCode.UpstreamUnavailable);
+        delete.Code.ShouldBe(rejected ? CalendarResourceDeleteDispatchCode.UpstreamUnauthorized : CalendarResourceDeleteDispatchCode.UpstreamUnavailable);
+        move.Code.ShouldBe(rejected ? CalendarResourceMoveDispatchCode.UpstreamUnauthorized : CalendarResourceMoveDispatchCode.UpstreamUnavailable);
+        createCollection.Code.ShouldBe(rejected
+            ? CalendarCollectionDispatchCode.UpstreamUnauthorized
+            : CalendarCollectionDispatchCode.UpstreamUnavailable);
+        // The scheduling-safety read that precedes a collection DELETE already fails closed.
+        deleteCollection.Code.ShouldBe(CalendarCollectionDispatchCode.SchedulingUnsafe);
     }
 
     [Fact]
