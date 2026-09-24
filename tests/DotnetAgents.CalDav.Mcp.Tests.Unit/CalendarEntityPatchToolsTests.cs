@@ -578,6 +578,8 @@ public sealed class CalendarEntityPatchToolsTests
         result.IsError.ShouldBe(true);
         result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("unsupported_capability");
         result.StructuredContent.Value.GetProperty("phase").GetString().ShouldBe("mrtr");
+        result.StructuredContent.Value.GetProperty("message").GetString().ShouldBe(
+            "This patch requires the client to support form elicitation for confirmation.");
         await service.Received(1).ReviewTodoPatchAsync(
             Arg.Any<CalendarTodoPatchRequest>(), Arg.Any<CancellationToken>());
         await service.DidNotReceive().PatchTodoAsync(

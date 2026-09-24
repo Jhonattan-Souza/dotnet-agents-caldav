@@ -840,7 +840,7 @@ internal sealed class ExactCalendarResourceWriteTools
         CalendarTelemetryErrorCategory.CapabilityAndProjection,
         CalendarTelemetryErrorPhase.Mrtr,
         false),
-        "Exact writes require MCP Multi Round-Trip Request support.",
+        "Exact writes require the client to support form elicitation for confirmation.",
         CalendarMutationState.NotAttempted);
 
     private static CallToolResult ProtocolError() => TerminalError(new CalendarStructuredErrorFacts(

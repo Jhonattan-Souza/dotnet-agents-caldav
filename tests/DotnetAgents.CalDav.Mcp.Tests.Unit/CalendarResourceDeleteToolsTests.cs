@@ -530,6 +530,8 @@ public sealed class CalendarResourceDeleteToolsTests
         structured.GetProperty("code").GetString().ShouldBe("unsupported_capability");
         structured.GetProperty("phase").GetString().ShouldBe("mrtr");
         structured.GetProperty("mutationState").GetString().ShouldBe("not_attempted");
+        structured.GetProperty("message").GetString().ShouldBe(
+            "Calendar Object Resource deletion requires the client to support form elicitation for confirmation.");
         await service.Received(1).GetResourceAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
         await service.DidNotReceive().DeleteResourceAsync(
             Arg.Any<CalendarResourceRevisionReference>(),

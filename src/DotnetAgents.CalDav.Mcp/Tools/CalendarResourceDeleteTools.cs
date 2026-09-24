@@ -454,7 +454,7 @@ internal sealed class CalendarResourceDeleteTools
         CalendarTelemetryErrorCategory.CapabilityAndProjection,
         CalendarTelemetryErrorPhase.Mrtr,
         false),
-        "Calendar Object Resource deletion requires MRTR confirmation support.",
+        "Calendar Object Resource deletion requires the client to support form elicitation for confirmation.",
         CalendarMutationState.NotAttempted);
 
     private static CallToolResult ConfirmationPreviewPayloadError() => TerminalError(new CalendarStructuredErrorFacts(

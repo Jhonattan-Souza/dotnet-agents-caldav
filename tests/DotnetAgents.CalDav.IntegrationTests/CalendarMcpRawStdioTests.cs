@@ -335,6 +335,7 @@ public sealed class CalendarMcpRawStdioTests
         structured.GetProperty("code").GetString().ShouldBe("unsupported_capability");
         structured.GetProperty("phase").GetString().ShouldBe("mrtr");
         structured.GetProperty("mutationState").GetString().ShouldBe("not_attempted");
+        structured.GetProperty("message").GetString().ShouldNotBeNull().ShouldContain("form elicitation");
         server.DeleteCount.ShouldBe(0);
         server.IsDeleted.ShouldBeFalse();
         stderr.ShouldBeEmpty();
