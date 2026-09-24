@@ -28,8 +28,32 @@ public sealed class CalendarMetadataToolsTests
         result.IsError.ShouldBe(false);
         result.StructuredContent!.Value.GetProperty("outcome").GetString().ShouldBe("success");
         result.StructuredContent.Value.GetProperty("scheduling").GetProperty("state").GetString().ShouldBe("unknown");
+        result.StructuredContent.Value.TryGetProperty("changeTag", out _).ShouldBeFalse();
         CalendarOutputSchemaGuard.Validate("calendars.inspect", result);
         await module.Received(1).InspectAsync(Href, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Inspect_and_patch_readback_carry_a_reported_change_tag_verbatim()
+    {
+        var module = Substitute.For<ICalendarMetadataModule>();
+        var patch = new CalendarMetadataPatch(new CalendarMetadataTextPatch("set", "Work"));
+        var observations = Enumerable.Range(0, 11)
+            .Select(index => new CalendarPropertyObservation("urn:ietf:params:xml:ns:caldav", "property-" + index, 200))
+            .Append(new CalendarPropertyObservation("http://calendarserver.org/ns/", "getctag", 200)).ToArray();
+        var snapshot = Snapshot() with { Properties = observations, ChangeTag = "\"d025819f\"" };
+        module.InspectAsync(Href, Arg.Any<CancellationToken>()).Returns(snapshot);
+        module.PatchAsync(Href, patch, Arg.Any<CancellationToken>())
+            .Returns(new CalendarMetadataPatchResult(CalendarMutationState.Committed, snapshot));
+        var tools = new CalendarMetadataTools(module);
+
+        var inspected = await tools.InspectAsync(Href, CancellationToken.None);
+        var patched = await tools.PatchAsync(Href, patch, CancellationToken.None);
+
+        inspected.StructuredContent!.Value.GetProperty("changeTag").GetString().ShouldBe("\"d025819f\"");
+        patched.StructuredContent!.Value.GetProperty("calendar").GetProperty("changeTag").GetString().ShouldBe("\"d025819f\"");
+        CalendarOutputSchemaGuard.Validate("calendars.inspect", inspected);
+        CalendarOutputSchemaGuard.Validate("calendars.patch", patched);
     }
 
     [Fact]

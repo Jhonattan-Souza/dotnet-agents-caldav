@@ -70,7 +70,7 @@ async def run(root, assembly, output, resource_count, cold_runs, warm_runs, sele
             href = connection['url']+path
             for scope in (('discovery','explicit') if selected_scope=='both' else (selected_scope,)):
                 for tool in operations:
-                    expected = 'upstream_protocol_error' if tool=='calendars.free_busy' and state.get('server','radicale')=='radicale' else 'success'
+                    expected = 'success'
                     for run_index in range(cold_runs):
                         env = environment(connection,service)
                         if scope=='explicit':

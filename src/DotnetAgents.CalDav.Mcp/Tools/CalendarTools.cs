@@ -165,6 +165,11 @@ public sealed record CalendarListItem(
     [property: JsonPropertyName("color")] string? Color,
     [property: JsonPropertyName("entityKinds")] CalendarEntityKinds EntityKinds)
 {
+    /// <summary>Advisory, opaque CalendarServer change tag; omitted when the server reports none.</summary>
+    [JsonPropertyName("changeTag")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ChangeTag { get; init; }
+
     internal static CalendarListItem FromDescriptor(CalendarDescriptor descriptor) => new(
         new CalendarHref(descriptor.Href),
         descriptor.DisplayName,
@@ -173,7 +178,10 @@ public sealed record CalendarListItem(
         GetSchemaColor(descriptor.Color),
         new CalendarEntityKinds(
             CalendarEntityKindCapability.From(descriptor.EventSupport, descriptor.EventEvidence),
-            CalendarEntityKindCapability.From(descriptor.TodoSupport, descriptor.TodoEvidence)));
+            CalendarEntityKindCapability.From(descriptor.TodoSupport, descriptor.TodoEvidence)))
+    {
+        ChangeTag = descriptor.ChangeTag
+    };
 
     private static string ToWireValue(DisplayNameProvenance provenance) => provenance switch
     {

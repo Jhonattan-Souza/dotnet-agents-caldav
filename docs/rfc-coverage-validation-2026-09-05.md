@@ -473,6 +473,42 @@ and `request_state`. The MCP confirmation contract was preserved. Independent
 readback verified writes; fixture-only cleanup restored the seeded 24 Events,
 24 To-dos and empty archive.
 
+## Addendum, 2026-09-24: Radicale free/busy and change tags
+
+This note supersedes the Radicale native free/busy result above for later
+revisions; the 2026-09-05 records remain unchanged. A direct REPORT against the
+pinned Radicale 3.7.8 image characterized the response. It contains one
+VFREEBUSY per busy period, with the period in `DTSTART`/`DTEND` rather than in
+`FREEBUSY`. Its type is a standalone `FBTYPE` property: `BUSY`, `BUSY-TENTATIVE`,
+or `FREE` for a cancelled Event. Transparent Events are omitted. Zoned Events
+keep their `TZID` and the response carries a VTIMEZONE for it. That definition
+comes from vobject's process-wide registry, not from the Event's own resource.
+In the shared conformance container, another resource had registered a
+truncated `America/New_York` definition. Radicale then emitted a VTIMEZONE
+that never returns to standard time, and such a value fails closed. Date-only
+and floating Events appear as UTC values. A window without busy time returns a
+VCALENDAR with no VFREEBUSY. The baseline and alternate-time-zone variants
+returned the same shape.
+
+`calendars.free_busy` now merges periods from every RFC 4791 VFREEBUSY
+component on all servers. Only the `radicale-3.7.8` profile admits the
+per-period representation and the empty VCALENDAR. Without that profile, the
+Radicale response still fails with `upstream_protocol_error`. A stray `FBTYPE`
+property fails on every profile: outside VFREEBUSY, repeated, beside `FREEBUSY`,
+or without exactly one `DTSTART` and `DTEND`. Malformed, floating or
+unresolvable values, recurrence properties and unknown components also fail.
+`RadicaleConformanceHarnessTests` verifies clipped, overlapping, tentative,
+zoned, cancelled, recurring, transparent and empty cases in every profile
+variant. It also verifies rejection when the profile is absent. The
+[observation harness](../scripts/observations/rfc-coverage/README.md) now
+expects success for Radicale and its `FREE` period. It was not rerun against
+Baikal or Nextcloud for this change.
+
+Radicale also reports CalendarServer `getctag`. `calendars.list` and
+`calendars.inspect` return it as an optional, opaque and advisory `changeTag`.
+It is omitted when absent and is never a revision or synchronization
+checkpoint.
+
 ## Reproduce
 
 Use [the observation harness instructions](../scripts/observations/rfc-coverage/README.md)

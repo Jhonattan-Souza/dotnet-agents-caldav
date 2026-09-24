@@ -13,6 +13,7 @@ public sealed class CalendarMetadataProtocolTests
     private const string Href = "https://cal.example/calendar/";
     private static readonly XNamespace Dav = "DAV:";
     private static readonly XNamespace CalDav = "urn:ietf:params:xml:ns:caldav";
+    private static readonly XNamespace CalServer = "http://calendarserver.org/ns/";
     private static readonly string[] IntegerLimitNames = ["max-resource-size", "max-instances", "max-attendees-per-instance"];
     private static readonly CalendarMetadataPatch Patch = new(DisplayName: new("set", "New name"));
 
@@ -67,6 +68,28 @@ public sealed class CalendarMetadataProtocolTests
             .ShouldAllBe(property => property.StatusCode == 404);
     }
 
+    [Fact]
+    public void InspectionRequestsTheChangeTagAndReportsItOnlyAsOpaqueAdvisoryEvidence()
+    {
+        XDocument.Parse(CalendarMetadataProtocol.InspectBody()).Descendants(CalServer + "getctag").ShouldHaveSingleItem();
+
+        var reported = CalendarMetadataProtocol.ParseMetadata(Href,
+            Response(Metadata(new XElement(CalServer + "getctag", " \"d0258\" "))), TestContext.Current.CancellationToken).Snapshot;
+        var body = Metadata();
+        body.Element(Dav + "response")!.Add(Propstat("HTTP/1.1 404 Not Found", new XElement(CalServer + "getctag", "\"stale\"")));
+        var unavailable = CalendarMetadataProtocol.ParseMetadata(Href, Response(body), TestContext.Current.CancellationToken).Snapshot;
+        var absent = CalendarMetadataProtocol.ParseMetadata(Href, Response(Metadata()), TestContext.Current.CancellationToken).Snapshot;
+
+        reported.ChangeTag.ShouldBe("\"d0258\"");
+        reported.Properties.Single(property => property.LocalName == "getctag").StatusCode.ShouldBe(200);
+        unavailable.ChangeTag.ShouldBeNull();
+        unavailable.Properties.Single(property => property.LocalName == "getctag").StatusCode.ShouldBe(404);
+        absent.ChangeTag.ShouldBeNull();
+        absent.Properties.Single(property => property.NamespaceUri == CalServer.NamespaceName).StatusCode.ShouldBeNull();
+        System.Text.Json.JsonSerializer.Serialize(absent).ShouldNotContain("changeTag");
+        System.Text.Json.JsonSerializer.Serialize(reported).ShouldContain("\"changeTag\":\"\\u0022d0258\\u0022\"");
+    }
+
     [Theory]
     [InlineData(12)]
     [InlineData(100)]
@@ -80,7 +103,7 @@ public sealed class CalendarMetadataProtocolTests
         var observed = CalendarMetadataProtocol.ParseMetadata(Href, response, TestContext.Current.CancellationToken);
 
         observed.Properties.Count.ShouldBe(extraCount + 1);
-        observed.Snapshot.Properties.Count.ShouldBe(11);
+        observed.Snapshot.Properties.Count.ShouldBe(12);
         observed.Snapshot.Properties.ShouldBe(baseline.Properties);
         observed.Snapshot.Reports.ShouldBeEmpty();
         observed.Snapshot.Privileges.ShouldBeEmpty();

@@ -482,6 +482,26 @@ public sealed class ContractCatalogTests
     }
 
     [Fact]
+    public void Mcp_catalog_exposes_the_change_tag_as_optional_bounded_advisory_evidence()
+    {
+        var catalog = ReadJson("mcp-tool-catalog.json");
+        var changeTag = catalog["$defs"]!["calendarChangeTag"]!;
+
+        changeTag["type"]!.GetValue<string>().ShouldBe("string");
+        changeTag["minLength"]!.GetValue<int>().ShouldBe(1);
+        changeTag["maxLength"]!.GetValue<int>().ShouldBe(1024);
+        changeTag["description"]!.GetValue<string>().ShouldContain("never parse it or use it as a revision");
+        foreach (var owner in new[] { "calendarDescriptor", "calendarInspectSuccess", "calendarMetadataSnapshot" })
+        {
+            var schema = catalog["$defs"]![owner]!;
+            schema["properties"]!["changeTag"]!["$ref"]!.GetValue<string>().ShouldBe("#/$defs/calendarChangeTag");
+            schema["required"]!.AsArray().Select(name => name!.GetValue<string>()).ShouldNotContain("changeTag");
+        }
+        foreach (var owner in new[] { "calendarInspectSuccess", "calendarMetadataSnapshot" })
+            catalog["$defs"]![owner]!["properties"]!["properties"]!["maxItems"]!.GetValue<int>().ShouldBe(12);
+    }
+
+    [Fact]
     public void Mcp_catalog_keeps_calendar_resource_entity_and_occurrence_identities_distinct()
     {
         var definitions = ReadJson("mcp-tool-catalog.json")["$defs"]!;

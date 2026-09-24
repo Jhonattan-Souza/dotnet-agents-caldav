@@ -984,7 +984,8 @@ public sealed partial class RadicaleConformanceHarnessTests(RadicaleConformanceF
         string baseUrl,
         string calendarHref,
         ConcurrentQueue<string>? requestTrace = null,
-        IHttpMessageHandlerBuilderFilter? mutationFilter = null)
+        IHttpMessageHandlerBuilderFilter? mutationFilter = null,
+        string? interoperabilityProfile = CalDavInteroperabilityProfiles.Radicale_3_7_8)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -994,7 +995,7 @@ public sealed partial class RadicaleConformanceHarnessTests(RadicaleConformanceF
             options.CalendarHrefs = calendarHref;
             options.Username = ConformanceUsername;
             options.Password = ConformancePassword;
-            options.InteroperabilityProfile = CalDavInteroperabilityProfiles.Radicale_3_7_8;
+            options.InteroperabilityProfile = interoperabilityProfile;
         });
         if (requestTrace is not null)
             services.AddSingleton<IHttpMessageHandlerBuilderFilter>(new SafeRequestTraceFilter(requestTrace));

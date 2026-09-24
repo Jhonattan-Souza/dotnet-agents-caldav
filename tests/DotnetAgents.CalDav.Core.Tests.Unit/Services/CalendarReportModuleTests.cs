@@ -78,6 +78,29 @@ public partial class CalendarReportModuleTests
         fixture.Handler.Requests[0].Method.ShouldBe("REPORT");
     }
 
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData(CalDavInteroperabilityProfiles.Radicale_3_7_8, true)]
+    public async Task RadicalePeriodComponentsAreAcceptedOnlyForTheVerifiedProfile(string? profile, bool accepted)
+    {
+        using var fixture = new Fixture();
+        fixture.Options.InteroperabilityProfile = profile;
+        fixture.Add(200, "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:test\r\nBEGIN:VFREEBUSY\r\nDTSTART:20260905T010000Z\r\n"
+            + "DTEND:20260905T020000Z\r\nDTSTAMP:20260901T000000Z\r\nFBTYPE:BUSY-TENTATIVE\r\nEND:VFREEBUSY\r\nEND:VCALENDAR\r\n", "text/calendar");
+
+        var request = new CalendarFreeBusyRequest(CalendarHref, From, From.AddDays(1));
+        if (accepted)
+        {
+            (await fixture.Module.FreeBusyAsync(request, CancellationToken.None)).Periods
+                .ShouldBe([new CalendarBusyPeriod("2026-09-05T01:00:00Z", "2026-09-05T02:00:00Z", "BUSY-TENTATIVE")]);
+        }
+        else
+        {
+            (await Should.ThrowAsync<CalendarProtocolException>(() => fixture.Module.FreeBusyAsync(request, CancellationToken.None)))
+                .Code.ShouldBe("upstream_protocol_error");
+        }
+    }
+
     [Fact]
     public async Task FreeBusyWithoutComponentBoundsStillReturnsTheExactRequestedWindow()
     {
