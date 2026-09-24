@@ -13,7 +13,7 @@ using Xunit;
 
 namespace DotnetAgents.CalDav.Core.Tests.Unit.Services;
 
-public sealed class CalendarCollectionModuleTests
+public sealed partial class CalendarCollectionModuleTests
 {
     [Fact]
     public async Task Create_MultipleHomesRequiresExplicitDestinationAndAcceptsEitherHome()
@@ -976,6 +976,7 @@ public sealed class CalendarCollectionModuleTests
         public bool SuppressCreatedItem { get; init; }
         public bool PreserveDeletedItem { get; init; }
         public CalendarDescriptor? CreatedDescriptor { get; init; }
+        public IReadOnlyList<CalendarPropertyRejection> CreateRejectedProperties { get; init; } = [];
         public int DiscoveryCount { get; private set; }
 
         public Task<CalendarCollectionDiscoverySnapshot> DiscoverAsync(CancellationToken cancellationToken)
@@ -1003,6 +1004,8 @@ public sealed class CalendarCollectionModuleTests
                     Href = request.Href,
                     DisplayName = request.DisplayName,
                     DisplayNameProvenance = DisplayNameProvenance.DavDisplayName,
+                    Color = request.InitialProperties?.Color,
+                    Order = request.InitialProperties?.Order,
                     EventSupport = request.EntityKinds.Contains(CalendarEntityKind.Event)
                         ? EntityKindSupport.Advertised
                         : EntityKindSupport.NotAdvertised,
@@ -1013,7 +1016,10 @@ public sealed class CalendarCollectionModuleTests
             }
             return Task.FromResult(new CalendarCollectionDispatchResult(
                 CreateDispatchCode,
-                (int)HttpStatusCode.Created));
+                (int)HttpStatusCode.Created)
+            {
+                RejectedProperties = CreateRejectedProperties
+            });
         }
 
         public Task<CalendarCollectionDispatchResult> DeleteAsync(

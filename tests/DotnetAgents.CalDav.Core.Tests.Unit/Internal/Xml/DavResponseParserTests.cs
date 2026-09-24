@@ -295,4 +295,43 @@ public class DavResponseParserTests
         return document.ToString(SaveOptions.DisableFormatting);
     }
 
+    [Theory]
+    [InlineData("#FF2968FF", "7", "#FF2968", 7)]
+    [InlineData("#0a0B0c", "0", "#0a0B0c", 0)]
+    [InlineData("rebeccapurple", "-3", null, null)]
+    [InlineData("#12345", "second", null, null)]
+    public void DiscoveryProperties_ReadColorOrderAndBothDescriptionsSeparately(
+        string storedColor, string storedOrder, string? color, int? order)
+    {
+        var xml = "<d:multistatus xmlns:d='DAV:' xmlns:c='urn:ietf:params:xml:ns:caldav' xmlns:i='http://apple.com/ns/ical/'>"
+            + "<d:response><d:href>/cal/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><c:calendar/></d:resourcetype>"
+            + "<c:calendar-description>CalDAV text</c:calendar-description><d:description>WebDAV text</d:description>"
+            + "<i:calendar-color>" + storedColor + "</i:calendar-color><i:calendar-order>" + storedOrder + "</i:calendar-order>"
+            + "</d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>";
+
+        var calendar = DavResponseParser.ParseCalendars(xml).Single();
+
+        calendar.Description.ShouldBe("CalDAV text");
+        calendar.DavDescription.ShouldBe("WebDAV text");
+        calendar.Color.ShouldBe(color);
+        calendar.Order.ShouldBe(order);
+    }
+
+    [Fact]
+    public void DiscoveryProperties_MissingOptionalCollectionPropertiesStayNull()
+    {
+        const string xml = "<d:multistatus xmlns:d='DAV:' xmlns:c='urn:ietf:params:xml:ns:caldav' xmlns:i='http://apple.com/ns/ical/'>"
+            + "<d:response><d:href>/cal/</d:href><d:propstat><d:prop><d:resourcetype><d:collection/><c:calendar/></d:resourcetype>"
+            + "</d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat><d:propstat><d:prop><d:description/>"
+            + "<i:calendar-color/><i:calendar-order/></d:prop><d:status>HTTP/1.1 404 Not Found</d:status></d:propstat>"
+            + "</d:response></d:multistatus>";
+
+        var calendar = DavResponseParser.ParseCalendars(xml).Single();
+
+        calendar.DavDescription.ShouldBeNull();
+        calendar.Color.ShouldBeNull();
+        calendar.Order.ShouldBeNull();
+        calendar.UnavailableProperties.Select(property => property.LocalName)
+            .ShouldBe(["calendar-color", "calendar-order", "description"], ignoreOrder: true);
+    }
 }

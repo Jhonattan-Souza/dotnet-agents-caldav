@@ -26,22 +26,22 @@ internal sealed class CalendarMetadataModule(CalDavClient client) : ICalendarMet
         CalendarMetadataPatch patch,
         CancellationToken cancellationToken)
     {
-        CalendarMetadataPatchProtocol.Validate(patch);
+        var changes = CalendarMetadataPatchProtocol.Plan(patch);
         var href = await client.AuthorizeProtocolCalendarAsync(calendarHref, cancellationToken).ConfigureAwait(false);
         CalendarOperationProgress.SetPhase(CalendarOperationPhase.Fetch);
         // Require the target's Calendar resource type before a metadata write, even with an
         // explicit href allowlist. This read does not act as a concurrency precondition.
         await ReadAsync(href, cancellationToken).ConfigureAwait(false);
-        var body = CalendarMetadataPatchProtocol.Body(patch);
-        var dispatch = await DispatchAsync(href, patch, body, cancellationToken).ConfigureAwait(false);
+        var body = CalendarMetadataPatchProtocol.Body(changes);
+        var dispatch = await DispatchAsync(href, changes, body, cancellationToken).ConfigureAwait(false);
         if (dispatch.State is CalendarMutationState.NotCommitted or CalendarMutationState.NotAttempted)
             return new(dispatch.State, Error: dispatch.Error);
-        return await ReconcileAsync(href, patch, dispatch, cancellationToken).ConfigureAwait(false);
+        return await ReconcileAsync(href, changes, dispatch, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<CalendarMetadataPatchDispatch> DispatchAsync(
         string href,
-        CalendarMetadataPatch patch,
+        IReadOnlyList<CalendarMetadataPropertyChange> changes,
         string body,
         CancellationToken cancellationToken)
     {
@@ -49,7 +49,7 @@ internal sealed class CalendarMetadataModule(CalDavClient client) : ICalendarMet
         try
         {
             var response = await client.SendProtocolRequestAsync(href, "PROPPATCH", body, null, cancellationToken).ConfigureAwait(false);
-            return CalendarMetadataPatchProtocol.ReadDispatch(href, patch, response);
+            return CalendarMetadataPatchProtocol.ReadDispatch(href, changes, response);
         }
         catch (Exception exception) when (CalendarTransportFailure.IsRejectedBeforeSend(exception))
         {
@@ -66,7 +66,7 @@ internal sealed class CalendarMetadataModule(CalDavClient client) : ICalendarMet
 
     private async Task<CalendarMetadataPatchResult> ReconcileAsync(
         string href,
-        CalendarMetadataPatch patch,
+        IReadOnlyList<CalendarMetadataPropertyChange> changes,
         CalendarMetadataPatchDispatch dispatch,
         CancellationToken cancellationToken)
     {
@@ -78,19 +78,19 @@ internal sealed class CalendarMetadataModule(CalDavClient client) : ICalendarMet
         }
         catch (Exception exception) when (IsUncertainFailure(exception))
         {
-            return ReconcileObservation(patch, dispatch, null);
+            return ReconcileObservation(changes, dispatch, null);
         }
-        return ReconcileObservation(patch, dispatch, observed);
+        return ReconcileObservation(changes, dispatch, observed);
     }
 
     private static CalendarMetadataPatchResult ReconcileObservation(
-        CalendarMetadataPatch patch,
+        IReadOnlyList<CalendarMetadataPropertyChange> changes,
         CalendarMetadataPatchDispatch dispatch,
         CalendarMetadataObservation? observed)
     {
         if (dispatch.State == CalendarMutationState.Unknown)
             return new(dispatch.State, observed?.Snapshot, dispatch.Error);
-        if (observed is null || !CalendarMetadataPatchProtocol.Matches(patch, observed))
+        if (observed is null || !CalendarMetadataPatchProtocol.Matches(changes, observed))
             return new(CalendarMutationState.Committed, observed?.Snapshot,
                 new CalendarProtocolException("committed_but_unverified", "The server acknowledged the property update, but readback did not verify the requested values. Inspect the Calendar before another write."));
         return new(CalendarMutationState.Committed, observed.Snapshot);

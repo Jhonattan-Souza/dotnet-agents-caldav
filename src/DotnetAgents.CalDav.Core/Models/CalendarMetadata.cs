@@ -15,7 +15,10 @@ public sealed record CalendarMetadataSnapshot(
     [property: JsonPropertyName("limits")] CalendarAdvertisedLimits Limits,
     [property: JsonPropertyName("timeZoneIds")] IReadOnlyList<string> TimeZoneIds,
     [property: JsonPropertyName("properties")] IReadOnlyList<CalendarPropertyObservation> Properties,
-    [property: JsonPropertyName("scheduling")] CalendarSchedulingObservation Scheduling)
+    [property: JsonPropertyName("scheduling")] CalendarSchedulingObservation Scheduling,
+    [property: JsonPropertyName("davDescription")] string? DavDescription = null,
+    [property: JsonPropertyName("color")] string? Color = null,
+    [property: JsonPropertyName("order")] int? Order = null)
 {
     /// <summary>
     /// Advisory CalendarServer <c>getctag</c> value; opaque cheap change evidence, never a
@@ -53,13 +56,21 @@ public sealed record CalendarSchedulingObservation(
 /// <summary>Only explicitly addressed metadata properties change.</summary>
 public sealed record CalendarMetadataPatch(
     [property: JsonPropertyName("displayName")] CalendarMetadataTextPatch? DisplayName = null,
-    [property: JsonPropertyName("description")] CalendarMetadataTextPatch? Description = null);
+    [property: JsonPropertyName("description")] CalendarMetadataTextPatch? Description = null,
+    [property: JsonPropertyName("color")] CalendarMetadataTextPatch? Color = null,
+    [property: JsonPropertyName("order")] CalendarMetadataOrderPatch? Order = null,
+    [property: JsonPropertyName("timeZone")] CalendarMetadataTextPatch? TimeZone = null);
 
 /// <summary>Set one property's complete value or remove the property.</summary>
 public sealed record CalendarMetadataTextPatch(
     [property: JsonPropertyName("operation")] string Operation,
     [property: JsonPropertyName("value")] string? Value = null,
     [property: JsonPropertyName("language")] string? Language = null);
+
+/// <summary>Set the non-negative Calendar Order or remove it.</summary>
+public sealed record CalendarMetadataOrderPatch(
+    [property: JsonPropertyName("operation")] string Operation,
+    [property: JsonPropertyName("value")] int? Value = null);
 
 /// <summary>The mutation state remains independent of the observed post-write metadata.</summary>
 public sealed record CalendarMetadataPatchResult(

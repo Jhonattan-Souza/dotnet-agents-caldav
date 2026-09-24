@@ -49,6 +49,7 @@ internal static class DavRequestBuilder
                     new XElement(CalDav + "calendar-description"),
                     new XElement(Dav + "description"),
                     new XElement(AppleCs + "calendar-color"),
+                    new XElement(AppleCs + "calendar-order"),
                     new XElement(CalServer + "getctag")
                 )
             )
@@ -74,7 +75,8 @@ internal static class DavRequestBuilder
     /// <summary>Builds the RFC 4791 MKCALENDAR property initialization body.</summary>
     public static string BuildMkCalendar(
         string displayName,
-        IReadOnlyList<CalendarEntityKind> entityKinds)
+        IReadOnlyList<CalendarEntityKind> entityKinds,
+        CalendarCollectionInitialProperties? initialProperties = null)
     {
         var components = entityKinds.Select(kind => new XElement(
             CalDav + "comp",
@@ -84,11 +86,23 @@ internal static class DavRequestBuilder
             new XElement(CalDav + "mkcalendar",
                 new XAttribute(XNamespace.Xmlns + "d", Dav.NamespaceName),
                 new XAttribute(XNamespace.Xmlns + "c", CalDav.NamespaceName),
+                new XAttribute(XNamespace.Xmlns + "ical", AppleCs.NamespaceName),
                 new XElement(Dav + "set",
                     new XElement(Dav + "prop",
                         new XElement(Dav + "displayname", displayName),
-                        new XElement(CalDav + "supported-calendar-component-set", components)))));
+                        new XElement(CalDav + "supported-calendar-component-set", components),
+                        InitialProperties(initialProperties)))));
         return doc.ToString(SaveOptions.DisableFormatting);
+    }
+
+    private static IEnumerable<XElement> InitialProperties(CalendarCollectionInitialProperties? properties)
+    {
+        if (properties?.Color is { } color)
+            yield return new XElement(AppleCs + "calendar-color", color);
+        if (properties?.Order is { } order)
+            yield return new XElement(AppleCs + "calendar-order", order.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        if (properties?.TimeZone is { } timeZone)
+            yield return new XElement(CalDav + "calendar-timezone", timeZone);
     }
 
     /// <summary>

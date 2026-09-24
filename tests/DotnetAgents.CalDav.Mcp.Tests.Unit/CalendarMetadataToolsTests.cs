@@ -164,6 +164,52 @@ public sealed class CalendarMetadataToolsTests
         CalendarOutputSchemaGuard.Validate("calendars.patch", result);
     }
 
+    [Fact]
+    public async Task Patch_atomic_property_failure_names_each_unapplied_member_as_a_violation()
+    {
+        var module = Substitute.For<ICalendarMetadataModule>();
+        var patch = new CalendarMetadataPatch(Color: new("set", "#FF2968"), Order: new CalendarMetadataOrderPatch("set", 1));
+        module.PatchAsync(Href, patch, Arg.Any<CancellationToken>())
+            .Returns(new CalendarMetadataPatchResult(CalendarMutationState.NotCommitted,
+                Error: new CalendarProtocolException("upstream_forbidden", "The Calendar operation was forbidden.")
+                {
+                    RejectedProperties = [new("order", 403), new("color", 424)]
+                }));
+
+        var result = await new CalendarMetadataTools(module).PatchAsync(Href, patch, CancellationToken.None);
+
+        result.IsError.ShouldBe(true);
+        var content = result.StructuredContent!.Value;
+        content.GetProperty("mutationState").GetString().ShouldBe("not_committed");
+        content.GetProperty("violations").EnumerateArray()
+            .Select(item => (item.GetProperty("pointer").GetString(), item.GetProperty("code").GetString()))
+            .ShouldBe([("/patch/color", "property_not_applied"), ("/patch/order", "property_rejected")]);
+        CalendarOutputSchemaGuard.Validate("calendars.patch", result);
+    }
+
+    [Fact]
+    public async Task Inspect_exposes_both_descriptions_color_and_order_in_schema_valid_output()
+    {
+        var module = Substitute.For<ICalendarMetadataModule>();
+        module.InspectAsync(Href, Arg.Any<CancellationToken>()).Returns(Snapshot() with
+        {
+            Description = "CalDAV text",
+            DavDescription = "WebDAV text",
+            Color = "#FF2968",
+            Order = 0,
+            TimeZoneIds = ["Europe/Berlin"]
+        });
+
+        var result = await new CalendarMetadataTools(module).InspectAsync(Href, CancellationToken.None);
+
+        var content = result.StructuredContent!.Value;
+        content.GetProperty("description").GetString().ShouldBe("CalDAV text");
+        content.GetProperty("davDescription").GetString().ShouldBe("WebDAV text");
+        content.GetProperty("color").GetString().ShouldBe("#FF2968");
+        content.GetProperty("order").GetInt32().ShouldBe(0);
+        CalendarOutputSchemaGuard.Validate("calendars.inspect", result);
+    }
+
     private static Exception ResilienceFailure(string failure) => failure switch
     {
         "timeout" => new TimeoutRejectedException("private timeout details"),
@@ -188,6 +234,15 @@ public sealed class CalendarMetadataToolsTests
     [InlineData("calendars.patch", "{\"calendarHref\":\"https://cal.example/home/work/\",\"patch\":{}}", false)]
     [InlineData("calendars.patch", "{\"calendarHref\":\"https://cal.example/home/work/\",\"patch\":{\"displayName\":null}}", false)]
     [InlineData("calendars.patch", "{\"calendarHref\":\"https://cal.example/home/work/\",\"patch\":{\"displayName\":{\"operation\":\"remove\",\"value\":\"unexpected\"}}}", false)]
+    [InlineData("calendars.patch", "{\"calendarHref\":\"https://cal.example/home/work/\",\"patch\":{\"color\":{\"operation\":\"set\",\"value\":\"#FF2968\"},\"order\":{\"operation\":\"set\",\"value\":0},\"timeZone\":{\"operation\":\"set\",\"value\":\"America/Port-au-Prince\"}}}", true)]
+    [InlineData("calendars.patch", "{\"calendarHref\":\"https://cal.example/home/work/\",\"patch\":{\"color\":{\"operation\":\"remove\"},\"order\":{\"operation\":\"remove\"},\"timeZone\":{\"operation\":\"remove\"}}}", true)]
+    [InlineData("calendars.patch", "{\"calendarHref\":\"https://cal.example/home/work/\",\"patch\":{\"color\":{\"operation\":\"set\",\"value\":\"#FF2968FF\"}}}", false)]
+    [InlineData("calendars.patch", "{\"calendarHref\":\"https://cal.example/home/work/\",\"patch\":{\"color\":{\"operation\":\"set\",\"value\":\"#FF2968\",\"language\":\"en\"}}}", false)]
+    [InlineData("calendars.patch", "{\"calendarHref\":\"https://cal.example/home/work/\",\"patch\":{\"order\":{\"operation\":\"set\",\"value\":-1}}}", false)]
+    [InlineData("calendars.patch", "{\"calendarHref\":\"https://cal.example/home/work/\",\"patch\":{\"order\":{\"operation\":\"set\",\"value\":\"1\"}}}", false)]
+    [InlineData("calendars.patch", "{\"calendarHref\":\"https://cal.example/home/work/\",\"patch\":{\"order\":{\"operation\":\"set\",\"value\":2147483648}}}", false)]
+    [InlineData("calendars.patch", "{\"calendarHref\":\"https://cal.example/home/work/\",\"patch\":{\"timeZone\":{\"operation\":\"set\",\"value\":\"+01:00\"}}}", false)]
+    [InlineData("calendars.patch", "{\"calendarHref\":\"https://cal.example/home/work/\",\"patch\":{\"timeZone\":{\"operation\":\"remove\",\"value\":\"UTC\"}}}", false)]
     [InlineData("calendar_resources.changes", "{\"checkpoint\":\"opaque\",\"pageSize\":2}", true)]
     [InlineData("calendar_resources.changes", "{\"checkpoint\":\"opaque\",\"calendarHref\":\"https://cal.example/home/work/\"}", false)]
     public void Native_input_boundary_enforces_closed_schema_before_sdk_deserialization(string tool, string json, bool valid)

@@ -140,6 +140,22 @@ _Avoid_: Calendar revision, collection ETag, sync token
 Explicit set or remove instructions for Calendar collection properties, applied atomically by PROPPATCH with unconditional concurrency. Unaddressed properties remain unchanged.
 _Avoid_: Revision-bound Semantic Patch, resource replacement
 
+**Calendar Description**:
+The CalDAV `calendar-description` text of a Calendar, with its optional language. The separate WebDAV `DAV:description` is reported as `davDescription` and is never merged into it.
+_Avoid_: Generic description, merged description
+
+**Calendar Color**:
+A presentation color for a Calendar, written as `#RRGGBB` and stored as Apple `calendar-color`; a stored alpha channel is not reported. It is not identity.
+_Avoid_: Label color, category color
+
+**Calendar Order**:
+A non-negative presentation sort position for a Calendar, stored as Apple `calendar-order`. It is not identity and need not be unique.
+_Avoid_: Priority, Calendar index
+
+**Calendar Time Zone**:
+The IANA time zone stored on a Calendar as CalDAV `calendar-timezone`, which the server may use to interpret floating times. It never becomes a Temporal Evaluation Context for this server.
+_Avoid_: Default time zone, host time zone
+
 **Server Free/Busy Report**:
 Busy periods computed by the CalDAV server for an exact Calendar and UTC interval, under server access control and temporal interpretation. Periods from every busy component are merged per busy type, and busy types remain distinguishable; a failed report gives no free-time evidence.
 _Avoid_: Event snapshot, invitation workflow, complete availability guarantee

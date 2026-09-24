@@ -41,7 +41,7 @@ internal sealed class CalendarCollectionTools
         OpenWorld = true,
         UseStructuredContent = true,
         OutputSchemaType = typeof(CalendarCollectionCreateSuccessResult)),
-     Description("Create one CalDAV Calendar collection for Events, To-dos, or both using MKCALENDAR.")]
+     Description("Create one CalDAV Calendar collection for Events, To-dos, or both using one atomic MKCALENDAR, optionally initializing its Calendar Color (#RRGGBB), Calendar Order and Calendar Time Zone (IANA identifier).")]
     public Task<CallToolResult> CreateAsync(
         RequestContext<CallToolRequestParams> requestContext,
         CancellationToken cancellationToken) => CreateRawAsync(
@@ -372,9 +372,12 @@ internal sealed class CalendarCollectionTools
 
     private static CallToolResult Error(CalendarCollectionCreateResult result) => Error(
         CalendarTelemetryFacts.From(result),
-        Message(result.Code),
+        result.RejectedProperties.Count > 0
+            ? "The CalDAV server rejected one or more requested Calendar collection properties, so no collection was created; see violations."
+            : Message(result.Code),
         result.MutationState,
-        result.RetryAfterMilliseconds);
+        result.RetryAfterMilliseconds,
+        violations: CalendarErrorViolations.FromRejectedProperties("/", result.RejectedProperties));
 
     private static CallToolResult Error(CalendarCollectionDeleteResult result) => Error(
         CalendarTelemetryFacts.From(result),
@@ -387,8 +390,9 @@ internal sealed class CalendarCollectionTools
         string message,
         CalendarMutationState mutationState,
         int? retryAfterMs = null,
-        CalendarCollectionLimits? limits = null) => CalendarToolResult.Error(
-            new CallToolResult
+        CalendarCollectionLimits? limits = null,
+        IEnumerable<CalendarInputViolation>? violations = null) => CalendarToolResult.Error(
+            CalendarErrorViolations.Attach(new CallToolResult
             {
                 IsError = true,
                 StructuredContent = JsonSerializer.SerializeToElement(new CalendarCollectionErrorResult(
@@ -401,7 +405,7 @@ internal sealed class CalendarCollectionTools
                     retryAfterMs,
                     limits)),
                 Content = [new TextContentBlock { Text = "Calendar collection operation failed." }]
-            },
+            }, violations ?? []),
             facts,
             mutationState).FinalizeResult();
 
@@ -412,7 +416,7 @@ internal sealed class CalendarCollectionTools
 
     private static string Message(CalendarCollectionCreateCode code) => code switch
     {
-        CalendarCollectionCreateCode.InvalidInput => "The Calendar collection create input is invalid. When multiple Calendar homes are discovered, supply an explicit destinationHref below the intended home.",
+        CalendarCollectionCreateCode.InvalidInput => "The Calendar collection create input is invalid. color must be #RRGGBB, order a non-negative integer and timeZone a known IANA identifier. When multiple Calendar homes are discovered, supply an explicit destinationHref below the intended home.",
         CalendarCollectionCreateCode.OutsideScope => "The Calendar collection target is outside the configured Calendar Scope.",
         CalendarCollectionCreateCode.Conflict => "A Calendar with the requested display name already exists.",
         CalendarCollectionCreateCode.DestinationConflict => "The Calendar collection destination already exists.",
@@ -492,44 +496,77 @@ internal sealed class CalendarCollectionTools
 
 internal static class CalendarCollectionArgumentParser
 {
+    private static readonly string[] CreateMembers = ["displayName", "entityKinds", "destinationHref", "color", "order", "timeZone"];
+
     internal static bool TryParseCreate(
         IDictionary<string, JsonElement>? arguments,
         out CalendarCollectionCreateRequest request)
     {
         request = null!;
         if (arguments is null
-            || arguments.Count is < 2 or > 3
             || !arguments.ContainsKey("displayName")
             || !arguments.ContainsKey("entityKinds")
-            || arguments.Keys.Any(key => key is not ("displayName" or "entityKinds" or "destinationHref"))
+            || arguments.Keys.Any(key => !CreateMembers.Contains(key, StringComparer.Ordinal))
             || !arguments["displayName"].TryGetString(out var displayName)
             || string.IsNullOrWhiteSpace(displayName)
-            || arguments["entityKinds"].ValueKind != JsonValueKind.Array)
+            || !TryParseKinds(arguments["entityKinds"], out var kinds)
+            || !TryGetOptionalString(arguments, "destinationHref", out var destination)
+            || !TryGetOptionalString(arguments, "color", out var color)
+            || !TryGetOptionalString(arguments, "timeZone", out var timeZone)
+            || !TryGetOptionalOrder(arguments, out var order))
             return false;
 
-        var kinds = new List<CalendarEntityKind>();
-        foreach (var element in arguments["entityKinds"].EnumerateArray())
-        {
-            if (element.ValueKind != JsonValueKind.String)
-                return false;
-            var value = element.GetString();
-            if (value == "event")
-                kinds.Add(CalendarEntityKind.Event);
-            else if (value == "todo")
-                kinds.Add(CalendarEntityKind.Todo);
-            else
-                return false;
-        }
-        if (kinds.Count is < 1 or > 2 || kinds.Distinct().Count() != kinds.Count)
-            return false;
+        request = new CalendarCollectionCreateRequest(displayName, kinds, destination, color, order, timeZone);
+        return true;
+    }
 
-        string? destination = null;
-        if (arguments.TryGetValue("destinationHref", out var destinationElement))
+    private static bool TryParseKinds(JsonElement element, out IReadOnlyList<CalendarEntityKind> kinds)
+    {
+        kinds = [];
+        if (element.ValueKind != JsonValueKind.Array)
+            return false;
+        var parsed = new List<CalendarEntityKind>();
+        foreach (var item in element.EnumerateArray())
         {
-            if (!destinationElement.TryGetString(out destination) || string.IsNullOrWhiteSpace(destination))
-                return false;
+            switch (item.ValueKind == JsonValueKind.String ? item.GetString() : null)
+            {
+                case "event":
+                    parsed.Add(CalendarEntityKind.Event);
+                    break;
+                case "todo":
+                    parsed.Add(CalendarEntityKind.Todo);
+                    break;
+                default:
+                    return false;
+            }
         }
-        request = new CalendarCollectionCreateRequest(displayName, kinds, destination);
+        kinds = parsed;
+        return parsed.Count is >= 1 and <= 2 && parsed.Distinct().Count() == parsed.Count;
+    }
+
+    // Semantic validation of color, order and time zone values stays in Core.
+    private static bool TryGetOptionalString(
+        IDictionary<string, JsonElement> arguments,
+        string name,
+        out string? value)
+    {
+        value = null;
+        if (!arguments.TryGetValue(name, out var element))
+            return true;
+        if (!element.TryGetString(out var text) || string.IsNullOrWhiteSpace(text))
+            return false;
+        value = text;
+        return true;
+    }
+
+    private static bool TryGetOptionalOrder(IDictionary<string, JsonElement> arguments, out int? order)
+    {
+        order = null;
+        if (!arguments.TryGetValue("order", out var element))
+            return true;
+        if (element.ValueKind != JsonValueKind.Number || !element.TryGetInt32(out var value))
+            return false;
+        order = value;
         return true;
     }
 

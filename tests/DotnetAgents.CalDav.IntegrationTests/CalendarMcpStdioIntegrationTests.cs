@@ -1485,6 +1485,112 @@ public sealed class CalendarMcpStdioIntegrationTests
     }
 
     [Fact]
+    public async Task CalendarCollectionProperties_RoundTripColorOrderAndTimeZoneThroughRadicaleOverStdio()
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        var stderr = new ConcurrentQueue<string>();
+        await using var client = await CreateClientAsync(
+            stderr,
+            exposeExact: false,
+            calendarHrefs: "",
+            confirmMutations: true);
+
+        var created = await client.CallToolAsync(
+            "calendars.create",
+            new Dictionary<string, object?>
+            {
+                ["displayName"] = $"Styled-{suffix}",
+                ["entityKinds"] = new[] { "event" },
+                ["color"] = "#FF2968",
+                ["order"] = 5,
+                ["timeZone"] = "America/New_York"
+            },
+            cancellationToken: TestContext.Current.CancellationToken);
+        created.IsError.ShouldBe(false, created.StructuredContent?.ToString());
+        var descriptor = created.StructuredContent!.Value.GetProperty("calendar");
+        descriptor.GetProperty("color").GetString().ShouldBe("#FF2968");
+        descriptor.GetProperty("order").GetInt32().ShouldBe(5);
+        var href = descriptor.GetProperty("calendar").GetProperty("href").GetString()!;
+
+        var inspected = await InspectAsync(client, href);
+        inspected.GetProperty("color").GetString().ShouldBe("#FF2968");
+        inspected.GetProperty("order").GetInt32().ShouldBe(5);
+        inspected.GetProperty("timeZoneIds").EnumerateArray().Select(item => item.GetString()).ShouldBe(["America/New_York"]);
+
+        var patched = await PatchCollectionAsync(client, href, new Dictionary<string, object?>
+        {
+            ["color"] = new Dictionary<string, object?> { ["operation"] = "set", ["value"] = "#00aa11" },
+            ["order"] = new Dictionary<string, object?> { ["operation"] = "set", ["value"] = 0 },
+            ["timeZone"] = new Dictionary<string, object?> { ["operation"] = "set", ["value"] = "Europe/Berlin" }
+        });
+        patched.GetProperty("mutationState").GetString().ShouldBe("committed");
+        var calendar = patched.GetProperty("calendar");
+        calendar.GetProperty("color").GetString().ShouldBe("#00aa11");
+        calendar.GetProperty("order").GetInt32().ShouldBe(0);
+        calendar.GetProperty("timeZoneIds").EnumerateArray().Select(item => item.GetString()).ShouldBe(["Europe/Berlin"]);
+
+        // Apple clients store #RRGGBBAA; the MCP reports the RGB part of the stored value.
+        using (var http = CreateAuthenticatedClient())
+        {
+            using var request = new HttpRequestMessage(new HttpMethod("PROPPATCH"), new Uri(href).AbsolutePath)
+            {
+                Content = new StringContent(
+                    "<d:propertyupdate xmlns:d=\"DAV:\" xmlns:i=\"http://apple.com/ns/ical/\"><d:set><d:prop>"
+                    + "<i:calendar-color>#11223380</i:calendar-color></d:prop></d:set></d:propertyupdate>",
+                    Encoding.UTF8,
+                    "application/xml")
+            };
+            using var response = await http.SendAsync(request, TestContext.Current.CancellationToken);
+            ((int)response.StatusCode).ShouldBe(207);
+        }
+        var listed = await client.CallToolAsync("calendars.list", null, cancellationToken: TestContext.Current.CancellationToken);
+        listed.StructuredContent!.Value.GetProperty("items").EnumerateArray()
+            .Single(item => item.GetProperty("calendar").GetProperty("href").GetString() == href)
+            .GetProperty("color").GetString().ShouldBe("#112233");
+
+        var removed = await PatchCollectionAsync(client, href, new Dictionary<string, object?>
+        {
+            ["color"] = new Dictionary<string, object?> { ["operation"] = "remove" },
+            ["order"] = new Dictionary<string, object?> { ["operation"] = "remove" },
+            ["timeZone"] = new Dictionary<string, object?> { ["operation"] = "remove" }
+        });
+        removed.GetProperty("mutationState").GetString().ShouldBe("committed");
+        removed.GetProperty("calendar").GetProperty("color").ValueKind.ShouldBe(JsonValueKind.Null);
+        removed.GetProperty("calendar").GetProperty("order").ValueKind.ShouldBe(JsonValueKind.Null);
+        removed.GetProperty("calendar").GetProperty("timeZoneIds").GetArrayLength().ShouldBe(0);
+
+        var deleted = await client.CallToolAsync(
+            "calendars.delete",
+            new Dictionary<string, object?> { ["href"] = href },
+            cancellationToken: TestContext.Current.CancellationToken);
+        deleted.IsError.ShouldBe(false, deleted.StructuredContent?.ToString());
+        stderr.ShouldBeEmpty();
+    }
+
+    private static async Task<JsonElement> InspectAsync(McpClient client, string href)
+    {
+        var result = await client.CallToolAsync(
+            "calendars.inspect",
+            new Dictionary<string, object?> { ["calendarHref"] = href },
+            cancellationToken: TestContext.Current.CancellationToken);
+        result.IsError.ShouldBe(false, result.StructuredContent?.ToString());
+        return result.StructuredContent!.Value;
+    }
+
+    private static async Task<JsonElement> PatchCollectionAsync(
+        McpClient client,
+        string href,
+        Dictionary<string, object?> patch)
+    {
+        var result = await client.CallToolAsync(
+            "calendars.patch",
+            new Dictionary<string, object?> { ["calendarHref"] = href, ["patch"] = patch },
+            cancellationToken: TestContext.Current.CancellationToken);
+        result.IsError.ShouldBe(false, result.StructuredContent?.ToString());
+        return result.StructuredContent!.Value;
+    }
+
+    [Fact]
     public async Task CalendarEntityQuery_InvalidRawShapesReturnTypedErrorsWithoutNetwork()
     {
         var stderr = new ConcurrentQueue<string>();

@@ -528,10 +528,57 @@ public sealed class ContractCatalogTests
             schema["required"]!.AsArray().Select(name => name!.GetValue<string>()).ShouldNotContain("changeTag");
         }
         foreach (var owner in new[] { "calendarInspectSuccess", "calendarMetadataSnapshot" })
-            catalog["$defs"]![owner]!["properties"]!["properties"]!["maxItems"]!.GetValue<int>().ShouldBe(12);
+            catalog["$defs"]![owner]!["properties"]!["properties"]!["maxItems"]!.GetValue<int>().ShouldBe(15);
         foreach (var tool in new[] { "calendars.list", "calendars.inspect" })
             FindTool(catalog, tool)["description"]!.GetValue<string>()
                 .ShouldEndWith("An optional changeTag is opaque, advisory change evidence, never a revision or sync checkpoint.");
+    }
+
+    [Fact]
+    public void Collection_property_schemas_bound_color_order_and_time_zone_and_keep_descriptions_distinct()
+    {
+        var catalog = ReadJson("mcp-tool-catalog.json");
+        var definitions = catalog["$defs"]!;
+        var create = definitions["calendarCollectionCreateInput"]!["properties"]!;
+        create["color"]!["pattern"]!.GetValue<string>().ShouldBe("^#[0-9A-Fa-f]{6}$");
+        create["order"]!["minimum"]!.GetValue<int>().ShouldBe(0);
+        create["order"]!["maximum"]!.GetValue<int>().ShouldBe(int.MaxValue);
+        create["timeZone"]!["maxLength"]!.GetValue<int>().ShouldBe(255);
+        definitions["calendarCollectionCreateInput"]!["required"]!.AsArray().Select(item => item!.GetValue<string>())
+            .ShouldBe(["displayName", "entityKinds"]);
+
+        var patch = definitions["calendarMetadataPatchInput"]!["properties"]!["patch"]!["properties"]!.AsObject();
+        patch.Select(property => property.Key).ShouldBe(["displayName", "description", "color", "order", "timeZone"]);
+        foreach (var (member, definition) in new[]
+                 {
+                     ("color", "calendarColorPatch"), ("order", "calendarOrderPatch"), ("timeZone", "calendarTimeZonePatch")
+                 })
+        {
+            patch[member]!["$ref"]!.GetValue<string>().ShouldBe("#/$defs/" + definition);
+            var branches = definitions[definition]!["oneOf"]!.AsArray();
+            branches.Select(branch => branch!["properties"]!["operation"]!["const"]!.GetValue<string>()).ShouldBe(["set", "remove"]);
+            branches.All(branch => !branch!["additionalProperties"]!.GetValue<bool>()).ShouldBeTrue();
+            branches[1]!["properties"]!.AsObject().ShouldNotContainKey("value");
+        }
+
+        foreach (var snapshot in new[] { "calendarInspectSuccess", "calendarMetadataSnapshot" })
+        {
+            var required = definitions[snapshot]!["required"]!.AsArray().Select(item => item!.GetValue<string>()).ToArray();
+            required.ShouldContain("davDescription");
+            required.ShouldContain("color");
+            required.ShouldContain("order");
+            definitions[snapshot]!["properties"]!["properties"]!["maxItems"]!.GetValue<int>().ShouldBe(15);
+            definitions[snapshot]!["properties"]!["timeZoneIds"].ShouldNotBeNull();
+        }
+
+        var descriptor = definitions["calendarDescriptor"]!["properties"]!.AsObject();
+        descriptor.ShouldContainKey("description");
+        descriptor.ShouldContainKey("davDescription");
+        descriptor["order"]!["minimum"]!.GetValue<int>().ShouldBe(0);
+        descriptor["color"]!["pattern"]!.GetValue<string>().ShouldBe("^#[0-9A-Fa-f]{6}$");
+        FindTool(catalog, "calendars.patch")["description"]!.GetValue<string>().ShouldContain("atomic PROPPATCH");
+        FindTool(catalog, "calendars.patch")["description"]!.GetValue<string>().ShouldContain("unconditional");
+        FindTool(catalog, "calendars.create")["description"]!.GetValue<string>().ShouldContain("atomic MKCALENDAR");
     }
 
     [Fact]

@@ -26,12 +26,20 @@ internal sealed record CalendarCollectionDiscoverySnapshot(
 internal sealed record CalendarCollectionCreateDispatchRequest(
     string Href,
     string DisplayName,
-    IReadOnlyList<CalendarEntityKind> EntityKinds);
+    IReadOnlyList<CalendarEntityKind> EntityKinds,
+    CalendarCollectionInitialProperties? InitialProperties = null);
+
+/// <summary>Validated optional MKCALENDAR properties; <see cref="TimeZone"/> is a complete VCALENDAR.</summary>
+internal sealed record CalendarCollectionInitialProperties(string? Color, int? Order, string? TimeZone);
 
 internal sealed record CalendarCollectionDispatchResult(
     CalendarCollectionDispatchCode Code,
     int? StatusCode = null,
-    int? RetryAfterMilliseconds = null);
+    int? RetryAfterMilliseconds = null)
+{
+    /// <summary>Requested properties rejected in a failed MKCALENDAR response body.</summary>
+    internal IReadOnlyList<CalendarPropertyRejection> RejectedProperties { get; init; } = [];
+}
 
 internal enum CalendarCollectionDispatchCode
 {

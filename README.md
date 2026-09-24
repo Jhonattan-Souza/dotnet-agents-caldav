@@ -78,7 +78,7 @@ client-specific commands.
 ### Semantic Calendar tools
 
 - `calendars.list` — Discover the configured Calendar Scope, with an advisory Calendar Change Tag when the server reports one.
-- `calendars.create` — Create an Event-only, To-do-only, or mixed Calendar collection with native `MKCALENDAR`.
+- `calendars.create` — Create an Event-only, To-do-only, or mixed Calendar collection with one atomic native `MKCALENDAR`, optionally initializing its Calendar Color, Calendar Order and Calendar Time Zone.
 - `calendars.delete` — Confirm and recursively delete one exact Calendar collection, including its resources.
 - `calendar_entities.query` — Start a persisted Event and To-do query across Calendar Scope, optionally selected by `text` and `categories`, or continue its immutable Query Result Snapshot without repeating CalDAV work. A bounded Start requires an explicit caller or configured IANA Temporal Evaluation Context and reports the frozen context on every page.
 - `calendar_occurrences.query` — Start one bounded Event and To-do Occurrence query under an explicit caller or configured IANA Temporal Evaluation Context, optionally selected by the `text` and `categories` of each Occurrence's own component, or continue its immutable Query Result Snapshot with no CalDAV or recurrence work.
@@ -96,8 +96,8 @@ client-specific commands.
 - `calendar_occurrences.restore_cancellation` — Remove only cancelled status from one override.
 - `calendar_resources.move` — Move one reviewed resource with exact `If-Match`, `Overwrite: F`, server-authoritative UID collision truth, and bounded bilateral reconciliation; requires a verified interoperability profile.
 - `calendar_resources.delete` — Delete an entire resource from an explicitly supplied revision reference (href, UID, kind, and exact strong ETag) after MCP MRTR review and confirmation; success requires verified absence.
-- `calendars.inspect` — Inspect standard Calendar metadata, report and privilege advertisements, storage limits, timezone identifiers, scheduling evidence, and any advisory Calendar Change Tag.
-- `calendars.patch` — Set or remove Calendar display name and description with one atomic, unconditional metadata update; preserve unaddressed properties.
+- `calendars.inspect` — Inspect standard Calendar metadata (display name, CalDAV and WebDAV descriptions, color, order, timezone identifiers), report and privilege advertisements, storage limits, scheduling evidence, and any advisory Calendar Change Tag.
+- `calendars.patch` — Set or remove Calendar display name, description, color, order and time zone with one atomic, unconditional metadata update; preserve unaddressed properties.
 - `calendars.free_busy` — Read native server-computed busy intervals for one Calendar and a bounded UTC window without downloading Events.
 - `calendar_resources.changes` — Read an initial inventory or incremental href/ETag changes and removals from view, using session-bound synchronization checkpoints.
 
@@ -226,12 +226,36 @@ synchronization checkpoint; use `calendar_resources.changes` for authoritative
 change tracking. A `calendars.list` result declares a 30-second client cache
 lifetime, so a cached listing's tag can lag.
 
-Calendar metadata updates set or remove only the addressed display name and
-description. Description accepts an optional language tag. The server applies
-the property instructions atomically, but the operation is **unconditional**:
-a concurrent edit to an addressed property can be overwritten. The MCP sends
-one PROPPATCH without retries and reads the target back. A committed or
-uncertain error requires inspection before another write.
+Calendar metadata updates set or remove only the addressed display name,
+description, color, order and time zone. Description accepts an optional
+language tag. The server applies the property instructions atomically, but the
+operation is **unconditional**: PROPPATCH carries no `If-Match` precondition
+because servers do not generally honor one on collection properties, so a
+concurrent edit to an addressed property can be overwritten. The MCP sends one
+PROPPATCH without retries and reads the target back. A committed or uncertain
+error requires inspection before another write. When the server reports
+per-property statuses, a rejected update is `not_committed` and `violations`
+name each property it rejected (`property_rejected`) or did not apply because
+another one failed (`property_not_applied`, HTTP 424); contradictory statuses
+remain `unknown`.
+
+Collection properties use these representations:
+
+| Tool member | Stored property | Written | Read |
+| --- | --- | --- | --- |
+| `description` | `CALDAV:calendar-description` | Text with optional language | Text and `descriptionLanguage` |
+| `davDescription` | `DAV:description` | Not written | Text, independent of `description` |
+| `color` | Apple `calendar-color` (`http://apple.com/ns/ical/`) | `#RRGGBB` | `#RRGGBB`; an Apple `#RRGGBBAA` alpha channel is discarded; other values read as `null` |
+| `order` | Apple `calendar-order` | Integer 0 to 2147483647 | The same range; other values read as `null` |
+| `timeZone` / `timeZoneIds` | `CALDAV:calendar-timezone` | An IANA identifier, stored as a VCALENDAR with one VTIMEZONE generated from tzdb for 1970 to 2100 | The embedded `TZID` |
+
+`calendars.create` sends requested color, order and time zone in the same
+atomic `MKCALENDAR`. Readback verifies color and order through discovery; the
+time zone relies on the server's definitive MKCALENDAR acknowledgement and is
+visible through `calendars.inspect`. When the server's failure body names
+rejected properties, the result is `unsupported_capability` with
+`not_committed` and per-property `violations`. RFC 7986 collection-level
+`NAME`, `IMAGE`, `REFRESH-INTERVAL` and `SOURCE` are not supported.
 
 Participation-bearing creates, updates and deletes require fresh OPTIONS
 evidence that automatic server scheduling is absent. Updates check both stored

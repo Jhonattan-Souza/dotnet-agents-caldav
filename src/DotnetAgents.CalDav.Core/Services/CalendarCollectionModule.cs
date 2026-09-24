@@ -4,6 +4,7 @@ using System.Text.Json;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Core.Internal;
+using DotnetAgents.CalDav.Core.Internal.Xml;
 using DotnetAgents.CalDav.Core.Models;
 using Microsoft.Extensions.Options;
 
@@ -21,7 +22,8 @@ internal sealed class CalendarCollectionModule(
         CalendarCollectionCreateRequest request,
         CancellationToken cancellationToken)
     {
-        if (!TryValidateCreateInput(request, out var normalizedKinds))
+        if (!TryValidateCreateInput(request, out var normalizedKinds)
+            || !TryCreateInitialProperties(request, out var initialProperties))
             return new(CalendarCollectionCreateCode.InvalidInput, CalendarMutationState.NotAttempted);
 
         var discovery = await DiscoverAsync(cancellationToken).ConfigureAwait(false);
@@ -51,7 +53,7 @@ internal sealed class CalendarCollectionModule(
         try
         {
             dispatch = await transport.CreateAsync(
-                new CalendarCollectionCreateDispatchRequest(target, request.DisplayName.Trim(), normalizedKinds),
+                new CalendarCollectionCreateDispatchRequest(target, request.DisplayName.Trim(), normalizedKinds, initialProperties),
                 cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception) when (CalendarTransportFailure.IsRejectedBeforeSend(exception))
@@ -109,7 +111,8 @@ internal sealed class CalendarCollectionModule(
         }
 
         if (!string.Equals(created.DisplayName?.Trim(), request.DisplayName.Trim(), StringComparison.OrdinalIgnoreCase)
-            || !SupportsAll(created, normalizedKinds))
+            || !SupportsAll(created, normalizedKinds)
+            || !HasInitialProperties(created, request, dispatch.Code))
         {
             return new(
                 CalendarCollectionCreateCode.CommittedButUnverified,
@@ -291,6 +294,33 @@ internal sealed class CalendarCollectionModule(
         return true;
     }
 
+    private static bool TryCreateInitialProperties(
+        CalendarCollectionCreateRequest request,
+        out CalendarCollectionInitialProperties? properties)
+    {
+        properties = null;
+        if (request.Color is not null && !CalendarCollectionPropertyValues.IsWritableColor(request.Color)
+            || request.Order is not null && !CalendarCollectionPropertyValues.IsWritableOrder(request.Order)
+            || request.TimeZoneId is not null && !CalendarCollectionPropertyValues.IsTimeZoneId(request.TimeZoneId))
+            return false;
+        if (request.Color is not null || request.Order is not null || request.TimeZoneId is not null)
+        {
+            properties = new(request.Color, request.Order,
+                request.TimeZoneId is null ? null : CalendarCollectionPropertyValues.SerializeTimeZone(request.TimeZoneId));
+        }
+        return true;
+    }
+
+    // Discovery reads Calendar Color and Order back. Calendar Time Zone is not part of the
+    // discovery descriptor, so only a definitive atomic MKCALENDAR acknowledgement covers it.
+    private static bool HasInitialProperties(
+        CalendarDescriptor created,
+        CalendarCollectionCreateRequest request,
+        CalendarCollectionDispatchCode dispatchCode) =>
+        (request.Color is null || string.Equals(created.Color, request.Color, StringComparison.OrdinalIgnoreCase))
+        && (request.Order is null || created.Order == request.Order)
+        && (request.TimeZoneId is null || dispatchCode == CalendarCollectionDispatchCode.Dispatched);
+
     private bool TryCanonicalHref(string href, out string canonical)
     {
         canonical = string.Empty;
@@ -344,7 +374,16 @@ internal sealed class CalendarCollectionModule(
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
     }
 
-    private static CalendarCollectionCreateResult? MapCreateDispatch(CalendarCollectionDispatchResult result) => result.Code switch
+    private static CalendarCollectionCreateResult? MapCreateDispatch(CalendarCollectionDispatchResult result) =>
+        result.RejectedProperties.Count > 0
+            // An MKCALENDAR is all-or-nothing, so named property failures prove nothing was created.
+            ? new(CalendarCollectionCreateCode.UnsupportedCapability, CalendarMutationState.NotCommitted)
+            {
+                RejectedProperties = result.RejectedProperties
+            }
+            : MapCreateDispatchStatus(result);
+
+    private static CalendarCollectionCreateResult? MapCreateDispatchStatus(CalendarCollectionDispatchResult result) => result.Code switch
     {
         CalendarCollectionDispatchCode.Dispatched or CalendarCollectionDispatchCode.PossiblyDispatched => null,
         CalendarCollectionDispatchCode.Conflict => new(CalendarCollectionCreateCode.DestinationConflict, CalendarMutationState.NotCommitted),

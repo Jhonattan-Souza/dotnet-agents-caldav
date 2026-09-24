@@ -15,7 +15,8 @@ public sealed class CalendarMetadataProtocolTests
     private static readonly XNamespace CalDav = "urn:ietf:params:xml:ns:caldav";
     private static readonly XNamespace CalServer = "http://calendarserver.org/ns/";
     private static readonly string[] IntegerLimitNames = ["max-resource-size", "max-instances", "max-attendees-per-instance"];
-    private static readonly CalendarMetadataPatch Patch = new(DisplayName: new("set", "New name"));
+    private static readonly IReadOnlyList<CalendarMetadataPropertyChange> Patch =
+        CalendarMetadataPatchProtocol.Plan(new(DisplayName: new("set", "New name")));
 
     [Theory]
     [InlineData("-1")]
@@ -103,7 +104,7 @@ public sealed class CalendarMetadataProtocolTests
         var observed = CalendarMetadataProtocol.ParseMetadata(Href, response, TestContext.Current.CancellationToken);
 
         observed.Properties.Count.ShouldBe(extraCount + 1);
-        observed.Snapshot.Properties.Count.ShouldBe(12);
+        observed.Snapshot.Properties.Count.ShouldBe(15);
         observed.Snapshot.Properties.ShouldBe(baseline.Properties);
         observed.Snapshot.Reports.ShouldBeEmpty();
         observed.Snapshot.Privileges.ShouldBeEmpty();
@@ -179,6 +180,30 @@ public sealed class CalendarMetadataProtocolTests
 
         properties[Dav + "displayname"].StatusCode.ShouldBe(expected);
         CalendarMetadataPatchProtocol.ReadDispatch(Href, Patch, response).State.ShouldBe(CalendarMutationState.Committed);
+    }
+
+    [Theory]
+    [InlineData("#FF2968FF", "5", "#FF2968", 5)]
+    [InlineData(" #00aa11 ", "0", "#00aa11", 0)]
+    [InlineData("#00aa1", "-5", null, null)]
+    [InlineData("blue", "4294967296", null, null)]
+    public void Inspect_reads_both_descriptions_color_and_order_without_conflating_them(
+        string storedColor, string storedOrder, string? color, int? order)
+    {
+        XNamespace ical = "http://apple.com/ns/ical/";
+        var snapshot = CalendarMetadataProtocol.ParseMetadata(Href, Response(Metadata(
+            new XElement(CalDav + "calendar-description", "CalDAV text"),
+            new XElement(Dav + "description", "WebDAV text"),
+            new XElement(ical + "calendar-color", storedColor),
+            new XElement(ical + "calendar-order", storedOrder))), TestContext.Current.CancellationToken).Snapshot;
+
+        snapshot.Description.ShouldBe("CalDAV text");
+        snapshot.DavDescription.ShouldBe("WebDAV text");
+        snapshot.Color.ShouldBe(color);
+        snapshot.Order.ShouldBe(order);
+        snapshot.Properties.Select(property => property.LocalName).TakeLast(3)
+            .ShouldBe(["description", "calendar-color", "calendar-order"]);
+        snapshot.Properties.Single(property => property.LocalName == "calendar-order").StatusCode.ShouldBe(200);
     }
 
     private static XElement Metadata(params XElement[] properties) => MultiStatus(Propstat("HTTP/1.1 200 OK",

@@ -162,7 +162,9 @@ public sealed record CalendarListItem(
     [property: JsonPropertyName("displayName")] string? DisplayName,
     [property: JsonPropertyName("displayNameProvenance")] string DisplayNameProvenance,
     [property: JsonPropertyName("description")] string? Description,
+    [property: JsonPropertyName("davDescription")] string? DavDescription,
     [property: JsonPropertyName("color")] string? Color,
+    [property: JsonPropertyName("order")] int? Order,
     [property: JsonPropertyName("entityKinds")] CalendarEntityKinds EntityKinds)
 {
     /// <summary>Advisory, opaque CalendarServer change tag; omitted when the server reports none.</summary>
@@ -175,7 +177,9 @@ public sealed record CalendarListItem(
         descriptor.DisplayName,
         ToWireValue(descriptor.DisplayNameProvenance),
         descriptor.Description,
+        descriptor.DavDescription,
         GetSchemaColor(descriptor.Color),
+        descriptor.Order,
         new CalendarEntityKinds(
             CalendarEntityKindCapability.From(descriptor.EventSupport, descriptor.EventEvidence),
             CalendarEntityKindCapability.From(descriptor.TodoSupport, descriptor.TodoEvidence)))

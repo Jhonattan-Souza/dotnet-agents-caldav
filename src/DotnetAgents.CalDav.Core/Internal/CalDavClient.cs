@@ -82,7 +82,7 @@ internal sealed partial class CalDavClient : ICalendarClient, ICalendarMoveResou
             return new(CalendarCollectionDispatchCode.ProtocolError);
         }
 
-        var body = DavRequestBuilder.BuildMkCalendar(request.DisplayName, request.EntityKinds);
+        var body = DavRequestBuilder.BuildMkCalendar(request.DisplayName, request.EntityKinds, request.InitialProperties);
         using var message = new HttpRequestMessage(MkCalendarMethod, canonicalHref)
         {
             Content = new StringContent(body, Encoding.UTF8, "application/xml")
@@ -91,7 +91,38 @@ internal sealed partial class CalDavClient : ICalendarClient, ICalendarMoveResou
             message,
             HttpCompletionOption.ResponseHeadersRead,
             cancellationToken).ConfigureAwait(false);
-        return MapCollectionResponse(response);
+        var result = MapCollectionResponse(response);
+        return response.IsSuccessStatusCode
+            ? result
+            : result with { RejectedProperties = await ReadRejectedPropertiesAsync(response.Content, cancellationToken).ConfigureAwait(false) };
+    }
+
+    private static readonly IReadOnlyDictionary<XName, string> MkCalendarPropertyMembers = new Dictionary<XName, string>
+    {
+        [XName.Get("displayname", "DAV:")] = "displayName",
+        [XName.Get("supported-calendar-component-set", "urn:ietf:params:xml:ns:caldav")] = "entityKinds",
+        [CalendarCollectionPropertyValues.ColorName] = "color",
+        [CalendarCollectionPropertyValues.OrderName] = "order",
+        [CalendarCollectionPropertyValues.TimeZoneName] = "timeZone"
+    };
+
+    // RFC 4791 MKCALENDAR is atomic; a failure body may name the rejected properties. The
+    // status is already definitive, so an unreadable body only loses that detail.
+    private static async Task<IReadOnlyList<CalendarPropertyRejection>> ReadRejectedPropertiesAsync(
+        HttpContent content,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var failure = await ReadBoundedContentAsync(content, cancellationToken).ConfigureAwait(false);
+            return failure.Content is null
+                ? []
+                : CalendarPropertyRejectionReader.Read(failure.Content, content.Headers.ContentType?.CharSet, MkCalendarPropertyMembers);
+        }
+        catch (Exception exception) when (exception is IOException or HttpRequestException or InvalidDataException)
+        {
+            return [];
+        }
     }
 
     internal async Task<CalendarCollectionDispatchResult> DeleteCalendarCollectionAsync(
