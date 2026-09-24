@@ -143,7 +143,7 @@ public sealed class CalendarTimeZoneResolutionTests
     }
 
     [Fact]
-    public void Normalize_MapsEveryAuthoredValueOfARecurrenceSetPatch()
+    public void Normalize_MapsAuthoredRecurrenceDatesButLeavesAssertedOverridesUnchanged()
     {
         var patch = new CalendarEventPatch(
             Start: new(CalendarScalarPatchOperation.Set, Zoned("2026-03-07T10:00:00")),
@@ -173,10 +173,10 @@ public sealed class CalendarTimeZoneResolutionTests
         var value = normalized.RecurrenceSet!.Value!;
         value.RecurrenceDates!.Single().TimeZoneId.ShouldBe("America/New_York");
         value.ExceptionDates!.Single().TimeZoneId.ShouldBe("America/New_York");
+        value.Overrides.ShouldBeSameAs(patch.RecurrenceSet!.Value!.Overrides);
         var recurrenceOverride = value.Overrides!.Single();
-        recurrenceOverride.RecurrenceIdentity.TimeZoneId.ShouldBe("America/New_York");
-        recurrenceOverride.MovedStart!.TimeZoneId.ShouldBe("America/New_York");
-        recurrenceOverride.MovedEnd.ShouldBeNull();
+        recurrenceOverride.RecurrenceIdentity.TimeZoneId.ShouldBe("Eastern Standard Time");
+        recurrenceOverride.MovedStart!.TimeZoneId.ShouldBe("Eastern Standard Time");
     }
 
     [Fact]
@@ -276,6 +276,15 @@ public sealed class CalendarTimeZoneResolutionTests
 
         CalendarPatchTimeZoneDefinitions.AddIntroduced(original, original).ShouldBe(original);
         CalendarPatchTimeZoneDefinitions.AddIntroduced(original, defined).ShouldBe(defined);
+    }
+
+    [Fact]
+    public void AddIntroduced_SkipsAZoneWithoutAnyLocalDateTimeValue()
+    {
+        var original = Resource("DTSTART:20260310T100000Z\r\n");
+        var edited = Resource("DTSTART:20260310T100000Z\r\nX-MARK;TZID=Europe/Paris:20260310\r\n");
+
+        CalendarPatchTimeZoneDefinitions.AddIntroduced(original, edited).ShouldBeSameAs(edited);
     }
 
     [Fact]
