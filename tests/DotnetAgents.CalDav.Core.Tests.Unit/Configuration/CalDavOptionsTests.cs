@@ -637,4 +637,16 @@ public class CalDavOptionsTests
         configure(options);
         return options;
     }
+
+    [Fact]
+    public void InteroperabilityProfiles_ListEveryVerifiedRuntimeAndOnlyRadicaleCommitsSameCalendarMove()
+    {
+        CalDavInteroperabilityProfiles.Verified.ShouldBe(["radicale-3.7.8", "nextcloud-34.0.3"]);
+        CalDavInteroperabilityProfiles.IsVerified(null).ShouldBeFalse();
+        CalDavInteroperabilityProfiles.SupportsSameCalendarMove(CalDavInteroperabilityProfiles.Radicale_3_7_8)
+            .ShouldBeTrue();
+        CalDavInteroperabilityProfiles.SupportsSameCalendarMove(CalDavInteroperabilityProfiles.Nextcloud_34_0_3)
+            .ShouldBeFalse();
+        CalDavInteroperabilityProfiles.SupportsSameCalendarMove(null).ShouldBeFalse();
+    }
 }

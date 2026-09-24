@@ -173,7 +173,8 @@ internal sealed class CalendarMoveAuthorization
         if (destinationResolution is CalendarResolution.Rejected destinationFailure)
             return Reject(destinationFailure.Failure);
         var source = ((CalendarResolution.Resolved)sourceResolution).Calendar;
-        var capability = RequireMoveCapability(
+        var capability = RequireExactMoveCapability(
+            source,
             ((CalendarResolution.Resolved)destinationResolution).Calendar,
             request.Revision.EntityKind);
         if (capability is CalendarResolution.Rejected capabilityFailure)
@@ -214,14 +215,28 @@ internal sealed class CalendarMoveAuthorization
             return CalendarResolution.Reject(Failure(
                 CalendarMoveAuthorizationFailureReason.EntityKindNotAdvertised,
                 [calendar]));
-        return string.Equals(
-            _interoperabilityProfile,
-            CalDavInteroperabilityProfiles.Radicale_3_7_8,
-            StringComparison.Ordinal)
+        return CalDavInteroperabilityProfiles.IsVerified(_interoperabilityProfile)
             ? new CalendarResolution.Resolved(calendar)
             : CalendarResolution.Reject(Failure(
                 CalendarMoveAuthorizationFailureReason.InteroperabilityProfileUnverified,
                 [calendar]));
+    }
+
+    private CalendarResolution RequireExactMoveCapability(
+        CalendarDescriptor source,
+        CalendarDescriptor destination,
+        CalendarEntityKind entityKind)
+    {
+        var capability = RequireMoveCapability(destination, entityKind);
+        if (capability is CalendarResolution.Rejected
+            || !string.Equals(source.Href, destination.Href, StringComparison.Ordinal)
+            || CalDavInteroperabilityProfiles.SupportsSameCalendarMove(_interoperabilityProfile))
+        {
+            return capability;
+        }
+        return CalendarResolution.Reject(Failure(
+            CalendarMoveAuthorizationFailureReason.InteroperabilityProfileUnverified,
+            [destination]));
     }
 
     private ImmutableArray<CalendarDescriptor> AuthorizedCandidates(

@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using DotnetAgents.CalDav.Core.Configuration;
 using Json.Schema;
 using Shouldly;
 using Xunit;
@@ -129,6 +130,12 @@ public class McpMetadataTests
             "bounded Calendar Entity Starts and every Occurrence or To-do Start");
         evaluationZoneDescription.ShouldNotContain("later", Case.Insensitive);
         evaluationZoneDescription.ShouldNotContain("cutover", Case.Insensitive);
+        var profileDescription = envVars.EnumerateArray()
+            .Single(item => item.GetProperty("name").GetString() == "CALDAV_INTEROPERABILITY_PROFILE")
+            .GetProperty("description").GetString();
+        profileDescription.ShouldNotBeNull();
+        foreach (var profile in CalDavInteroperabilityProfiles.Verified)
+            profileDescription.ShouldContain(profile);
         var description = root.GetProperty("description").GetString()!;
         description.ShouldContain("Calendars");
         description.ShouldContain("Events");

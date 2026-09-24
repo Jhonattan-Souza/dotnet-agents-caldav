@@ -210,13 +210,16 @@ internal sealed class ValidateCalDavOptions : IValidateOptions<CalDavOptions>
             || string.Equals(original + '/', uri.AbsoluteUri, StringComparison.Ordinal));
 
     private static bool IsSupportedInteroperabilityProfile(string? profile) =>
-        string.IsNullOrEmpty(profile)
-        || string.Equals(profile, CalDavInteroperabilityProfiles.Radicale_3_7_8, StringComparison.Ordinal);
+        string.IsNullOrEmpty(profile) || CalDavInteroperabilityProfiles.IsVerified(profile);
 
     private static void ValidateInteroperabilityProfile(string? profile, ICollection<string> failures)
     {
         if (!IsSupportedInteroperabilityProfile(profile))
-            failures.Add($"CalDav:InteroperabilityProfile must be '{CalDavInteroperabilityProfiles.Radicale_3_7_8}' when specified.");
+        {
+            failures.Add("CalDav:InteroperabilityProfile must be one of "
+                + string.Join(", ", CalDavInteroperabilityProfiles.Verified.Select(value => $"'{value}'"))
+                + " when specified.");
+        }
     }
 
     private static void ValidateSchedulingMode(string? mode, ICollection<string> failures)
@@ -269,6 +272,21 @@ internal static class BearerTokenSyntax
 public static class CalDavInteroperabilityProfiles
 {
     public const string Radicale_3_7_8 = "radicale-3.7.8";
+
+    public const string Nextcloud_34_0_3 = "nextcloud-34.0.3";
+
+    /// <summary>Every verified profile, each backed by a digest-pinned contract and dated observation record.</summary>
+    public static IReadOnlyList<string> Verified { get; } = [Radicale_3_7_8, Nextcloud_34_0_3];
+
+    internal static bool IsVerified(string? profile) =>
+        profile is not null && Verified.Contains(profile, StringComparer.Ordinal);
+
+    /// <summary>
+    /// Whether the verified runtime commits a MOVE that renames a resource within its Calendar.
+    /// Nextcloud 34.0.3 rejects that MOVE with HTTP 403, so Exact Move fails closed before dispatch.
+    /// </summary>
+    internal static bool SupportsSameCalendarMove(string? profile) =>
+        string.Equals(profile, Radicale_3_7_8, StringComparison.Ordinal);
 }
 
 internal static class IanaTimeZoneIds

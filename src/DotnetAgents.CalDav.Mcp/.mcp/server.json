@@ -79,7 +79,7 @@
         },
         {
           "name": "CALDAV_INTEROPERABILITY_PROFILE",
-          "description": "Verified server runtime profile; radicale-3.7.8 enables server-authoritative MOVE and its native free/busy representation (optional)",
+          "description": "Verified server runtime profile; radicale-3.7.8 or nextcloud-34.0.3 enables server-authoritative MOVE; radicale-3.7.8 also enables its native free/busy representation (optional)",
           "isRequired": false
         },
         {
