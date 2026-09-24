@@ -327,7 +327,8 @@ public sealed class CalendarTelemetryTests
                 Content = []
             }));
 
-        var violation = stopped.Single(activity => activity.OperationName == "caldav.output_contract");
+        var violation = stopped.Single(activity => activity.OperationName == "caldav.output_contract"
+            && Equals(activity.GetTagItem("caldav.tool.name"), "events.patch"));
         new TelemetryActivityAllowlistProcessor().OnEnd(violation);
         violation.DisplayName.ShouldBe("caldav.output_contract");
         violation.GetTagItem("caldav.tool.name").ShouldBe("events.patch");
@@ -354,7 +355,8 @@ public sealed class CalendarTelemetryTests
             "calendars.list",
             new CallToolResult { Content = [] }));
 
-        var violation = stopped.Single(activity => activity.OperationName == "caldav.output_contract");
+        var violation = stopped.Single(activity => activity.OperationName == "caldav.output_contract"
+            && Equals(activity.GetTagItem("caldav.tool.name"), "calendars.list"));
         new TelemetryActivityAllowlistProcessor().OnEnd(violation);
         violation.GetTagItem("caldav.tool.name").ShouldBe("calendars.list");
         violation.GetTagItem("caldav.output_contract.violation").ShouldBe("missing_structured_content");
