@@ -335,6 +335,9 @@ public sealed class CalendarMcpRawStdioTests
             cancellationToken: timeout.Token);
         read.IsError.ShouldBe(false, read.StructuredContent?.ToString());
         JsonSchema.FromText(readSchema.GetRawText()).Evaluate(read.StructuredContent!.Value).IsValid.ShouldBeTrue();
+        var extraProperty = System.Text.Json.Nodes.JsonNode.Parse(read.StructuredContent.Value.GetRawText())!;
+        extraProperty["unexpected"] = true;
+        JsonSchema.FromText(readSchema.GetRawText()).Evaluate(extraProperty).IsValid.ShouldBeFalse();
         var result = await CallDeleteAsync(client, server.ResourceHref, timeout.Token);
 
         result.IsError.ShouldBe(true);
