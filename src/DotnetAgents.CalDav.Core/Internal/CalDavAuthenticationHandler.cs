@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 
 namespace DotnetAgents.CalDav.Core.Internal;
 
-/// <summary>One Authorization header value for the configured CalDAV origin.</summary>
+/// <summary>One Authorization header value for an authorized CalDAV account origin.</summary>
 internal sealed record CalDavCredential(string Scheme, string Parameter)
 {
     internal AuthenticationHeaderValue ToHeader() => new(Scheme, Parameter);
@@ -54,9 +54,9 @@ internal sealed class StaticCalDavCredentialSource(CalDavCredential credential) 
 }
 
 /// <summary>
-/// Attaches the configured credential per HTTP attempt, and only to requests on the configured
-/// CalDAV origin. Redirects are followed manually above this handler with same-origin validation;
-/// this check keeps credentials off any other origin even if a caller bypasses that validation.
+/// Attaches the configured credential per HTTP attempt to authorized CalDAV account origins.
+/// Redirect validation and this handler share the configured origin and HTTPS host allowlist;
+/// this check keeps credentials off every other origin even if a caller bypasses redirect validation.
 /// A renewable credential rejected with 401 is renewed and the request resent exactly once.
 /// <see cref="CalDavAuthenticationException"/> therefore escapes only before the attempt that would
 /// apply the request is sent. An earlier manually followed 307/308 hop may have been sent, but a
@@ -67,14 +67,14 @@ internal sealed class CalDavAuthenticationHandler(
     CalDavCredentialSource credentials,
     IOptions<CalDavOptions> options) : DelegatingHandler
 {
-    private readonly Uri _origin = new(options.Value.BaseUrl, UriKind.Absolute);
+    private readonly CalDavAccountOrigins _accountOrigins = CalDavAccountOrigins.From(options.Value);
 
     protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
         CancellationToken cancellationToken)
     {
         request.Headers.Authorization = null;
-        if (request.RequestUri is not { IsAbsoluteUri: true } requestUri || !HasConfiguredOrigin(requestUri))
+        if (request.RequestUri is not { IsAbsoluteUri: true } requestUri || !_accountOrigins.Contains(requestUri))
             return await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
         var credential = await credentials.GetAsync(cancellationToken).ConfigureAwait(false);
@@ -107,8 +107,4 @@ internal sealed class CalDavAuthenticationHandler(
         return await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
     }
 
-    private bool HasConfiguredOrigin(Uri requestUri) =>
-        string.Equals(_origin.Scheme, requestUri.Scheme, StringComparison.OrdinalIgnoreCase)
-        && string.Equals(_origin.Host, requestUri.Host, StringComparison.OrdinalIgnoreCase)
-        && _origin.Port == requestUri.Port;
 }
