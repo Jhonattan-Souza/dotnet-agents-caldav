@@ -4685,6 +4685,7 @@
     },
     "todoQueryOutcome": {
       "type": "object",
+      "unevaluatedProperties": false,
       "oneOf": [
         {
           "$ref": "#/$defs/todoQuerySuccess"
@@ -10218,6 +10219,7 @@
     },
     "calendarCollectionCreateOutcome": {
       "type": "object",
+      "unevaluatedProperties": false,
       "oneOf": [
         {
           "$ref": "#/$defs/calendarCollectionCreateSuccess"
@@ -10229,6 +10231,7 @@
     },
     "calendarCollectionDeleteOutcome": {
       "type": "object",
+      "unevaluatedProperties": false,
       "oneOf": [
         {
           "$ref": "#/$defs/calendarCollectionDeleteSuccess"
@@ -10243,6 +10246,7 @@
     },
     "calendarListOutcome": {
       "type": "object",
+      "unevaluatedProperties": false,
       "oneOf": [
         {
           "$ref": "#/$defs/calendarListSuccess"
@@ -10254,6 +10258,7 @@
     },
     "entityQueryOutcome": {
       "type": "object",
+      "unevaluatedProperties": false,
       "oneOf": [
         {
           "$ref": "#/$defs/entityQuerySuccess"
@@ -10265,6 +10270,7 @@
     },
     "occurrenceQueryOutcome": {
       "type": "object",
+      "unevaluatedProperties": false,
       "oneOf": [
         {
           "$ref": "#/$defs/occurrenceQuerySuccess"
@@ -10276,6 +10282,7 @@
     },
     "resourceOutcome": {
       "type": "object",
+      "unevaluatedProperties": false,
       "oneOf": [
         {
           "$ref": "#/$defs/resourceSuccess"
@@ -10287,6 +10294,7 @@
     },
     "exactGetOutcome": {
       "type": "object",
+      "unevaluatedProperties": false,
       "oneOf": [
         {
           "$ref": "#/$defs/exactGetSuccess"
@@ -10680,6 +10688,7 @@
     },
     "snapshotMutationOutcome": {
       "type": "object",
+      "unevaluatedProperties": false,
       "oneOf": [
         {
           "$ref": "#/$defs/snapshotMutationSuccess"
@@ -10792,6 +10801,7 @@
     },
     "exactSnapshotMutationOutcome": {
       "type": "object",
+      "unevaluatedProperties": false,
       "oneOf": [
         {
           "$ref": "#/$defs/snapshotMutationSuccess"
@@ -10806,6 +10816,7 @@
     },
     "deleteMutationOutcome": {
       "type": "object",
+      "unevaluatedProperties": false,
       "oneOf": [
         {
           "$ref": "#/$defs/deleteMutationSuccess"
@@ -11735,6 +11746,7 @@
     },
     "calendarInspectOutcome": {
       "type": "object",
+      "unevaluatedProperties": false,
       "oneOf": [
         {
           "$ref": "#/$defs/calendarInspectSuccess"
@@ -11746,6 +11758,7 @@
     },
     "calendarMetadataPatchOutcome": {
       "type": "object",
+      "unevaluatedProperties": false,
       "oneOf": [
         {
           "$ref": "#/$defs/calendarMetadataPatchSuccess"
@@ -11757,6 +11770,7 @@
     },
     "calendarFreeBusyOutcome": {
       "type": "object",
+      "unevaluatedProperties": false,
       "oneOf": [
         {
           "$ref": "#/$defs/calendarFreeBusySuccess"
@@ -11768,6 +11782,7 @@
     },
     "calendarResourceChangesOutcome": {
       "type": "object",
+      "unevaluatedProperties": false,
       "oneOf": [
         {
           "$ref": "#/$defs/calendarResourceChangesSuccess"
