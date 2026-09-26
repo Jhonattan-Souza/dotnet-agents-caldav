@@ -212,7 +212,7 @@ Organizer, Attendee, Participant, and related participation data preserved and e
 _Avoid_: Scheduling workflow, meeting invitation
 
 **Scheduling Mode**:
-The configured model, `storage_only` by default or opt-in `server_managed`, that decides whether a participation-bearing write or a Calendar collection deletion may proceed on a Calendar whose server advertises automatic scheduling. Unknown scheduling evidence blocks in both modes.
+The configured model, `storage_only` by default or opt-in `server_managed`, that decides whether a participation-bearing write or a Calendar collection deletion may proceed on a Calendar whose server advertises automatic scheduling. Unknown scheduling evidence blocks in both modes; a Calendar collection deletion the mode refuses may still proceed after a clean bounded member scan.
 _Avoid_: Scheduling toggle, invitation setting
 
 **Server-managed Scheduling**:

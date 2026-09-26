@@ -252,6 +252,7 @@ public partial class CalDavClientTests
         internal List<string?> Depths { get; } = [];
         internal int RequestedMembers { get; private set; }
         internal string? Failure { get; init; }
+        internal string? DavCompliance { get; init; } = "1, 3, calendar-access, calendar-auto-schedule";
         internal CancellationTokenSource? Cancellation { get; init; }
         internal string ExtraListingResponse { get; init; } = string.Empty;
         internal Action? AfterListing { get; set; }
@@ -282,7 +283,8 @@ public partial class CalDavClientTests
             if (Failure == "options_caller_cancellation")
                 throw CancelCaller();
             var response = new HttpResponseMessage(HttpStatusCode.OK);
-            response.Headers.TryAddWithoutValidation("DAV", "1, 3, calendar-access, calendar-auto-schedule");
+            if (DavCompliance is not null)
+                response.Headers.TryAddWithoutValidation("DAV", DavCompliance);
             return response;
         }
 

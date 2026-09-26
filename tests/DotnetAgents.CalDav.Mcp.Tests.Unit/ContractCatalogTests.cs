@@ -62,7 +62,7 @@ public sealed class ContractCatalogTests
         foreach (var name in new[]
                  {
                      "snapshotMutationSuccess", "deleteMutationSuccess", "calendarCollectionDeleteSuccess",
-                     "mutationErrorOutcome", "exactMutationErrorOutcome"
+                     "mutationErrorOutcome", "calendarCollectionMutationErrorOutcome", "exactMutationErrorOutcome"
                  })
         {
             definitions[name]!["properties"]!["schedulingSideEffects"]!["$ref"]!.GetValue<string>()
