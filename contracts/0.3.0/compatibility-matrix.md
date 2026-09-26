@@ -10,7 +10,9 @@
 | `todos.query` `recurrence` | Shared `recurrenceSet`; overrides may declare Event or To-do fields | `todoQueryRecurrenceSet`; overrides are `entityKind: todo` with To-do fields only, as VTODO overrides always were |
 | `tools/list` caching hint | SDK default `ttlMs: 0`, `cacheScope: private` | `ttlMs: 3600000`, `cacheScope: private` from `transport.toolsListCache` |
 | `server/discover` caching hint | SDK default `ttlMs: 0`, `cacheScope: private` | Unchanged |
-| Per-tool `_meta.cache` | Tool-specific hints | Unchanged |
+| Per-tool cache metadata | Tool-specific hints under `_meta.cache` | Same hints under `_meta["io.github.jhonattan-souza/cache"]` |
+| Tool titles | Absent | Short human-readable titles for all 27 tools |
+| Server instructions | Absent | Catalog routing guidance returned in discovery and initialization |
 | `CALDAV_EVALUATION_TIME_ZONE` | Optional | Required for installations; a caller `evaluationTimeZone` still wins |
 | Default semantic catalog | 17 tools | 23 tools: adds `calendars.create`, `calendars.delete`, `calendars.inspect`, `calendars.patch`, `calendars.free_busy`, and `calendar_resources.changes` |
 | Opt-in exact catalog | 4 additional tools | 4 additional tools |
