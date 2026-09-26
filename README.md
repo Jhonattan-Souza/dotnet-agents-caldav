@@ -90,7 +90,7 @@ With `oauth2`, the access token is held only in memory. The first CalDAV request
 
 Use an `https` `CALDAV_URL` with every scheme; plain `http` sends passwords and tokens in cleartext and is only appropriate for loopback testing.
 
-Credentials are attached only to requests on the `CALDAV_URL` origin. Redirects are followed manually and only within that origin, so a cross-origin `Location` never receives them; the token endpoint is contacted with its own client that follows no redirects. Digest and client-certificate (mTLS) authentication are not supported.
+Credentials are attached only to the `CALDAV_URL` origin and HTTPS hosts authorized by `CALDAV_REDIRECT_HOSTS` at the configured port. Redirects are followed manually under the same account-origin rules. Other origins receive no credentials. The token endpoint uses its own client that follows no redirects. Digest and client-certificate (mTLS) authentication are not supported.
 
 ## Available tools
 
