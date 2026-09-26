@@ -115,40 +115,45 @@ public partial class CalDavClientTests
         CalendarOperationProgress.SchedulingSideEffectsPossible.ShouldBeFalse();
     }
 
+    // Matrix: scheduling mode x OPTIONS evidence x member participation. The mode decides first; the member
+    // scan runs only when the mode refuses, and a clean scan admits the DELETE without possible side effects.
+    // A server-managed deletion on an advertising server is admitted without a scan and discloses possible.
     [Theory]
-    [InlineData(null, AdvertisedScheduling, false, false)]
-    [InlineData(CalDavSchedulingModes.StorageOnly, AdvertisedScheduling, false, false)]
-    [InlineData(CalDavSchedulingModes.ServerManaged, AdvertisedScheduling, true, true)]
-    [InlineData(CalDavSchedulingModes.ServerManaged, AbsentScheduling, true, false)]
-    [InlineData(CalDavSchedulingModes.ServerManaged, "invalid compliance", false, false)]
-    [InlineData(CalDavSchedulingModes.ServerManaged, null, false, false)]
+    [InlineData(null, AdvertisedScheduling, true, false, false, "OPTIONS PROPFIND REPORT")]
+    [InlineData(null, AdvertisedScheduling, false, true, false, "OPTIONS PROPFIND REPORT PROPFIND DELETE")]
+    [InlineData(CalDavSchedulingModes.StorageOnly, AdvertisedScheduling, true, false, false, "OPTIONS PROPFIND REPORT")]
+    [InlineData(CalDavSchedulingModes.StorageOnly, AbsentScheduling, true, true, false, "OPTIONS DELETE")]
+    [InlineData(CalDavSchedulingModes.ServerManaged, AdvertisedScheduling, true, true, true, "OPTIONS DELETE")]
+    [InlineData(CalDavSchedulingModes.ServerManaged, AdvertisedScheduling, false, true, true, "OPTIONS DELETE")]
+    [InlineData(CalDavSchedulingModes.ServerManaged, AbsentScheduling, true, true, false, "OPTIONS DELETE")]
+    [InlineData(CalDavSchedulingModes.ServerManaged, "invalid compliance", true, false, false, "OPTIONS PROPFIND REPORT")]
+    [InlineData(CalDavSchedulingModes.ServerManaged, "invalid compliance", false, true, false,
+        "OPTIONS PROPFIND REPORT PROPFIND DELETE")]
+    [InlineData(CalDavSchedulingModes.ServerManaged, null, true, false, false, "OPTIONS PROPFIND REPORT")]
+    [InlineData(CalDavSchedulingModes.ServerManaged, null, false, true, false, "OPTIONS PROPFIND REPORT PROPFIND DELETE")]
     public async Task SchedulingMode_DecidesCollectionDeletion(
         string? mode,
         string? dav,
+        bool participation,
         bool dispatched,
-        bool sideEffectsPossible)
+        bool sideEffectsPossible,
+        string methods)
     {
-        var methods = new List<string>();
-        var handler = new StubHttpMessageHandler(request =>
-        {
-            methods.Add(request.Method.Method);
-            var response = new HttpResponseMessage(
-                request.Method == HttpMethod.Options ? HttpStatusCode.OK : HttpStatusCode.NoContent);
-            if (dav is not null)
-                response.Headers.TryAddWithoutValidation("DAV", dav);
-            return response;
-        });
+        var server = new AutoScheduleCalendarServer { DavCompliance = dav };
+        server.Add("member.ics", participation
+            ? "ORGANIZER:mailto:owner@example.com\r\nATTENDEE:mailto:guest@example.com\r\n"
+            : "SUMMARY:Focus\r\n");
         var state = CalendarOperationProgress.CreateState();
         using var scope = CalendarOperationProgress.Attach(state);
 
-        var result = await CreateSut(handler, SchedulingOptions(mode))
-            .DeleteCalendarCollectionAsync(SchedulingCalendarHref, CancellationToken.None);
+        var result = await CreateSut(new StubHttpMessageHandler(server.Handle), SchedulingOptions(mode))
+            .DeleteCalendarCollectionAsync(AutoScheduleCalendarServer.CalendarHref, CancellationToken.None);
 
         result.Code.ShouldBe(dispatched
             ? CalendarCollectionDispatchCode.Dispatched
             : CalendarCollectionDispatchCode.SchedulingUnsafe);
         state.SchedulingSideEffectsPossible.ShouldBe(sideEffectsPossible);
-        methods.ShouldBe(dispatched ? ["OPTIONS", "DELETE"] : ["OPTIONS"]);
+        server.Methods.ShouldBe(methods.Split(' '));
     }
 
     private static CalendarSchedulingEvidence Evidence(string name) => name switch

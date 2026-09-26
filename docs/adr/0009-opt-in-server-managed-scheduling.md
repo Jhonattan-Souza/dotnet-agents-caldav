@@ -110,8 +110,10 @@ same evidence before promotion, as listed in the roadmap.
 Scheduling-governed mutation outcomes gain an optional closed property
 `schedulingSideEffects` with values `none` and `possible`. It is added to
 `snapshotMutationSuccess`, `deleteMutationSuccess`,
-`calendarCollectionDeleteSuccess`, `mutationErrorOutcome` and
-`exactMutationErrorOutcome`. It is emitted only when all of these hold:
+`calendarCollectionDeleteSuccess`, `mutationErrorOutcome`,
+`calendarCollectionMutationErrorOutcome` (the collection failure shape
+without `currentSnapshot`) and `exactMutationErrorOutcome`. It is emitted only
+when all of these hold:
 
 1. The mode is `server_managed`.
 2. The tool is scheduling-governed.
@@ -194,12 +196,28 @@ like any other participation write.
 
 ### Interaction with collection-delete member scanning
 
-A separate change lets `calendars.delete` proceed on an advertising server
-when a complete, stable member scan finds no participation data. The two
-changes are orthogonal. After both merge, collection deletion is allowed with
-`none` when OPTIONS proves absence or the scan is clean. With advertised
-scheduling and participation found, it is blocked in `storage_only` and
-allowed with `possible` in `server_managed`. Unknown evidence still blocks.
+A separate change lets `calendars.delete` proceed when a complete, stable
+member scan finds no participation data. After both merged, the mode decision
+runs first and the scan runs only when that decision blocks:
+
+| Evidence at the target Calendar | `storage_only` | `server_managed` |
+| --- | --- | --- |
+| Absent | allowed, no scan | allowed, `none`, no scan |
+| Advertised | scan: clean allows, otherwise blocked | allowed, `possible`, no scan |
+| Unknown | scan: clean allows, otherwise blocked | scan: clean allows with `none`, otherwise blocked |
+
+A clean scan admits the deletion because no member is a scheduling object
+resource, the same reason that writes without participation data skip the
+lock. It never records `possible`. With unknown evidence and participation
+found, or a scan that cannot complete, the deletion stays blocked in both
+modes.
+
+`server_managed` does not scan on an advertising server. The scan cannot
+exclude a member written between its second listing and the recursive DELETE,
+so it cannot guarantee `none` there. It would also spend the operation budget
+on a deletion the mode already admits, and could end it with `limit_exhausted`
+before the DELETE. Reporting `possible` never under-reports, and `possible`
+does not claim that a message was sent.
 
 ## Roadmap
 

@@ -9,8 +9,12 @@ internal sealed partial class CalDavClient
     internal const long MaximumScannedCollectionBytes = CalendarQuerySnapshotPolicy.MaximumBytes;
 
     /// <summary>
-    /// A recursive collection DELETE is storage-only when OPTIONS proves automatic scheduling absent,
+    /// A recursive collection DELETE proceeds when the scheduling mode admits the fresh OPTIONS evidence,
     /// or when a complete, stable member scan finds no participation data for the server to act on.
+    /// The mode decides first, so the scan only unblocks deletions the mode would refuse. A
+    /// server-managed deletion on an advertising server keeps its <c>possible</c> disclosure without a
+    /// scan: the scan's residual race could not guarantee <c>none</c>, and it could exhaust the
+    /// operation budget before a DELETE the mode already admits.
     /// </summary>
     private async Task<bool> IsCollectionDeletionPermittedAsync(string calendarHref, CancellationToken cancellationToken) =>
         await IsSchedulingPermittedAsync(calendarHref, cancellationToken).ConfigureAwait(false)

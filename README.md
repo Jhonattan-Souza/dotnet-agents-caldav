@@ -228,9 +228,11 @@ automatic scheduling, otherwise `none`.
 The default mode never emits the field. See
 [ADR 0009](docs/adr/0009-opt-in-server-managed-scheduling.md).
 
-In storage-only mode, collection deletion needs that evidence only when a member could trigger
-scheduling. Without it, for example on Nextcloud or Baïkal, the MCP first scans
-every direct member: one Depth 1 PROPFIND lists strong ETags, calendar-multiget
+Collection deletion needs that evidence only when a member could trigger
+scheduling. When the scheduling mode does not admit the OPTIONS evidence, that
+is, unknown evidence in either mode or `calendar-auto-schedule` in the default
+mode (for example on Nextcloud or Baïkal), the MCP first scans every direct
+member: one Depth 1 PROPFIND lists strong ETags, calendar-multiget
 reads the data in batches of 50, and a second listing must match the first.
 The DELETE proceeds only when no member contains an `ORGANIZER` or `ATTENDEE`
 property, including one inside an alarm. A nested collection, a missing or weak
@@ -241,7 +243,10 @@ with `not_attempted` and a message naming the scheduling boundary. If the
 while scanning a large Calendar, the result is `limit_exhausted` with
 `not_attempted` and is not retryable. The second listing narrows, but cannot
 remove, the window for a member written concurrently before the recursive
-DELETE.
+DELETE. A scan-admitted deletion reports `schedulingSideEffects: none` under
+`server_managed`. On a server that advertises automatic scheduling,
+`server_managed` admits the deletion without a scan and reports `possible`,
+because that race keeps a scan from guaranteeing `none`.
 
 Discovery follows all advertised Calendar homes and nested ordinary
 collections, stopping at Calendar collections. It fails without partial results
