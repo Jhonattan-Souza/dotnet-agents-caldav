@@ -4684,6 +4684,7 @@
       }
     },
     "todoQueryOutcome": {
+      "type": "object",
       "oneOf": [
         {
           "$ref": "#/$defs/todoQuerySuccess"
@@ -10216,6 +10217,7 @@
       }
     },
     "calendarCollectionCreateOutcome": {
+      "type": "object",
       "oneOf": [
         {
           "$ref": "#/$defs/calendarCollectionCreateSuccess"
@@ -10226,6 +10228,7 @@
       ]
     },
     "calendarCollectionDeleteOutcome": {
+      "type": "object",
       "oneOf": [
         {
           "$ref": "#/$defs/calendarCollectionDeleteSuccess"
@@ -10239,6 +10242,7 @@
       ]
     },
     "calendarListOutcome": {
+      "type": "object",
       "oneOf": [
         {
           "$ref": "#/$defs/calendarListSuccess"
@@ -10249,6 +10253,7 @@
       ]
     },
     "entityQueryOutcome": {
+      "type": "object",
       "oneOf": [
         {
           "$ref": "#/$defs/entityQuerySuccess"
@@ -10259,6 +10264,7 @@
       ]
     },
     "occurrenceQueryOutcome": {
+      "type": "object",
       "oneOf": [
         {
           "$ref": "#/$defs/occurrenceQuerySuccess"
@@ -10269,6 +10275,7 @@
       ]
     },
     "resourceOutcome": {
+      "type": "object",
       "oneOf": [
         {
           "$ref": "#/$defs/resourceSuccess"
@@ -10279,6 +10286,7 @@
       ]
     },
     "exactGetOutcome": {
+      "type": "object",
       "oneOf": [
         {
           "$ref": "#/$defs/exactGetSuccess"
@@ -10671,6 +10679,7 @@
       }
     },
     "snapshotMutationOutcome": {
+      "type": "object",
       "oneOf": [
         {
           "$ref": "#/$defs/snapshotMutationSuccess"
@@ -10782,6 +10791,7 @@
       }
     },
     "exactSnapshotMutationOutcome": {
+      "type": "object",
       "oneOf": [
         {
           "$ref": "#/$defs/snapshotMutationSuccess"
@@ -10795,6 +10805,7 @@
       ]
     },
     "deleteMutationOutcome": {
+      "type": "object",
       "oneOf": [
         {
           "$ref": "#/$defs/deleteMutationSuccess"
@@ -11723,6 +11734,7 @@
       }
     },
     "calendarInspectOutcome": {
+      "type": "object",
       "oneOf": [
         {
           "$ref": "#/$defs/calendarInspectSuccess"
@@ -11733,6 +11745,7 @@
       ]
     },
     "calendarMetadataPatchOutcome": {
+      "type": "object",
       "oneOf": [
         {
           "$ref": "#/$defs/calendarMetadataPatchSuccess"
@@ -11743,6 +11756,7 @@
       ]
     },
     "calendarFreeBusyOutcome": {
+      "type": "object",
       "oneOf": [
         {
           "$ref": "#/$defs/calendarFreeBusySuccess"
@@ -11753,6 +11767,7 @@
       ]
     },
     "calendarResourceChangesOutcome": {
+      "type": "object",
       "oneOf": [
         {
           "$ref": "#/$defs/calendarResourceChangesSuccess"
