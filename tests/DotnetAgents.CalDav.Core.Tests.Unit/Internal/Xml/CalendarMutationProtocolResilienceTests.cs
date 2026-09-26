@@ -1,4 +1,5 @@
 using System.Net;
+using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Core.Internal.Xml;
 using DotnetAgents.CalDav.Core.Models;
 using Polly.CircuitBreaker;
@@ -79,27 +80,27 @@ public sealed class CalendarMutationProtocolResilienceTests
 
     private static async Task<string> ExecuteAsync(string operation, HttpClient client)
     {
-        var configuredBaseUri = new Uri("https://example.com");
+        var accountOrigins = new CalDavAccountOrigins(new Uri("https://example.com"));
         return operation switch
         {
-            "create" => Name((await new CalendarResourceCreateProtocol(client, configuredBaseUri).CreateAsync(
+            "create" => Name((await new CalendarResourceCreateProtocol(client, accountOrigins).CreateAsync(
                 new CalendarResourceCreateRequest(
                     "https://example.com/calendars/events/",
                     "https://example.com/calendars/events/a.ics",
                     new byte[] { 1 }),
                 TestContext.Current.CancellationToken)).Code.ToString()),
-            "update" => Name((await new CalendarResourceUpdateProtocol(client, configuredBaseUri).UpdateAsync(
+            "update" => Name((await new CalendarResourceUpdateProtocol(client, accountOrigins).UpdateAsync(
                 new CalendarResourceUpdateRequest(
                     "https://example.com/calendars/events/a.ics",
                     "\"r1\"",
                     new byte[] { 1 }),
                 TestContext.Current.CancellationToken)).Code.ToString()),
-            "delete" => Name((await new CalendarResourceDeleteProtocol(client, configuredBaseUri).DeleteAsync(
+            "delete" => Name((await new CalendarResourceDeleteProtocol(client, accountOrigins).DeleteAsync(
                 new CalendarResourceDeleteRequest(
                     "https://example.com/calendars/events/a.ics",
                     "\"r1\""),
                 TestContext.Current.CancellationToken)).Code.ToString()),
-            "move" => Name((await new CalendarResourceMoveProtocol(client, configuredBaseUri).MoveAsync(
+            "move" => Name((await new CalendarResourceMoveProtocol(client, accountOrigins).MoveAsync(
                 new CalendarResourceMoveDispatchRequest(
                     "https://example.com/calendars/events/a.ics",
                     "https://example.com/calendars/archive/a.ics",
