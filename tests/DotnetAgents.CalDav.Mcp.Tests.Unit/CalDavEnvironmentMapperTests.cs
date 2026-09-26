@@ -128,6 +128,7 @@ public class CalDavEnvironmentMapperTests
         requestedNames.ShouldBe(
         [
             "CALDAV_URL",
+            "CALDAV_AUTH_SCHEME",
             "CALDAV_USERNAME",
             "CALDAV_PASSWORD",
             "CALDAV_OAUTH_TOKEN_ENDPOINT",
