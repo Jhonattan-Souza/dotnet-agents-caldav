@@ -763,7 +763,10 @@ public sealed class ContractCatalogTests
         path.Contains("$defs.mrtrInputResponse.oneOf[0].properties.content", StringComparison.Ordinal);
 
     private static bool IsClosed(JsonObject obj) =>
-        obj["additionalProperties"] is JsonValue value && value.TryGetValue<bool>(out var closed) && !closed;
+        IsFalse(obj["additionalProperties"]) || IsFalse(obj["unevaluatedProperties"]);
+
+    private static bool IsFalse(JsonNode? node) =>
+        node is JsonValue value && value.TryGetValue<bool>(out var flag) && !flag;
 
     private static void AddUntypedArrayFinding(JsonObject obj, string path, ICollection<string> findings)
     {
