@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using DotnetAgents.CalDav.IntegrationTests.Fixtures;
 using DotnetAgents.CalDav.Mcp.Tools;
+using Json.Schema;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
@@ -323,14 +324,21 @@ public sealed class CalendarMcpRawStdioTests
             cancellationToken: timeout.Token);
 
         client.NegotiatedProtocolVersion.ShouldBe(protocolVersion);
+        var catalog = await client.ListToolsAsync(new ListToolsRequestParams(), timeout.Token);
+        foreach (var tool in catalog.Tools)
+            tool.OutputSchema!.Value.GetProperty("type").GetString().ShouldBe("object", tool.Name);
+        var readSchema = catalog.Tools.Single(tool => tool.Name == "calendar_resources.get").OutputSchema!.Value;
+        var deleteSchema = catalog.Tools.Single(tool => tool.Name == "calendar_resources.delete").OutputSchema!.Value;
         var read = await client.CallToolAsync(
             "calendar_resources.get",
             new Dictionary<string, object?> { ["href"] = server.ResourceHref },
             cancellationToken: timeout.Token);
         read.IsError.ShouldBe(false, read.StructuredContent?.ToString());
+        JsonSchema.FromText(readSchema.GetRawText()).Evaluate(read.StructuredContent!.Value).IsValid.ShouldBeTrue();
         var result = await CallDeleteAsync(client, server.ResourceHref, timeout.Token);
 
         result.IsError.ShouldBe(true);
+        JsonSchema.FromText(deleteSchema.GetRawText()).Evaluate(result.StructuredContent!.Value).IsValid.ShouldBeTrue();
         var structured = result.StructuredContent!.Value;
         structured.GetProperty("code").GetString().ShouldBe("unsupported_capability");
         structured.GetProperty("phase").GetString().ShouldBe("mrtr");
