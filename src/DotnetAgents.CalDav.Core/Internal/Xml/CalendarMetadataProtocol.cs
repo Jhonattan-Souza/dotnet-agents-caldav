@@ -58,7 +58,7 @@ internal static class CalendarMetadataProtocol
             new CalendarSchedulingObservation("unknown", null),
             Value(properties, Dav + "description")?.Value,
             CalendarCollectionPropertyValues.ReadColor(Value(properties, CalendarCollectionPropertyValues.ColorName)?.Value),
-            CalendarCollectionPropertyValues.ReadOrder(Value(properties, CalendarCollectionPropertyValues.OrderName)?.Value)
+            CalendarCollectionPropertyValues.ReadOrder(Value(properties, CalendarCollectionPropertyValues.OrderName)?.Value))
         {
             ChangeTag = DavResponseParser.ReadChangeTag(Value(properties, DavResponseParser.ChangeTagProperty))
         });
