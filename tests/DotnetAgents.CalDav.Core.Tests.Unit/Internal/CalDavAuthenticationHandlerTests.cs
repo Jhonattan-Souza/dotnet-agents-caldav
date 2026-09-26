@@ -92,6 +92,43 @@ public sealed class CalDavAuthenticationHandlerTests
         primary.Authorizations.ShouldHaveSingleItem().ShouldBeNull();
     }
 
+    [Theory]
+    [InlineData("Basic", "https://delegate.example/events/a.ics", true)]
+    [InlineData("Bearer", "https://delegate.example/events/a.ics", true)]
+    [InlineData("Bearer", "https://sub.delegate.example/events/a.ics", true)]
+    [InlineData("Bearer", "https://other.example/events/a.ics", false)]
+    [InlineData("Bearer", "https://delegate.example:8443/events/a.ics", false)]
+    [InlineData("Bearer", "http://delegate.example/events/a.ics", false)]
+    public async Task Credentials_follow_only_allowlisted_account_origins(string scheme, string href, bool authorized)
+    {
+        var primary = new RecordingHandler(HttpStatusCode.OK);
+        using var invoker = new HttpMessageInvoker(new CalDavAuthenticationHandler(
+            new StaticCalDavCredentialSource(new CalDavCredential(scheme, "configured-credential")),
+            Options.Create(new CalDavOptions
+            {
+                BaseUrl = "https://cal.example/dav/",
+                RedirectHosts = "delegate.example,.delegate.example"
+            }))
+        {
+            InnerHandler = primary
+        });
+        using var request = new HttpRequestMessage(HttpMethod.Get, href);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "caller-supplied");
+
+        using var response = await invoker.SendAsync(request, TestContext.Current.CancellationToken);
+
+        var header = primary.Authorizations.ShouldHaveSingleItem();
+        if (authorized)
+        {
+            header.ShouldNotBeNull().Scheme.ShouldBe(scheme);
+            header.Parameter.ShouldBe("configured-credential");
+        }
+        else
+        {
+            header.ShouldBeNull();
+        }
+    }
+
     [Fact]
     public async Task Cancellation_during_renewal_disposes_the_401_and_propagates()
     {
