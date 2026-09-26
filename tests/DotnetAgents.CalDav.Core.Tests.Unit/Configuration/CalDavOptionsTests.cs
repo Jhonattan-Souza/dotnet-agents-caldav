@@ -214,15 +214,17 @@ public class CalDavOptionsTests
         result.Failures.ShouldContain(failure => failure.Contains("InteroperabilityProfile", StringComparison.Ordinal));
     }
 
-    [Fact]
-    public void ValidateCalDavOptions_AcceptsVerifiedRadicaleInteroperabilityProfile()
+    [Theory]
+    [InlineData(CalDavInteroperabilityProfiles.Radicale_3_7_8)]
+    [InlineData(CalDavInteroperabilityProfiles.Nextcloud_34_0_3)]
+    public void ValidateCalDavOptions_AcceptsVerifiedInteroperabilityProfile(string profile)
     {
         var result = new ValidateCalDavOptions().Validate(null, new CalDavOptions
         {
             BaseUrl = "https://caldav.example.com",
             Username = "user",
             Password = "pass",
-            InteroperabilityProfile = CalDavInteroperabilityProfiles.Radicale_3_7_8
+            InteroperabilityProfile = profile
         });
 
         result.Succeeded.ShouldBeTrue();
