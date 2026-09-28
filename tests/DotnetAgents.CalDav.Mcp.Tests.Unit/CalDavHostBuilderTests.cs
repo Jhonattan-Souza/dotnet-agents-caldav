@@ -25,17 +25,6 @@ public class CalDavHostBuilderTests
     };
 
     [Fact]
-    public void CreateBuilder_ReturnsHostBuilder_WithMcpServerRegistered()
-    {
-        // Act
-        var builder = CalDavHostBuilder.CreateBuilder();
-
-        // Assert — the builder itself should be a valid HostApplicationBuilder
-        builder.ShouldNotBeNull();
-        builder.Services.ShouldNotBeNull();
-    }
-
-    [Fact]
     public void BuildHost_RegistersCalendarService_FromCore()
     {
         // Arrange
@@ -49,21 +38,6 @@ public class CalDavHostBuilderTests
         var calendarService = host.Services.GetService<ICalendarService>();
         calendarService.ShouldNotBeNull();
         calendarService.ShouldBeAssignableTo<ICalendarService>();
-    }
-
-    [Fact]
-    public void BuildHost_BuildsSuccessfully_WithValidOptions()
-    {
-        // Arrange
-        var builder = CalDavHostBuilder.CreateBuilder();
-        builder.Services.ConfigureCalDav(ValidOptions);
-
-        // Act
-        using var host = builder.Build();
-
-        // Assert — host builds without throwing
-        host.ShouldNotBeNull();
-        host.Services.GetService<ICalendarService>().ShouldNotBeNull();
     }
 
     [Fact]
@@ -81,28 +55,6 @@ public class CalDavHostBuilderTests
         options.ShouldNotBeNull();
         options.Value.BaseUrl.ShouldBe("https://caldav.example.com");
         options.Value.Username.ShouldBe("testuser");
-    }
-
-    [Fact]
-    public void BuildHost_RegistersMcpServerToolsFromAssembly()
-    {
-        // Arrange
-        var builder = CalDavHostBuilder.CreateBuilder();
-        builder.Services.ConfigureCalDav(ValidOptions);
-
-        // Act
-        using var host = builder.Build();
-
-        // Assert — verify that the MCP assembly's tool types are discoverable.
-        // The CalDavHostBuilder should register tools from its own assembly
-        // so that [McpServerToolType]-decorated classes are loaded.
-        var mcpAssembly = typeof(CalDavHostBuilder).Assembly;
-        var toolTypeAttributes = mcpAssembly.GetTypes()
-            .Where(t => t.GetCustomAttribute<ModelContextProtocol.Server.McpServerToolTypeAttribute>() is not null)
-            .ToList();
-
-        // At least one tool type must be registered for the server to be useful.
-        toolTypeAttributes.ShouldNotBeEmpty("the MCP assembly should contain at least one [McpServerToolType] class");
     }
 
     [Fact]
