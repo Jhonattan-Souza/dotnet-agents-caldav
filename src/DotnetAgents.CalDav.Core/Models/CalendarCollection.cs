@@ -34,7 +34,8 @@ public sealed record CalendarCollectionCreateResult(
     CalendarMutationState MutationState,
     CalendarDescriptor? Calendar = null,
     bool Retryable = false,
-    int? RetryAfterMilliseconds = null)
+    int? RetryAfterMilliseconds = null,
+    IReadOnlyList<CalendarRequestViolation>? Violations = null)
 {
     /// <summary>Requested properties the server rejected in its atomic MKCALENDAR failure body.</summary>
     public IReadOnlyList<CalendarPropertyRejection> RejectedProperties { get; init; } = [];
@@ -88,7 +89,8 @@ public sealed record CalendarCollectionDeleteResult(
     CalendarMutationState MutationState,
     CalendarDescriptor? Calendar = null,
     bool Retryable = false,
-    int? RetryAfterMilliseconds = null)
+    int? RetryAfterMilliseconds = null,
+    IReadOnlyList<CalendarRequestViolation>? Violations = null)
 {
     public static CalendarCollectionDeleteResult Success(CalendarDescriptor calendar) => new(
         CalendarCollectionDeleteCode.Success,

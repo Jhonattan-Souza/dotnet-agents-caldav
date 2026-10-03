@@ -24,7 +24,10 @@ internal sealed class CalendarCollectionModule(
     {
         if (!TryValidateCreateInput(request, out var normalizedKinds)
             || !TryCreateInitialProperties(request, out var initialProperties))
-            return new(CalendarCollectionCreateCode.InvalidInput, CalendarMutationState.NotAttempted);
+        {
+            return new(CalendarCollectionCreateCode.InvalidInput, CalendarMutationState.NotAttempted,
+                Violations: CalendarCollectionViolations.CreateInput(request) is { } inputViolation ? [inputViolation] : null);
+        }
 
         var discovery = await DiscoverAsync(cancellationToken).ConfigureAwait(false);
         // Href remains the collection identity; creation rejects a duplicate display name only
@@ -34,19 +37,27 @@ internal sealed class CalendarCollectionModule(
                 request.DisplayName.Trim(),
                 StringComparison.OrdinalIgnoreCase)))
         {
-            return new(CalendarCollectionCreateCode.Conflict, CalendarMutationState.NotAttempted);
+            return new(CalendarCollectionCreateCode.Conflict, CalendarMutationState.NotAttempted,
+                Violations: [CalendarCollectionViolations.DisplayNameTaken]);
         }
 
         if (string.IsNullOrWhiteSpace(request.DestinationHref) && discovery.HomeSetHrefs.Count != 1)
-            return new(CalendarCollectionCreateCode.InvalidInput, CalendarMutationState.NotAttempted);
+        {
+            return new(CalendarCollectionCreateCode.InvalidInput, CalendarMutationState.NotAttempted,
+                Violations: [CalendarCollectionViolations.DestinationRequired]);
+        }
         var target = ResolveCreateTarget(request.DestinationHref, discovery.HomeSetHrefs);
         if (target is null)
         {
+            var implicitDestination = string.IsNullOrWhiteSpace(request.DestinationHref);
             return new(
-                string.IsNullOrWhiteSpace(request.DestinationHref)
+                implicitDestination
                     ? CalendarCollectionCreateCode.OutsideScope
                     : CalendarCollectionCreateCode.InvalidInput,
-                CalendarMutationState.NotAttempted);
+                CalendarMutationState.NotAttempted,
+                Violations: [implicitDestination
+                    ? CalendarCollectionViolations.DestinationRequiredByScope
+                    : CalendarCollectionViolations.DestinationInvalid]);
         }
 
         CalendarCollectionDispatchResult dispatch;
@@ -130,7 +141,10 @@ internal sealed class CalendarCollectionModule(
         if (!TryCanonicalHref(request.Href, out var href))
         {
             return new(
-                FailureDelete(CalendarCollectionDeleteCode.InvalidInput),
+                FailureDelete(CalendarCollectionDeleteCode.InvalidInput) with
+                {
+                    Violations = [CalendarCollectionViolations.CollectionHrefInvalid]
+                },
                 null,
                 null);
         }

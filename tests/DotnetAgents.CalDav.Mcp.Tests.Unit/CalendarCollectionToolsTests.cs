@@ -51,6 +51,30 @@ public sealed partial class CalendarCollectionToolsTests
             result.StructuredContent.Value.GetProperty("mutationState").GetString());
     }
 
+
+    [Fact]
+    public async Task CreateRawAsync_AttachesTheTypedCoreReasonAndUsesItsMessage()
+    {
+        var module = Substitute.For<ICalendarCollectionModule>();
+        module.CreateAsync(Arg.Any<CalendarCollectionCreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CalendarCollectionCreateResult(
+                CalendarCollectionCreateCode.InvalidInput,
+                CalendarMutationState.NotAttempted,
+                Violations: [new CalendarRequestViolation("/color", "color_invalid", "color must be #RRGGBB.")]));
+        var sut = CreateTool(module, TimeProvider.System);
+
+        var result = await sut.CreateRawAsync(
+            JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+                """{"displayName":"Work","entityKinds":["todo"],"color":"blue"}"""),
+            CancellationToken.None);
+
+        var structured = result.StructuredContent!.Value;
+        structured.GetProperty("message").GetString().ShouldBe("color must be #RRGGBB.");
+        var violation = structured.GetProperty("violations").EnumerateArray().ShouldHaveSingleItem();
+        violation.GetProperty("pointer").GetString().ShouldBe("/color");
+        violation.GetProperty("code").GetString().ShouldBe("color_invalid");
+    }
+
     [Fact]
     public async Task CreateRawAsync_ValidInputReturnsCreatedCalendar()
     {

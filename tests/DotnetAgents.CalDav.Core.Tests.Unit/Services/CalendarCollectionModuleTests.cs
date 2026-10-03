@@ -25,6 +25,7 @@ public sealed partial class CalendarCollectionModuleTests
         var module = CreateModule(transport);
         var omitted = await module.CreateAsync(new("Planning", [CalendarEntityKind.Event]), CancellationToken.None);
         omitted.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        omitted.Violations.ShouldNotBeNull().ShouldHaveSingleItem().Code.ShouldBe("destination_href_required");
         transport.CreateCount.ShouldBe(0);
 
         var explicitTarget = await module.CreateAsync(new("Planning", [CalendarEntityKind.Event],
@@ -87,7 +88,9 @@ public sealed partial class CalendarCollectionModuleTests
             CancellationToken.None);
 
         omitted.Code.ShouldBe(CalendarCollectionCreateCode.OutsideScope);
+        omitted.Violations.ShouldNotBeNull().ShouldHaveSingleItem().Code.ShouldBe("destination_href_required_by_scope");
         outside.Code.ShouldBe(CalendarCollectionCreateCode.InvalidInput);
+        outside.Violations.ShouldNotBeNull().ShouldHaveSingleItem().Pointer.ShouldBe("/destinationHref");
         transport.CreateCount.ShouldBe(0);
     }
 
@@ -96,22 +99,26 @@ public sealed partial class CalendarCollectionModuleTests
     {
         var transport = new ScriptedTransport("https://cal.example/calendars/user/");
         var module = CreateModule(transport);
-        var requests = new[]
+        var requests = new (CalendarCollectionCreateRequest Request, string Reason)[]
         {
-            new CalendarCollectionCreateRequest(" ", [CalendarEntityKind.Event]),
-            new CalendarCollectionCreateRequest(new string('x', 257), [CalendarEntityKind.Event]),
-            new CalendarCollectionCreateRequest("Planning", []),
-            new CalendarCollectionCreateRequest("Planning", [CalendarEntityKind.Event, CalendarEntityKind.Todo, CalendarEntityKind.Event]),
-            new CalendarCollectionCreateRequest("Planning", [CalendarEntityKind.Event, CalendarEntityKind.Event]),
-            new CalendarCollectionCreateRequest("Planning", [(CalendarEntityKind)999]),
-            new CalendarCollectionCreateRequest("Planning", null!),
-            new CalendarCollectionCreateRequest(null!, [CalendarEntityKind.Event])
+            (new CalendarCollectionCreateRequest(" ", [CalendarEntityKind.Event]), "display_name_blank"),
+            (new CalendarCollectionCreateRequest(new string('x', 257), [CalendarEntityKind.Event]), "display_name_too_long"),
+            (new CalendarCollectionCreateRequest("Planning", []), "entity_kinds_invalid"),
+            (new CalendarCollectionCreateRequest("Planning", [CalendarEntityKind.Event, CalendarEntityKind.Todo, CalendarEntityKind.Event]), "entity_kinds_invalid"),
+            (new CalendarCollectionCreateRequest("Planning", [CalendarEntityKind.Event, CalendarEntityKind.Event]), "entity_kinds_invalid"),
+            (new CalendarCollectionCreateRequest("Planning", [(CalendarEntityKind)999]), "entity_kinds_invalid"),
+            (new CalendarCollectionCreateRequest("Planning", null!), "entity_kinds_invalid"),
+            (new CalendarCollectionCreateRequest(null!, [CalendarEntityKind.Event]), "display_name_blank"),
+            (new CalendarCollectionCreateRequest("Planning", [CalendarEntityKind.Event], Color: "blue"), "color_invalid"),
+            (new CalendarCollectionCreateRequest("Planning", [CalendarEntityKind.Event], Order: -1), "order_invalid"),
+            (new CalendarCollectionCreateRequest("Planning", [CalendarEntityKind.Event], TimeZoneId: "Mars/Olympus"), "time_zone_invalid")
         };
 
-        foreach (var request in requests)
+        foreach (var (request, reason) in requests)
         {
             var result = await module.CreateAsync(request, CancellationToken.None);
             result.Code.ShouldBe(CalendarCollectionCreateCode.InvalidInput);
+            result.Violations.ShouldNotBeNull().ShouldHaveSingleItem().Code.ShouldBe(reason);
         }
 
         transport.DiscoveryCount.ShouldBe(0);
@@ -191,6 +198,7 @@ public sealed partial class CalendarCollectionModuleTests
 
         result.Code.ShouldBe(CalendarCollectionCreateCode.Conflict);
         result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        result.Violations.ShouldNotBeNull().ShouldHaveSingleItem().Pointer.ShouldBe("/displayName");
         transport.CreateCount.ShouldBe(0);
     }
 
@@ -289,6 +297,7 @@ public sealed partial class CalendarCollectionModuleTests
             CancellationToken.None);
 
         review.Outcome!.Code.ShouldBe(CalendarCollectionDeleteCode.InvalidInput);
+        review.Outcome.Violations.ShouldNotBeNull().ShouldHaveSingleItem().Pointer.ShouldBe("/href");
         transport.DiscoveryCount.ShouldBe(0);
     }
 
