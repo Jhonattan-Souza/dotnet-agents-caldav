@@ -54,7 +54,7 @@ public sealed class CalendarResourceTools
         {
             var read = await calendarService.GetResourceAsync(href, cancellationToken);
             if (read.Code != CalendarResourceReadCode.Success || read.Snapshot is null)
-                return CreateError(read.Code, read.ObservedByteCount);
+                return CreateError(read.Code, read.ObservedByteCount, read.Violations);
 
             return CalendarToolResult.Success(createSuccess(read.Snapshot))
                 .FinalizeBounded(PayloadLimitError);
@@ -97,10 +97,13 @@ public sealed class CalendarResourceTools
         Content = [new TextContentBlock { Text = "Calendar Object Resource read completed." }, .. additionalContent]
     };
 
-    internal static CallToolResult CreateError(CalendarResourceReadCode code, int? observedByteCount = null)
+    internal static CallToolResult CreateError(
+        CalendarResourceReadCode code,
+        int? observedByteCount = null,
+        IReadOnlyList<CalendarRequestViolation>? violations = null)
     {
         var facts = CalendarTelemetryFacts.From(code);
-        return FinalizeError(facts, code switch
+        var message = CalendarErrorViolations.MessageOr(violations, code switch
         {
             CalendarResourceReadCode.InvalidInput => "The resource href is invalid.",
             CalendarResourceReadCode.OutsideScope => "The resource is outside the configured Calendar Scope.",
@@ -108,7 +111,10 @@ public sealed class CalendarResourceTools
             CalendarResourceReadCode.ConcurrencyUnavailable => "The server did not return a strong Entity Tag.",
             CalendarResourceReadCode.PayloadTooLarge => "The Calendar Object Resource exceeds the safe payload limit.",
             _ => "The Calendar Object Resource response was invalid."
-        }, observedByteCount);
+        });
+        return CalendarErrorViolations.FromRequestViolations(violations, pointer => pointer) is { } resolved
+            ? CalendarToolResult.WithViolations(() => FinalizeError(facts, message, observedByteCount), resolved)
+            : FinalizeError(facts, message, observedByteCount);
     }
 
     internal static CallToolResult CreateInputGuardError(bool payloadTooLarge) => FinalizeError(

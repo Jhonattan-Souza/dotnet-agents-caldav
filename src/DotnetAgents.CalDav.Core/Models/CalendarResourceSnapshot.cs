@@ -95,7 +95,8 @@ public sealed record CalendarResourceRead(
     string? EntityTag = null,
     ReadOnlyMemory<byte> AuthoritativeUtf8 = default,
     CalendarResourceSnapshot? Snapshot = null,
-    int? ObservedByteCount = null)
+    int? ObservedByteCount = null,
+    IReadOnlyList<CalendarRequestViolation>? Violations = null)
 {
     public static CalendarResourceRead Success(string resourceHref, string entityTag, ReadOnlyMemory<byte> authoritativeUtf8) =>
         new(CalendarResourceReadCode.Success, resourceHref, entityTag, authoritativeUtf8);

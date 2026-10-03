@@ -120,12 +120,12 @@ internal sealed class CalendarService : ICalendarService
         CalendarEntityKind? expectedKind,
         CancellationToken cancellationToken)
     {
-        if (!TryGetCanonicalResourceUri(href, out var resourceUri))
-            return new CalendarResourceRead(CalendarResourceReadCode.InvalidInput);
+        if (!TryGetCanonicalResourceUri(href, out var resourceUri, out var hrefViolation))
+            return Refused(CalendarResourceReadCode.InvalidInput, hrefViolation);
 
         var configuredScope = CalendarDiscoveryPolicy.ParseScope(_options.Value.CalendarHrefs);
         if (configuredScope.Count > 0 && !configuredScope.Any(calendarHref => IsDirectResourceOf(resourceUri, calendarHref)))
-            return new CalendarResourceRead(CalendarResourceReadCode.OutsideScope);
+            return Refused(CalendarResourceReadCode.OutsideScope, CalendarHrefViolations.OutsideConfiguredScope("/href"));
 
         var calendars = (await _operationDiscovery.DiscoverAsync(cancellationToken)).Discovery.Items;
         var calendar = calendars
@@ -133,7 +133,7 @@ internal sealed class CalendarService : ICalendarService
             .OrderByDescending(candidate => candidate.Href.Length)
             .FirstOrDefault();
         if (calendar is null)
-            return new CalendarResourceRead(CalendarResourceReadCode.OutsideScope);
+            return Refused(CalendarResourceReadCode.OutsideScope, CalendarHrefViolations.NoOwningCalendar("/href"));
         if (expectedKind is not null && !CalendarDiscoveryPolicy.SupportsEntityKind(calendar, expectedKind.Value))
             return new CalendarResourceRead(CalendarResourceReadCode.UnsupportedCapability);
 
@@ -279,9 +279,16 @@ internal sealed class CalendarService : ICalendarService
         return CalendarResourceProjector.AttachSnapshot(calendar.Href, read);
     }
 
-    private bool TryGetCanonicalResourceUri(string href, out Uri resourceUri)
+    private static CalendarResourceRead Refused(CalendarResourceReadCode code, CalendarRequestViolation violation) =>
+        new(code, Violations: [violation]);
+
+    private bool TryGetCanonicalResourceUri(
+        string href,
+        out Uri resourceUri,
+        out CalendarRequestViolation violation)
     {
         resourceUri = null!;
+        violation = null!;
         if (!Uri.TryCreate(href, UriKind.Absolute, out var candidate)
             || (!candidate.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
                 && !candidate.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
@@ -291,11 +298,15 @@ internal sealed class CalendarService : ICalendarService
             || HasEncodedPathSeparator(candidate)
             || !string.Equals(candidate.AbsoluteUri, href, StringComparison.Ordinal))
         {
+            violation = CalendarHrefViolations.Canonical("/href", href, candidate)!;
             return false;
         }
 
         if (!CalDavAccountOrigins.From(_options.Value).Contains(candidate))
+        {
+            violation = CalendarHrefViolations.ForeignOrigin("/href");
             return false;
+        }
 
         resourceUri = candidate;
         return true;

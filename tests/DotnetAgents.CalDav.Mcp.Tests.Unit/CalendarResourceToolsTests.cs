@@ -498,6 +498,47 @@ public sealed class CalendarResourceToolsTests
     }
 
     [Theory]
+    [InlineData("events/a.ics", null, "invalid_input", "href_not_absolute")]
+    [InlineData("ftp://cal.example/events/a.ics", null, "invalid_input", "href_scheme_unsupported")]
+    [InlineData("https://user@cal.example/events/a.ics", null, "invalid_input", "href_has_userinfo")]
+    [InlineData("https://cal.example/events/a.ics?x=1", null, "invalid_input", "href_has_query_or_fragment")]
+    [InlineData("https://CAL.example/events/a.ics", null, "invalid_input", "href_not_canonical")]
+    [InlineData("https://cal.example/events%2Fother/a.ics", null, "invalid_input", "href_encoded_separator")]
+    [InlineData("https://elsewhere.example/events/a.ics", null, "invalid_input", "href_foreign_origin")]
+    [InlineData("https://cal.example/other/a.ics", "https://cal.example/events/", "outside_scope", "outside_configured_scope")]
+    [InlineData("https://cal.example/other/a.ics", null, "outside_scope", "no_owning_calendar")]
+    public async Task GetAsync_names_the_href_rule_or_scope_that_refused_the_read(
+        string href,
+        string? configuredScope,
+        string expectedCode,
+        string reasonCode)
+    {
+        var client = Substitute.For<ICalendarClient>();
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
+            new CalendarDescriptor
+            {
+                Href = "https://cal.example/events/",
+                DisplayName = "Events",
+                DisplayNameProvenance = DisplayNameProvenance.DavDisplayName,
+                EventSupport = EntityKindSupport.Advertised,
+                TodoSupport = EntityKindSupport.NotAdvertised
+            }
+        ]);
+        using var serviceHost = CalendarServiceTestHost.Create(client, options => options.CalendarHrefs = configuredScope);
+        var sut = new CalendarResourceTools(serviceHost.Service);
+
+        var result = await sut.GetAsync(href, CancellationToken.None);
+
+        var structured = result.StructuredContent!.Value;
+        structured.GetProperty("code").GetString().ShouldBe(expectedCode);
+        var violation = structured.GetProperty("violations").EnumerateArray().ShouldHaveSingleItem();
+        violation.GetProperty("pointer").GetString().ShouldBe("/href");
+        violation.GetProperty("code").GetString().ShouldBe(reasonCode);
+        structured.GetProperty("message").GetString().ShouldBe(violation.GetProperty("message").GetString());
+        await client.DidNotReceive().GetCalendarResourceAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
     [InlineData(System.Net.HttpStatusCode.Unauthorized, "upstream_unauthorized", false)]
     [InlineData(System.Net.HttpStatusCode.Forbidden, "upstream_forbidden", false)]
     [InlineData(System.Net.HttpStatusCode.RequestEntityTooLarge, "payload_too_large", false)]
