@@ -33,7 +33,7 @@ internal static class CalendarEntityPatchEditor
             document = selected.Document!;
             var master = selected.Component!;
             var targetPath = master.Path;
-            var effectivePatch = PrepareScalarPatch(
+            var (effectivePatch, rejection) = PrepareScalarPatch(
                 snapshot,
                 document,
                 master,
@@ -41,12 +41,12 @@ internal static class CalendarEntityPatchEditor
                 expectedKind,
                 target.Scope == "master");
             if (effectivePatch is null)
-                return (null, Failure(CalendarEntityPatchCode.InvalidInput, snapshot));
+                return (null, Failure(CalendarEntityPatchCode.InvalidInput, snapshot, rejection));
             var scalarEdit = ApplyScalars(document, master, effectivePatch);
             document = scalarEdit.Document;
             master = document.GetComponent(targetPath);
-            if (!HasValidAddressedFinalShape(document, master, effectivePatch, expectedKind))
-                return (null, Failure(CalendarEntityPatchCode.InvalidInput, snapshot));
+            if (!HasValidAddressedFinalShape(document, master, effectivePatch, expectedKind, out var shapeRejection))
+                return (null, Failure(CalendarEntityPatchCode.InvalidInput, snapshot, shapeRejection));
             var changed = scalarEdit.Changed;
 
             var categoryEdit = ApplyCategories(document, master, patch.Categories);
@@ -111,7 +111,12 @@ internal static class CalendarEntityPatchEditor
         if (patch.RecurrenceSet is not null)
         {
             if (target.Scope != "entire-set")
-                return (null, Failure(CalendarEntityPatchCode.InvalidInput, snapshot));
+            {
+                return (null, Failure(
+                    CalendarEntityPatchCode.InvalidInput,
+                    snapshot,
+                    CalendarEntityViolations.RecurrenceScopeRequired));
+            }
             var recurrence = CalendarRecurrenceSetPatchEditor.TryEdit(
                 snapshot,
                 document,
@@ -128,7 +133,7 @@ internal static class CalendarEntityPatchEditor
         var paths = ScopedPaths(document, primary, target, kind);
         var shifts = GetScopedTemporalShifts(document, primary, patch, kind);
         if (shifts.Failure)
-            return (null, Failure(CalendarEntityPatchCode.InvalidInput, snapshot));
+            return (null, Failure(CalendarEntityPatchCode.InvalidInput, snapshot, shifts.Rejection));
         var changed = recurrenceChanged;
         var changedPaths = new List<IReadOnlyList<CalendarComponentPathSegment>>();
         RecordChangedPath(changedPaths, primary.Path, recurrenceChanged);
@@ -201,9 +206,13 @@ internal static class CalendarEntityPatchEditor
         var start = GetTemporalDelta(document, primary, "DTSTART", patch.Start);
         var end = GetTemporalDelta(document, primary, "DTEND", patch.End);
         var due = GetTemporalDelta(document, primary, "DUE", patch.Due);
-        return new(start.Delta, end.Delta, due.Delta, start.Failure || end.Failure || due.Failure
+        var changedFamily = start.Failure ? "start" : end.Failure ? "end" : due.Failure ? "due" : null;
+        return new(start.Delta, end.Delta, due.Delta, changedFamily is not null
             || kind == CalendarEntityKind.Event && patch.Due is not null
-            || kind == CalendarEntityKind.Todo && patch.End is not null);
+            || kind == CalendarEntityKind.Todo && patch.End is not null)
+        {
+            Rejection = changedFamily is null ? null : CalendarEntityViolations.ScopedTemporalFamilyChange(changedFamily)
+        };
     }
 
     private static (TimeSpan? Delta, bool Failure) GetTemporalDelta(
@@ -409,14 +418,15 @@ internal static class CalendarEntityPatchEditor
         CalendarEntityKind kind)
     {
         var component = document.GetComponent(path);
-        var effectivePatch = PrepareScalarPatch(snapshot, document, component, patch, kind, targetsMaster: false);
+        var (effectivePatch, rejection) = PrepareScalarPatch(
+            snapshot, document, component, patch, kind, targetsMaster: false);
         if (effectivePatch is null)
-            return (document, false, Failure(CalendarEntityPatchCode.InvalidInput, snapshot));
+            return (document, false, Failure(CalendarEntityPatchCode.InvalidInput, snapshot, rejection));
         var scalar = ApplyScalars(document, component, effectivePatch);
         document = scalar.Document;
         component = document.GetComponent(path);
-        if (!HasValidAddressedFinalShape(document, component, effectivePatch, kind))
-            return (document, false, Failure(CalendarEntityPatchCode.InvalidInput, snapshot));
+        if (!HasValidAddressedFinalShape(document, component, effectivePatch, kind, out var shapeRejection))
+            return (document, false, Failure(CalendarEntityPatchCode.InvalidInput, snapshot, shapeRejection));
         var changed = scalar.Changed;
         var categories = ApplyCategories(document, component, patch.Categories);
         if (categories.Failure is not null)
@@ -445,7 +455,7 @@ internal static class CalendarEntityPatchEditor
         return current?.Equals("CANCELLED", StringComparison.OrdinalIgnoreCase) == true;
     }
 
-    private static CalendarEventPatch? PrepareScalarPatch(
+    private static (CalendarEventPatch? Patch, CalendarEntityViolation? Rejection) PrepareScalarPatch(
         CalendarResourceSnapshot snapshot,
         CalendarContentDocument document,
         CalendarContentComponent master,
@@ -453,25 +463,54 @@ internal static class CalendarEntityPatchEditor
         CalendarEntityKind kind,
         bool targetsMaster)
     {
-        if (HasUnsupportedOpenEnumTransition(document, master, patch, kind)
-            || !targetsMaster && HasReservedCancellationTransition(document, master, patch.Status)
-            || IntroducesDerivedOrganizer(patch)
-            || targetsMaster && patch.Start is not null && HasRecurrenceMembership(document, master, kind))
-            return null;
+        var rejection = ScalarTransitionRejection(document, master, patch, kind, targetsMaster);
+        if (rejection is not null)
+            return (null, rejection);
         var effectivePatch = PreserveExplicitEffectiveSpan(snapshot, document, master, patch, kind);
-        return effectivePatch is not null && !HasAddressedDerivedScalar(document, master, effectivePatch)
-            ? effectivePatch
+        if (effectivePatch is null)
+            return (null, SpanPreservationRejection(document, master, kind));
+        var derived = AddressedDerivedScalar(document, master, effectivePatch);
+        return derived is null
+            ? (effectivePatch, null)
+            : (null, CalendarEntityViolations.DerivedValueReserved(CalendarEntityViolations.Fields + "/" + derived));
+    }
+
+    private static CalendarEntityViolation? ScalarTransitionRejection(
+        CalendarContentDocument document,
+        CalendarContentComponent master,
+        CalendarEventPatch patch,
+        CalendarEntityKind kind,
+        bool targetsMaster)
+    {
+        if (UnsupportedOpenEnumTransition(document, master, patch, kind) is { } field)
+            return CalendarEntityViolations.StoredValueUnrecognized(field);
+        if (!targetsMaster && HasReservedCancellationTransition(document, master, patch.Status))
+            return CalendarEntityViolations.OccurrenceCancellationReserved;
+        if (IntroducesDerivedOrganizer(patch))
+            return CalendarEntityViolations.DerivedValueReserved(CalendarEntityViolations.Fields + "/organizer");
+        return targetsMaster && patch.Start is not null && HasRecurrenceMembership(document, master, kind)
+            ? CalendarEntityViolations.MasterStartWithOverrides
             : null;
     }
 
-    private static bool HasUnsupportedOpenEnumTransition(
+    /// <summary>A timed-to-date Event start has no implicit end; any other failure is an unshiftable stored end.</summary>
+    private static CalendarEntityViolation SpanPreservationRejection(
+        CalendarContentDocument document,
+        CalendarContentComponent master,
+        CalendarEntityKind kind) =>
+        kind == CalendarEntityKind.Event && FindProperty(document, master.Path, "DTEND") is null
+            ? CalendarEntityViolations.DateStartRequiresEnd
+            : CalendarEntityViolations.EffectiveSpanUnresolved;
+
+    private static string? UnsupportedOpenEnumTransition(
         CalendarContentDocument document,
         CalendarContentComponent component,
         CalendarEventPatch patch,
         CalendarEntityKind kind) =>
-        HasUnsupportedOpenEnumTransition(document, component, "STATUS", patch.Status, kind)
-        || HasUnsupportedOpenEnumTransition(document, component, "TRANSP", patch.Transparency, kind)
-        || HasUnsupportedOpenEnumTransition(document, component, "CLASS", patch.Classification, kind);
+        HasUnsupportedOpenEnumTransition(document, component, "STATUS", patch.Status, kind) ? "status"
+        : HasUnsupportedOpenEnumTransition(document, component, "TRANSP", patch.Transparency, kind) ? "transparency"
+        : HasUnsupportedOpenEnumTransition(document, component, "CLASS", patch.Classification, kind) ? "classification"
+        : null;
 
     private static bool HasUnsupportedOpenEnumTransition(
         CalendarContentDocument document,
@@ -614,7 +653,7 @@ internal static class CalendarEntityPatchEditor
         var current = CalendarPatchOccurrenceSerializer.Current(document, master, patch.Field);
         var additions = SerializeOccurrences(patch.Field, patch.AddValues, kind);
         if (HasDerivedOccurrence(patch.Field, additions, kind))
-            return (null, Failure(CalendarEntityPatchCode.InvalidInput));
+            return (null, DerivedCollectionFailure(patch.Field));
         if (patch.Operation == CalendarCollectionPatchOperation.ReplaceAll)
             return ReplaceAllStructured(document, master, patch, current, kind);
 
@@ -623,7 +662,7 @@ internal static class CalendarEntityPatchEditor
             return (null, Failure(removalMatch.Failure.Value));
         var removals = removalMatch.Removals!;
         if (removals.Any(occurrence => CalendarPatchSemanticComparer.IsDerived(patch.Field, occurrence, kind)))
-            return (null, Failure(CalendarEntityPatchCode.InvalidInput));
+            return (null, DerivedCollectionFailure(patch.Field));
         return removals.Count == 0 && additions.Count == 0
             ? (null, null)
             : (document.EditOccurrences(master.Path, removals, additions), null);
@@ -637,11 +676,11 @@ internal static class CalendarEntityPatchEditor
         CalendarEntityKind kind)
     {
         if (current.Any(occurrence => CalendarPatchSemanticComparer.IsDerived(patch.Field, occurrence, kind)))
-            return (null, Failure(CalendarEntityPatchCode.InvalidInput));
+            return (null, DerivedCollectionFailure(patch.Field));
         var replacementValues = patch.ReplacementValues ?? [];
         var replacements = SerializeOccurrences(patch.Field, replacementValues, kind);
         if (HasDerivedOccurrence(patch.Field, replacements, kind))
-            return (null, Failure(CalendarEntityPatchCode.InvalidInput));
+            return (null, DerivedCollectionFailure(patch.Field));
         return AreSameOccurrences(patch.Field, current, replacementValues, kind)
             ? (null, null)
             : (document.EditOccurrences(master.Path, current, replacements), null);
@@ -785,26 +824,31 @@ internal static class CalendarEntityPatchEditor
             _ => document.SetOrClearSinglePropertySlice(path, propertyName, desired)
         };
 
-    private static bool HasAddressedDerivedScalar(
+    /// <summary>Returns the semantic field of the first addressed scalar whose stored property is DERIVED.</summary>
+    private static string? AddressedDerivedScalar(
         CalendarContentDocument document,
         CalendarContentComponent master,
         CalendarEventPatch patch)
     {
-        var addressed = new (string Name, bool IsAddressed)[]
+        var addressed = new (string Name, string Field, bool IsAddressed)[]
         {
-            ("SUMMARY", patch.Summary is not null), ("DESCRIPTION", patch.Description is not null),
-            ("DTSTART", patch.Start is not null), ("DTEND", patch.End is not null),
-            ("DUE", patch.Due is not null), ("DURATION", patch.Duration is not null),
-            ("LOCATION", patch.Location is not null), ("GEO", patch.Geo is not null),
-            ("STATUS", patch.Status is not null), ("TRANSP", patch.Transparency is not null),
-            ("CLASS", patch.Classification is not null), ("PRIORITY", patch.Priority is not null),
-            ("PERCENT-COMPLETE", patch.PercentComplete is not null),
-            ("URL", patch.Url is not null), ("ORGANIZER", patch.Organizer is not null)
+            ("SUMMARY", "summary", patch.Summary is not null),
+            ("DESCRIPTION", "description", patch.Description is not null),
+            ("DTSTART", "start", patch.Start is not null), ("DTEND", "end", patch.End is not null),
+            ("DUE", "due", patch.Due is not null), ("DURATION", "duration", patch.Duration is not null),
+            ("LOCATION", "location", patch.Location is not null), ("GEO", "geo", patch.Geo is not null),
+            ("STATUS", "status", patch.Status is not null),
+            ("TRANSP", "transparency", patch.Transparency is not null),
+            ("CLASS", "classification", patch.Classification is not null),
+            ("PRIORITY", "priority", patch.Priority is not null),
+            ("PERCENT-COMPLETE", "percentComplete", patch.PercentComplete is not null),
+            ("URL", "url", patch.Url is not null), ("ORGANIZER", "organizer", patch.Organizer is not null)
         };
-        return addressed.Where(item => item.IsAddressed).Any(item =>
+        return addressed.Where(item => item.IsAddressed).FirstOrDefault(item =>
             FindProperty(document, master.Path, item.Name)?.Parameters.Any(parameter =>
                 parameter.Name.Equals("DERIVED", StringComparison.OrdinalIgnoreCase)
-                && parameter.Values.Any(value => value.Equals("TRUE", StringComparison.OrdinalIgnoreCase))) == true);
+                && parameter.Values.Any(value => value.Equals("TRUE", StringComparison.OrdinalIgnoreCase))) == true)
+            .Field;
     }
 
     private static bool IntroducesDerivedOrganizer(CalendarEventPatch patch) =>
@@ -833,7 +877,7 @@ internal static class CalendarEntityPatchEditor
             return (null, Failure(removalMatch.Failure.Value));
         var matched = removalMatch.Matches!;
         if (matched.Keys.Any(IsDerivedProperty))
-            return (null, Failure(CalendarEntityPatchCode.InvalidInput));
+            return (null, DerivedCollectionFailure(CalendarCollectionField.Categories));
         var replacements = BuildCategoryReplacements(matched);
         var additions = (patch.Add ?? []).Select(value =>
             "CATEGORIES:" + CalendarContentDocument.EncodeText(value) + "\r\n").ToArray();
@@ -889,7 +933,7 @@ internal static class CalendarEntityPatchEditor
         IReadOnlyList<string> values)
     {
         if (properties.Any(IsDerivedProperty))
-            return (null, Failure(CalendarEntityPatchCode.InvalidInput));
+            return (null, DerivedCollectionFailure(CalendarCollectionField.Categories));
         var existing = properties.SelectMany(property => SplitTextList(property.RawEncodedValue)).ToArray();
         if (existing.SequenceEqual(values, StringComparer.Ordinal))
             return (null, null);
@@ -945,8 +989,10 @@ internal static class CalendarEntityPatchEditor
         CalendarContentDocument document,
         CalendarContentComponent master,
         CalendarEventPatch patch,
-        CalendarEntityKind kind)
+        CalendarEntityKind kind,
+        out CalendarEntityViolation? rejection)
     {
+        rejection = null;
         try
         {
             var start = FindProperty(document, master.Path, "DTSTART");
@@ -961,6 +1007,7 @@ internal static class CalendarEntityPatchEditor
         }
         catch (Exception exception) when (exception is ArgumentException or FormatException or InvalidOperationException)
         {
+            rejection = (exception as CalendarEntityValidationException)?.Violation;
             return false;
         }
     }
@@ -992,11 +1039,17 @@ internal static class CalendarEntityPatchEditor
 
     private static CalendarEntityPatchResult Failure(
         CalendarEntityPatchCode code,
-        CalendarResourceSnapshot? snapshot = null) => new(
+        CalendarResourceSnapshot? snapshot = null,
+        CalendarEntityViolation? violation = null) => new(
         code,
         CalendarMutationState.NotAttempted,
         snapshot,
-        Phase: CalendarEntityPatchPhase.CompleteResourceSemantics);
+        Phase: CalendarEntityPatchPhase.CompleteResourceSemantics,
+        Violations: violation is null ? null : [violation]);
+
+    private static CalendarEntityPatchResult DerivedCollectionFailure(CalendarCollectionField field) => Failure(
+        CalendarEntityPatchCode.InvalidInput,
+        violation: CalendarEntityViolations.DerivedValueReserved(CalendarEntityViolations.Collection(field)));
 
     private sealed record CategoryOccurrence(CalendarContentProperty Property, int Index, string Value);
 
@@ -1011,5 +1064,8 @@ internal static class CalendarEntityPatchEditor
         TimeSpan? Start,
         TimeSpan? End,
         TimeSpan? Due,
-        bool Failure);
+        bool Failure)
+    {
+        public CalendarEntityViolation? Rejection { get; init; }
+    }
 }

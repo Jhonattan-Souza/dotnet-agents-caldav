@@ -42,10 +42,16 @@ internal static class CalendarRecurrenceSetPatchEditor
                     cancellationToken))
                 .ToArray();
             if (!HasExactReconciliations(orphans, patch.OrphanReconciliations))
-                return Failed(document, snapshot, CalendarEntityPatchCode.InvalidCalendarData);
+            {
+                return Failed(document, snapshot, CalendarEntityPatchCode.InvalidCalendarData,
+                    CalendarEntityViolations.OrphanReconciliationMismatch);
+            }
             edited = RemoveOrphans(edited, master, orphans);
             if (!HasExactRequestedOverrides(edited, patch.Value?.Overrides, kind))
-                return Failed(document, snapshot, CalendarEntityPatchCode.InvalidCalendarData);
+            {
+                return Failed(document, snapshot, CalendarEntityPatchCode.InvalidCalendarData,
+                    CalendarEntityViolations.RequestedOverridesMismatch);
+            }
             var changed = definitionChanged || orphans.Length > 0;
             return new(changed ? edited : document, changed, null);
         }
@@ -53,16 +59,17 @@ internal static class CalendarRecurrenceSetPatchEditor
         {
             return Failed(document, snapshot, CalendarEntityPatchCode.LimitExhausted);
         }
-        catch (CalendarRecurrenceUnevaluableException)
+        catch (CalendarRecurrenceUnevaluableException exception)
         {
-            return Failed(document, snapshot, CalendarEntityPatchCode.RecurrenceUnevaluable);
+            return Failed(document, snapshot, CalendarEntityPatchCode.RecurrenceUnevaluable, exception.Violation);
         }
         catch (Exception exception) when (exception is FormatException
             or ArgumentException
             or InvalidOperationException
             or OverflowException)
         {
-            return Failed(document, snapshot, CalendarEntityPatchCode.InvalidCalendarData);
+            return Failed(document, snapshot, CalendarEntityPatchCode.InvalidCalendarData,
+                (exception as CalendarEntityValidationException)?.Violation);
         }
     }
 
@@ -323,14 +330,16 @@ internal static class CalendarRecurrenceSetPatchEditor
     private static CalendarRecurrenceSetEdit Failed(
         CalendarContentDocument document,
         CalendarResourceSnapshot snapshot,
-        CalendarEntityPatchCode code) => new(
+        CalendarEntityPatchCode code,
+        CalendarEntityViolation? violation = null) => new(
         document,
         false,
         new CalendarEntityPatchResult(
             code,
             CalendarMutationState.NotAttempted,
             snapshot,
-            Phase: CalendarEntityPatchPhase.CompleteResourceSemantics));
+            Phase: CalendarEntityPatchPhase.CompleteResourceSemantics,
+            Violations: violation is null ? null : [violation]));
 
     private sealed record OrphanCandidate(
         CalendarOrphanKind Kind,

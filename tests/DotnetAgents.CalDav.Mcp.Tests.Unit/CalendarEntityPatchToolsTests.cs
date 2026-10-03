@@ -1304,6 +1304,110 @@ public sealed class CalendarEntityPatchToolsTests
         new CalendarResourceProjection(CalendarResourceProjectionKind.Event, uid, "Updated"),
         []);
 
+    [Theory]
+    [MemberData(nameof(RejectedPatchInputs))]
+    public async Task Public_tool_names_the_rejected_patch_field_and_reason_without_writing(
+        string kind,
+        string stored,
+        string target,
+        string patch,
+        string expectedCode,
+        string reasonCode,
+        string? pointer)
+    {
+        var href = $"https://cal.example/{kind}s/entity-1.ics";
+        var component = kind == "event" ? "VEVENT" : "VTODO";
+        var content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\n"
+            + stored.Replace("$C", component, StringComparison.Ordinal) + "END:VCALENDAR\r\n";
+        var client = Substitute.For<ICalendarClient>();
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
+            new CalendarDescriptor
+            {
+                Href = $"https://cal.example/{kind}s/",
+                DisplayName = "Entities",
+                DisplayNameProvenance = DisplayNameProvenance.DavDisplayName,
+                EventSupport = EntityKindSupport.Advertised,
+                TodoSupport = EntityKindSupport.Advertised
+            }
+        ]);
+        client.GetCalendarResourceAsync(href, Arg.Any<CancellationToken>())
+            .Returns(CalendarResourceRead.Success(href, "\"r1\"", Encoding.UTF8.GetBytes(content)));
+        using var serviceHost = CalendarServiceTestHost.Create(client, options => options.BaseUrl = "https://cal.example/");
+        var sut = new CalendarEntityPatchTools(serviceHost.Service, TimeProvider.System);
+        var arguments = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+            "{\"snapshot\":{\"href\":\"" + href + "\",\"entityUid\":\"entity-1\",\"entityKind\":\"" + kind
+            + "\",\"entityTag\":\"\\\"r1\\\"\"},\"target\":" + target + ",\"patch\":" + patch + "}");
+
+        var result = kind == "event"
+            ? await sut.PatchEventRawAsync(arguments, CancellationToken.None)
+            : await sut.PatchTodoRawAsync(arguments, CancellationToken.None);
+
+        result.IsError.ShouldBe(true);
+        var structured = result.StructuredContent!.Value;
+        structured.GetProperty("code").GetString().ShouldBe(expectedCode);
+        structured.GetProperty("mutationState").GetString().ShouldBe("not_attempted");
+        structured.GetProperty("message").GetString().ShouldNotBeOneOf(
+            "The Calendar Entity patch could not be completed.",
+            "This value is invalid for its field.");
+        if (pointer is null)
+        {
+            structured.TryGetProperty("violations", out _).ShouldBeFalse();
+        }
+        else
+        {
+            var violation = structured.GetProperty("violations").EnumerateArray().ShouldHaveSingleItem();
+            violation.GetProperty("pointer").GetString().ShouldBe(pointer);
+            violation.GetProperty("code").GetString().ShouldBe(reasonCode);
+        }
+        await client.DidNotReceive().UpdateCalendarResourceAsync(
+            Arg.Any<CalendarResourceUpdateRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    public static TheoryData<string, string, string, string, string, string, string?> RejectedPatchInputs()
+    {
+        const string Master = "{\"scope\":\"master\"}";
+        const string EntireSet = "{\"scope\":\"entire-set\"}";
+        const string Invalid = "invalid_input";
+        const string DateTodo = "BEGIN:$C\r\nUID:entity-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART;VALUE=DATE:20261025\r\nDUE;VALUE=DATE:20261026\r\nEND:$C\r\n";
+        const string TimedEvent = "BEGIN:$C\r\nUID:entity-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260817T100000Z\r\nEND:$C\r\n";
+        const string Series = "BEGIN:$C\r\nUID:entity-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260817T100000Z\r\nRRULE:FREQ=DAILY;COUNT=3\r\nEXDATE:20260818T100000Z\r\nEND:$C\r\n"
+            + "BEGIN:$C\r\nUID:entity-1\r\nDTSTAMP:20260816T100000Z\r\nRECURRENCE-ID:20260819T100000Z\r\nDTSTART:20260819T120000Z\r\nEND:$C\r\n";
+        static string Scalar(string field, string value) =>
+            "{\"scalars\":[{\"field\":\"" + field + "\",\"operation\":\"set\",\"value\":" + value + "}]}";
+        static string Recurrence(string value) =>
+            "{\"scalars\":[{\"field\":\"recurrenceSet\",\"operation\":\"set\",\"value\":" + value + ",\"orphanReconciliations\":[]}]}";
+        return new TheoryData<string, string, string, string, string, string, string?>
+        {
+            { "todo", DateTodo, Master, Scalar("due", "{\"kind\":\"date\",\"value\":\"2026-10-25\"}"),
+                Invalid, "due_not_after_start", "/patch/scalars/0/value" },
+            { "todo", DateTodo, Master, Scalar("due", "{\"kind\":\"utcDateTime\",\"value\":\"2026-10-26T10:00:00Z\"}"),
+                Invalid, "temporal_family_mismatch", "/patch/scalars/0/value" },
+            { "todo", "BEGIN:$C\r\nUID:entity-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART;VALUE=DATE:20261025\r\nDURATION:P1D\r\nEND:$C\r\n",
+                Master, Scalar("due", "{\"kind\":\"date\",\"value\":\"2026-10-27\"}"), Invalid, "due_duration_exclusive", null },
+            { "todo", DateTodo, Master, Scalar("status", "\"COMPLETED\""), Invalid, "field_value_invalid", "/patch/scalars/0/value" },
+            { "todo", DateTodo, Master, Scalar("priority", "12"), Invalid, "field_value_invalid", "/patch/scalars/0/value" },
+            { "event", TimedEvent, Master, Scalar("start", "{\"kind\":\"date\",\"value\":\"2026-08-18\"}"),
+                Invalid, "date_start_requires_end", "/patch/scalars/0/value" },
+            { "event", TimedEvent.Replace("DTSTART", "STATUS:POSTPONED\r\nDTSTART", StringComparison.Ordinal), Master,
+                Scalar("status", "\"CONFIRMED\""), Invalid, "stored_value_unrecognized", "/patch/scalars/0/value" },
+            { "event", TimedEvent.Replace("DTSTART", "SUMMARY;DERIVED=TRUE:Kept\r\nDTSTART", StringComparison.Ordinal), Master,
+                Scalar("summary", "\"Changed\""), Invalid, "derived_value_reserved", "/patch/scalars/0/value" },
+            { "event", TimedEvent.Replace("DTSTART", "CATEGORIES;DERIVED=TRUE:Kept\r\nDTSTART", StringComparison.Ordinal), Master,
+                "{\"collections\":[{\"field\":\"categories\",\"operation\":\"replaceAll\",\"values\":[\"Work\"]}]}",
+                Invalid, "derived_value_reserved", "/patch/collections/0" },
+            { "event", Series, Master, Scalar("start", "{\"kind\":\"utcDateTime\",\"value\":\"2026-08-17T11:00:00Z\"}"),
+                Invalid, "master_start_with_overrides", "/target/scope" },
+            { "event", Series, "{\"scope\":\"one-occurrence\",\"recurrenceIdentity\":{\"value\":{\"kind\":\"utcDateTime\",\"value\":\"2026-08-17T10:00:00Z\"}}}",
+                Scalar("status", "\"CANCELLED\""), Invalid, "occurrence_cancellation_reserved", "/patch/scalars/0/value" },
+            { "event", Series, EntireSet, Recurrence("{\"rrule\":\"FREQ=DAILY;COUNT=abc\"}"),
+                "invalid_calendar_data", "recurrence_rule_invalid", "/patch/scalars/0/value/rrule" },
+            { "event", Series, EntireSet, Recurrence("{\"rrule\":\"FREQ=WEEKLY;BYDAY=TU\"}"),
+                "recurrence_unevaluable", "recurrence_start_mismatch", null },
+            { "event", Series, EntireSet, Recurrence("{\"rrule\":\"FREQ=DAILY;COUNT=1\"}"),
+                "invalid_calendar_data", "orphan_reconciliation_mismatch", "/patch/scalars/0/orphanReconciliations" }
+        };
+    }
+
     private static CalendarEntityPatchTools CreateTool(
         ICalendarService service,
         TimeProvider time)

@@ -29,6 +29,29 @@ internal static class CalendarErrorViolations
             : new CalendarInputViolation(pointerPrefix + rejection.Property, "property_rejected",
                 string.Create(CultureInfo.InvariantCulture, $"The server rejected this property with HTTP status {rejection.StatusCode}.")));
 
+    /// <summary>
+    /// Anchors typed Core reasons at the caller's arguments. A reason whose semantic pointer names no argument
+    /// in this request, such as a fault in stored data, contributes only its message.
+    /// </summary>
+    internal static IReadOnlyList<CalendarInputViolation>? FromEntityViolations(
+        IReadOnlyList<CalendarEntityViolation>? violations,
+        Func<string, string?> resolvePointer)
+    {
+        if (violations is not { Count: > 0 })
+            return null;
+        var resolved = new List<CalendarInputViolation>(violations.Count);
+        foreach (var violation in violations)
+        {
+            if (violation.Pointer is not null && resolvePointer(violation.Pointer) is { } pointer)
+                resolved.Add(new CalendarInputViolation(pointer, violation.Code, violation.Message));
+        }
+        return resolved.Count == 0 ? null : Normalize(resolved);
+    }
+
+    /// <summary>Returns the first typed reason's fixed message, or the caller's fallback.</summary>
+    internal static string MessageOr(IReadOnlyList<CalendarEntityViolation>? violations, string fallback) =>
+        violations is [var first, ..] ? first.Message : fallback;
+
     internal static CallToolResult Attach(
         CallToolResult result,
         IEnumerable<CalendarInputViolation> violations)

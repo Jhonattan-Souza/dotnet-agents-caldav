@@ -15,14 +15,17 @@ internal sealed class CalendarEntityValidationException : ArgumentException
 /// <summary>Typed reasons for complete Calendar Entity creation, with fixed messages that never echo authored values.</summary>
 internal static class CalendarEntityViolations
 {
+    /// <summary>The semantic request location of the authored Entity fields.</summary>
+    internal const string Fields = "/fields";
+
     internal static string OverrideFields(int index) =>
-        string.Create(CultureInfo.InvariantCulture, $"/recurrenceSet/overrides/{index}/fields");
+        string.Create(CultureInfo.InvariantCulture, $"/fields/recurrenceSet/overrides/{index}/fields");
 
     internal static string Override(int index) =>
-        string.Create(CultureInfo.InvariantCulture, $"/recurrenceSet/overrides/{index}");
+        string.Create(CultureInfo.InvariantCulture, $"/fields/recurrenceSet/overrides/{index}");
 
     internal static string Item(string collection, int index) =>
-        string.Create(CultureInfo.InvariantCulture, $"/recurrenceSet/{collection}/{index}");
+        string.Create(CultureInfo.InvariantCulture, $"/fields/recurrenceSet/{collection}/{index}");
 
     internal static CalendarEntityValidationException StartRequired(string fields) => Reject(
         fields + "/start", "start_required", "An Event requires start.");
@@ -48,7 +51,70 @@ internal static class CalendarEntityViolations
         + $"so a single day D uses start D and {endField} D+1.");
 
     internal static CalendarEntityValidationException TemporalValueInvalid(string pointer, ArgumentException inner) =>
-        new(new CalendarEntityViolation(pointer, "temporal_value_invalid", inner.Message), inner);
+        new(new CalendarEntityViolation(pointer, "temporal_value_invalid", AuthoredMessage(inner)), inner);
+
+    internal static CalendarEntityValidationException FieldValueInvalid(string field, ArgumentException inner) =>
+        new(new CalendarEntityViolation(Fields + "/" + field, "field_value_invalid", AuthoredMessage(inner)), inner);
+
+    /// <summary>
+    /// Surfaces a message only when the validator itself threw it as a fixed literal; messages from the BCL,
+    /// Ical.Net, or NodaTime are replaced so they can never echo values or library internals.
+    /// </summary>
+    private static string AuthoredMessage(ArgumentException exception) =>
+        exception.GetType() == typeof(ArgumentException)
+        && exception.TargetSite?.DeclaringType == typeof(CalendarEntityCreateValidator)
+            ? exception.Message
+            : "This value is invalid for its field.";
+
+    internal static string Collection(CalendarCollectionField field)
+    {
+        var name = field.ToString();
+        return "/collections/" + char.ToLowerInvariant(name[0]) + name[1..];
+    }
+
+    /// <summary>Only a typed validator reason is surfaced; serializer and library messages stay internal.</summary>
+    internal static CalendarEntityViolation CollectionValueInvalid(CalendarCollectionField field, Exception exception) =>
+        exception is CalendarEntityValidationException typed
+            ? typed.Violation with { Pointer = Collection(field) }
+            : new(Collection(field), "collection_value_invalid", "A value in this collection is invalid for its field.");
+
+    internal static CalendarEntityViolation StoredValueUnrecognized(string field) => new(
+        Fields + "/" + field, "stored_value_unrecognized",
+        $"The stored {field} value is not recognized, so a patch can only keep it unchanged.");
+
+    internal static CalendarEntityViolation OccurrenceCancellationReserved { get; } = new(
+        Fields + "/status", "occurrence_cancellation_reserved",
+        "Use calendar_occurrences.cancel or calendar_occurrences.restore_cancellation to change whether one Occurrence is CANCELLED.");
+
+    internal static CalendarEntityViolation DerivedValueReserved(string pointer) => new(
+        pointer, "derived_value_reserved", "A value marked DERIVED is maintained by the server and cannot be patched.");
+
+    internal static CalendarEntityViolation MasterStartWithOverrides { get; } = new(
+        "/target/scope", "master_start_with_overrides",
+        "Changing start on the master of a series with overrides would detach them; use target scope entire-set.");
+
+    internal static CalendarEntityViolation DateStartRequiresEnd { get; } = new(
+        Fields + "/start", "date_start_requires_end",
+        "Changing a timed Event to a date start also requires an end or duration in the same patch.");
+
+    internal static CalendarEntityViolation EffectiveSpanUnresolved { get; } = new(
+        Fields + "/start", "effective_span_unresolved",
+        "The stored end cannot be shifted with this start; include end or due in the same patch.");
+
+    internal static CalendarEntityViolation RecurrenceScopeRequired { get; } = new(
+        "/target/scope", "recurrence_scope_required", "recurrenceSet can be patched only with target scope entire-set.");
+
+    internal static CalendarEntityViolation ScopedTemporalFamilyChange(string field) => new(
+        Fields + "/" + field, "scoped_temporal_family_change",
+        $"A scoped {field} change must keep the stored temporal kind and time zone.");
+
+    internal static CalendarEntityViolation OrphanReconciliationMismatch { get; } = new(
+        Fields + "/recurrenceSet/orphanReconciliations", "orphan_reconciliation_mismatch",
+        "orphanReconciliations must name, once each, every override and exception date the new recurrence set no longer includes.");
+
+    internal static CalendarEntityViolation RequestedOverridesMismatch { get; } = new(
+        Fields + "/recurrenceSet/overrides", "requested_overrides_mismatch",
+        "overrides must list exactly the overrides that remain, with matching recurrenceIdentity, range, and status.");
 
     internal static CalendarEntityValidationException RecurrenceStartRequired(string fields) => Reject(
         fields + "/start", "recurrence_start_required", "A recurring Calendar Entity requires start.");
@@ -58,7 +124,7 @@ internal static class CalendarEntityViolations
         "recurrenceSet requires rrule, rdates, exdates, or overrides.");
 
     internal static CalendarEntityValidationException RecurrenceRuleInvalid(Exception? inner = null) => new(
-        new CalendarEntityViolation("/recurrenceSet/rrule", "recurrence_rule_invalid",
+        new CalendarEntityViolation("/fields/recurrenceSet/rrule", "recurrence_rule_invalid",
             "rrule must be one RFC 5545 RRULE value without the RRULE: prefix."),
         inner);
 
@@ -75,22 +141,22 @@ internal static class CalendarEntityViolations
         "Override status must be cancelled exactly when its fields.status is CANCELLED.");
 
     internal static CalendarEntityViolation RecurrenceCountInvalid { get; } = new(
-        "/recurrenceSet/rrule", "recurrence_count_invalid", "rrule COUNT must be at least 1.");
+        "/fields/recurrenceSet/rrule", "recurrence_count_invalid", "rrule COUNT must be at least 1.");
 
     internal static CalendarEntityViolation RecurrenceOccurrenceLimit { get; } = new(
-        "/recurrenceSet/rrule", "recurrence_occurrence_limit_exceeded",
+        "/fields/recurrenceSet/rrule", "recurrence_occurrence_limit_exceeded",
         string.Create(CultureInfo.InvariantCulture,
             $"A bounded rrule may produce at most {CalendarCreateRecurrenceAnalyzer.MaximumProfileOccurrences} occurrences."));
 
     internal static CalendarEntityViolation RecurrenceNoOccurrences { get; } = new(
-        "/recurrenceSet/rrule", "recurrence_no_occurrences", "rrule produces no occurrences from start.");
+        "/fields/recurrenceSet/rrule", "recurrence_no_occurrences", "rrule produces no occurrences from start.");
 
     internal static CalendarEntityViolation RecurrenceStartMismatch { get; } = new(
-        "/start", "recurrence_start_mismatch",
+        "/fields/start", "recurrence_start_mismatch",
         "start must be the first occurrence of rrule; move start to a date the rule matches or change the rule.");
 
     internal static CalendarEntityViolation RecurrenceEvaluationFailed { get; } = new(
-        "/recurrenceSet/rrule", "recurrence_evaluation_failed", "rrule could not be evaluated from start.");
+        "/fields/recurrenceSet/rrule", "recurrence_evaluation_failed", "rrule could not be evaluated from start.");
 
     private static CalendarEntityValidationException Reject(string pointer, string code, string message) =>
         new(new CalendarEntityViolation(pointer, code, message));

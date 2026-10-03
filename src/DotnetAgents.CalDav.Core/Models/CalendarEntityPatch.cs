@@ -227,7 +227,8 @@ public sealed record CalendarEntityPatchResult(
     int? RetryAfterMilliseconds = null,
     bool Retryable = false,
     CalendarEntityPatchPhase Phase = CalendarEntityPatchPhase.Execution,
-    CalendarEntityPatchLimitDimension? LimitDimension = null)
+    CalendarEntityPatchLimitDimension? LimitDimension = null,
+    IReadOnlyList<CalendarEntityViolation>? Violations = null)
 {
     public static CalendarEntityPatchResult Success(CalendarResourceSnapshot snapshot) =>
         new(
