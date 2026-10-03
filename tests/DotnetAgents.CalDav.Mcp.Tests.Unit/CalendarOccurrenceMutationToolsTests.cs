@@ -301,4 +301,90 @@ public sealed class CalendarOccurrenceMutationToolsTests
         + "\"entityUid\":\"series-1\",\"entityKind\":\"event\",\"entityTag\":\"\\\"v1\\\"\"},"
         + "\"recurrenceIdentity\":{\"value\":{\"kind\":\"utcDateTime\","
         + "\"value\":\"2026-08-18T09:00:00Z\"}}}")!;
+
+    [Theory]
+    [MemberData(nameof(RejectedOccurrenceInputs))]
+    public async Task Public_tools_name_the_rejected_argument_or_stored_state_without_writing(
+        string tool,
+        string kind,
+        string stored,
+        string identityAndTag,
+        string expectedCode,
+        string reasonCode,
+        string? pointer)
+    {
+        var href = $"https://cal.example/{kind}s/entity-1.ics";
+        var component = kind == "event" ? "VEVENT" : "VTODO";
+        var content = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\n"
+            + stored.Replace("$C", component, StringComparison.Ordinal) + "END:VCALENDAR\r\n";
+        var client = Substitute.For<ICalendarClient>();
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
+            new CalendarDescriptor
+            {
+                Href = $"https://cal.example/{kind}s/",
+                DisplayName = "Entities",
+                DisplayNameProvenance = DisplayNameProvenance.DavDisplayName,
+                EventSupport = EntityKindSupport.Advertised,
+                TodoSupport = EntityKindSupport.Advertised
+            }
+        ]);
+        client.GetCalendarResourceAsync(href, Arg.Any<CancellationToken>())
+            .Returns(CalendarResourceRead.Success(href, "\"r1\"", Encoding.UTF8.GetBytes(content)));
+        using var serviceHost = CalendarServiceTestHost.Create(client, options => options.BaseUrl = "https://cal.example/");
+        var sut = new CalendarOccurrenceMutationTools(serviceHost.Service);
+        var parts = identityAndTag.Split('|');
+        var arguments = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+            "{\"snapshot\":{\"href\":\"" + href + "\",\"entityUid\":\"entity-1\",\"entityKind\":\"" + kind
+            + "\",\"entityTag\":" + JsonSerializer.Serialize(parts[1]) + "}"
+            + (parts[0].Length == 0 ? string.Empty : ",\"recurrenceIdentity\":{\"value\":" + parts[0] + "}") + "}");
+
+        var result = tool switch
+        {
+            "complete" => await sut.CompleteTodoRawAsync(arguments, CancellationToken.None),
+            "add" => await sut.AddRawAsync(arguments, CancellationToken.None),
+            _ => await sut.ExcludeRawAsync(arguments, CancellationToken.None)
+        };
+
+        result.IsError.ShouldBe(true);
+        var structured = result.StructuredContent!.Value;
+        structured.GetProperty("code").GetString().ShouldBe(expectedCode);
+        structured.GetProperty("mutationState").GetString().ShouldBe("not_attempted");
+        structured.GetProperty("message").GetString().ShouldNotBeNull().ShouldNotContain("could not be completed");
+        if (pointer is null)
+        {
+            structured.TryGetProperty("violations", out _).ShouldBeFalse();
+        }
+        else
+        {
+            var violation = structured.GetProperty("violations").EnumerateArray().ShouldHaveSingleItem();
+            violation.GetProperty("pointer").GetString().ShouldBe(pointer);
+            violation.GetProperty("code").GetString().ShouldBe(reasonCode);
+        }
+        await client.DidNotReceive().UpdateCalendarResourceAsync(
+            Arg.Any<CalendarResourceUpdateRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    public static TheoryData<string, string, string, string, string, string, string?> RejectedOccurrenceInputs()
+    {
+        const string Strong = "\"r1\"";
+        const string Series = "BEGIN:$C\r\nUID:entity-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260817T100000Z\r\nRRULE:FREQ=DAILY;COUNT=3\r\nEXDATE:20260818T100000Z\r\nEND:$C\r\n";
+        const string Single = "BEGIN:$C\r\nUID:entity-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260817T100000Z\r\nEND:$C\r\n";
+        const string Day = "{\"kind\":\"utcDateTime\",\"value\":\"2026-08-17T10:00:00Z\"}";
+        const string Excluded = "{\"kind\":\"utcDateTime\",\"value\":\"2026-08-18T10:00:00Z\"}";
+        const string Missing = "{\"kind\":\"utcDateTime\",\"value\":\"2026-08-25T10:00:00Z\"}";
+        return new TheoryData<string, string, string, string, string, string, string?>
+        {
+            { "complete", "todo", Series, "|" + Strong, "invalid_input", "recurrence_identity_required", "/recurrenceIdentity" },
+            { "complete", "todo", Single, Day + "|" + Strong, "invalid_input", "recurrence_identity_not_applicable", "/recurrenceIdentity" },
+            { "complete", "todo", Single.Replace("DTSTART", "STATUS:CANCELLED\r\nDTSTART", StringComparison.Ordinal), "|" + Strong,
+                "invalid_input", "cancelled_not_completable", null },
+            { "complete", "todo", Series, Excluded + "|" + Strong, "not_found", "occurrence_excluded", "/recurrenceIdentity" },
+            { "complete", "todo", Series, "{\"kind\":\"date\",\"value\":\"2026-08-17\"}|" + Strong,
+                "invalid_input", "recurrence_family_mismatch", "/recurrenceIdentity/value" },
+            { "complete", "todo", Single, "|\"r0\"", "conflict", "revision_changed", "/snapshot/entityTag" },
+            { "complete", "todo", Single, "|W/\"r1\"", "concurrency_unavailable", "weak_entity_tag", "/snapshot/entityTag" },
+            { "add", "event", Series, Excluded + "|" + Strong, "invalid_input", "occurrence_excluded", "/recurrenceIdentity" },
+            { "exclude", "event", Series, Missing + "|" + Strong, "not_found", "occurrence_not_found", "/recurrenceIdentity" }
+        };
+    }
 }

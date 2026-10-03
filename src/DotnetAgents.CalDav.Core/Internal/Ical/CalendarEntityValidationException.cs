@@ -116,6 +116,51 @@ internal static class CalendarEntityViolations
         Fields + "/recurrenceSet/overrides", "requested_overrides_mismatch",
         "overrides must list exactly the overrides that remain, with matching recurrenceIdentity, range, and status.");
 
+    internal const string TargetIdentity = "/target/recurrenceIdentity";
+
+    internal static CalendarEntityViolation OccurrenceNotFound { get; } = new(
+        TargetIdentity, "occurrence_not_found",
+        "No Occurrence of this series has this recurrenceIdentity; copy it exactly from a calendar_occurrences.query result.");
+
+    internal static CalendarEntityViolation OccurrenceExcludedForAdd { get; } = new(
+        TargetIdentity, "occurrence_excluded",
+        "This Occurrence is excluded; use calendar_occurrences.restore_exclusion to bring it back.");
+
+    internal static CalendarEntityViolation OccurrenceExcluded { get; } = new(
+        TargetIdentity, "occurrence_excluded", "This Occurrence is excluded from the series.");
+
+    internal static CalendarEntityViolation IdentityFamilyMismatch { get; } = new(
+        TargetIdentity + "/value", "recurrence_family_mismatch",
+        "recurrenceIdentity must use the series start's temporal kind and time zone; copy it from a query result.");
+
+    internal static CalendarEntityViolation SeriesStartMissing { get; } = new(
+        null, "series_start_missing", "The stored series has no start, so its Occurrences cannot be addressed.");
+
+    internal static CalendarEntityViolation RecurrenceIdentityRequired { get; } = new(
+        TargetIdentity, "recurrence_identity_required",
+        "This To-do recurs; pass the recurrenceIdentity of the Occurrence to complete, as returned in its completionTarget.");
+
+    internal static CalendarEntityViolation RecurrenceIdentityNotApplicable { get; } = new(
+        TargetIdentity, "recurrence_identity_not_applicable", "This To-do does not recur; omit recurrenceIdentity.");
+
+    internal static CalendarEntityViolation CancelledNotCompletable { get; } = new(
+        null, "cancelled_not_completable", "A CANCELLED To-do or Occurrence cannot be completed.");
+
+    internal static CalendarEntityViolation RevisionChanged { get; } = new(
+        "/snapshot/entityTag", "revision_changed",
+        "The resource changed after this snapshot was read; read it again and use the new entityTag.");
+
+    internal static CalendarEntityViolation EntityUidMismatch { get; } = new(
+        "/snapshot/entityUid", "entity_uid_mismatch",
+        "This href now holds a different Calendar Entity; read it again before changing it.");
+
+    internal static CalendarEntityViolation WeakEntityTag { get; } = new(
+        "/snapshot/entityTag", "weak_entity_tag", "entityTag must be the strong ETag exactly as returned by a read.");
+
+    internal static CalendarEntityViolation SnapshotMemberInvalid(string member) => new(
+        "/snapshot/" + member, "snapshot_member_invalid",
+        $"snapshot.{member} must be passed exactly as returned by the read that produced this snapshot.");
+
     internal static CalendarEntityValidationException RecurrenceStartRequired(string fields) => Reject(
         fields + "/start", "recurrence_start_required", "A recurring Calendar Entity requires start.");
 

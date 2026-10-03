@@ -24,7 +24,7 @@ internal static class CalendarTodoCompletionEditor
             var target = selected.Component!;
             var classification = CalendarTodoCompletionClassifier.Classify(document, target.Path);
             if (classification.State == CalendarTodoCompletionState.Cancelled)
-                return (null, Failure(CalendarEntityPatchCode.InvalidInput, snapshot));
+                return (null, Failure(CalendarEntityPatchCode.InvalidInput, snapshot, CalendarEntityViolations.CancelledNotCompletable));
             if (classification.State == CalendarTodoCompletionState.Indeterminate)
                 return (null, Failure(CalendarEntityPatchCode.CompletionStateConflict, snapshot));
             if (classification.State == CalendarTodoCompletionState.Completed)
@@ -68,11 +68,11 @@ internal static class CalendarTodoCompletionEditor
         if (recurrenceIdentity is null)
         {
             return recurring
-                ? Failed(CalendarEntityPatchCode.InvalidInput, snapshot)
+                ? Failed(CalendarEntityPatchCode.InvalidInput, snapshot, CalendarEntityViolations.RecurrenceIdentityRequired)
                 : new(document, master, null);
         }
         if (!recurring)
-            return Failed(CalendarEntityPatchCode.InvalidInput, snapshot);
+            return Failed(CalendarEntityPatchCode.InvalidInput, snapshot, CalendarEntityViolations.RecurrenceIdentityNotApplicable);
         return SelectRecurringTarget(snapshot, document, recurrenceIdentity, cancellationToken);
     }
 
@@ -91,11 +91,11 @@ internal static class CalendarTodoCompletionEditor
         if (inspection.Failure is not null)
             return new(null, null, inspection.Failure);
         if (inspection.IsExcluded)
-            return Failed(CalendarEntityPatchCode.NotFound, snapshot);
+            return Failed(CalendarEntityPatchCode.NotFound, snapshot, CalendarEntityViolations.OccurrenceExcluded);
         var effective = inspection.Individual ?? inspection.Range ?? inspection.Master!;
         var classification = CalendarTodoCompletionClassifier.Classify(document, effective.Path);
         if (classification.State == CalendarTodoCompletionState.Cancelled)
-            return Failed(CalendarEntityPatchCode.InvalidInput, snapshot);
+            return Failed(CalendarEntityPatchCode.InvalidInput, snapshot, CalendarEntityViolations.CancelledNotCompletable);
         if (classification.State == CalendarTodoCompletionState.Indeterminate)
             return Failed(CalendarEntityPatchCode.CompletionStateConflict, snapshot);
         if (classification.State == CalendarTodoCompletionState.Completed)
@@ -123,13 +123,16 @@ internal static class CalendarTodoCompletionEditor
 
     private static CalendarEntityPatchResult Failure(
         CalendarEntityPatchCode code,
-        CalendarResourceSnapshot snapshot) => new(
+        CalendarResourceSnapshot snapshot,
+        CalendarEntityViolation? violation = null) => new(
         code,
         CalendarMutationState.NotAttempted,
         snapshot,
-        Phase: CalendarEntityPatchPhase.CompleteResourceSemantics);
+        Phase: CalendarEntityPatchPhase.CompleteResourceSemantics,
+        Violations: violation is null ? null : [violation]);
 
     private static CalendarOccurrencePatchTarget Failed(
         CalendarEntityPatchCode code,
-        CalendarResourceSnapshot snapshot) => new(null, null, Failure(code, snapshot));
+        CalendarResourceSnapshot snapshot,
+        CalendarEntityViolation? violation = null) => new(null, null, Failure(code, snapshot, violation));
 }

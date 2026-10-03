@@ -346,13 +346,16 @@ public sealed class CalendarOccurrenceMutationTools
     private static CalendarToolResult Error(CalendarEntityPatchResult result, string operation)
     {
         var facts = CalendarTelemetryFacts.From(result);
-        return CalendarToolResult.Error(new CallToolResult
+        var violations = CalendarErrorViolations.FromEntityViolations(
+            result.Violations,
+            CalendarEntityPatchMessages.ResolveOccurrencePointer);
+        var body = new CallToolResult
         {
             IsError = true,
             StructuredContent = JsonSerializer.SerializeToElement(new CalendarEntityCreateErrorResult(
                 facts.CodeName,
                 facts.CategoryName,
-                $"The {operation} could not be completed.",
+                CalendarErrorViolations.MessageOr(result.Violations, CalendarEntityPatchMessages.Describe(result.Code)),
                 facts.Retryable,
                 facts.PhaseName,
                 CalendarTelemetryVocabulary.MutationStateName(result.MutationState),
@@ -362,7 +365,11 @@ public sealed class CalendarOccurrenceMutationTools
                     ? null
                     : new CalendarEntityCreateLimits(Dimension: "elapsed_time"))),
             Content = [new TextContentBlock { Text = operation + " failed." }]
-        }, facts, result.MutationState);
+        };
+        return CalendarToolResult.Error(
+            violations is null ? body : CalendarErrorViolations.Attach(body, violations),
+            facts,
+            result.MutationState);
     }
 
     private static CallToolResult InputError(bool payloadTooLarge) => NamedError(
