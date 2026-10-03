@@ -499,13 +499,15 @@ internal sealed class CalendarCreationModule(
                 ? Failure(CalendarEntityCreateCode.PayloadTooLarge)
                 : null;
         }
-        catch (CalendarRecurrenceUnevaluableException)
+        catch (CalendarRecurrenceUnevaluableException exception)
         {
-            return Failure(CalendarEntityCreateCode.RecurrenceUnevaluable);
+            return SemanticFailure(CalendarEntityCreateCode.RecurrenceUnevaluable, exception.Violation);
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
-            return Failure(CalendarEntityCreateCode.InvalidCalendarData);
+            return SemanticFailure(
+                CalendarEntityCreateCode.InvalidCalendarData,
+                (exception as CalendarEntityValidationException)?.Violation);
         }
     }
 
@@ -516,13 +518,15 @@ internal sealed class CalendarCreationModule(
             validate();
             return null;
         }
-        catch (CalendarRecurrenceUnevaluableException)
+        catch (CalendarRecurrenceUnevaluableException exception)
         {
-            return Failure(CalendarEntityCreateCode.RecurrenceUnevaluable);
+            return SemanticFailure(CalendarEntityCreateCode.RecurrenceUnevaluable, exception.Violation);
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
-            return Failure(CalendarEntityCreateCode.InvalidCalendarData);
+            return SemanticFailure(
+                CalendarEntityCreateCode.InvalidCalendarData,
+                (exception as CalendarEntityValidationException)?.Violation);
         }
     }
 
@@ -1071,6 +1075,11 @@ internal sealed class CalendarCreationModule(
         CalendarMutationState mutationState = CalendarMutationState.NotAttempted,
         CalendarEntityCreateExecutionLimits? limits = null) =>
         new(code, mutationState, AuthorizedCandidates: candidates ?? [], Limits: limits);
+
+    private static CalendarEntityCreateResult SemanticFailure(
+        CalendarEntityCreateCode code,
+        CalendarEntityViolation? violation) =>
+        Failure(code) with { Violations = violation is null ? null : [violation] };
 
     private static bool HasSameOrigin(Uri left, Uri right) =>
         string.Equals(left.Scheme, right.Scheme, StringComparison.OrdinalIgnoreCase)

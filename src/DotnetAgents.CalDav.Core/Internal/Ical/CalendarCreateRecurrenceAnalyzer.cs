@@ -15,6 +15,12 @@ internal sealed class CalendarRecurrenceUnevaluableException : Exception
         : base("The recurrence set could not be evaluated safely.", innerException)
     {
     }
+
+    public CalendarRecurrenceUnevaluableException(CalendarEntityViolation violation, Exception? innerException = null)
+        : base(violation.Message, innerException) => Violation = violation;
+
+    /// <summary>Gets the typed reason, when the evaluation failure is attributable to authored input.</summary>
+    public CalendarEntityViolation? Violation { get; }
 }
 
 internal sealed record CalendarCreateRecurrenceAnalysis(bool IsUnbounded, DateTime LastLocalStart);
@@ -30,10 +36,10 @@ internal static class CalendarCreateRecurrenceAnalyzer
         try
         {
             if (TryReadCount(rule, out var count) && count < 1)
-                throw new CalendarRecurrenceUnevaluableException();
+                throw new CalendarRecurrenceUnevaluableException(CalendarEntityViolations.RecurrenceCountInvalid);
             var pattern = new RecurrenceRule(rule);
             if (pattern.Count is > MaximumProfileOccurrences)
-                throw new CalendarRecurrenceUnevaluableException();
+                throw new CalendarRecurrenceUnevaluableException(CalendarEntityViolations.RecurrenceOccurrenceLimit);
             var nominalStart = CreateStart(masterStart);
             var unbounded = pattern.Count is null && pattern.Until is null;
             var maximumStarts = unbounded ? 1 : MaximumProfileOccurrences + 1;
@@ -45,12 +51,7 @@ internal static class CalendarCreateRecurrenceAnalyzer
                 .Select(period => period.StartTime.Value)
                 .Take(maximumStarts)
                 .ToArray();
-            if (starts.Length == 0
-                || starts[0] != nominalStart.Value
-                || starts.Length > MaximumProfileOccurrences)
-            {
-                throw new CalendarRecurrenceUnevaluableException();
-            }
+            EnsureProfileStarts(starts, nominalStart.Value);
             return new CalendarCreateRecurrenceAnalysis(unbounded, starts[^1]);
         }
         catch (CalendarRecurrenceUnevaluableException)
@@ -59,8 +60,23 @@ internal static class CalendarCreateRecurrenceAnalyzer
         }
         catch (EvaluationException exception)
         {
-            throw new CalendarRecurrenceUnevaluableException(exception);
+            throw new CalendarRecurrenceUnevaluableException(
+                CalendarEntityViolations.RecurrenceEvaluationFailed,
+                exception);
         }
+    }
+
+    private static void EnsureProfileStarts(DateTime[] starts, DateTime nominalStart)
+    {
+        var violation = starts switch
+        {
+            [] => CalendarEntityViolations.RecurrenceNoOccurrences,
+            _ when starts[0] != nominalStart => CalendarEntityViolations.RecurrenceStartMismatch,
+            { Length: > MaximumProfileOccurrences } => CalendarEntityViolations.RecurrenceOccurrenceLimit,
+            _ => null
+        };
+        if (violation is not null)
+            throw new CalendarRecurrenceUnevaluableException(violation);
     }
 
     private static bool TryReadCount(string rule, out int count)
