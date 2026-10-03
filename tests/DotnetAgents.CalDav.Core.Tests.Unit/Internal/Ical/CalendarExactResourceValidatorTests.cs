@@ -33,6 +33,40 @@ public sealed class CalendarExactResourceValidatorTests
         CalendarExactResourceValidator.TryValidate(Encoding.UTF8.GetBytes(content), out _).ShouldBeFalse();
     }
 
+    [Theory]
+    [MemberData(nameof(ExplainedResources))]
+    public void Explain_names_the_first_rule_a_refused_resource_breaks(string content, string code)
+    {
+        var bytes = Encoding.UTF8.GetBytes(content);
+        CalendarExactResourceValidator.TryValidate(bytes, out _).ShouldBeFalse();
+
+        var violation = CalendarExactResourceValidator.Explain(bytes);
+
+        violation.Pointer.ShouldBe("/resource");
+        violation.Code.ShouldBe(code);
+        violation.Message.ShouldNotContain("explained-uid");
+    }
+
+    public static TheoryData<string, string> ExplainedResources()
+    {
+        const string Head = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Exact Tests//EN\r\n";
+        const string Event = "BEGIN:VEVENT\r\nUID:explained-uid\r\nDTSTAMP:20260817T120000Z\r\nDTSTART:20260818T120000Z\r\nEND:VEVENT\r\n";
+        const string Tail = "END:VCALENDAR\r\n";
+        return new TheoryData<string, string>
+        {
+            { (Head + Event + Tail).Replace("\r\n", "\n", StringComparison.Ordinal), "crlf_required" },
+            { Head + Event + Tail.TrimEnd('\r', '\n'), "crlf_required" },
+            { Head + "\r\n" + Event + Tail, "content_line_invalid" },
+            { " folded-first\r\n" + Head + Event + Tail, "content_line_invalid" },
+            { Head + "NO-COLON-HERE\r\n" + Event + Tail, "content_line_invalid" },
+            { Head + Event + "BEGIN:X-OPEN\r\n" + Tail, "component_nesting_invalid" },
+            { Head + Tail, "entity_missing" },
+            { Head.Replace("VERSION:2.0\r\n", string.Empty, StringComparison.Ordinal) + Event + Tail, "resource_structure_invalid" },
+            { Head + Event + "BEGIN:VTODO\r\nUID:explained-uid\r\nDTSTAMP:20260817T120000Z\r\nEND:VTODO\r\n" + Tail, "entity_kinds_mixed" },
+            { Head + Event + Event.Replace("explained-uid", "other-uid", StringComparison.Ordinal) + Tail, "uid_inconsistent" }
+        };
+    }
+
     [Fact]
     public void TryValidate_RejectsInvalidUtf8()
     {

@@ -71,13 +71,11 @@ internal sealed class CalendarExactResourceEngine(
             var revisionFailure = ValidateCurrentRevision(request.Revision, snapshot);
             if (revisionFailure is not null)
                 return FailedReview(revisionFailure);
-            if (!CalendarExactResourceValidator.TryValidate(request.AuthoritativeUtf8.Span, out var intended)
-                || intended.EntityUid != request.Revision.EntityUid
-                || intended.EntityKind != request.Revision.EntityKind)
+            if (ReplacementViolation(request, out _) is { } replacementViolation)
             {
                 return FailedReview(Failure(
                     CalendarExactResourceCode.InvalidCalendarData,
-                    CalendarExactResourcePhase.CompleteResourceSemantics));
+                    CalendarExactResourcePhase.CompleteResourceSemantics) with { Violations = [replacementViolation] });
             }
             if (snapshot.AuthoritativeUtf8.Span.SequenceEqual(request.AuthoritativeUtf8.Span))
             {
@@ -118,13 +116,11 @@ internal sealed class CalendarExactResourceEngine(
         var revisionFailure = ValidateCurrentRevision(request.Revision, snapshot);
         if (revisionFailure is not null)
             return revisionFailure;
-        if (!CalendarExactResourceValidator.TryValidate(request.AuthoritativeUtf8.Span, out var intended)
-            || intended.EntityUid != request.Revision.EntityUid
-            || intended.EntityKind != request.Revision.EntityKind)
+        if (ReplacementViolation(request, out var intended) is { } replacementViolation)
         {
             return Failure(
                 CalendarExactResourceCode.InvalidCalendarData,
-                CalendarExactResourcePhase.CompleteResourceSemantics);
+                CalendarExactResourcePhase.CompleteResourceSemantics) with { Violations = [replacementViolation] };
         }
         if (snapshot.AuthoritativeUtf8.Span.SequenceEqual(request.AuthoritativeUtf8.Span))
         {
@@ -277,13 +273,31 @@ internal sealed class CalendarExactResourceEngine(
                 snapshot,
                 Phase: CalendarExactResourcePhase.TargetRevision);
         }
-        return current.EntityUid == revision.EntityUid && snapshot.EntityTag == revision.EntityTag
+        var changed = current.EntityUid != revision.EntityUid
+            ? CalendarRevisionViolations.UidMismatch("/revision")
+            : snapshot.EntityTag != revision.EntityTag
+                ? CalendarRevisionViolations.Changed("/revision")
+                : null;
+        return changed is null
             ? null
             : new CalendarExactResourceResult(
                 CalendarExactResourceCode.Conflict,
                 CalendarMutationState.NotAttempted,
                 snapshot,
-                Phase: CalendarExactResourcePhase.TargetRevision);
+                Phase: CalendarExactResourcePhase.TargetRevision,
+                Violations: [changed]);
+    }
+
+    /// <summary>Returns why a replacement body is refused: invalid content or an identity that differs from the revision.</summary>
+    private static CalendarRequestViolation? ReplacementViolation(
+        CalendarExactReplaceRequest request,
+        out CalendarExactResourceIdentity intended)
+    {
+        if (!CalendarExactResourceValidator.TryValidate(request.AuthoritativeUtf8.Span, out intended))
+            return CalendarExactResourceValidator.Explain(request.AuthoritativeUtf8.Span);
+        if (intended.EntityUid != request.Revision.EntityUid)
+            return CalendarExactResourceValidator.UidMismatch;
+        return intended.EntityKind != request.Revision.EntityKind ? CalendarExactResourceValidator.KindMismatch : null;
     }
 
     private CalendarExactResourceResult? ValidateReplaceShape(CalendarExactReplaceRequest request)

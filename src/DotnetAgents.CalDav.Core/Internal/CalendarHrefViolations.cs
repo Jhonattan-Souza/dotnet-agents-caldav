@@ -6,7 +6,7 @@ namespace DotnetAgents.CalDav.Core.Internal;
 internal static class CalendarHrefViolations
 {
     /// <summary>Returns the first rule a candidate breaks, in the order the canonical-href check applies them.</summary>
-    internal static CalendarRequestViolation? Canonical(string pointer, string href, Uri? candidate) => candidate switch
+    internal static CalendarRequestViolation Canonical(string pointer, string href, Uri? candidate) => candidate switch
     {
         null => new(pointer, "href_not_absolute", "href must be an absolute http or https URL."),
         _ when !candidate.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)

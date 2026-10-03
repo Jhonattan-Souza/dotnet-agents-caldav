@@ -30,6 +30,97 @@ internal static class CalendarExactResourceValidator
         }
     }
 
+    /// <summary>The semantic location of the caller-authored resource body.</summary>
+    internal const string ResourcePointer = "/resource";
+
+    /// <summary>
+    /// Names the first exact-resource rule a refused body breaks. It runs only after <see cref="TryValidate"/>
+    /// failed and reports line numbers and rules, never content.
+    /// </summary>
+    internal static CalendarRequestViolation Explain(ReadOnlySpan<byte> authoritativeUtf8)
+    {
+        if (!HasExactWireFormat(authoritativeUtf8))
+            return Resource("crlf_required", "Every line must end with CRLF, including the last line.");
+        if (FindInvalidContentLine(authoritativeUtf8) is { } line)
+        {
+            return line == 0
+                ? Resource("component_nesting_invalid", "BEGIN and END lines must balance and nest at most 64 deep.")
+                : Resource("content_line_invalid", string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                    $"Physical line {line} does not start a valid iCalendar content line or fold."));
+        }
+        try
+        {
+            var document = CalendarContentDocument.Parse(authoritativeUtf8);
+            return IdentityViolation(document) ?? Resource("resource_structure_invalid",
+                "The resource must be one VCALENDAR with VERSION:2.0 and PRODID whose components are valid.");
+        }
+        catch (Exception exception) when (exception is FormatException
+            or DecoderFallbackException
+            or InvalidOperationException)
+        {
+            return Resource("content_unparsable", "The resource could not be parsed as iCalendar text.");
+        }
+    }
+
+    internal static CalendarRequestViolation UidMismatch { get; } = Resource("resource_uid_mismatch",
+        "The resource UID must equal revision.entityUid; a replacement cannot change identity.");
+
+    internal static CalendarRequestViolation KindMismatch { get; } = Resource("resource_kind_mismatch",
+        "The resource Entity Kind must equal revision.entityKind.");
+
+    private static CalendarRequestViolation Resource(string code, string message) => new(ResourcePointer, code, message);
+
+    private static CalendarRequestViolation? IdentityViolation(CalendarContentDocument document)
+    {
+        var entities = GetEntityComponents(document);
+        if (entities.Length == 0)
+            return Resource("entity_missing", "The resource must contain at least one VEVENT or VTODO.");
+        if (entities.Select(component => component.Path[1].Name).Distinct(StringComparer.Ordinal).Count() != 1)
+            return Resource("entity_kinds_mixed", "The resource must contain only VEVENT or only VTODO components.");
+        return HasConsistentIdentity(entities.Select(component => ReadIdentity(document, component)).ToArray())
+            ? null
+            : Resource("uid_inconsistent",
+                "Every component must share one UID, with one master and distinct RECURRENCE-IDs.");
+    }
+
+    /// <summary>Returns the first invalid physical line (1-based), 0 for unbalanced nesting, or null when valid.</summary>
+    private static int? FindInvalidContentLine(ReadOnlySpan<byte> authoritativeUtf8)
+    {
+        var physicalLines = Encoding.Latin1.GetString(authoritativeUtf8).Split("\r\n", StringSplitOptions.None);
+        var logicalLine = new StringBuilder();
+        var logicalStart = 0;
+        var componentDepth = 0;
+        for (var index = 0; index < physicalLines.Length - 1; index++)
+        {
+            var physicalLine = physicalLines[index];
+            var isFold = physicalLine.Length > 0 && physicalLine[0] is ' ' or '\t';
+            if (physicalLine.Length == 0 || (isFold && logicalStart == 0))
+                return index + 1;
+            if (isFold)
+            {
+                logicalLine.Append(physicalLine.AsSpan(1));
+                continue;
+            }
+            if (logicalStart > 0 && !HasValidLogicalLine(logicalLine.ToString(), ref componentDepth))
+                return InvalidLineOrNesting(componentDepth, logicalStart);
+            logicalLine.Clear().Append(physicalLine);
+            logicalStart = index + 1;
+        }
+        return FinalLineFailure(logicalLine.ToString(), logicalStart, componentDepth);
+    }
+
+    private static int? FinalLineFailure(string logicalLine, int logicalStart, int componentDepth)
+    {
+        if (logicalStart == 0)
+            return 1;
+        if (!HasValidLogicalLine(logicalLine, ref componentDepth))
+            return InvalidLineOrNesting(componentDepth, logicalStart);
+        return componentDepth == 0 ? null : 0;
+    }
+
+    private static int InvalidLineOrNesting(int componentDepth, int logicalStart) =>
+        componentDepth is < 0 or > MaximumComponentDepth ? 0 : logicalStart;
+
     private static bool HasExactWireFormat(ReadOnlySpan<byte> authoritativeUtf8)
     {
         return authoritativeUtf8.Length >= 2

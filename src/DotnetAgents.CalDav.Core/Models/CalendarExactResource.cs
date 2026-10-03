@@ -119,7 +119,8 @@ public sealed record CalendarExactResourceResult(
     bool Retryable = false,
     int? RetryAfterMilliseconds = null,
     CalendarExactResourcePhase Phase = CalendarExactResourcePhase.Execution,
-    CalendarEntityCreateExecutionLimits? Limits = null)
+    CalendarEntityCreateExecutionLimits? Limits = null,
+    IReadOnlyList<CalendarRequestViolation>? Violations = null)
 {
     public static CalendarExactResourceResult Success(CalendarResourceSnapshot snapshot) => new(
         CalendarExactResourceCode.Success,

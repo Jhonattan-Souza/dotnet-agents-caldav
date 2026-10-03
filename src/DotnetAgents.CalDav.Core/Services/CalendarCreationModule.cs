@@ -739,7 +739,10 @@ internal sealed class CalendarCreationModule(
                 null,
                 ExactFailure(
                     CalendarExactResourceCode.InvalidCalendarData,
-                    CalendarExactResourcePhase.CompleteResourceSemantics));
+                    CalendarExactResourcePhase.CompleteResourceSemantics) with
+                {
+                    Violations = [CalendarExactResourceValidator.Explain(request.AuthoritativeUtf8.Span)]
+                });
         }
         if (!Advertises(destination, identity.EntityKind))
         {
@@ -776,7 +779,10 @@ internal sealed class CalendarCreationModule(
                 null,
                 ExactFailure(
                     CalendarExactResourceCode.InvalidCalendarData,
-                    CalendarExactResourcePhase.CompleteResourceSemantics));
+                    CalendarExactResourcePhase.CompleteResourceSemantics) with
+                {
+                    Violations = [CalendarExactResourceValidator.Explain(request.AuthoritativeUtf8.Span)]
+                });
         }
         return new ExactPreparedCreate(destination, identity, null);
     }
@@ -852,9 +858,13 @@ internal sealed class CalendarCreationModule(
         }
         if (!TryValidateExactResourceHref(request.DestinationHref))
         {
+            Uri.TryCreate(request.DestinationHref, UriKind.Absolute, out var candidate);
             return ExactFailure(
                 CalendarExactResourceCode.InvalidInput,
-                CalendarExactResourcePhase.OriginScopeAuthorization);
+                CalendarExactResourcePhase.OriginScopeAuthorization) with
+            {
+                Violations = [CalendarHrefViolations.Canonical("/destinationHref", request.DestinationHref, candidate)]
+            };
         }
         return ValidateExactOriginAndScope(request.DestinationHref);
     }
@@ -866,7 +876,10 @@ internal sealed class CalendarCreationModule(
         {
             return ExactFailure(
                 CalendarExactResourceCode.InvalidInput,
-                CalendarExactResourcePhase.OriginScopeAuthorization);
+                CalendarExactResourcePhase.OriginScopeAuthorization) with
+            {
+                Violations = [CalendarHrefViolations.ForeignOrigin("/destinationHref")]
+            };
         }
         var configuredScope = ParseScope(options.CalendarHrefs);
         return configuredScope.Count == 0
@@ -874,7 +887,10 @@ internal sealed class CalendarCreationModule(
             ? null
             : ExactFailure(
                 CalendarExactResourceCode.OutsideScope,
-                CalendarExactResourcePhase.OriginScopeAuthorization);
+                CalendarExactResourcePhase.OriginScopeAuthorization) with
+            {
+                Violations = [CalendarHrefViolations.OutsideConfiguredScope("/destinationHref")]
+            };
     }
 
     private static bool TryValidateExactResourceHref(string href) =>

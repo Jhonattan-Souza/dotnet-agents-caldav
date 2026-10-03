@@ -127,6 +127,42 @@ public sealed class ExactCalendarResourceTests
             Arg.Any<CalendarExactReplaceRequest>(), Arg.Any<CancellationToken>());
     }
 
+    [Theory]
+    [InlineData(false, "/utf8Resource")]
+    [InlineData(true, "/base64Utf8Resource")]
+    public async Task ExactReplaceRawAsync_AnchorsBodyReasonsAtTheResourceArgumentTheCallerSent(bool base64, string pointer)
+    {
+        var service = Substitute.For<ICalendarService>();
+        var revision = ExactRevision();
+        service.ReviewExactReplaceResourceAsync(
+                Arg.Any<CalendarExactReplaceRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CalendarExactResourceReviewResult(
+                new CalendarExactResourceResult(
+                    CalendarExactResourceCode.InvalidCalendarData,
+                    CalendarMutationState.NotAttempted,
+                    Phase: CalendarExactResourcePhase.CompleteResourceSemantics,
+                    Violations: [new CalendarRequestViolation("/resource", "crlf_required", "Every line must end with CRLF.")]),
+                null,
+                default));
+        var sut = CreateWriteTools(service);
+        var arguments = ReplaceArguments(revision, ExactEvent(revision.EntityUid));
+        if (base64)
+        {
+            arguments.Remove("utf8Resource");
+            arguments["base64Utf8Resource"] = JsonSerializer.SerializeToElement(
+                Convert.ToBase64String(ExactEvent(revision.EntityUid)));
+        }
+
+        var result = await sut.ReplaceRawAsync(arguments, null, null, true, CancellationToken.None);
+
+        var structured = result.StructuredContent!.Value;
+        structured.GetProperty("message").GetString().ShouldBe("Every line must end with CRLF.");
+        var violation = structured.GetProperty("violations").EnumerateArray().ShouldHaveSingleItem();
+        violation.GetProperty("pointer").GetString().ShouldBe(pointer);
+        using var text = JsonDocument.Parse(result.Content.OfType<TextContentBlock>().First().Text);
+        JsonElement.DeepEquals(text.RootElement, structured).ShouldBeTrue();
+    }
+
     [Fact]
     public async Task ExactReplaceRawAsync_AcceptedBoundContinuationExecutesOnce()
     {

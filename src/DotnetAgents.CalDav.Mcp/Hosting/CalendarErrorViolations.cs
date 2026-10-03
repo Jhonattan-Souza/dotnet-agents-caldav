@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using DotnetAgents.CalDav.Core.Models;
+using DotnetAgents.CalDav.Mcp.Tools;
 using ModelContextProtocol.Protocol;
 
 namespace DotnetAgents.CalDav.Mcp.Hosting;
@@ -57,6 +58,24 @@ internal static class CalendarErrorViolations
     /// <summary>Returns the first typed reason's fixed message, or the caller's fallback.</summary>
     internal static string MessageOr(IReadOnlyList<CalendarRequestViolation>? violations, string fallback) =>
         violations is [var first, ..] ? first.Message : fallback;
+
+    /// <summary>Moves violations anchored at one argument member to another and re-renders the text block.</summary>
+    internal static CallToolResult RebasePointer(CallToolResult result, string from, string to)
+    {
+        if (result.StructuredContent is not { } structured
+            || !structured.TryGetProperty("violations", out var violations)
+            || !violations.EnumerateArray().Any(item => item.GetProperty("pointer").GetString() == from))
+            return result;
+        var body = JsonNode.Parse(structured.GetRawText())!.AsObject();
+        foreach (var violation in body["violations"]!.AsArray())
+        {
+            if (violation!["pointer"]!.GetValue<string>() == from)
+                violation["pointer"] = to;
+        }
+        result.StructuredContent = JsonSerializer.SerializeToElement(body);
+        CalendarQueryToolSupport.ApplyCompatibilityText(result);
+        return result;
+    }
 
     internal static CallToolResult Attach(
         CallToolResult result,
