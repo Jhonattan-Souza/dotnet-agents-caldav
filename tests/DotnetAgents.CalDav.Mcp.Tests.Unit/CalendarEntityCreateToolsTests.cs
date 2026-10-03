@@ -1195,7 +1195,16 @@ public sealed class CalendarEntityCreateToolsTests
             { "event", "{\"start\":" + start + ",\"recurrenceSet\":{\"rrule\":\"FREQ=DAILY\",\"overrides\":["
                 + Override(Utc("2026-08-18T13:00:00Z"), "active", "{\"start\":" + Utc("2026-08-18T15:00:00Z")
                     + ",\"status\":\"CANCELLED\"}") + "]}}",
-                Invalid, "override_status_conflict", "/entity/fields/recurrenceSet/overrides/0/status" }
+                Invalid, "override_status_conflict", "/entity/fields/recurrenceSet/overrides/0/status" },
+            { "event", "{\"start\":" + start + ",\"recurrenceSet\":{\"rrule\":\"FREQ=SOMETIMES\"}}",
+                Invalid, "recurrence_rule_invalid", "/entity/fields/recurrenceSet/rrule" },
+            { "event", "{\"start\":" + start + ",\"recurrenceSet\":{\"rrule\":\"FREQ=DAILY;COUNT=abc\"}}",
+                Invalid, "recurrence_rule_invalid", "/entity/fields/recurrenceSet/rrule" },
+            { "event", "{\"start\":" + start + ",\"recurrenceSet\":{\"rrule\":\"RRULE:FREQ=DAILY\"}}",
+                Invalid, "recurrence_rule_invalid", "/entity/fields/recurrenceSet/rrule" },
+            { "event", "{\"start\":" + start + ",\"recurrenceSet\":{}}",
+                Invalid, "recurrence_data_required", "/entity/fields/recurrenceSet" },
+            { "event", "{\"summary\":\"No start\"}", Invalid, "start_required", "/entity/fields/start" }
         };
     }
 

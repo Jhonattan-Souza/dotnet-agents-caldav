@@ -37,7 +37,7 @@ internal static class CalendarCreateRecurrenceAnalyzer
         {
             if (TryReadCount(rule, out var count) && count < 1)
                 throw new CalendarRecurrenceUnevaluableException(CalendarEntityViolations.RecurrenceCountInvalid);
-            var pattern = new RecurrenceRule(rule);
+            var pattern = ParseRule(rule);
             if (pattern.Count is > MaximumProfileOccurrences)
                 throw new CalendarRecurrenceUnevaluableException(CalendarEntityViolations.RecurrenceOccurrenceLimit);
             var nominalStart = CreateStart(masterStart);
@@ -63,6 +63,18 @@ internal static class CalendarCreateRecurrenceAnalyzer
             throw new CalendarRecurrenceUnevaluableException(
                 CalendarEntityViolations.RecurrenceEvaluationFailed,
                 exception);
+        }
+    }
+
+    private static RecurrenceRule ParseRule(string rule)
+    {
+        try
+        {
+            return new RecurrenceRule(rule);
+        }
+        catch (Exception exception) when (exception is ArgumentException or FormatException)
+        {
+            throw CalendarEntityViolations.RecurrenceRuleInvalid(exception);
         }
     }
 
