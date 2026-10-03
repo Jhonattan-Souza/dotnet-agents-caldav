@@ -755,6 +755,24 @@ public sealed class CalendarMcpRawStdioTests
     }
 
     [Fact]
+    public async Task TodoCreate_RecurrenceWithoutStartNamesTheMissingFieldThroughTheOutputSchemaGuard()
+    {
+        const string request = """
+            {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"todos.create","arguments":{"destination":{"mode":"default"},"entity":{"kind":"todo","fields":{"summary":"private-marker","due":{"kind":"date","value":"2026-10-25"},"recurrenceSet":{"rrule":"FREQ=MONTHLY;BYMONTHDAY=25"}}}}}}
+            """;
+
+        var result = await InvokeRawAsync(request);
+
+        AssertTypedError(result, "invalid_calendar_data", "completeResourceSemantics");
+        var structured = result.GetProperty("structuredContent");
+        structured.GetProperty("mutationState").GetString().ShouldBe("not_attempted");
+        var violation = structured.GetProperty("violations").EnumerateArray().ShouldHaveSingleItem();
+        violation.GetProperty("pointer").GetString().ShouldBe("/entity/fields/start");
+        violation.GetProperty("code").GetString().ShouldBe("recurrence_start_required");
+        result.ToString().ShouldNotContain("private-marker");
+    }
+
+    [Fact]
     public async Task EventCreate_DuplicateRruleReturnsTypedInvalidInputBeforeNetwork()
     {
         const string request = """

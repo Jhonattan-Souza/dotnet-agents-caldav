@@ -32,7 +32,7 @@ public sealed class CalendarEntityCreateTools
         OpenWorld = true,
         UseStructuredContent = true,
         OutputSchemaType = typeof(CalendarEntityCreateSuccessResult)),
-     Description("Create one typed Event in the default or explicitly selected Calendar. A timed Event without an explicit end or duration defaults to PT1H; a date-only Event remains one nominal day.")]
+     Description("Create one typed Event in the default or explicitly selected Calendar. A timed Event without an explicit end or duration defaults to PT1H; a date-only Event remains one nominal day. end must share start's temporal kind and time zone and be later than start. With a recurrenceSet, start must be the first occurrence of rrule. A rejected field is named by violations[].pointer and violations[].code.")]
     public Task<CallToolResult> CreateEventAsync(
         RequestContext<CallToolRequestParams> requestContext,
         CancellationToken cancellationToken) =>
@@ -46,7 +46,7 @@ public sealed class CalendarEntityCreateTools
         OpenWorld = true,
         UseStructuredContent = true,
         OutputSchemaType = typeof(CalendarEntityCreateSuccessResult)),
-     Description("Create one typed To-do in the default or explicitly selected Calendar.")]
+     Description("Create one typed To-do in the default or explicitly selected Calendar. When start and due are both present, due must share start's temporal kind and time zone and be later than start. With a recurrenceSet, start is required and must be the first occurrence of rrule. A rejected field is named by violations[].pointer and violations[].code.")]
     public Task<CallToolResult> CreateTodoAsync(
         RequestContext<CallToolRequestParams> requestContext,
         CancellationToken cancellationToken) =>
@@ -178,7 +178,8 @@ public sealed class CalendarEntityCreateTools
     private static CalendarToolResult Error(CalendarEntityCreateResult result)
     {
         var facts = CalendarTelemetryFacts.From(result);
-        var message = Describe(result.Code);
+        var violations = ToInputViolations(result.Violations);
+        var message = result.Violations is [var first, ..] ? first.Message : Describe(result.Code);
         return Error(
             facts,
             message,
@@ -187,8 +188,18 @@ public sealed class CalendarEntityCreateTools
                 ? result.AuthorizedCandidates.Select(CalendarAuthorizedCandidateResult.FromDescriptor).ToArray()
                 : null,
             result.Snapshot is null ? null : CalendarSnapshotResult.FromSnapshot(result.Snapshot),
-            limits: result.Limits is null ? null : CalendarEntityCreateLimits.FromLimits(result.Limits));
+            limits: result.Limits is null ? null : CalendarEntityCreateLimits.FromLimits(result.Limits),
+            violations: violations);
     }
+
+    /// <summary>Anchors typed Core reasons at the authored <c>entity.fields</c> argument.</summary>
+    private static IReadOnlyList<CalendarInputViolation>? ToInputViolations(
+        IReadOnlyList<CalendarEntityViolation>? violations) => violations is { Count: > 0 }
+        ? CalendarErrorViolations.Normalize(violations.Select(violation => new CalendarInputViolation(
+            "/entity/fields" + violation.FieldPointer,
+            violation.Code,
+            violation.Message)))
+        : null;
 
     private static string Describe(
         CalendarEntityCreateCode code) => code switch
@@ -232,7 +243,8 @@ public sealed class CalendarEntityCreateTools
         IReadOnlyList<CalendarAuthorizedCandidateResult>? candidates = null,
         CalendarSnapshotResult? currentSnapshot = null,
         int? retryAfterMs = null,
-        CalendarEntityCreateLimits? limits = null) => CalendarToolResult.Error(new CallToolResult
+        CalendarEntityCreateLimits? limits = null,
+        IReadOnlyList<CalendarInputViolation>? violations = null) => CalendarToolResult.Error(WithViolations(new CallToolResult
         {
             IsError = true,
             StructuredContent = JsonSerializer.SerializeToElement(new CalendarEntityCreateErrorResult(
@@ -247,7 +259,12 @@ public sealed class CalendarEntityCreateTools
                 retryAfterMs,
                 limits)),
             Content = [new TextContentBlock { Text = "Calendar Entity creation failed." }]
-        }, facts, mutationState);
+        }, violations), facts, mutationState);
+
+    private static CallToolResult WithViolations(
+        CallToolResult result,
+        IReadOnlyList<CalendarInputViolation>? violations) =>
+        violations is null ? result : CalendarErrorViolations.Attach(result, violations);
 
     private static CalendarToolResult PayloadLimitError(CalendarMutationState mutationState) => Error(
         CalendarTelemetryFacts.FromInputGuard(payloadTooLarge: true),

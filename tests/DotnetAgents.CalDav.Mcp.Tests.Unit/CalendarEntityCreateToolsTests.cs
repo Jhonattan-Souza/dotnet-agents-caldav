@@ -1089,6 +1089,116 @@ public sealed class CalendarEntityCreateToolsTests
         }
     }
 
+    [Theory]
+    [MemberData(nameof(RejectedSemanticInputs))]
+    public async Task CreateRawAsync_NamesTheRejectedFieldAndReasonWithoutWriting(
+        string entityKind,
+        string fields,
+        string expectedCode,
+        string violationCode,
+        string pointer)
+    {
+        var client = Substitute.For<ICalendarClient>();
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
+            new CalendarDescriptor
+            {
+                Href = "https://cal.example/both/",
+                DisplayName = "Both",
+                DisplayNameProvenance = DisplayNameProvenance.DavDisplayName,
+                EventSupport = EntityKindSupport.Advertised,
+                TodoSupport = EntityKindSupport.Advertised
+            }
+        ]);
+        using var serviceHost = CalendarServiceTestHost.Create(
+            client,
+            options =>
+            {
+                options.DefaultEventCalendarName = "Both";
+                options.DefaultTodoCalendarName = "Both";
+            });
+        var sut = new CalendarEntityCreateTools(serviceHost.Service, TimeProvider.System);
+        var arguments = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+            "{\"destination\":{\"mode\":\"default\"},\"entity\":{\"kind\":\"" + entityKind
+            + "\",\"fields\":" + fields + "}}");
+
+        var result = entityKind == "event"
+            ? await sut.CreateEventRawAsync(arguments, CancellationToken.None)
+            : await sut.CreateTodoRawAsync(arguments, CancellationToken.None);
+
+        result.IsError.ShouldBe(true);
+        var structured = result.StructuredContent!.Value;
+        structured.GetProperty("code").GetString().ShouldBe(expectedCode);
+        structured.GetProperty("phase").GetString().ShouldBe("completeResourceSemantics");
+        structured.GetProperty("mutationState").GetString().ShouldBe("not_attempted");
+        structured.GetProperty("retryable").GetBoolean().ShouldBeFalse();
+        var violation = structured.GetProperty("violations").EnumerateArray().ShouldHaveSingleItem();
+        violation.GetProperty("pointer").GetString().ShouldBe(pointer);
+        violation.GetProperty("code").GetString().ShouldBe(violationCode);
+        structured.GetProperty("message").GetString().ShouldBe(violation.GetProperty("message").GetString());
+        await client.DidNotReceive().CreateCalendarResourceAsync(
+            Arg.Any<CalendarResourceCreateRequest>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    public static TheoryData<string, string, string, string, string> RejectedSemanticInputs()
+    {
+        static string Date(string value) => "{\"kind\":\"date\",\"value\":\"" + value + "\"}";
+        static string Utc(string value) => "{\"kind\":\"utcDateTime\",\"value\":\"" + value + "\"}";
+        const string Monthly = "\"recurrenceSet\":{\"rrule\":\"FREQ=MONTHLY;BYMONTHDAY=25\"}";
+        const string Invalid = "invalid_calendar_data";
+        const string Unevaluable = "recurrence_unevaluable";
+        var start = Utc("2026-08-17T13:00:00Z");
+        string Override(string identity, string status, string overrideFields) =>
+            "{\"recurrenceIdentity\":{\"value\":" + identity + "},\"status\":\"" + status
+            + "\",\"fields\":" + overrideFields + "}";
+        return new TheoryData<string, string, string, string, string>
+        {
+            { "todo", "{\"due\":" + Date("2026-10-25") + "," + Monthly + "}",
+                Invalid, "recurrence_start_required", "/entity/fields/start" },
+            { "todo", "{\"start\":" + Date("2026-10-25") + ",\"due\":" + Date("2026-10-25") + "," + Monthly + "}",
+                Invalid, "due_not_after_start", "/entity/fields/due" },
+            { "todo", "{\"start\":" + Date("2026-10-24") + ",\"due\":" + Date("2026-10-25") + "," + Monthly + "}",
+                Unevaluable, "recurrence_start_mismatch", "/entity/fields/start" },
+            { "todo", "{\"start\":" + Date("2026-10-25") + ",\"due\":" + Utc("2026-10-26T09:00:00Z") + "}",
+                Invalid, "temporal_family_mismatch", "/entity/fields/due" },
+            { "todo", "{\"duration\":\"P1D\"}", Invalid, "duration_start_required", "/entity/fields/start" },
+            { "todo", "{\"start\":" + Date("2026-10-25") + ",\"due\":" + Date("2026-10-26") + ",\"duration\":\"P1D\"}",
+                Invalid, "due_duration_exclusive", "/entity/fields/duration" },
+            { "event", "{\"start\":" + start + ",\"end\":" + Utc("2026-08-17T12:00:00Z") + "}",
+                Invalid, "end_not_after_start", "/entity/fields/end" },
+            { "event", "{\"start\":" + start + ",\"end\":" + Utc("2026-08-17T14:00:00Z") + ",\"duration\":\"PT1H\"}",
+                Invalid, "end_duration_exclusive", "/entity/fields/duration" },
+            { "event", "{\"start\":" + Date("2026-08-17") + ",\"duration\":\"PT1H\"}",
+                Invalid, "duration_invalid", "/entity/fields/duration" },
+            { "event", "{\"start\":{\"kind\":\"zonedDateTime\",\"value\":\"2026-03-08T02:30:00\",\"timeZoneId\":\"America/New_York\"}}",
+                Invalid, "temporal_value_invalid", "/entity/fields/start" },
+            { "event", "{\"start\":" + start + ",\"recurrenceSet\":{\"rrule\":\"FREQ=DAILY;COUNT=0\"}}",
+                Unevaluable, "recurrence_count_invalid", "/entity/fields/recurrenceSet/rrule" },
+            { "event", "{\"start\":" + start + ",\"recurrenceSet\":{\"rrule\":\"FREQ=DAILY;COUNT=10001\"}}",
+                Unevaluable, "recurrence_occurrence_limit_exceeded", "/entity/fields/recurrenceSet/rrule" },
+            { "event", "{\"start\":" + start + ",\"recurrenceSet\":{\"rrule\":\"FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=30;COUNT=1\"}}",
+                Unevaluable, "recurrence_evaluation_failed", "/entity/fields/recurrenceSet/rrule" },
+            { "event", "{\"start\":" + start + ",\"recurrenceSet\":{\"rrule\":\"FREQ=DAILY;UNTIL=20260801T000000Z\"}}",
+                Unevaluable, "recurrence_no_occurrences", "/entity/fields/recurrenceSet/rrule" },
+            { "event", "{\"start\":" + start + ",\"recurrenceSet\":{\"rrule\":\"FREQ=DAILY\",\"exdates\":[" + Date("2026-08-18") + "]}}",
+                Invalid, "recurrence_family_mismatch", "/entity/fields/recurrenceSet/exdates/0" },
+            { "event", "{\"start\":" + start + ",\"recurrenceSet\":{\"rrule\":\"FREQ=DAILY\",\"rdates\":[" + Date("2026-08-18") + "]}}",
+                Invalid, "recurrence_family_mismatch", "/entity/fields/recurrenceSet/rdates/0" },
+            { "event", "{\"start\":" + start + ",\"recurrenceSet\":{\"rrule\":\"FREQ=DAILY\",\"overrides\":["
+                + Override(Utc("2026-08-18T13:00:00Z"), "active", "{\"start\":" + Utc("2026-08-18T15:00:00Z") + "}") + ","
+                + Override(Utc("2026-08-18T13:00:00Z"), "active", "{\"start\":" + Utc("2026-08-18T16:00:00Z") + "}") + "]}}",
+                Invalid, "recurrence_override_duplicate", "/entity/fields/recurrenceSet/overrides/1/recurrenceIdentity" },
+            { "event", "{\"start\":" + start + ",\"recurrenceSet\":{\"rrule\":\"FREQ=DAILY\",\"overrides\":["
+                + Override(Utc("2026-08-18T13:00:00Z"), "active", "{\"start\":" + Utc("2026-08-18T15:00:00Z")
+                    + ",\"end\":" + Utc("2026-08-18T14:00:00Z") + "}") + "]}}",
+                Invalid, "end_not_after_start", "/entity/fields/recurrenceSet/overrides/0/fields/end" },
+            { "event", "{\"start\":" + start + ",\"recurrenceSet\":{\"rrule\":\"FREQ=DAILY\",\"overrides\":["
+                + Override(Utc("2026-08-18T13:00:00Z"), "active", "{\"start\":" + Utc("2026-08-18T15:00:00Z")
+                    + ",\"status\":\"CANCELLED\"}") + "]}}",
+                Invalid, "override_status_conflict", "/entity/fields/recurrenceSet/overrides/0/status" }
+        };
+    }
+
     private static CalendarResourceSnapshot EventSnapshot() => Snapshot(CalendarResourceProjectionKind.Event, "event-1");
 
     private static CalendarResourceSnapshot OversizedEventSnapshot()

@@ -307,11 +307,18 @@ public sealed record CalendarEntityCreateResult(
     CalendarMutationState MutationState,
     CalendarResourceSnapshot? Snapshot = null,
     IReadOnlyList<CalendarDescriptor>? AuthorizedCandidates = null,
-    CalendarEntityCreateExecutionLimits? Limits = null)
+    CalendarEntityCreateExecutionLimits? Limits = null,
+    IReadOnlyList<CalendarEntityViolation>? Violations = null)
 {
     public static CalendarEntityCreateResult Success(CalendarResourceSnapshot snapshot) =>
         new(CalendarEntityCreateCode.Success, CalendarMutationState.Committed, snapshot);
 }
+
+/// <summary>One typed reason that complete Calendar Entity semantics were rejected before any write.</summary>
+/// <param name="FieldPointer">JSON Pointer relative to the authored Entity fields, such as <c>/start</c>.</param>
+/// <param name="Code">Stable snake_case reason code.</param>
+/// <param name="Message">Fixed explanation that never echoes authored values.</param>
+public sealed record CalendarEntityViolation(string FieldPointer, string Code, string Message);
 
 /// <summary>Observed bounded-work evidence for semantic creation.</summary>
 public sealed record CalendarEntityCreateExecutionLimits(

@@ -3215,7 +3215,7 @@
         "idempotentHint": false,
         "openWorldHint": true
       },
-      "description": "Create one typed Event in the default or explicitly selected Calendar. A timed Event without an explicit end or duration defaults to PT1H; a date-only Event remains one nominal day."
+      "description": "Create one typed Event in the default or explicitly selected Calendar. A timed Event without an explicit end or duration defaults to PT1H; a date-only Event remains one nominal day. end must share start's temporal kind and time zone and be later than start. With a recurrenceSet, start must be the first occurrence of rrule. A rejected field is named by violations[].pointer and violations[].code."
     },
     {
       "name": "events.patch",
@@ -3257,7 +3257,7 @@
         "idempotentHint": false,
         "openWorldHint": true
       },
-      "description": "Create one typed To-do in the default or explicitly selected Calendar."
+      "description": "Create one typed To-do in the default or explicitly selected Calendar. When start and due are both present, due must share start's temporal kind and time zone and be later than start. With a recurrenceSet, start is required and must be the first occurrence of rrule. A rejected field is named by violations[].pointer and violations[].code."
     },
     {
       "name": "todos.patch",
@@ -5259,10 +5259,12 @@
           "type": "string"
         },
         "start": {
-          "$ref": "#/$defs/temporalValue"
+          "$ref": "#/$defs/temporalValue",
+          "description": "Required. When recurrenceSet has an rrule, start must be the rule's first occurrence."
         },
         "end": {
-          "$ref": "#/$defs/temporalValue"
+          "$ref": "#/$defs/temporalValue",
+          "description": "Same temporal kind and time zone as start, and later than start. Mutually exclusive with duration."
         },
         "duration": {
           "type": "string"
@@ -5298,7 +5300,8 @@
           "format": "uri"
         },
         "recurrenceSet": {
-          "$ref": "#/$defs/eventRecurrenceSetInput"
+          "$ref": "#/$defs/eventRecurrenceSetInput",
+          "description": "Requires start. rrule is evaluated from start, so start must be its first occurrence; rdates, exdates, and override recurrenceIdentity values use start's temporal kind and time zone."
         },
         "structuredData": {
           "$ref": "#/$defs/structuredDataInput"
@@ -5316,10 +5319,12 @@
           "type": "string"
         },
         "start": {
-          "$ref": "#/$defs/temporalValue"
+          "$ref": "#/$defs/temporalValue",
+          "description": "Required when recurrenceSet or duration is present. When recurrenceSet has an rrule, start must be the rule's first occurrence."
         },
         "due": {
-          "$ref": "#/$defs/temporalValue"
+          "$ref": "#/$defs/temporalValue",
+          "description": "When start is present, due uses the same temporal kind and time zone as start and is later than start. Mutually exclusive with duration."
         },
         "duration": {
           "type": "string"
@@ -5339,7 +5344,8 @@
           }
         },
         "recurrenceSet": {
-          "$ref": "#/$defs/todoRecurrenceSetInput"
+          "$ref": "#/$defs/todoRecurrenceSetInput",
+          "description": "Requires start. rrule is evaluated from start, so start must be its first occurrence; rdates, exdates, and override recurrenceIdentity values use start's temporal kind and time zone."
         },
         "structuredData": {
           "$ref": "#/$defs/structuredDataInput"
