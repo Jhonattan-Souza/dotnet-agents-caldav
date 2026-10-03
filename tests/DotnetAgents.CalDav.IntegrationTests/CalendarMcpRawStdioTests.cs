@@ -773,6 +773,23 @@ public sealed class CalendarMcpRawStdioTests
     }
 
     [Fact]
+    public async Task EventPatch_SchemaInvalidArgumentsNameTheMemberAndAllowedValuesThroughTheFilterChain()
+    {
+        const string request = """
+            {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"events.patch","arguments":{"snapshot":{"href":"https://cal.example/events/event-1.ics","entityUid":"event-1","entityKind":"event","entityTag":"\"r1\""},"target":{"scope":"master"},"patch":{"scalars":[{"field":"title","operation":"set","value":"private-marker"}]}}}}
+            """;
+
+        var result = await InvokeRawAsync(request);
+
+        AssertTypedError(result, "invalid_input", "schemaLexicalDiscriminator");
+        var violation = result.GetProperty("structuredContent").GetProperty("violations").EnumerateArray().ShouldHaveSingleItem();
+        violation.GetProperty("pointer").GetString().ShouldBe("/patch/scalars/0/field");
+        violation.GetProperty("code").GetString().ShouldBe("value_not_allowed");
+        violation.GetProperty("message").GetString().ShouldNotBeNull().ShouldContain("summary");
+        result.ToString().ShouldNotContain("private-marker");
+    }
+
+    [Fact]
     public async Task EventCreate_DuplicateRruleReturnsTypedInvalidInputBeforeNetwork()
     {
         const string request = """

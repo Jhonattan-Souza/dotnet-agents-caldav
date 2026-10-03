@@ -31,6 +31,10 @@ internal static class CalendarToolContract
     /// <summary>Gets the routing summary advertised as MCP server instructions.</summary>
     public static string ServerInstructions { get; } = Catalog["serverInstructions"]!.GetValue<string>();
 
+    /// <summary>Gets whether the catalog defines a tool with this exact name.</summary>
+    public static bool HasTool(string toolName) => Catalog["tools"]!.AsArray()
+        .Any(item => item!["name"]!.GetValue<string>() == toolName);
+
     public static string GetTitle(string toolName) => FindTool(toolName)["title"]!.GetValue<string>();
 
     private static JsonElement GetSchema(string toolName, string schemaProperty)
