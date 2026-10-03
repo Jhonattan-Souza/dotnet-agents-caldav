@@ -374,16 +374,18 @@ internal sealed class CalendarCollectionTools
         CalendarTelemetryFacts.From(result),
         result.RejectedProperties.Count > 0
             ? "The CalDAV server rejected one or more requested Calendar collection properties, so no collection was created; see violations."
-            : Message(result.Code),
+            : CalendarErrorViolations.MessageOr(result.Violations, Message(result.Code)),
         result.MutationState,
         result.RetryAfterMilliseconds,
-        violations: CalendarErrorViolations.FromRejectedProperties("/", result.RejectedProperties));
+        violations: CalendarErrorViolations.FromRejectedProperties("/", result.RejectedProperties)
+            .Concat(CalendarErrorViolations.FromRequestViolations(result.Violations, pointer => pointer) ?? []));
 
     private static CallToolResult Error(CalendarCollectionDeleteResult result) => Error(
         CalendarTelemetryFacts.From(result),
-        Message(result.Code),
+        CalendarErrorViolations.MessageOr(result.Violations, Message(result.Code)),
         result.MutationState,
-        result.RetryAfterMilliseconds);
+        result.RetryAfterMilliseconds,
+        violations: CalendarErrorViolations.FromRequestViolations(result.Violations, pointer => pointer));
 
     private static CallToolResult Error(
         CalendarStructuredErrorFacts facts,
