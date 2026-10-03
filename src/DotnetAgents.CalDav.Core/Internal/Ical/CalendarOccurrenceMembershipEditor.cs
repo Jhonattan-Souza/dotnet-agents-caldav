@@ -71,7 +71,7 @@ internal static class CalendarOccurrenceMembershipEditor
             if (inspection.IsExcluded)
                 return (null, null);
             if (!inspection.Exists)
-                return (null, Failure(CalendarEntityPatchCode.NotFound, snapshot));
+                return (null, Failure(CalendarEntityPatchCode.NotFound, snapshot, CalendarEntityViolations.OccurrenceNotFound));
 
             var master = inspection.Master!;
             var edited = document.EditProperties(
@@ -112,7 +112,7 @@ internal static class CalendarOccurrenceMembershipEditor
             if (inspection.Failure is not null)
                 return (null, inspection.Failure);
             if (!inspection.IsExcluded)
-                return inspection.Exists ? (null, null) : (null, Failure(CalendarEntityPatchCode.NotFound, snapshot));
+                return inspection.Exists ? (null, null) : (null, Failure(CalendarEntityPatchCode.NotFound, snapshot, CalendarEntityViolations.OccurrenceNotFound));
 
             var master = inspection.Master!;
             var key = identity.GetCanonicalSortKey();
@@ -221,7 +221,7 @@ internal static class CalendarOccurrenceMembershipEditor
             if (inspection.Failure is not null)
                 return (null, inspection.Failure);
             if (!inspection.Exists)
-                return (null, Failure(CalendarEntityPatchCode.NotFound, snapshot));
+                return (null, Failure(CalendarEntityPatchCode.NotFound, snapshot, CalendarEntityViolations.OccurrenceNotFound));
             var effective = inspection.Individual ?? inspection.Range ?? inspection.Master!;
             if (!IsCancelled(document, effective))
                 return (null, null);
@@ -280,9 +280,11 @@ internal static class CalendarOccurrenceMembershipEditor
 
     private static CalendarEntityPatchResult Failure(
         CalendarEntityPatchCode code,
-        CalendarResourceSnapshot snapshot) => new(
+        CalendarResourceSnapshot snapshot,
+        CalendarEntityViolation? violation = null) => new(
         code,
         CalendarMutationState.NotAttempted,
         snapshot,
-        Phase: CalendarEntityPatchPhase.CompleteResourceSemantics);
+        Phase: CalendarEntityPatchPhase.CompleteResourceSemantics,
+        Violations: violation is null ? null : [violation]);
 }

@@ -579,15 +579,30 @@ internal sealed class CalendarEntityPatchEngine(
         }
     }
 
-    private static CalendarEntityPatchCode? ValidateRevisionShape(
+    private static CalendarEntityPatchResult? ValidateRevisionShape(
         CalendarResourceRevisionReference revision,
         CalendarEntityKind expectedKind)
     {
-        if (!HasValidRevisionShape(revision, expectedKind))
-            return CalendarEntityPatchCode.InvalidInput;
+        var invalidMember = InvalidRevisionMember(revision, expectedKind);
+        if (invalidMember is not null)
+        {
+            return Failure(CalendarEntityPatchCode.InvalidInput, phase: CalendarEntityPatchPhase.TargetRevision)
+                with { Violations = [CalendarEntityViolations.SnapshotMemberInvalid(invalidMember)] };
+        }
         _ = EntityTagHeaderValue.TryParse(revision.EntityTag, out var tag);
-        return tag!.IsWeak ? CalendarEntityPatchCode.ConcurrencyUnavailable : null;
+        return tag!.IsWeak
+            ? Failure(CalendarEntityPatchCode.ConcurrencyUnavailable, phase: CalendarEntityPatchPhase.TargetRevision)
+                with { Violations = [CalendarEntityViolations.WeakEntityTag] }
+            : null;
     }
+
+    private static string? InvalidRevisionMember(
+        CalendarResourceRevisionReference revision,
+        CalendarEntityKind expectedKind) =>
+        revision.EntityKind != expectedKind ? "entityKind"
+        : string.IsNullOrEmpty(revision.EntityUid) ? "entityUid"
+        : HasValidRevisionShape(revision, expectedKind) ? null
+        : "entityTag";
 
     private static CalendarEntityPatchResult? ValidatePreparedSnapshot(
         CalendarResourceRevisionReference revision,
@@ -596,10 +611,8 @@ internal sealed class CalendarEntityPatchEngine(
         CalendarEventPatch patch,
         CalendarEntityKind expectedKind)
     {
-        var revisionShapeFailure = ValidateRevisionShape(revision, expectedKind);
-        if (revisionShapeFailure is not null)
-            return Failure(revisionShapeFailure.Value, phase: CalendarEntityPatchPhase.TargetRevision);
-        return ValidateAuthoritativeRevision(revision, snapshot)
+        return ValidateRevisionShape(revision, expectedKind)
+            ?? ValidateAuthoritativeRevision(revision, snapshot)
             ?? ValidateProjection(snapshot, expectedKind)
             ?? ValidatePatchShape(target, patch, expectedKind);
     }
@@ -622,11 +635,9 @@ internal sealed class CalendarEntityPatchEngine(
         CalendarResourceRevisionReference revision,
         CalendarResourceSnapshot snapshot)
     {
-        var revisionShapeFailure = ValidateRevisionShape(revision, revision.EntityKind);
-        return revisionShapeFailure is not null
-            ? Failure(revisionShapeFailure.Value, phase: CalendarEntityPatchPhase.TargetRevision)
-            : ValidateAuthoritativeRevision(revision, snapshot)
-                ?? ValidateProjection(snapshot, revision.EntityKind);
+        return ValidateRevisionShape(revision, revision.EntityKind)
+            ?? ValidateAuthoritativeRevision(revision, snapshot)
+            ?? ValidateProjection(snapshot, revision.EntityKind);
     }
 
     private static bool HasValidRevisionShape(
@@ -798,16 +809,16 @@ internal sealed class CalendarEntityPatchEngine(
         CalendarResourceRevisionReference revision,
         CalendarResourceSnapshot snapshot)
     {
-        if (!string.Equals(snapshot.EntityTag, revision.EntityTag, StringComparison.Ordinal)
-            || snapshot.Projection.EntityUid is not null
-            && !string.Equals(snapshot.Projection.EntityUid, revision.EntityUid, StringComparison.Ordinal))
-        {
-            return Failure(
-                CalendarEntityPatchCode.Conflict,
-                snapshot,
-                phase: CalendarEntityPatchPhase.TargetRevision);
-        }
-        return null;
+        var changed = snapshot.Projection.EntityUid is not null
+            && !string.Equals(snapshot.Projection.EntityUid, revision.EntityUid, StringComparison.Ordinal)
+                ? CalendarEntityViolations.EntityUidMismatch
+                : !string.Equals(snapshot.EntityTag, revision.EntityTag, StringComparison.Ordinal)
+                    ? CalendarEntityViolations.RevisionChanged
+                    : null;
+        return changed is null
+            ? null
+            : Failure(CalendarEntityPatchCode.Conflict, snapshot, phase: CalendarEntityPatchPhase.TargetRevision)
+                with { Violations = [changed] };
     }
 
     private static CalendarEntityPatchResult? ValidateProjection(

@@ -598,7 +598,7 @@ internal sealed class CalendarEntityPatchTools
             StructuredContent = JsonSerializer.SerializeToElement(new CalendarEntityCreateErrorResult(
                 facts.CodeName,
                 facts.CategoryName,
-                CalendarErrorViolations.MessageOr(result.Violations, Message(result.Code)),
+                CalendarErrorViolations.MessageOr(result.Violations, CalendarEntityPatchMessages.Describe(result.Code)),
                 facts.Retryable,
                 facts.PhaseName,
                 CalendarTelemetryVocabulary.MutationStateName(result.MutationState),
@@ -614,14 +614,6 @@ internal sealed class CalendarEntityPatchTools
             facts,
             result.MutationState);
     }
-
-    private static string Message(CalendarEntityPatchCode code) => code switch
-    {
-        CalendarEntityPatchCode.RemovalNotFound => "No requested collection occurrence matched.",
-        CalendarEntityPatchCode.RemovalAmbiguous => "The requested collection removal was ambiguous.",
-        CalendarEntityPatchCode.LimitExhausted => "The Calendar Entity patch exceeded its execution time limit.",
-        _ => "The Calendar Entity patch could not be completed."
-    };
 
     private static string LimitDimension(CalendarEntityPatchLimitDimension dimension) => dimension switch
     {

@@ -45,7 +45,7 @@ internal static class CalendarOccurrencePatchBuilder
         if (inspection.Failure is not null)
             return new(false, inspection.Failure);
         return inspection.IsExcluded
-            ? AdditionFailure(CalendarEntityPatchCode.InvalidInput, snapshot)
+            ? AdditionFailure(CalendarEntityPatchCode.InvalidInput, snapshot, CalendarEntityViolations.OccurrenceExcludedForAdd)
             : new(!inspection.Exists, null);
     }
 
@@ -65,7 +65,11 @@ internal static class CalendarOccurrencePatchBuilder
             var master = document.GetMasterComponent(kind);
             var masterStart = GetProperty(document, master, "DTSTART");
             if (!HasValidIdentityFamily(masterStart, identity))
-                return InspectionFailure(CalendarEntityPatchCode.InvalidInput, snapshot);
+            {
+                return InspectionFailure(CalendarEntityPatchCode.InvalidInput, snapshot, masterStart is null
+                    ? CalendarEntityViolations.SeriesStartMissing
+                    : CalendarEntityViolations.IdentityFamilyMismatch);
+            }
             if (IsTemporallyUnresolved(snapshot, identity))
                 return InspectionFailure(CalendarEntityPatchCode.TemporalUnresolved, snapshot);
             if (HasRecurrencePeriodDate(document, master))
@@ -106,7 +110,7 @@ internal static class CalendarOccurrencePatchBuilder
         try
         {
             if (!inspection.Exists || inspection.Master is null)
-                return Failed(CalendarEntityPatchCode.NotFound, snapshot);
+                return Failed(CalendarEntityPatchCode.NotFound, snapshot, CalendarEntityViolations.OccurrenceNotFound);
             if (inspection.Individual is not null)
             {
                 return CompleteSupportedIndividual(
@@ -143,11 +147,14 @@ internal static class CalendarOccurrencePatchBuilder
 
     private static CalendarOccurrenceAdditionValidation AdditionFailure(
         CalendarEntityPatchCode code,
-        CalendarResourceSnapshot snapshot) => new(false, Failed(code, snapshot).Failure);
+        CalendarResourceSnapshot snapshot,
+        CalendarEntityViolation? violation = null) => new(false, Failed(code, snapshot, violation).Failure);
 
     private static CalendarOccurrenceMembershipInspection InspectionFailure(
         CalendarEntityPatchCode code,
-        CalendarResourceSnapshot snapshot) => new(null, null, null, false, false, Failed(code, snapshot).Failure);
+        CalendarResourceSnapshot snapshot,
+        CalendarEntityViolation? violation = null) =>
+        new(null, null, null, false, false, Failed(code, snapshot, violation).Failure);
 
     private static bool IsTemporallyUnresolved(
         CalendarResourceSnapshot snapshot,
@@ -244,14 +251,16 @@ internal static class CalendarOccurrencePatchBuilder
 
     private static CalendarOccurrencePatchTarget Failed(
         CalendarEntityPatchCode code,
-        CalendarResourceSnapshot snapshot) => new(
+        CalendarResourceSnapshot snapshot,
+        CalendarEntityViolation? violation = null) => new(
         null,
         null,
         new CalendarEntityPatchResult(
             code,
             CalendarMutationState.NotAttempted,
             snapshot,
-            Phase: CalendarEntityPatchPhase.CompleteResourceSemantics));
+            Phase: CalendarEntityPatchPhase.CompleteResourceSemantics,
+            Violations: violation is null ? null : [violation]));
 
     private static OccurrenceMembership ResolveMembership(
         CalendarContentDocument document,
