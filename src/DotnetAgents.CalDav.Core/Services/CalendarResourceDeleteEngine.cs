@@ -196,12 +196,14 @@ internal sealed class CalendarResourceDeleteEngine(
             : CalendarEntityKind.Todo;
         if (kind != revision.EntityKind)
             return Failure(CalendarResourceDeleteCode.EntityKindMismatch, snapshot);
-        if (!string.Equals(snapshot.Projection.EntityUid, revision.EntityUid, StringComparison.Ordinal)
-            || !string.Equals(snapshot.EntityTag, revision.EntityTag, StringComparison.Ordinal))
-        {
-            return Failure(CalendarResourceDeleteCode.Conflict, snapshot);
-        }
-        return null;
+        var changed = !string.Equals(snapshot.Projection.EntityUid, revision.EntityUid, StringComparison.Ordinal)
+            ? CalendarRevisionViolations.UidMismatch("/revision")
+            : !string.Equals(snapshot.EntityTag, revision.EntityTag, StringComparison.Ordinal)
+                ? CalendarRevisionViolations.Changed("/revision")
+                : null;
+        return changed is null
+            ? null
+            : Failure(CalendarResourceDeleteCode.Conflict, snapshot) with { Violations = [changed] };
     }
 
     private static CalendarResourceDeleteResult FromReadFailure(CalendarResourceReadCode code) => code switch

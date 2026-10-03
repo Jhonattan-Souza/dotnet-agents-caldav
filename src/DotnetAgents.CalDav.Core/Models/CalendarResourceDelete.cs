@@ -43,7 +43,8 @@ public sealed record CalendarResourceDeleteResult(
     CalendarResourceDeletionReceipt? DeletionReceipt = null,
     CalendarResourceSnapshot? CurrentSnapshot = null,
     int? RetryAfterMilliseconds = null,
-    bool Retryable = false)
+    bool Retryable = false,
+    IReadOnlyList<CalendarRequestViolation>? Violations = null)
 {
     public static CalendarResourceDeleteResult Success(CalendarResourceDeletionReceipt receipt) =>
         new(CalendarResourceDeleteCode.Success, CalendarMutationState.Committed, receipt);

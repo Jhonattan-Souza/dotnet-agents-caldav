@@ -146,17 +146,6 @@ internal static class CalendarEntityViolations
     internal static CalendarRequestViolation CancelledNotCompletable { get; } = new(
         null, "cancelled_not_completable", "A CANCELLED To-do or Occurrence cannot be completed.");
 
-    internal static CalendarRequestViolation RevisionChanged { get; } = new(
-        "/snapshot/entityTag", "revision_changed",
-        "The resource changed after this snapshot was read; read it again and use the new entityTag.");
-
-    internal static CalendarRequestViolation EntityUidMismatch { get; } = new(
-        "/snapshot/entityUid", "entity_uid_mismatch",
-        "This href now holds a different Calendar Entity; read it again before changing it.");
-
-    internal static CalendarRequestViolation WeakEntityTag { get; } = new(
-        "/snapshot/entityTag", "weak_entity_tag", "entityTag must be the strong ETag exactly as returned by a read.");
-
     internal static CalendarRequestViolation SnapshotMemberInvalid(string member) => new(
         "/snapshot/" + member, "snapshot_member_invalid",
         $"snapshot.{member} must be passed exactly as returned by the read that produced this snapshot.");

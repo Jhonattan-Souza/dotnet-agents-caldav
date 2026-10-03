@@ -77,7 +77,12 @@ internal sealed class CalendarResourceDeleteTools
         if (!CalendarResourceDeleteArgumentParser.TryParse(arguments, out var revision))
             return InputError();
         if (CalendarResourceDeleteArgumentParser.IsWeakEntityTag(revision.EntityTag))
-            return Error(Failure(CalendarResourceDeleteCode.ConcurrencyUnavailable)).FinalizeResult();
+        {
+            return Error(Failure(CalendarResourceDeleteCode.ConcurrencyUnavailable) with
+            {
+                Violations = [CalendarRevisionViolations.WeakEntityTag("/revision")]
+            }).FinalizeResult();
+        }
 
         return await ExecuteWithDeadlineAsync(
             revision,
@@ -317,7 +322,7 @@ internal sealed class CalendarResourceDeleteTools
         {
             var read = await _calendarService.GetResourceAsync(revision.Href, cancellationToken).ConfigureAwait(false);
             if (read.Code != CalendarResourceReadCode.Success || read.Snapshot is null)
-                return new ReviewOutcome(null, FromReadFailure(read.Code));
+                return new ReviewOutcome(null, FromReadFailure(read.Code) with { Violations = AtRevision(read.Violations) });
             if (!read.Snapshot.SemanticMutationAvailable)
                 return new ReviewOutcome(null, Failure(CalendarResourceDeleteCode.OpaqueResource, read.Snapshot));
             var kind = read.Snapshot.Projection.Kind == CalendarResourceProjectionKind.Event
@@ -325,10 +330,17 @@ internal sealed class CalendarResourceDeleteTools
                 : CalendarEntityKind.Todo;
             if (kind != revision.EntityKind)
                 return new ReviewOutcome(null, Failure(CalendarResourceDeleteCode.EntityKindMismatch, read.Snapshot));
-            return string.Equals(read.Snapshot.Projection.EntityUid, revision.EntityUid, StringComparison.Ordinal)
-                && string.Equals(read.Snapshot.EntityTag, revision.EntityTag, StringComparison.Ordinal)
+            var changed = !string.Equals(read.Snapshot.Projection.EntityUid, revision.EntityUid, StringComparison.Ordinal)
+                ? CalendarRevisionViolations.UidMismatch("/revision")
+                : !string.Equals(read.Snapshot.EntityTag, revision.EntityTag, StringComparison.Ordinal)
+                    ? CalendarRevisionViolations.Changed("/revision")
+                    : null;
+            return changed is null
                 ? new ReviewOutcome(read.Snapshot, null)
-                : new ReviewOutcome(null, Failure(CalendarResourceDeleteCode.Conflict, read.Snapshot));
+                : new ReviewOutcome(null, Failure(CalendarResourceDeleteCode.Conflict, read.Snapshot) with
+                {
+                    Violations = [changed]
+                });
         }
         catch (Exception exception) when (exception is IOException or TimeoutException)
         {
@@ -355,6 +367,12 @@ internal sealed class CalendarResourceDeleteTools
             ConfirmationTitle,
             ConfirmationDescription)).Length <= CalendarQueryToolSupport.MaximumHumanReadableBytes;
 
+    /// <summary>Re-anchors a resource-read reason from the read tool's <c>/href</c> at this tool's revision href.</summary>
+    private static IReadOnlyList<CalendarRequestViolation>? AtRevision(IReadOnlyList<CalendarRequestViolation>? violations) =>
+        violations?.Select(violation => violation.Pointer == "/href"
+            ? violation with { Pointer = "/revision/href" }
+            : violation).ToArray();
+
     private static CalendarResourceDeleteResult FromReadFailure(CalendarResourceReadCode code) => code switch
     {
         CalendarResourceReadCode.InvalidInput => Failure(CalendarResourceDeleteCode.InvalidInput),
@@ -378,12 +396,14 @@ internal sealed class CalendarResourceDeleteTools
     private static CalendarToolResult Error(CalendarResourceDeleteResult result)
     {
         var facts = CalendarTelemetryFacts.From(result);
-        return Error(
+        var terminal = Error(
             facts,
-            Message(result.Code),
+            CalendarErrorViolations.MessageOr(result.Violations, Message(result.Code)),
             result.MutationState,
             result.CurrentSnapshot is null ? null : CalendarSnapshotResult.FromSnapshot(result.CurrentSnapshot),
             retryAfterMs: result.RetryAfterMilliseconds);
+        CalendarErrorViolations.AttachRequestViolations(terminal.Value, result.Violations);
+        return terminal;
     }
 
     private static CallToolResult Success(CalendarResourceDeletionReceipt receipt) => new()

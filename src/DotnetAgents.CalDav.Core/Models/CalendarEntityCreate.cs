@@ -323,6 +323,23 @@ public sealed record CalendarEntityCreateResult(
 /// <param name="Message">Fixed explanation that never echoes authored or stored values.</param>
 public sealed record CalendarRequestViolation(string? Pointer, string Code, string Message);
 
+/// <summary>Fixed reasons a revision-bound request no longer matches the resource it names.</summary>
+public static class CalendarRevisionViolations
+{
+    /// <summary>The stored ETag differs from the caller's; <paramref name="root"/> is the revision argument, such as <c>/revision</c>.</summary>
+    public static CalendarRequestViolation Changed(string root) => new(
+        root + "/entityTag", "revision_changed",
+        "The resource changed after this revision was read; read it again and use the new entityTag.");
+
+    /// <summary>The href now holds a different Calendar Entity UID.</summary>
+    public static CalendarRequestViolation UidMismatch(string root) => new(
+        root + "/entityUid", "entity_uid_mismatch", "This href now holds a different Calendar Entity; read it again.");
+
+    /// <summary>The caller passed a weak ETag where a strong one is required.</summary>
+    public static CalendarRequestViolation WeakEntityTag(string root) => new(
+        root + "/entityTag", "weak_entity_tag", "entityTag must be the strong ETag exactly as returned by a read.");
+}
+
 /// <summary>Observed bounded-work evidence for semantic creation.</summary>
 public sealed record CalendarEntityCreateExecutionLimits(
     int? ResourcesInspected = null,
