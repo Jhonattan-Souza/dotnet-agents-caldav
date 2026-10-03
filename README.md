@@ -70,6 +70,7 @@ client-specific commands.
 | `CALDAV_EVALUATION_TIME_ZONE` | Yes (installation) | Exact IANA zone used as the configured Temporal Evaluation Context for bounded Calendar Entity Starts and every Occurrence or To-do Start; invalid values fail startup and a caller `evaluationTimeZone` override wins. Manual runs may omit it when the call supplies an IANA identifier; To-do Starts require context even without a window |
 | `CALDAV_INTEROPERABILITY_PROFILE` | No | Set to `radicale-3.7.8` or `nextcloud-34.0.3` only for that verified runtime; otherwise server-authoritative Move fails closed with `unsupported_capability`  Radicale’s non-RFC free/busy representation requires `radicale-3.7.8` |
 | `CALDAV_SCHEDULING_MODE` | No | `storage_only` (default when unset or empty) or `server_managed`; any other value fails startup. `storage_only` blocks participation-bearing writes and Calendar collection deletion unless fresh OPTIONS evidence shows the server does not advertise `calendar-auto-schedule`. `server_managed` also allows them when the server advertises it; the server may then send invitations, updates or cancellations, and affected outcomes report `schedulingSideEffects`. See [ADR 0009](docs/adr/0009-opt-in-server-managed-scheduling.md) |
+| `CALDAV_CONFIRMATION_POLICY` | No | `always` (default when unset or empty), `destructive-scope`, or `never`; any other value fails startup. Chooses which mutations ask for MRTR confirmation; see [Confirmed mutations](#confirmed-mutations). A skipped confirmation removes only the confirmation round, and affected outcomes report `confirmation: skipped_by_policy`. See [ADR 0010](docs/adr/0010-configurable-confirmation-policy.md) |
 | `CALDAV_REDIRECT_HOSTS` | No | Comma-separated HTTPS host allowlist for providers that redirect or delegate to other hosts, such as `.icloud.com` for iCloud. An entry is an exact host name or a leading-dot suffix matching strict subdomains; schemes, ports, paths, wildcards and IP addresses fail startup, and `CALDAV_URL` must use HTTPS. Allowlisted hosts receive the configured credentials at the configured port; every other origin is refused before any request. Omit to keep every request on the `CALDAV_URL` origin |
 | `CALDAV_EXPOSE_EXACT_TOOLS` | No | Set to `true` to expose protected exact Calendar Object Resource tools |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | No | Non-empty OTLP endpoint that opts into telemetry export; no exporter is registered when omitted |
@@ -114,7 +115,7 @@ Credentials are attached only to the `CALDAV_URL` origin and HTTPS hosts authori
 - `calendar_occurrences.cancel` — Create or update one complete cancelled override.
 - `calendar_occurrences.restore_cancellation` — Remove only cancelled status from one override.
 - `calendar_resources.move` — Move one reviewed resource with one MOVE that sends a strong `If-Match` and `Overwrite: F`, relies on server-authoritative UID collision truth, and ends with bounded bilateral reconciliation; requires a verified interoperability profile. Server enforcement of `If-Match` varies by profile (see the [2026-09-24 Move interoperability record](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/main/docs/move-interoperability-profiles-2026-09-24.md)).
-- `calendar_resources.delete` — Delete an entire resource from an explicitly supplied revision reference (href, UID, kind, and exact strong ETag) after MCP MRTR review and confirmation; success requires verified absence.
+- `calendar_resources.delete` — Delete an entire resource from an explicitly supplied revision reference (href, UID, kind, and exact strong ETag) after MCP MRTR review and confirmation, which `CALDAV_CONFIRMATION_POLICY` `destructive-scope` or `never` skips; success requires verified absence.
 - `calendars.inspect` — Inspect standard Calendar metadata (display name, CalDAV and WebDAV descriptions, color, order, timezone identifiers), report and privilege advertisements, storage limits, scheduling evidence, and any advisory Calendar Change Tag.
 - `calendars.patch` — Set or remove Calendar display name, description, color, order and time zone with one atomic, unconditional metadata update; preserve unaddressed properties.
 - `calendars.free_busy` — Read native server-computed busy intervals for one Calendar and a bounded UTC window without downloading Events.
@@ -141,11 +142,36 @@ The four exact tools are enabled with `CALDAV_EXPOSE_EXACT_TOOLS=true`; this fla
 
 ### Confirmed mutations
 
-`calendars.delete`, `calendar_resources.delete`, the three exact writes, and the
+By default (`CALDAV_CONFIRMATION_POLICY=always`), `calendars.delete`,
+`calendar_resources.delete`, the three exact writes, and the
 recurrence-definition, `this-and-future`, `entire-set`, and `replaceAll` patches
 require a form confirmation before they mutate. A blank `"elicitation": {}`
 counts as form support under the revision's compatibility rule; an elicitation
 that names only `url` does not.
+
+The installation can narrow that list:
+
+| Mutation | `always` | `destructive-scope` | `never` |
+| --- | --- | --- | --- |
+| `calendars.delete` | confirms | confirms | no confirmation |
+| Exact create, replace and move | confirms | confirms | no confirmation |
+| Patch with `recurrenceSet`, `this-and-future` or `entire-set` | confirms | confirms | no confirmation |
+| `replaceAll` patch at `master` or `one-occurrence` scope | confirms | no confirmation | no confirmation |
+| `calendar_resources.delete` of one resource | confirms | no confirmation | no confirmation |
+
+A mutation the policy does not confirm needs no elicitation capability on any
+revision and ignores `requestState` and `inputResponses`. Only the
+confirmation round is removed: the fresh review, strong revision and `If-Match`
+checks, conflict, opaque and Entity Kind refusals, scheduling safety, and
+execution budgets still apply. When such a call's `mutationState` is
+`committed` or `unknown`, its result carries `confirmation: skipped_by_policy`;
+the field is absent under `always`.
+
+The confirmation form has one required boolean, `confirm`, with no default. An
+`accept` without a boolean `confirm`, such as a client that answers `accept`
+with an empty form, returns `confirmation_mismatch` in phase `mrtr` with
+`mutationState` `not_attempted` and a message saying nothing was changed.
+`confirm: false`, `decline` and `cancel` still return `confirmation_declined`.
 
 On `2026-07-28` the confirmation travels through MCP Multi Round-Trip Requests.
 A call that opens a confirmation requires `_meta` to declare

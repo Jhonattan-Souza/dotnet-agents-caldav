@@ -568,11 +568,11 @@ public class CalDavHostBuilderTests
             .Where(tool => tool.ProtocolTool.Name.StartsWith("calendar_resources.exact_", StringComparison.Ordinal))
             .ToDictionary(tool => tool.ProtocolTool.Name, tool => tool.ProtocolTool.Description);
         exactDescriptions["calendar_resources.exact_create"].ShouldBe(
-            "Create a complete caller-authored Calendar Object Resource at an explicitly provided absolute destination resource href.");
+            "Create a complete caller-authored Calendar Object Resource at an explicitly provided absolute destination resource href after confirmation, which only CALDAV_CONFIRMATION_POLICY=never skips.");
         exactDescriptions["calendar_resources.exact_replace"].ShouldBe(
-            "Confirm and replace one revision-bound resource at its explicitly provided absolute href with a complete caller-authored Calendar Object Resource.");
+            "Confirm and replace one revision-bound resource at its explicitly provided absolute href with a complete caller-authored Calendar Object Resource; only CALDAV_CONFIRMATION_POLICY=never skips the confirmation.");
         exactDescriptions["calendar_resources.exact_move"].ShouldBe(
-            "Review, confirm, and atomically move one strong-revision-bound complete resource to an explicitly provided absolute destination href with constant work and authoritative-byte verification.");
+            "Review, confirm, and atomically move one strong-revision-bound complete resource to an explicitly provided absolute destination href with constant work and authoritative-byte verification; only CALDAV_CONFIRMATION_POLICY=never skips the confirmation.");
     }
 
     [Theory]

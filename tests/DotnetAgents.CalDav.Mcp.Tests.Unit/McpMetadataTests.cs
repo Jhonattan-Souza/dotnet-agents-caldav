@@ -82,6 +82,7 @@ public class McpMetadataTests
             "CALDAV_EVALUATION_TIME_ZONE",
             "CALDAV_INTEROPERABILITY_PROFILE",
             "CALDAV_SCHEDULING_MODE",
+            "CALDAV_CONFIRMATION_POLICY",
             "CALDAV_REDIRECT_HOSTS",
             "CALDAV_EXPOSE_EXACT_TOOLS",
             "OTEL_EXPORTER_OTLP_ENDPOINT",
@@ -97,6 +98,17 @@ public class McpMetadataTests
         schedulingMode.GetProperty("default").GetString().ShouldBe("storage_only");
         schedulingMode.GetProperty("choices").EnumerateArray().Select(item => item.GetString())
             .ShouldBe(["storage_only", "server_managed"]);
+        var confirmationPolicy = envVars.EnumerateArray()
+            .Single(item => item.GetProperty("name").GetString() == "CALDAV_CONFIRMATION_POLICY");
+        confirmationPolicy.GetProperty("isRequired").GetBoolean().ShouldBeFalse();
+        confirmationPolicy.GetProperty("description").GetString().ShouldNotBeNull().ShouldContain("skipped_by_policy");
+        confirmationPolicy.GetProperty("default").GetString().ShouldBe(CalDavConfirmationPolicies.Always);
+        confirmationPolicy.GetProperty("choices").EnumerateArray().Select(item => item.GetString())
+            .ShouldBe([
+                CalDavConfirmationPolicies.Always,
+                CalDavConfirmationPolicies.DestructiveScope,
+                CalDavConfirmationPolicies.Never
+            ]);
         envVars.EnumerateArray()
             .Single(item => item.GetProperty("name").GetString() == "OTEL_EXPORTER_OTLP_HEADERS")
             .GetProperty("isSecret").GetBoolean().ShouldBeTrue();

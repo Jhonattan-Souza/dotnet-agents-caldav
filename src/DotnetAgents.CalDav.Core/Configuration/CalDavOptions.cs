@@ -62,6 +62,12 @@ public sealed class CalDavOptions
     public string? SchedulingMode { get; set; }
 
     /// <summary>
+    /// Which MRTR-confirmed mutations still ask for confirmation. Unset means
+    /// <see cref="CalDavConfirmationPolicies.Always"/>.
+    /// </summary>
+    public string? ConfirmationPolicy { get; set; }
+
+    /// <summary>
     /// Optional comma-separated HTTPS host allowlist for cross-origin redirects and discovered hrefs,
     /// such as <c>p01-caldav.icloud.com</c> or the strict-subdomain suffix <c>.icloud.com</c>.
     /// Empty keeps every request on the configured origin.
@@ -112,6 +118,7 @@ internal sealed class ValidateCalDavOptions : IValidateOptions<CalDavOptions>
         ValidateRedirectHosts(options, failures);
         ValidateInteroperabilityProfile(options.InteroperabilityProfile, failures);
         ValidateSchedulingMode(options.SchedulingMode, failures);
+        ValidateConfirmationPolicy(options.ConfirmationPolicy, failures);
 
         return failures.Count > 0
             ? ValidateOptionsResult.Fail(failures)
@@ -227,6 +234,39 @@ internal sealed class ValidateCalDavOptions : IValidateOptions<CalDavOptions>
         if (!CalDavSchedulingModes.IsSupported(mode))
             failures.Add($"CalDav:SchedulingMode must be '{CalDavSchedulingModes.StorageOnly}' or '{CalDavSchedulingModes.ServerManaged}' when specified.");
     }
+
+    private static void ValidateConfirmationPolicy(string? policy, ICollection<string> failures)
+    {
+        if (!CalDavConfirmationPolicies.IsSupported(policy))
+            failures.Add($"CalDav:ConfirmationPolicy must be '{CalDavConfirmationPolicies.Always}', '{CalDavConfirmationPolicies.DestructiveScope}', or '{CalDavConfirmationPolicies.Never}' when specified.");
+    }
+}
+
+/// <summary>Closed set of confirmation policies. See ADR 0010.</summary>
+public static class CalDavConfirmationPolicies
+{
+    /// <summary>Default: every mutation that defines a confirmation asks for it.</summary>
+    public const string Always = "always";
+
+    /// <summary>
+    /// Opt-in: confirmation is kept for collection deletion, recurrence-definition, this-and-future and
+    /// entire-set patches and exact writes, and skipped for single-resource deletion and single-scope
+    /// replaceAll patches.
+    /// </summary>
+    public const string DestructiveScope = "destructive-scope";
+
+    /// <summary>Opt-in: no mutation asks for confirmation.</summary>
+    public const string Never = "never";
+
+    internal static bool IsSupported(string? policy) =>
+        string.IsNullOrEmpty(policy)
+        || string.Equals(policy, Always, StringComparison.Ordinal)
+        || string.Equals(policy, DestructiveScope, StringComparison.Ordinal)
+        || string.Equals(policy, Never, StringComparison.Ordinal);
+
+    /// <summary>The validated policy, with an omitted value resolved to <see cref="Always"/>.</summary>
+    public static string Effective(CalDavOptions options) =>
+        string.IsNullOrEmpty(options.ConfirmationPolicy) ? Always : options.ConfirmationPolicy;
 }
 
 /// <summary>Closed set of scheduling models. See ADR 0009.</summary>

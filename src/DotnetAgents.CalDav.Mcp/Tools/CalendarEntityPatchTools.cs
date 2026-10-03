@@ -46,7 +46,7 @@ internal sealed class CalendarEntityPatchTools
         OpenWorld = true,
         UseStructuredContent = true,
         OutputSchemaType = typeof(CalendarEntityCreateSuccessResult)),
-     Description("Apply a revision-bound semantic patch to one Event resource at an explicitly supplied absolute snapshot href.")]
+     Description("Apply a revision-bound semantic patch to one Event resource at an explicitly supplied absolute snapshot href. Recurrence-definition, this-and-future and entire-set patches confirm unless CALDAV_CONFIRMATION_POLICY=never; other replaceAll patches confirm only under the default always policy.")]
     public Task<CallToolResult> PatchEventAsync(
         RequestContext<CallToolRequestParams> requestContext,
         CancellationToken cancellationToken) =>
@@ -66,7 +66,7 @@ internal sealed class CalendarEntityPatchTools
         OpenWorld = true,
         UseStructuredContent = true,
         OutputSchemaType = typeof(CalendarEntityCreateSuccessResult)),
-     Description("Apply a revision-bound semantic patch to one To-do resource at an explicitly supplied absolute snapshot href; completion is reserved for todos.complete.")]
+     Description("Apply a revision-bound semantic patch to one To-do resource at an explicitly supplied absolute snapshot href; completion is reserved for todos.complete. Recurrence-definition, this-and-future and entire-set patches confirm unless CALDAV_CONFIRMATION_POLICY=never; other replaceAll patches confirm only under the default always policy.")]
     public Task<CallToolResult> PatchTodoAsync(
         RequestContext<CallToolRequestParams> requestContext,
         CancellationToken cancellationToken) =>
@@ -112,6 +112,10 @@ internal sealed class CalendarEntityPatchTools
         if (!RequiresConfirmation(request.Target, request.Patch))
             return await ExecuteMutationAsync(
                 token => _calendarService.PatchEventAsync(request, token), arguments, cancellationToken);
+        if (!CalendarConfirmationPolicy.RequiresConfirmation(
+                IsDestructiveScope(request.Target, request.Patch.RecurrenceSet is not null)))
+            return await ExecuteWithoutConfirmationAsync(
+                token => _calendarService.PatchEventAsync(request, token), arguments, cancellationToken);
         CalendarMrtrCapabilityGuard.RequireConfirmationCapability(
             requestState, inputResponses, mrtrSupported, clientCapabilities);
         return await ConfirmEventAsync(request, arguments!, requestState, inputResponses, mrtrSupported, cancellationToken);
@@ -150,6 +154,10 @@ internal sealed class CalendarEntityPatchTools
             return Error();
         if (!RequiresConfirmation(request.Target, request.Patch))
             return await ExecuteMutationAsync(
+                token => _calendarService.PatchTodoAsync(request, token), arguments, cancellationToken);
+        if (!CalendarConfirmationPolicy.RequiresConfirmation(
+                IsDestructiveScope(request.Target, request.Patch.RecurrenceSet is not null)))
+            return await ExecuteWithoutConfirmationAsync(
                 token => _calendarService.PatchTodoAsync(request, token), arguments, cancellationToken);
         CalendarMrtrCapabilityGuard.RequireConfirmationCapability(
             requestState, inputResponses, mrtrSupported, clientCapabilities);
@@ -298,19 +306,9 @@ internal sealed class CalendarEntityPatchTools
                 {
                     Mode = "form",
                     Message = confirmationMessage,
-                    RequestedSchema = new ElicitRequestParams.RequestSchema
-                    {
-                        Properties = new Dictionary<string, ElicitRequestParams.PrimitiveSchemaDefinition>
-                        {
-                            ["confirm"] = new ElicitRequestParams.BooleanSchema
-                            {
-                                Title = ConfirmationTitle,
-                                Description = ConfirmationDescription,
-                                Default = false
-                            }
-                        },
-                        Required = ["confirm"]
-                    }
+                    RequestedSchema = CalendarMutationConfirmation.CreateSchema(
+                        ConfirmationTitle,
+                        ConfirmationDescription)
                 })
             },
             state);
@@ -332,15 +330,24 @@ internal sealed class CalendarEntityPatchTools
         if (confirmation.Decision == ConfirmationDecision.Declined)
             return ConfirmationDeclined();
         if (confirmation.Decision != ConfirmationDecision.Confirmed)
-            return ConfirmationError(confirmation.Decision == ConfirmationDecision.Expired);
+            return ConfirmationError(confirmation.Decision);
         var continuationReview = await review(cancellationToken).ConfigureAwait(false);
         if (continuationReview.Outcome is not null)
             return ToToolResult(continuationReview.Outcome, arguments);
         if (!HasValidIntentDigest(continuationReview.IntentDigest)
             || !_stateProtector!.MatchesIntent(confirmation.IntentBinding!, continuationReview.IntentDigest.Span))
-            return ConfirmationError(expired: false);
+            return ConfirmationError(ConfirmationDecision.Mismatch);
         if (!mrtrSupported)
             return UnsupportedMrtrError();
+        return await ExecuteMutationAsync(execute, arguments, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<CallToolResult> ExecuteWithoutConfirmationAsync(
+        Func<CancellationToken, Task<CalendarEntityPatchResult>> execute,
+        IDictionary<string, JsonElement>? arguments,
+        CancellationToken cancellationToken)
+    {
+        using var skipped = CalendarConfirmationPolicy.Skip();
         return await ExecuteMutationAsync(execute, arguments, cancellationToken).ConfigureAwait(false);
     }
 
@@ -378,12 +385,13 @@ internal sealed class CalendarEntityPatchTools
         if (!_stateProtector!.TryUnprotect(
                 requestState!, operation, revision, binding, out var intentBinding, out var expired))
             return new(expired ? ConfirmationDecision.Expired : ConfirmationDecision.Mismatch);
-        var elicitation = response.Deserialize(InputResponse.ElicitResultJsonTypeInfo);
-        if (elicitation?.Action is "decline" or "cancel")
-            return new(ConfirmationDecision.Declined);
-        if (!TryReadConfirmationValue(elicitation, out var confirmed))
-            return new(ConfirmationDecision.Mismatch);
-        return new(confirmed ? ConfirmationDecision.Confirmed : ConfirmationDecision.Declined, intentBinding);
+        return CalendarMutationConfirmation.Read(response) switch
+        {
+            CalendarConfirmationAnswer.Confirmed => new(ConfirmationDecision.Confirmed, intentBinding),
+            CalendarConfirmationAnswer.Declined => new(ConfirmationDecision.Declined),
+            CalendarConfirmationAnswer.IncompleteAccept => new(ConfirmationDecision.IncompleteAccept),
+            _ => new(ConfirmationDecision.Mismatch)
+        };
     }
 
     private static bool TryGetConfirmation(
@@ -399,20 +407,6 @@ internal sealed class CalendarEntityPatchTools
             || candidate is null)
             return false;
         response = candidate;
-        return true;
-    }
-
-    private static bool TryReadConfirmationValue(ElicitResult? elicitation, out bool confirmed)
-    {
-        confirmed = false;
-        if (elicitation is null
-            || !string.Equals(elicitation.Action, "accept", StringComparison.Ordinal)
-            || elicitation.Content is null
-            || elicitation.Content.Count != 1
-            || !elicitation.Content.TryGetValue("confirm", out var value)
-            || value.ValueKind is not JsonValueKind.True and not JsonValueKind.False)
-            return false;
-        confirmed = value.GetBoolean();
         return true;
     }
 
@@ -500,7 +494,7 @@ internal sealed class CalendarEntityPatchTools
                 + (target.RecurrenceIdentity.TimeZoneId is null
                     ? string.Empty
                     : $" ({target.RecurrenceIdentity.TimeZoneId})");
-        if (target.Scope is "this-and-future" or "entire-set" || changesRecurrenceDefinition)
+        if (IsDestructiveScope(target, changesRecurrenceDefinition))
         {
             var impact = changesRecurrenceDefinition
                 ? "recurrence definition and explicitly reconciled orphans"
@@ -518,6 +512,13 @@ internal sealed class CalendarEntityPatchTools
             message,
             ConfirmationTitle,
             ConfirmationDescription)).Length;
+
+    /// <summary>
+    /// Whether a confirmed patch reaches beyond one resource or one recurrence instance. A replaceAll at the
+    /// master or one-occurrence scope does not, so the destructive-scope policy skips its confirmation.
+    /// </summary>
+    private static bool IsDestructiveScope(CalendarMutationTarget target, bool changesRecurrenceDefinition) =>
+        target.Scope is "this-and-future" or "entire-set" || changesRecurrenceDefinition;
 
     private static bool RequiresConfirmation(CalendarMutationTarget target, CalendarEventPatch patch) =>
         target.Scope is "this-and-future" or "entire-set"
@@ -640,12 +641,19 @@ internal sealed class CalendarEntityPatchTools
         "This patch requires the client to support form elicitation for confirmation.",
         CalendarMutationState.NotAttempted).FinalizeResult();
 
-    private static CallToolResult ConfirmationError(bool expired) => NamedError(new CalendarStructuredErrorFacts(
-        expired ? CalendarTelemetryErrorCode.ConfirmationExpired : CalendarTelemetryErrorCode.ConfirmationMismatch,
+    private static CallToolResult ConfirmationError(ConfirmationDecision decision) => NamedError(new CalendarStructuredErrorFacts(
+        decision == ConfirmationDecision.Expired
+            ? CalendarTelemetryErrorCode.ConfirmationExpired
+            : CalendarTelemetryErrorCode.ConfirmationMismatch,
         CalendarTelemetryErrorCategory.Confirmation,
         CalendarTelemetryErrorPhase.Mrtr,
         false),
-        expired ? "The mutation confirmation expired." : "The mutation confirmation did not match the reviewed request.",
+        decision switch
+        {
+            ConfirmationDecision.Expired => "The mutation confirmation expired.",
+            ConfirmationDecision.IncompleteAccept => CalendarMutationConfirmation.IncompleteAcceptMessage,
+            _ => "The mutation confirmation did not match the reviewed request."
+        },
         CalendarMutationState.NotAttempted).FinalizeResult();
 
     private static CallToolResult ConfirmationPreviewPayloadError() => NamedError(new CalendarStructuredErrorFacts(
@@ -706,6 +714,7 @@ internal sealed class CalendarEntityPatchTools
         Confirmed,
         Declined,
         Expired,
+        IncompleteAccept,
         Mismatch
     }
 

@@ -52,12 +52,13 @@ internal sealed class ExactCalendarResourceWriteTools
         OpenWorld = true,
         UseStructuredContent = true,
         OutputSchemaType = typeof(CalendarEntityCreateSuccessResult)),
-     Description("Create a complete caller-authored Calendar Object Resource at an explicitly provided absolute destination resource href.")]
+     Description("Create a complete caller-authored Calendar Object Resource at an explicitly provided absolute destination resource href after confirmation, which only CALDAV_CONFIRMATION_POLICY=never skips.")]
     public Task<CallToolResult> CreateAsync(
         RequestContext<CallToolRequestParams> requestContext,
         CancellationToken cancellationToken)
     {
-        CalendarMrtrCapabilityGuard.RequireConfirmationCapability(requestContext);
+        if (CalendarConfirmationPolicy.RequiresConfirmation(destructiveScope: true))
+            CalendarMrtrCapabilityGuard.RequireConfirmationCapability(requestContext);
         return CreateRawAsync(
             requestContext.Params?.Arguments,
             requestContext.Params?.RequestState,
@@ -74,12 +75,13 @@ internal sealed class ExactCalendarResourceWriteTools
         OpenWorld = true,
         UseStructuredContent = true,
         OutputSchemaType = typeof(CalendarEntityCreateSuccessResult)),
-     Description("Confirm and replace one revision-bound resource at its explicitly provided absolute href with a complete caller-authored Calendar Object Resource.")]
+     Description("Confirm and replace one revision-bound resource at its explicitly provided absolute href with a complete caller-authored Calendar Object Resource; only CALDAV_CONFIRMATION_POLICY=never skips the confirmation.")]
     public Task<CallToolResult> ReplaceAsync(
         RequestContext<CallToolRequestParams> requestContext,
         CancellationToken cancellationToken)
     {
-        CalendarMrtrCapabilityGuard.RequireConfirmationCapability(requestContext);
+        if (CalendarConfirmationPolicy.RequiresConfirmation(destructiveScope: true))
+            CalendarMrtrCapabilityGuard.RequireConfirmationCapability(requestContext);
         return ReplaceRawAsync(
             requestContext.Params?.Arguments,
             requestContext.Params?.RequestState,
@@ -96,12 +98,13 @@ internal sealed class ExactCalendarResourceWriteTools
         OpenWorld = true,
         UseStructuredContent = true,
         OutputSchemaType = typeof(CalendarEntityCreateSuccessResult)),
-     Description("Review, confirm, and atomically move one strong-revision-bound complete resource to an explicitly provided absolute destination href with constant work and authoritative-byte verification.")]
+     Description("Review, confirm, and atomically move one strong-revision-bound complete resource to an explicitly provided absolute destination href with constant work and authoritative-byte verification; only CALDAV_CONFIRMATION_POLICY=never skips the confirmation.")]
     public Task<CallToolResult> MoveAsync(
         RequestContext<CallToolRequestParams> requestContext,
         CancellationToken cancellationToken)
     {
-        CalendarMrtrCapabilityGuard.RequireConfirmationCapability(requestContext);
+        if (CalendarConfirmationPolicy.RequiresConfirmation(destructiveScope: true))
+            CalendarMrtrCapabilityGuard.RequireConfirmationCapability(requestContext);
         return MoveRawAsync(
             requestContext.Params?.Arguments,
             requestContext.Params?.RequestState,
@@ -186,6 +189,8 @@ internal sealed class ExactCalendarResourceWriteTools
         bool mrtrSupported,
         CancellationToken cancellationToken)
     {
+        if (!CalendarConfirmationPolicy.RequiresConfirmation(destructiveScope: true))
+            return await CreateWithoutConfirmationAsync(request, cancellationToken).ConfigureAwait(false);
         if (requestState is null && inputResponses is null)
             return await BeginCreateConfirmationAsync(request, mrtrSupported, cancellationToken).ConfigureAwait(false);
         var requestBinding = BindCreate(request);
@@ -193,7 +198,7 @@ internal sealed class ExactCalendarResourceWriteTools
         if (confirmation.Decision == ConfirmationDecision.Declined)
             return ConfirmationDeclined();
         if (confirmation.Decision != ConfirmationDecision.Confirmed)
-            return ConfirmationError(confirmation.Decision == ConfirmationDecision.Expired);
+            return ConfirmationError(confirmation.Decision);
         if (!mrtrSupported)
             return UnsupportedMrtrError();
         var continuationReview = await _calendarService
@@ -206,10 +211,31 @@ internal sealed class ExactCalendarResourceWriteTools
                 confirmation.IntentBinding!,
                 continuationReview.Binding!))
         {
-            return ConfirmationError(expired: false);
+            return ConfirmationError(ConfirmationDecision.Mismatch);
         }
         return await ExecuteMutationAsync(
             token => _calendarService.ExactCreateResourceAsync(continuationReview.ReviewedCreate!, token),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Creates without the confirmation round the configured policy skips; the authoritative review and
+    /// its reviewed create still run.
+    /// </summary>
+    private async Task<CallToolResult> CreateWithoutConfirmationAsync(
+        CalendarExactCreateRequest request,
+        CancellationToken cancellationToken)
+    {
+        using var skipped = CalendarConfirmationPolicy.Skip();
+        var review = await _calendarService
+            .ReviewExactCreateResourceAsync(request, cancellationToken)
+            .ConfigureAwait(false);
+        if (review.Outcome is not null)
+            return ToToolResult(review.Outcome);
+        if (!HasValidCreateReview(review))
+            return ProtocolError();
+        return await ExecuteMutationAsync(
+            token => _calendarService.ExactCreateResourceAsync(review.ReviewedCreate!, token),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -253,11 +279,7 @@ internal sealed class ExactCalendarResourceWriteTools
         {
             return new Confirmation(expired ? ConfirmationDecision.Expired : ConfirmationDecision.Mismatch, null);
         }
-        if (!TryReadConfirmation(response, out var confirmed))
-            return new Confirmation(ConfirmationDecision.Mismatch, null);
-        return new Confirmation(
-            confirmed ? ConfirmationDecision.Confirmed : ConfirmationDecision.Declined,
-            intentBinding);
+        return new Confirmation(Decide(response), intentBinding);
     }
 
     internal async Task<CallToolResult> ReplaceRawAsync(
@@ -331,13 +353,15 @@ internal sealed class ExactCalendarResourceWriteTools
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
         try
         {
+            if (!CalendarConfirmationPolicy.RequiresConfirmation(destructiveScope: true))
+                return await MoveWithoutConfirmationAsync(request, linked.Token).ConfigureAwait(false);
             if (requestState is null && inputResponses is null)
                 return await BeginMoveConfirmationAsync(request, mrtrSupported, linked.Token).ConfigureAwait(false);
             var confirmation = ReadMoveConfirmation(request, requestState, inputResponses);
             if (confirmation.Decision == ConfirmationDecision.Declined)
                 return ConfirmationDeclined();
             if (confirmation.Decision != ConfirmationDecision.Confirmed)
-                return ConfirmationError(confirmation.Decision == ConfirmationDecision.Expired);
+                return ConfirmationError(confirmation.Decision);
             if (!mrtrSupported)
                 return UnsupportedMrtrError();
             return await ExecuteMutationAsync(
@@ -360,6 +384,27 @@ internal sealed class ExactCalendarResourceWriteTools
         {
             return ReviewProtocolError();
         }
+    }
+
+    /// <summary>
+    /// Moves without the confirmation round the configured policy skips; the review binding still bounds
+    /// the MOVE exactly as a confirmed continuation would.
+    /// </summary>
+    private async Task<CallToolResult> MoveWithoutConfirmationAsync(
+        CalendarExactMoveRequest request,
+        CancellationToken cancellationToken)
+    {
+        using var skipped = CalendarConfirmationPolicy.Skip();
+        var review = await _calendarService
+            .ReviewExactMoveResourceAsync(request, cancellationToken)
+            .ConfigureAwait(false);
+        if (review.Outcome is not null)
+            return ToToolResult(review.Outcome);
+        if (!HasValidMoveReview(request, review))
+            return ProtocolError();
+        return await ExecuteMutationAsync(
+            token => _calendarService.ExecuteConfirmedExactMoveResourceAsync(request, review.Binding!, token),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<CallToolResult> BeginMoveConfirmationAsync(
@@ -400,11 +445,7 @@ internal sealed class ExactCalendarResourceWriteTools
         {
             return new MoveConfirmation(expired ? ConfirmationDecision.Expired : ConfirmationDecision.Mismatch, null);
         }
-        if (!TryReadConfirmation(response, out var confirmed))
-            return new MoveConfirmation(ConfirmationDecision.Mismatch, null);
-        return new MoveConfirmation(
-            confirmed ? ConfirmationDecision.Confirmed : ConfirmationDecision.Declined,
-            binding);
+        return new MoveConfirmation(Decide(response), binding);
     }
 
     private async Task<CallToolResult> ConfirmAsync(
@@ -462,6 +503,8 @@ internal sealed class ExactCalendarResourceWriteTools
         Func<CancellationToken, Task<CalendarExactResourceResult>> execute,
         CancellationToken cancellationToken)
     {
+        if (!CalendarConfirmationPolicy.RequiresConfirmation(destructiveScope: true))
+            return await ExecuteWithoutConfirmationAsync(review, execute, cancellationToken).ConfigureAwait(false);
         if (requestState is null && inputResponses is null)
             return await BeginConfirmationAsync(
                 operation,
@@ -475,7 +518,7 @@ internal sealed class ExactCalendarResourceWriteTools
         if (confirmation.Decision == ConfirmationDecision.Declined)
             return ConfirmationDeclined();
         if (confirmation.Decision != ConfirmationDecision.Confirmed)
-            return ConfirmationError(confirmation.Decision == ConfirmationDecision.Expired);
+            return ConfirmationError(confirmation.Decision);
         if (!mrtrSupported)
             return UnsupportedMrtrError();
         var continuationReview = await review(cancellationToken).ConfigureAwait(false);
@@ -483,7 +526,7 @@ internal sealed class ExactCalendarResourceWriteTools
             return ToToolResult(continuationReview.Outcome);
         if (!HasValidReview(continuationReview)
             || !_stateProtector.MatchesIntent(confirmation.IntentBinding!, continuationReview.IntentDigest.Span))
-            return ConfirmationError(expired: false);
+            return ConfirmationError(ConfirmationDecision.Mismatch);
         return await ExecuteMutationAsync(execute, cancellationToken).ConfigureAwait(false);
     }
 
@@ -506,6 +549,24 @@ internal sealed class ExactCalendarResourceWriteTools
                 CalendarMutationState.Unknown,
                 Phase: CalendarExactResourcePhase.PostWriteVerificationOrReconciliation));
         }
+    }
+
+    /// <summary>
+    /// Replaces without the confirmation round the configured policy skips; the review still runs and the
+    /// write still carries the supplied strong revision as If-Match.
+    /// </summary>
+    private static async Task<CallToolResult> ExecuteWithoutConfirmationAsync(
+        Func<CancellationToken, Task<CalendarExactResourceReviewResult>> review,
+        Func<CancellationToken, Task<CalendarExactResourceResult>> execute,
+        CancellationToken cancellationToken)
+    {
+        using var skipped = CalendarConfirmationPolicy.Skip();
+        var currentReview = await review(cancellationToken).ConfigureAwait(false);
+        if (currentReview.Outcome is not null)
+            return ToToolResult(currentReview.Outcome);
+        if (!HasValidReview(currentReview))
+            return ProtocolError();
+        return await ExecuteMutationAsync(execute, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<CallToolResult> BeginConfirmationAsync(
@@ -557,11 +618,7 @@ internal sealed class ExactCalendarResourceWriteTools
                 out var intentBinding,
                 out var expired))
             return new Confirmation(expired ? ConfirmationDecision.Expired : ConfirmationDecision.Mismatch, null);
-        if (!TryReadConfirmation(response, out var confirmed))
-            return new Confirmation(ConfirmationDecision.Mismatch, null);
-        return new Confirmation(
-            confirmed ? ConfirmationDecision.Confirmed : ConfirmationDecision.Declined,
-            intentBinding);
+        return new Confirmation(Decide(response), intentBinding);
     }
 
     private static Dictionary<string, InputRequest> CreateConfirmationRequests(string confirmationMessage) => new()
@@ -570,19 +627,7 @@ internal sealed class ExactCalendarResourceWriteTools
         {
             Mode = "form",
             Message = confirmationMessage,
-            RequestedSchema = new ElicitRequestParams.RequestSchema
-            {
-                Properties = new Dictionary<string, ElicitRequestParams.PrimitiveSchemaDefinition>
-                {
-                    ["confirm"] = new ElicitRequestParams.BooleanSchema
-                    {
-                        Title = ConfirmationTitle,
-                        Description = ConfirmationDescription,
-                        Default = false
-                    }
-                },
-                Required = ["confirm"]
-            }
+            RequestedSchema = CalendarMutationConfirmation.CreateSchema(ConfirmationTitle, ConfirmationDescription)
         })
     };
 
@@ -626,22 +671,14 @@ internal sealed class ExactCalendarResourceWriteTools
         return true;
     }
 
-    private static bool TryReadConfirmation(InputResponse response, out bool confirmed)
-    {
-        confirmed = false;
-        var elicitation = response.Deserialize(InputResponse.ElicitResultJsonTypeInfo);
-        if (elicitation?.Action is "decline" or "cancel")
-            return true;
-        if (elicitation?.Action != "accept"
-            || elicitation.Content?.Count != 1
-            || !elicitation.Content.TryGetValue("confirm", out var element)
-            || element.ValueKind is not JsonValueKind.True and not JsonValueKind.False)
+    private static ConfirmationDecision Decide(InputResponse response) =>
+        CalendarMutationConfirmation.Read(response) switch
         {
-            return false;
-        }
-        confirmed = element.GetBoolean();
-        return true;
-    }
+            CalendarConfirmationAnswer.Confirmed => ConfirmationDecision.Confirmed,
+            CalendarConfirmationAnswer.Declined => ConfirmationDecision.Declined,
+            CalendarConfirmationAnswer.IncompleteAccept => ConfirmationDecision.IncompleteAccept,
+            _ => ConfirmationDecision.Mismatch
+        };
 
     private static byte[] BindCreate(CalendarExactCreateRequest request)
     {
@@ -857,12 +894,19 @@ internal sealed class ExactCalendarResourceWriteTools
 
     private static CallToolResult ConfirmationDeclined() => NonMutation("confirmation_declined").FinalizeResult();
 
-    private static CallToolResult ConfirmationError(bool expired) => TerminalError(new CalendarStructuredErrorFacts(
-        expired ? CalendarTelemetryErrorCode.ConfirmationExpired : CalendarTelemetryErrorCode.ConfirmationMismatch,
+    private static CallToolResult ConfirmationError(ConfirmationDecision decision) => TerminalError(new CalendarStructuredErrorFacts(
+        decision == ConfirmationDecision.Expired
+            ? CalendarTelemetryErrorCode.ConfirmationExpired
+            : CalendarTelemetryErrorCode.ConfirmationMismatch,
         CalendarTelemetryErrorCategory.Confirmation,
         CalendarTelemetryErrorPhase.Mrtr,
         false),
-        expired ? "The mutation confirmation expired." : "The mutation confirmation does not match the reviewed request.",
+        decision switch
+        {
+            ConfirmationDecision.Expired => "The mutation confirmation expired.",
+            ConfirmationDecision.IncompleteAccept => CalendarMutationConfirmation.IncompleteAcceptMessage,
+            _ => "The mutation confirmation does not match the reviewed request."
+        },
         CalendarMutationState.NotAttempted);
 
     private static CallToolResult ConfirmationPreviewPayloadError() => TerminalError(new CalendarStructuredErrorFacts(
@@ -979,6 +1023,7 @@ internal sealed class ExactCalendarResourceWriteTools
     private enum ConfirmationDecision
     {
         Mismatch,
+        IncompleteAccept,
         Expired,
         Declined,
         Confirmed

@@ -1408,6 +1408,108 @@ public sealed class CalendarEntityPatchToolsTests
         };
     }
 
+    [Theory]
+    [InlineData(CalDavConfirmationPolicies.DestructiveScope)]
+    [InlineData(CalDavConfirmationPolicies.Never)]
+    public async Task Single_scope_replaceAll_skips_review_and_capability_guard_when_the_policy_skips_its_confirmation(
+        string policy)
+    {
+        var service = Substitute.For<ICalendarService>();
+        service.PatchEventAsync(Arg.Any<CalendarEventPatchRequest>(), Arg.Any<CancellationToken>()).Returns(
+            new CalendarEntityPatchResult(
+                CalendarEntityPatchCode.Indeterminate,
+                CalendarMutationState.Unknown,
+                Phase: CalendarEntityPatchPhase.PostWriteVerificationOrReconciliation));
+        var sut = CreateTool(service, new MutableTimeProvider(DateTimeOffset.Parse("2026-08-16T12:00:00Z")));
+        using var attached = CalendarConfirmationPolicy.Attach(policy);
+
+        var result = await sut.PatchEventRawAsync(
+            ReplaceAllArguments(), null, null, true, clientCapabilities: null, CancellationToken.None);
+
+        var structured = result.StructuredContent!.Value;
+        structured.GetProperty("code").GetString().ShouldBe("indeterminate");
+        structured.GetProperty("mutationState").GetString().ShouldBe("unknown");
+        structured.GetProperty("confirmation").GetString().ShouldBe("skipped_by_policy");
+        DotnetAgents.CalDav.Mcp.Hosting.CalendarOutputSchemaGuard.Validate("events.patch", result);
+        await service.DidNotReceive().ReviewEventPatchAsync(
+            Arg.Any<CalendarEventPatchRequest>(), Arg.Any<CancellationToken>());
+        await service.Received(1).PatchEventAsync(
+            Arg.Is<CalendarEventPatchRequest>(request =>
+                request.Snapshot.EntityTag == "\"r1\"" && request.Target.Scope == "master"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Destructive_scope_policy_still_confirms_entire_set_patches()
+    {
+        var service = ReviewedService();
+        var sut = CreateTool(service, new MutableTimeProvider(DateTimeOffset.Parse("2026-08-16T12:00:00Z")));
+        var arguments = ReplaceAllArguments();
+        arguments["target"] = JsonSerializer.SerializeToElement(new { scope = "entire-set" });
+        using var attached = CalendarConfirmationPolicy.Attach(CalDavConfirmationPolicies.DestructiveScope);
+
+        var request = await Should.ThrowAsync<InputRequiredException>(() => sut.PatchEventRawAsync(
+            arguments, null, null, true, CancellationToken.None));
+
+        request.Result.InputRequests!["confirm_replace_all"].ElicitationParams!.Message
+            .ShouldContain("High-impact change: entire-set recurrence scope.");
+        await service.DidNotReceive().PatchEventAsync(
+            Arg.Any<CalendarEventPatchRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Never_policy_runs_an_entire_set_patch_without_review_or_confirmation()
+    {
+        var service = Substitute.For<ICalendarService>();
+        service.PatchEventAsync(Arg.Any<CalendarEventPatchRequest>(), Arg.Any<CancellationToken>()).Returns(
+            new CalendarEntityPatchResult(CalendarEntityPatchCode.Conflict, CalendarMutationState.NotCommitted));
+        var sut = CreateTool(service, new MutableTimeProvider(DateTimeOffset.Parse("2026-08-16T12:00:00Z")));
+        var arguments = ReplaceAllArguments();
+        arguments["target"] = JsonSerializer.SerializeToElement(new { scope = "entire-set" });
+        using var attached = CalendarConfirmationPolicy.Attach(CalDavConfirmationPolicies.Never);
+
+        var result = await sut.PatchEventRawAsync(arguments, null, null, false, CancellationToken.None);
+
+        var structured = result.StructuredContent!.Value;
+        structured.GetProperty("code").GetString().ShouldBe("conflict");
+        structured.TryGetProperty("confirmation", out _).ShouldBeFalse();
+        await service.DidNotReceive().ReviewEventPatchAsync(
+            Arg.Any<CalendarEventPatchRequest>(), Arg.Any<CancellationToken>());
+        await service.Received(1).PatchEventAsync(
+            Arg.Any<CalendarEventPatchRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Accept_without_a_boolean_confirm_fails_with_an_explicit_message_and_zero_write()
+    {
+        var service = ReviewedService();
+        var sut = CreateTool(service, new MutableTimeProvider(DateTimeOffset.Parse("2026-08-16T12:00:00Z")));
+        var first = await BeginAsync(sut);
+        first.Result.InputRequests!["confirm_replace_all"].ElicitationParams!.RequestedSchema!
+            .Properties["confirm"].ShouldBeOfType<ElicitRequestParams.BooleanSchema>().Default.ShouldBeNull();
+
+        var result = await sut.PatchEventRawAsync(
+            ReplaceAllArguments(),
+            first.Result.RequestState,
+            new Dictionary<string, InputResponse>
+            {
+                ["confirm_replace_all"] = InputResponse.FromElicitResult(new ElicitResult
+                {
+                    Action = "accept",
+                    Content = new Dictionary<string, JsonElement>()
+                })
+            },
+            true,
+            CancellationToken.None);
+
+        var structured = result.StructuredContent!.Value;
+        structured.GetProperty("code").GetString().ShouldBe("confirmation_mismatch");
+        structured.GetProperty("mutationState").GetString().ShouldBe("not_attempted");
+        structured.GetProperty("message").GetString().ShouldBe(CalendarMutationConfirmation.IncompleteAcceptMessage);
+        await service.DidNotReceive().PatchEventAsync(
+            Arg.Any<CalendarEventPatchRequest>(), Arg.Any<CancellationToken>());
+    }
+
     private static CalendarEntityPatchTools CreateTool(
         ICalendarService service,
         TimeProvider time)

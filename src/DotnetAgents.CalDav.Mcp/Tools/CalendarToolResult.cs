@@ -64,6 +64,7 @@ internal readonly record struct CalendarToolResult(
         if (PendingViolations.Value is { } violations)
             CalendarErrorViolations.Attach(Value, violations);
         CalendarSchedulingDisclosure.Apply(Value);
+        CalendarConfirmationPolicy.Apply(Value);
         var terminal = this;
         var bounded = CalendarQueryToolSupport.EnsureBoundedResult(
             Value,
@@ -71,6 +72,7 @@ internal readonly record struct CalendarToolResult(
             {
                 terminal = createPayloadError(byteCount, humanReadable);
                 CalendarSchedulingDisclosure.Apply(terminal.Value);
+                CalendarConfirmationPolicy.Apply(terminal.Value);
                 return terminal.Value;
             });
         terminal.Facts.Observe();

@@ -40,12 +40,13 @@ internal sealed class CalendarResourceDeleteTools
         OpenWorld = true,
         UseStructuredContent = true,
         OutputSchemaType = typeof(CalendarResourceDeleteSuccessResult)),
-     Description("Confirm and delete one revision-bound Calendar Object Resource.")]
+     Description("Confirm and delete one revision-bound Calendar Object Resource; CALDAV_CONFIRMATION_POLICY=destructive-scope or never skips the confirmation.")]
     public Task<CallToolResult> DeleteAsync(
         RequestContext<CallToolRequestParams> requestContext,
         CancellationToken cancellationToken)
     {
-        CalendarMrtrCapabilityGuard.RequireConfirmationCapability(requestContext);
+        if (CalendarConfirmationPolicy.RequiresConfirmation(destructiveScope: false))
+            CalendarMrtrCapabilityGuard.RequireConfirmationCapability(requestContext);
         return DeleteRawAsync(
             requestContext.Params?.Arguments,
             requestContext.Params?.RequestState,
@@ -156,6 +157,8 @@ internal sealed class CalendarResourceDeleteTools
         bool mrtrSupported,
         CancellationToken cancellationToken)
     {
+        if (!CalendarConfirmationPolicy.RequiresConfirmation(destructiveScope: false))
+            return await DeleteWithoutConfirmationAsync(revision, cancellationToken).ConfigureAwait(false);
         var hasContinuation = requestState is not null || inputResponses is not null;
         if (hasContinuation && !mrtrSupported)
             return UnsupportedMrtrError();
@@ -195,19 +198,9 @@ internal sealed class CalendarResourceDeleteTools
                 {
                     Mode = "form",
                     Message = confirmationMessage,
-                    RequestedSchema = new ElicitRequestParams.RequestSchema
-                    {
-                        Properties = new Dictionary<string, ElicitRequestParams.PrimitiveSchemaDefinition>
-                        {
-                            ["confirm"] = new ElicitRequestParams.BooleanSchema
-                            {
-                                Title = ConfirmationTitle,
-                                Description = ConfirmationDescription,
-                                Default = false
-                            }
-                        },
-                        Required = ["confirm"]
-                    }
+                    RequestedSchema = CalendarMutationConfirmation.CreateSchema(
+                        ConfirmationTitle,
+                        ConfirmationDescription)
                 })
             },
             state);
@@ -224,11 +217,31 @@ internal sealed class CalendarResourceDeleteTools
         {
             return ConfirmationMismatch();
         }
+        if (confirmation == ConfirmationDecision.IncompleteAccept)
+            return ConfirmationMismatch(CalendarMutationConfirmation.IncompleteAcceptMessage);
         if (confirmation == ConfirmationDecision.Expired)
             return ConfirmationExpired();
         if (confirmation == ConfirmationDecision.Declined)
             return ConfirmationDeclined();
+        return await ReviewThenDeleteAsync(revision, cancellationToken).ConfigureAwait(false);
+    }
 
+    /// <summary>
+    /// Deletes without the confirmation round the configured policy skips. The fresh review, its
+    /// revision, Entity Kind and opaque-resource checks, and the If-Match DELETE all still run.
+    /// </summary>
+    private async Task<CallToolResult> DeleteWithoutConfirmationAsync(
+        CalendarResourceRevisionReference revision,
+        CancellationToken cancellationToken)
+    {
+        using var skipped = CalendarConfirmationPolicy.Skip();
+        return await ReviewThenDeleteAsync(revision, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<CallToolResult> ReviewThenDeleteAsync(
+        CalendarResourceRevisionReference revision,
+        CancellationToken cancellationToken)
+    {
         var current = await ReviewAsync(revision, cancellationToken).ConfigureAwait(false);
         if (current.Failure is not null)
             return Error(current.Failure).FinalizeResult();
@@ -265,9 +278,13 @@ internal sealed class CalendarResourceDeleteTools
             return ConfirmationDecision.Mismatch;
         if (!_stateProtector.TryUnprotect(requestState!, revision, out var expired))
             return expired ? ConfirmationDecision.Expired : ConfirmationDecision.Mismatch;
-        return !TryReadConfirmation(response, out var confirmed)
-            ? ConfirmationDecision.Mismatch
-            : confirmed ? ConfirmationDecision.Confirmed : ConfirmationDecision.Declined;
+        return CalendarMutationConfirmation.Read(response) switch
+        {
+            CalendarConfirmationAnswer.Confirmed => ConfirmationDecision.Confirmed,
+            CalendarConfirmationAnswer.Declined => ConfirmationDecision.Declined,
+            CalendarConfirmationAnswer.IncompleteAccept => ConfirmationDecision.IncompleteAccept,
+            _ => ConfirmationDecision.Mismatch
+        };
     }
 
     private static bool TryGetConfirmationResponse(
@@ -285,26 +302,6 @@ internal sealed class CalendarResourceDeleteTools
             return false;
         }
         response = candidate;
-        return true;
-    }
-
-    private static bool TryReadConfirmation(InputResponse response, out bool confirmed)
-    {
-        confirmed = false;
-        var elicitation = response.Deserialize(InputResponse.ElicitResultJsonTypeInfo);
-        if (elicitation is null)
-            return false;
-        if (elicitation.Action is "decline" or "cancel")
-            return true;
-        if (!string.Equals(elicitation.Action, "accept", StringComparison.Ordinal)
-            || elicitation.Content is null
-            || elicitation.Content.Count != 1
-            || !elicitation.Content.TryGetValue("confirm", out var element)
-            || element.ValueKind is not JsonValueKind.True and not JsonValueKind.False)
-        {
-            return false;
-        }
-        confirmed = element.GetBoolean();
         return true;
     }
 
@@ -432,13 +429,15 @@ internal sealed class CalendarResourceDeleteTools
             Content = [new TextContentBlock { Text = "Calendar Object Resource deletion was declined." }]
         }, CalendarMutationState.NotAttempted).FinalizeResult();
 
-    private static CallToolResult ConfirmationMismatch() => TerminalError(new CalendarStructuredErrorFacts(
-        CalendarTelemetryErrorCode.ConfirmationMismatch,
-        CalendarTelemetryErrorCategory.Confirmation,
-        CalendarTelemetryErrorPhase.Mrtr,
-        false),
-        "The mutation confirmation does not match the reviewed request.",
-        CalendarMutationState.NotAttempted);
+    private static CallToolResult ConfirmationMismatch(
+        string message = "The mutation confirmation does not match the reviewed request.") =>
+        TerminalError(new CalendarStructuredErrorFacts(
+            CalendarTelemetryErrorCode.ConfirmationMismatch,
+            CalendarTelemetryErrorCategory.Confirmation,
+            CalendarTelemetryErrorPhase.Mrtr,
+            false),
+            message,
+            CalendarMutationState.NotAttempted);
 
     private static CallToolResult ConfirmationExpired() => TerminalError(new CalendarStructuredErrorFacts(
         CalendarTelemetryErrorCode.ConfirmationExpired,
@@ -599,6 +598,7 @@ internal sealed class CalendarResourceDeleteTools
     private enum ConfirmationDecision
     {
         Mismatch,
+        IncompleteAccept,
         Expired,
         Declined,
         Confirmed

@@ -4,6 +4,7 @@ using System.Xml;
 using DotnetAgents.CalDav.Core.Abstractions;
 using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Core.Models;
+using DotnetAgents.CalDav.Mcp.Hosting;
 using DotnetAgents.CalDav.Mcp.Tools;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.Protocol;
@@ -54,7 +55,7 @@ public sealed class CalendarResourceDeleteToolsTests
         elicitation.Message.ShouldNotContain("secret");
         elicitation.Message.ShouldNotContain(exception.Result.RequestState);
         var schema = elicitation.RequestedSchema.ShouldNotBeNull();
-        schema.Properties["confirm"].ShouldBeOfType<ElicitRequestParams.BooleanSchema>().Default.ShouldBe(false);
+        schema.Properties["confirm"].ShouldBeOfType<ElicitRequestParams.BooleanSchema>().Default.ShouldBeNull();
         await service.Received(1).GetResourceAsync(snapshot.ResourceHref, Arg.Any<CancellationToken>());
         await service.DidNotReceive().DeleteResourceAsync(
             Arg.Any<CalendarResourceRevisionReference>(),
@@ -959,6 +960,161 @@ public sealed class CalendarResourceDeleteToolsTests
         structured.GetProperty("phase").GetString().ShouldBe("selectionDiscoveryCapability");
         structured.GetProperty("mutationState").GetString().ShouldBe("not_attempted");
         structured.GetProperty("limits").GetProperty("calendarCount").GetInt32().ShouldBe(257);
+        await service.DidNotReceive().DeleteResourceAsync(
+            Arg.Any<CalendarResourceRevisionReference>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData(CalDavConfirmationPolicies.DestructiveScope)]
+    [InlineData(CalDavConfirmationPolicies.Never)]
+    public async Task DeleteRawAsync_PolicySkipReviewsThenDeletesTheReviewedRevisionWithoutConfirmation(string policy)
+    {
+        var service = ReviewedService();
+        var snapshot = TodoSnapshot();
+        service.DeleteResourceAsync(Arg.Any<CalendarResourceRevisionReference>(), Arg.Any<CancellationToken>())
+            .Returns(CalendarResourceDeleteResult.Success(new CalendarResourceDeletionReceipt(
+                snapshot.ResourceHref,
+                snapshot.Projection.EntityUid!,
+                CalendarEntityKind.Todo,
+                snapshot.EntityTag)));
+        var sut = CreateTool(service, new FixedTimeProvider(DateTimeOffset.Parse("2026-08-16T12:00:00Z")));
+        using var attached = CalendarConfirmationPolicy.Attach(policy);
+
+        var result = await sut.DeleteRawAsync(
+            ValidArguments(),
+            requestState: null,
+            inputResponses: null,
+            mrtrSupported: false,
+            CancellationToken.None);
+
+        result.IsError.ShouldBe(false, result.StructuredContent?.ToString());
+        var structured = result.StructuredContent!.Value;
+        structured.GetProperty("outcome").GetString().ShouldBe("success");
+        structured.GetProperty("mutationState").GetString().ShouldBe("committed");
+        structured.GetProperty("confirmation").GetString().ShouldBe("skipped_by_policy");
+        CalendarOutputSchemaGuard.Validate("calendar_resources.delete", result);
+        await service.Received(1).GetResourceAsync(snapshot.ResourceHref, Arg.Any<CancellationToken>());
+        await service.Received(1).DeleteResourceAsync(
+            new CalendarResourceRevisionReference(snapshot.ResourceHref, "todo-1", CalendarEntityKind.Todo, "\"r1\""),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task DeleteRawAsync_PolicySkipKeepsTheChangedRevisionConflictWithoutDeleting()
+    {
+        var current = TodoSnapshot() with { EntityTag = "\"r2\"" };
+        var service = Substitute.For<ICalendarService>();
+        service.GetResourceAsync(current.ResourceHref, Arg.Any<CancellationToken>()).Returns(
+            CalendarResourceRead.Success(current.ResourceHref, current.EntityTag, current.AuthoritativeUtf8) with
+            {
+                Snapshot = current
+            });
+        var sut = CreateTool(service, new FixedTimeProvider(DateTimeOffset.Parse("2026-08-16T12:00:00Z")));
+        using var attached = CalendarConfirmationPolicy.Attach(CalDavConfirmationPolicies.DestructiveScope);
+
+        var result = await sut.DeleteRawAsync(ValidArguments(), null, null, false, CancellationToken.None);
+
+        result.IsError.ShouldBe(true);
+        var structured = result.StructuredContent!.Value;
+        structured.GetProperty("code").GetString().ShouldBe("conflict");
+        structured.GetProperty("mutationState").GetString().ShouldBe("not_attempted");
+        structured.TryGetProperty("confirmation", out _).ShouldBeFalse();
+        await service.DidNotReceive().DeleteResourceAsync(
+            Arg.Any<CalendarResourceRevisionReference>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task DeleteRawAsync_AlwaysPolicyStillOpensTheConfirmationRound()
+    {
+        var service = ReviewedService();
+        var sut = CreateTool(service, new FixedTimeProvider(DateTimeOffset.Parse("2026-08-16T12:00:00Z")));
+        using var attached = CalendarConfirmationPolicy.Attach(CalDavConfirmationPolicies.Always);
+
+        await BeginAsync(sut);
+
+        await service.DidNotReceive().DeleteResourceAsync(
+            Arg.Any<CalendarResourceRevisionReference>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("null")]
+    [InlineData("empty")]
+    [InlineData("non-boolean")]
+    [InlineData("other-field")]
+    public async Task DeleteRawAsync_AcceptWithoutBooleanConfirmFailsExplicitlyWithoutDeleting(string content)
+    {
+        var service = ReviewedService();
+        var sut = CreateTool(service, new FixedTimeProvider(DateTimeOffset.Parse("2026-08-16T12:00:00Z")));
+        var firstRound = await BeginAsync(sut);
+
+        var result = await sut.DeleteRawAsync(
+            ValidArguments(),
+            firstRound.Result.RequestState,
+            new Dictionary<string, InputResponse>
+            {
+                ["confirm_delete"] = InputResponse.FromElicitResult(new ElicitResult
+                {
+                    Action = "accept",
+                    Content = content switch
+                    {
+                        "null" => null,
+                        "non-boolean" => new Dictionary<string, JsonElement>
+                        {
+                            ["confirm"] = JsonSerializer.SerializeToElement(1)
+                        },
+                        "other-field" => new Dictionary<string, JsonElement>
+                        {
+                            ["approved"] = JsonSerializer.SerializeToElement(true)
+                        },
+                        _ => new Dictionary<string, JsonElement>()
+                    }
+                })
+            },
+            mrtrSupported: true,
+            CancellationToken.None);
+
+        result.IsError.ShouldBe(true);
+        var structured = result.StructuredContent!.Value;
+        structured.GetProperty("code").GetString().ShouldBe("confirmation_mismatch");
+        structured.GetProperty("phase").GetString().ShouldBe("mrtr");
+        structured.GetProperty("mutationState").GetString().ShouldBe("not_attempted");
+        structured.GetProperty("message").GetString().ShouldBe(CalendarMutationConfirmation.IncompleteAcceptMessage);
+        await service.DidNotReceive().DeleteResourceAsync(
+            Arg.Any<CalendarResourceRevisionReference>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task DeleteRawAsync_AcceptWithAnExtraFieldStaysAPlainMismatch()
+    {
+        var service = ReviewedService();
+        var sut = CreateTool(service, new FixedTimeProvider(DateTimeOffset.Parse("2026-08-16T12:00:00Z")));
+        var firstRound = await BeginAsync(sut);
+
+        var result = await sut.DeleteRawAsync(
+            ValidArguments(),
+            firstRound.Result.RequestState,
+            new Dictionary<string, InputResponse>
+            {
+                ["confirm_delete"] = InputResponse.FromElicitResult(new ElicitResult
+                {
+                    Action = "accept",
+                    Content = new Dictionary<string, JsonElement>
+                    {
+                        ["confirm"] = JsonSerializer.SerializeToElement(true),
+                        ["extra"] = JsonSerializer.SerializeToElement(true)
+                    }
+                })
+            },
+            mrtrSupported: true,
+            CancellationToken.None);
+
+        var structured = result.StructuredContent!.Value;
+        structured.GetProperty("code").GetString().ShouldBe("confirmation_mismatch");
+        structured.GetProperty("message").GetString().ShouldBe("The mutation confirmation does not match the reviewed request.");
         await service.DidNotReceive().DeleteResourceAsync(
             Arg.Any<CalendarResourceRevisionReference>(),
             Arg.Any<CancellationToken>());
