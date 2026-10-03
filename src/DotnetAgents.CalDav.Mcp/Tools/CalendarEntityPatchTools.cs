@@ -589,7 +589,7 @@ internal sealed class CalendarEntityPatchTools
         IDictionary<string, JsonElement>? arguments)
     {
         var facts = CalendarTelemetryFacts.From(result);
-        var violations = CalendarErrorViolations.FromEntityViolations(
+        var violations = CalendarErrorViolations.FromRequestViolations(
             result.Violations,
             pointer => CalendarPatchViolationPointers.Resolve(pointer, arguments));
         var body = new CallToolResult

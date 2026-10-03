@@ -683,7 +683,7 @@ internal sealed class CalendarEntityPatchEngine(
         }
     }
 
-    private static CalendarEntityViolation? ScalarValueViolation(CalendarEventPatch patch, CalendarEntityKind expectedKind)
+    private static CalendarRequestViolation? ScalarValueViolation(CalendarEventPatch patch, CalendarEntityKind expectedKind)
     {
         try
         {
@@ -704,7 +704,7 @@ internal sealed class CalendarEntityPatchEngine(
         IReadOnlyList<ICalendarCollectionPatch>? patches,
         CalendarEntityKind expectedKind) => StructuredValueFailure(patches, expectedKind) is null;
 
-    private static CalendarEntityViolation? StructuredValueViolation(
+    private static CalendarRequestViolation? StructuredValueViolation(
         IReadOnlyList<ICalendarCollectionPatch>? patches,
         CalendarEntityKind expectedKind) => StructuredValueFailure(patches, expectedKind) switch
         {

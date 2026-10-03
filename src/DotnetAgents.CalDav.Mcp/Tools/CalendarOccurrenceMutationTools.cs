@@ -346,7 +346,7 @@ public sealed class CalendarOccurrenceMutationTools
     private static CalendarToolResult Error(CalendarEntityPatchResult result, string operation)
     {
         var facts = CalendarTelemetryFacts.From(result);
-        var violations = CalendarErrorViolations.FromEntityViolations(
+        var violations = CalendarErrorViolations.FromRequestViolations(
             result.Violations,
             CalendarEntityPatchMessages.ResolveOccurrencePointer);
         var body = new CallToolResult

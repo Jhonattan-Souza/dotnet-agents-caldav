@@ -178,7 +178,7 @@ public sealed class CalendarEntityCreateTools
     private static CalendarToolResult Error(CalendarEntityCreateResult result)
     {
         var facts = CalendarTelemetryFacts.From(result);
-        var violations = CalendarErrorViolations.FromEntityViolations(result.Violations, ResolvePointer);
+        var violations = CalendarErrorViolations.FromRequestViolations(result.Violations, ResolvePointer);
         var message = CalendarErrorViolations.MessageOr(result.Violations, Describe(result.Code));
         return Error(
             facts,

@@ -124,7 +124,7 @@ internal static class CalendarTodoCompletionEditor
     private static CalendarEntityPatchResult Failure(
         CalendarEntityPatchCode code,
         CalendarResourceSnapshot snapshot,
-        CalendarEntityViolation? violation = null) => new(
+        CalendarRequestViolation? violation = null) => new(
         code,
         CalendarMutationState.NotAttempted,
         snapshot,
@@ -134,5 +134,5 @@ internal static class CalendarTodoCompletionEditor
     private static CalendarOccurrencePatchTarget Failed(
         CalendarEntityPatchCode code,
         CalendarResourceSnapshot snapshot,
-        CalendarEntityViolation? violation = null) => new(null, null, Failure(code, snapshot, violation));
+        CalendarRequestViolation? violation = null) => new(null, null, Failure(code, snapshot, violation));
 }

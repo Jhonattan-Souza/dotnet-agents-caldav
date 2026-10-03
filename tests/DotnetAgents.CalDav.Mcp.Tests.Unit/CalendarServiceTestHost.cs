@@ -13,9 +13,12 @@ internal sealed class CalendarServiceTestHost : IDisposable
     {
         _services = services;
         Service = services.GetRequiredService<ICalendarService>();
+        QueryModule = services.GetRequiredService<ICalendarQueryModule>();
     }
 
     internal ICalendarService Service { get; }
+
+    internal ICalendarQueryModule QueryModule { get; }
 
     internal static CalendarServiceTestHost Create(
         ICalendarClient client,

@@ -308,20 +308,20 @@ public sealed record CalendarEntityCreateResult(
     CalendarResourceSnapshot? Snapshot = null,
     IReadOnlyList<CalendarDescriptor>? AuthorizedCandidates = null,
     CalendarEntityCreateExecutionLimits? Limits = null,
-    IReadOnlyList<CalendarEntityViolation>? Violations = null)
+    IReadOnlyList<CalendarRequestViolation>? Violations = null)
 {
     public static CalendarEntityCreateResult Success(CalendarResourceSnapshot snapshot) =>
         new(CalendarEntityCreateCode.Success, CalendarMutationState.Committed, snapshot);
 }
 
-/// <summary>One typed reason that a Calendar Entity mutation was rejected before any write.</summary>
+/// <summary>One typed reason that a request was rejected before any write or read.</summary>
 /// <param name="Pointer">
 /// JSON Pointer into the semantic request, such as <c>/fields/start</c>, <c>/collections/attendees</c>, or
 /// <c>/target/scope</c>; <see langword="null"/> when the fault lies in stored data rather than an argument.
 /// </param>
 /// <param name="Code">Stable snake_case reason code.</param>
 /// <param name="Message">Fixed explanation that never echoes authored or stored values.</param>
-public sealed record CalendarEntityViolation(string? Pointer, string Code, string Message);
+public sealed record CalendarRequestViolation(string? Pointer, string Code, string Message);
 
 /// <summary>Observed bounded-work evidence for semantic creation.</summary>
 public sealed record CalendarEntityCreateExecutionLimits(

@@ -16,11 +16,11 @@ internal sealed class CalendarRecurrenceUnevaluableException : Exception
     {
     }
 
-    public CalendarRecurrenceUnevaluableException(CalendarEntityViolation violation, Exception? innerException = null)
+    public CalendarRecurrenceUnevaluableException(CalendarRequestViolation violation, Exception? innerException = null)
         : base(violation.Message, innerException) => Violation = violation;
 
     /// <summary>Gets the typed reason, when the evaluation failure is attributable to authored input.</summary>
-    public CalendarEntityViolation? Violation { get; }
+    public CalendarRequestViolation? Violation { get; }
 }
 
 internal sealed record CalendarCreateRecurrenceAnalysis(bool IsUnbounded, DateTime LastLocalStart);

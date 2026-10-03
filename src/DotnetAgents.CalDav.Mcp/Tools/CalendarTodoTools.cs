@@ -89,7 +89,7 @@ public sealed class CalendarTodoTools
 
     private static CalendarToolResult ErrorCandidate(
         QueryFailure failure,
-        CalendarStructuredErrorFacts facts) => CalendarToolResult.Error(new CallToolResult
+        CalendarStructuredErrorFacts facts) => CalendarToolResult.Error(CalendarErrorViolations.AttachRequestViolations(new CallToolResult
         {
             IsError = true,
             StructuredContent = JsonSerializer.SerializeToElement(new CalendarTodoQueryErrorResult(
@@ -111,7 +111,7 @@ public sealed class CalendarTodoTools
                 failure.AuthorizedCandidates?.Select(Candidate).ToArray(),
                 failure.RetryAfterMs)),
             Content = [new TextContentBlock { Text = "Compact To-do query failed." }]
-        }, facts);
+        }, failure.Violations), facts);
 
     private static CalendarToolResult PayloadLimitCandidate(int byteCount, bool humanReadable)
     {

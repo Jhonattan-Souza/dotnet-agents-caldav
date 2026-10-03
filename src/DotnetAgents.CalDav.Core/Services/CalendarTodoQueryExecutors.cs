@@ -21,7 +21,13 @@ internal sealed class CalendarTodoQueryStartExecutor(
         CancellationToken cancellationToken)
     {
         if (!IsValid(request))
-            return Failure(CalendarQueryFailures.InvalidInput());
+        {
+            return Failure(CalendarQueryWindows.InvalidInput(
+                CalendarQueryFailures.InvalidInput("The To-do query input is invalid."),
+                request.Query is null ? null : CalendarQueryWindows.Violation(request.Query.From, request.Query.To),
+                request.Query is null ? null : CalendarQueryWindows.Violation(
+                    request.Query.DueFrom, request.Query.DueTo, "dueFrom", "dueTo")));
+        }
         if (!CalendarTextCriteria.TryCreate(request.Query.TextFilter, out var criteria))
             return Failure(CalendarQueryFailures.InvalidTextFilter("To-do"));
         var temporal = temporalContextResolver.Resolve(new CalendarTemporalContextRequest(

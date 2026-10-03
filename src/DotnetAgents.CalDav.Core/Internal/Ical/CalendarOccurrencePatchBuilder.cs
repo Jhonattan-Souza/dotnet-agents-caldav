@@ -148,12 +148,12 @@ internal static class CalendarOccurrencePatchBuilder
     private static CalendarOccurrenceAdditionValidation AdditionFailure(
         CalendarEntityPatchCode code,
         CalendarResourceSnapshot snapshot,
-        CalendarEntityViolation? violation = null) => new(false, Failed(code, snapshot, violation).Failure);
+        CalendarRequestViolation? violation = null) => new(false, Failed(code, snapshot, violation).Failure);
 
     private static CalendarOccurrenceMembershipInspection InspectionFailure(
         CalendarEntityPatchCode code,
         CalendarResourceSnapshot snapshot,
-        CalendarEntityViolation? violation = null) =>
+        CalendarRequestViolation? violation = null) =>
         new(null, null, null, false, false, Failed(code, snapshot, violation).Failure);
 
     private static bool IsTemporallyUnresolved(
@@ -252,7 +252,7 @@ internal static class CalendarOccurrencePatchBuilder
     private static CalendarOccurrencePatchTarget Failed(
         CalendarEntityPatchCode code,
         CalendarResourceSnapshot snapshot,
-        CalendarEntityViolation? violation = null) => new(
+        CalendarRequestViolation? violation = null) => new(
         null,
         null,
         new CalendarEntityPatchResult(

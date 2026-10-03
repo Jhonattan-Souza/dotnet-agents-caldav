@@ -435,4 +435,42 @@ public sealed class CalendarTodoToolsTests
     private static JsonElement Element(object? value) => value is JsonElement element
         ? element
         : JsonSerializer.SerializeToElement(value, value?.GetType() ?? typeof(object));
+
+    [Theory]
+    [InlineData("todos.query", "from", "2026-10-02T00:00:00Z", "2026-10-01T00:00:00Z", "/to", "window_not_increasing")]
+    [InlineData("todos.query", "dueFrom", "2026-01-01T00:00:00Z", "2027-06-01T00:00:00Z", "/dueTo", "window_too_long")]
+    [InlineData("calendar_occurrences.query", "from", "2026-10-02T00:00:00Z", "2026-10-01T00:00:00Z", "/to", "window_not_increasing")]
+    [InlineData("calendar_occurrences.query", "from", "2026-01-01T00:00:00Z", "2027-06-01T00:00:00Z", "/to", "window_too_long")]
+    [InlineData("calendar_entities.query", "from", "2026-10-02T00:00:00Z", "2026-10-01T00:00:00Z", "/to", "window_not_increasing")]
+    public async Task Query_tools_name_the_window_rule_a_start_breaks_before_any_CalDAV_work(
+        string tool,
+        string fromMember,
+        string from,
+        string to,
+        string pointer,
+        string code)
+    {
+        var client = Substitute.For<ICalendarClient>();
+        using var serviceHost = CalendarServiceTestHost.Create(client, options => options.EvaluationTimeZone = "UTC");
+        var toMember = fromMember == "from" ? "to" : "dueTo";
+        var arguments = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+            "{\"scope\":{\"mode\":\"all\"}," + (tool == "calendar_entities.query" ? "\"entityKinds\":[\"event\"]," : string.Empty)
+            + "\"" + fromMember + "\":{\"kind\":\"utcDateTime\",\"value\":\"" + from + "\"},\""
+            + toMember + "\":{\"kind\":\"utcDateTime\",\"value\":\"" + to + "\"}}")!;
+
+        var result = tool switch
+        {
+            "todos.query" => await new CalendarTodoTools(serviceHost.QueryModule).QueryRawAsync(arguments, CancellationToken.None),
+            "calendar_occurrences.query" => await new CalendarOccurrenceTools(serviceHost.QueryModule).QueryRawAsync(arguments, CancellationToken.None),
+            _ => await new CalendarEntityTools(serviceHost.QueryModule).QueryRawAsync(arguments, CancellationToken.None)
+        };
+
+        var structured = result.StructuredContent!.Value;
+        structured.GetProperty("code").GetString().ShouldBe("invalid_input");
+        var violation = structured.GetProperty("violations").EnumerateArray().ShouldHaveSingleItem();
+        violation.GetProperty("pointer").GetString().ShouldBe(pointer);
+        violation.GetProperty("code").GetString().ShouldBe(code);
+        structured.GetProperty("message").GetString().ShouldBe(violation.GetProperty("message").GetString());
+        await client.DidNotReceive().GetCalendarsAsync(Arg.Any<CancellationToken>());
+    }
 }

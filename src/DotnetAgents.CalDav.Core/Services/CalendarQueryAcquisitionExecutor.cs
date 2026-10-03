@@ -78,7 +78,11 @@ internal sealed class CalendarQueryAcquisitionExecutor(
     private QueryFailure? Prevalidate(CalendarQueryAcquisitionRequest request)
     {
         if (!IsValid(request))
-            return CalendarQueryFailures.InvalidInput();
+        {
+            return CalendarQueryWindows.InvalidInput(
+                CalendarQueryFailures.InvalidInput(),
+                CalendarQueryWindows.Violation(request.From, request.To));
+        }
         var href = request.Scope.Mode == CalendarEntityScopeMode.Selected ? request.Scope.Calendar?.Href : null;
         if (href is null)
             return null;
