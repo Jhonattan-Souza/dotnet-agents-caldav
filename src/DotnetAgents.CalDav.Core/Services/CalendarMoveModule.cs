@@ -132,7 +132,10 @@ internal sealed class CalendarMoveModule(
     private static CalendarResourceMoveResult? ValidateStrongRevision(
         CalendarResourceRevisionReference revision) =>
         EntityTagHeaderValue.Parse(revision.EntityTag).IsWeak
-            ? Failure(CalendarResourceMoveCode.ConcurrencyUnavailable)
+            ? Failure(CalendarResourceMoveCode.ConcurrencyUnavailable) with
+            {
+                Violations = [CalendarMoveViolations.WeakEntityTag("/revision")]
+            }
             : null;
 
     private static CalendarResourceMoveResult? ValidateRevision(
@@ -146,10 +149,14 @@ internal sealed class CalendarMoveModule(
             : CalendarEntityKind.Todo;
         if (kind != revision.EntityKind)
             return Failure(CalendarResourceMoveCode.EntityKindMismatch, snapshot);
-        return !string.Equals(snapshot.Projection.EntityUid, revision.EntityUid, StringComparison.Ordinal)
-            || !string.Equals(snapshot.EntityTag, revision.EntityTag, StringComparison.Ordinal)
-            ? Failure(CalendarResourceMoveCode.Conflict, snapshot)
-            : null;
+        var changed = !string.Equals(snapshot.Projection.EntityUid, revision.EntityUid, StringComparison.Ordinal)
+            ? CalendarMoveViolations.EntityUidMismatch("/revision")
+            : !string.Equals(snapshot.EntityTag, revision.EntityTag, StringComparison.Ordinal)
+                ? CalendarMoveViolations.RevisionChanged("/revision")
+                : null;
+        return changed is null
+            ? null
+            : Failure(CalendarResourceMoveCode.Conflict, snapshot) with { Violations = [changed] };
     }
 
     private static CalendarResourceMoveResult DestinationPreflightFailure(CalendarResourceRead read) => read.Code switch
@@ -157,7 +164,10 @@ internal sealed class CalendarMoveModule(
         CalendarResourceReadCode.Success
             or CalendarResourceReadCode.ConcurrencyUnavailable
             or CalendarResourceReadCode.PayloadTooLarge =>
-            Failure(CalendarResourceMoveCode.DestinationConflict),
+            Failure(CalendarResourceMoveCode.DestinationConflict) with
+            {
+                Violations = [CalendarMoveViolations.DestinationOccupied]
+            },
         CalendarResourceReadCode.UnsupportedCapability => Failure(CalendarResourceMoveCode.UnsupportedCapability),
         _ => Failure(CalendarResourceMoveCode.UpstreamProtocolError)
     };
@@ -258,7 +268,10 @@ internal sealed class CalendarMoveModule(
                 (CalendarResourceMoveCode.InvalidInput, CalendarResourceMovePhase.SelectionDiscoveryCapability),
             _ => throw new ArgumentOutOfRangeException(nameof(failure))
         };
-        return Failure(code, candidates: failure.AuthorizedCandidates, phase: phase);
+        return Failure(code, candidates: failure.AuthorizedCandidates, phase: phase) with
+        {
+            Violations = [CalendarMoveViolations.From(failure.Reason, "/revision/href", "/destination")]
+        };
     }
 
     private static CalendarResourceRead Attach(string calendarHref, CalendarResourceRead read) =>

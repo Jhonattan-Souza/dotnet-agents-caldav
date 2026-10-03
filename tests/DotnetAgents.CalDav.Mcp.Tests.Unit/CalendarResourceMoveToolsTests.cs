@@ -147,6 +147,26 @@ public sealed class CalendarResourceMoveToolsTests
     }
 
     [Fact]
+    public async Task MoveRawAsync_AttachesTheTypedReasonAndUsesItsMessage()
+    {
+        var service = Substitute.For<ICalendarService>();
+        service.MoveResourceAsync(Arg.Any<CalendarResourceMoveRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceMoveResult(
+                CalendarResourceMoveCode.Ambiguous,
+                CalendarMutationState.NotAttempted,
+                Violations: [new CalendarRequestViolation("/destination", "destination_ambiguous", "Pick one by href.")]));
+        var sut = CreateTool(service);
+
+        var result = await sut.MoveRawAsync(Arguments("{\"mode\":\"default\"}"), CancellationToken.None);
+
+        var structured = result.StructuredContent!.Value;
+        structured.GetProperty("message").GetString().ShouldBe("Pick one by href.");
+        var violation = structured.GetProperty("violations").EnumerateArray().ShouldHaveSingleItem();
+        violation.GetProperty("pointer").GetString().ShouldBe("/destination");
+        violation.GetProperty("code").GetString().ShouldBe("destination_ambiguous");
+    }
+
+    [Fact]
     public async Task MoveRawAsync_UnexpectedServiceFailureIsIndeterminateAndRedacted()
     {
         var service = Substitute.For<ICalendarService>();

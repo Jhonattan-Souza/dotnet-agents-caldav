@@ -72,7 +72,8 @@ public sealed record CalendarResourceMoveResult(
     bool Retryable = false,
     CalendarResourceMoveLimitDimension? LimitDimension = null,
     CalendarResourceMovePhase? Phase = null,
-    int? CalendarCount = null)
+    int? CalendarCount = null,
+    IReadOnlyList<CalendarRequestViolation>? Violations = null)
 {
     public static CalendarResourceMoveResult Success(CalendarResourceSnapshot snapshot) =>
         new(

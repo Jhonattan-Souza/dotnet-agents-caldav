@@ -42,6 +42,7 @@ public sealed class CalendarMoveModuleTests
                 (CalendarMoveAuthorizationFailureReason.SameCalendarNotAllowed, CalendarResourceMoveCode.InvalidInput, CalendarResourceMovePhase.SelectionDiscoveryCapability)
             ];
 
+        var reasonCodes = new HashSet<string>(StringComparer.Ordinal);
         foreach (var entry in cases)
         {
             var result = CalendarMoveModule.MapAuthorizationFailure(
@@ -52,7 +53,14 @@ public sealed class CalendarMoveModuleTests
             result.AuthorizedCandidates.ShouldBe([candidate]);
             result.Retryable.ShouldBeFalse();
             result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+            reasonCodes.Add(result.Violations.ShouldNotBeNull().ShouldHaveSingleItem().Code).ShouldBeTrue();
         }
+        Reason(CalendarMoveAuthorizationFailureReason.NonCanonicalResourceHref).Pointer.ShouldBe("/revision/href");
+        Reason(CalendarMoveAuthorizationFailureReason.DestinationSelectionAmbiguous).Pointer.ShouldBe("/destination");
+        Reason(CalendarMoveAuthorizationFailureReason.SourceOwnershipAmbiguous).Pointer.ShouldBeNull();
+
+        CalendarRequestViolation Reason(CalendarMoveAuthorizationFailureReason reason) => CalendarMoveModule
+            .MapAuthorizationFailure(new CalendarMoveAuthorizationFailure(reason, [candidate])).Violations!.Single();
     }
 
     [Theory]
@@ -293,13 +301,14 @@ public sealed class CalendarMoveModuleTests
     }
 
     [Theory]
-    [InlineData("opaque", CalendarResourceMoveCode.OpaqueResource)]
-    [InlineData("kind", CalendarResourceMoveCode.EntityKindMismatch)]
-    [InlineData("uid", CalendarResourceMoveCode.Conflict)]
-    [InlineData("etag", CalendarResourceMoveCode.Conflict)]
+    [InlineData("opaque", CalendarResourceMoveCode.OpaqueResource, null)]
+    [InlineData("kind", CalendarResourceMoveCode.EntityKindMismatch, null)]
+    [InlineData("uid", CalendarResourceMoveCode.Conflict, "/revision/entityUid")]
+    [InlineData("etag", CalendarResourceMoveCode.Conflict, "/revision/entityTag")]
     public async Task AuthoritativeSourceMismatchNeverProbeOrDispatch(
         string mismatch,
-        CalendarResourceMoveCode expectedCode)
+        CalendarResourceMoveCode expectedCode,
+        string? reasonPointer)
     {
         var source = mismatch switch
         {
@@ -314,6 +323,7 @@ public sealed class CalendarMoveModuleTests
 
         result.Code.ShouldBe(expectedCode);
         result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        result.Violations?.Single().Pointer.ShouldBe(reasonPointer);
         transport.Trace.ShouldBe(["discover", "read-source"]);
     }
 
