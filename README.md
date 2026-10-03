@@ -103,9 +103,9 @@ Credentials are attached only to the `CALDAV_URL` origin and HTTPS hosts authori
 - `calendar_occurrences.query` — Start one bounded Event and To-do Occurrence query under an explicit caller or configured IANA Temporal Evaluation Context, optionally selected by the `text` and `categories` of each Occurrence's own component, or continue its immutable Query Result Snapshot with no CalDAV or recurrence work.
 - `todos.query` — Start a compact normalized To-do query over one authoritative VTODO-only corpus, optionally selected by `text` and `categories`, or continue its immutable Query Result Snapshot without remote or semantic re-execution. Every Start requires a caller or configured IANA Temporal Evaluation Context.
 - `calendar_resources.get` — Read an authoritative semantic-or-opaque snapshot by confirmed absolute href.
-- `events.create` — Create one Event in a selected Calendar. Timed Events without an explicit `end` or `duration` default to `PT1H`; date-only Events remain one nominal day.
+- `events.create` — Create one Event in a selected Calendar. Timed Events without an explicit `end` or `duration` default to `PT1H`; date-only Events remain one nominal day. A recurring Event's `start` must be the first occurrence of its `rrule`.
 - `events.patch` — Apply a revision-bound semantic patch to one Event resource.
-- `todos.create` — Create one To-do in a selected Calendar.
+- `todos.create` — Create one To-do in a selected Calendar. A recurring To-do requires `start` on the first occurrence of its `rrule`, and `due` must be later than `start` in the same temporal family.
 - `todos.patch` — Apply a revision-bound semantic patch to one To-do resource.
 - `todos.complete` — Complete one non-recurring To-do or one explicitly identified recurring Occurrence.
 - `calendar_occurrences.add` — Add one explicit RDATE identity.
