@@ -134,7 +134,7 @@ internal sealed class CalendarMoveModule(
         EntityTagHeaderValue.Parse(revision.EntityTag).IsWeak
             ? Failure(CalendarResourceMoveCode.ConcurrencyUnavailable) with
             {
-                Violations = [CalendarMoveViolations.WeakEntityTag("/revision")]
+                Violations = [CalendarRevisionViolations.WeakEntityTag("/revision")]
             }
             : null;
 
@@ -150,9 +150,9 @@ internal sealed class CalendarMoveModule(
         if (kind != revision.EntityKind)
             return Failure(CalendarResourceMoveCode.EntityKindMismatch, snapshot);
         var changed = !string.Equals(snapshot.Projection.EntityUid, revision.EntityUid, StringComparison.Ordinal)
-            ? CalendarMoveViolations.EntityUidMismatch("/revision")
+            ? CalendarRevisionViolations.UidMismatch("/revision")
             : !string.Equals(snapshot.EntityTag, revision.EntityTag, StringComparison.Ordinal)
-                ? CalendarMoveViolations.RevisionChanged("/revision")
+                ? CalendarRevisionViolations.Changed("/revision")
                 : null;
         return changed is null
             ? null

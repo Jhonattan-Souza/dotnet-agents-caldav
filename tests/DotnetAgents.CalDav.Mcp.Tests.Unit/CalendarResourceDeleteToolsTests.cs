@@ -631,6 +631,55 @@ public sealed class CalendarResourceDeleteToolsTests
             Arg.Any<CancellationToken>());
     }
 
+    [Theory]
+    [InlineData("https://other.example/tasks/a.ics", "\"r1\"", "invalid_input", "/revision/href", "href_foreign_origin")]
+    [InlineData("https://cal.example/tasks/a.ics?view=full", "\"r1\"", "invalid_input", "/revision/href", "href_has_query_or_fragment")]
+    [InlineData("https://cal.example/tasks/a.ics", "\"r0\"", "conflict", "/revision/entityTag", "revision_changed")]
+    [InlineData("https://cal.example/tasks/a.ics", "W/\"r1\"", "concurrency_unavailable", "/revision/entityTag", "weak_entity_tag")]
+    public async Task DeleteRawAsync_NamesTheRevisionMemberThatRefusedTheDeletionPreview(
+        string href,
+        string entityTag,
+        string expectedCode,
+        string pointer,
+        string reasonCode)
+    {
+        var client = Substitute.For<ICalendarClient>();
+        client.GetCalendarsAsync(Arg.Any<CancellationToken>()).Returns([
+            new CalendarDescriptor
+            {
+                Href = "https://cal.example/tasks/",
+                DisplayName = "Tasks",
+                DisplayNameProvenance = DisplayNameProvenance.DavDisplayName,
+                EventSupport = EntityKindSupport.NotAdvertised,
+                TodoSupport = EntityKindSupport.Advertised
+            }
+        ]);
+        client.GetCalendarResourceAsync("https://cal.example/tasks/a.ics", Arg.Any<CancellationToken>())
+            .Returns(CalendarResourceRead.Success("https://cal.example/tasks/a.ics", "\"r1\"", Encoding.UTF8.GetBytes(
+                "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VTODO\r\nUID:todo-1\r\nDTSTAMP:20260816T100000Z\r\nEND:VTODO\r\nEND:VCALENDAR\r\n")));
+        using var serviceHost = CalendarServiceTestHost.Create(client, options => options.BaseUrl = "https://cal.example/");
+        var sut = CreateTool(serviceHost.Service, new FixedTimeProvider(DateTimeOffset.Parse("2026-08-16T12:00:00Z")));
+        var arguments = ValidArguments();
+        arguments["revision"] = JsonSerializer.SerializeToElement(new
+        {
+            href,
+            entityUid = "todo-1",
+            entityKind = "todo",
+            entityTag
+        });
+
+        var result = await sut.DeleteRawAsync(arguments, requestState: null, inputResponses: null, mrtrSupported: true, CancellationToken.None);
+
+        var structured = result.StructuredContent!.Value;
+        structured.GetProperty("code").GetString().ShouldBe(expectedCode);
+        structured.GetProperty("mutationState").GetString().ShouldBe("not_attempted");
+        var violation = structured.GetProperty("violations").EnumerateArray().ShouldHaveSingleItem();
+        violation.GetProperty("pointer").GetString().ShouldBe(pointer);
+        violation.GetProperty("code").GetString().ShouldBe(reasonCode);
+        await client.DidNotReceive().DeleteCalendarResourceAsync(
+            Arg.Any<CalendarResourceDeleteRequest>(), Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public void MutationRequestState_IsNonceRandomCredentialBoundAndInvalidatedByKeyRotation()
     {

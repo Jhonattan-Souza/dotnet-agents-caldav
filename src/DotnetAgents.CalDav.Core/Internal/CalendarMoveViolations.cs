@@ -67,16 +67,6 @@ internal static class CalendarMoveViolations
         return new CalendarRequestViolation(pointer, code, message);
     }
 
-    internal static CalendarRequestViolation RevisionChanged(string root) => new(
-        root + "/entityTag", "revision_changed",
-        "The resource changed after this revision was read; read it again and use the new entityTag.");
-
-    internal static CalendarRequestViolation EntityUidMismatch(string root) => new(
-        root + "/entityUid", "entity_uid_mismatch", "This href now holds a different Calendar Entity; read it again.");
-
-    internal static CalendarRequestViolation WeakEntityTag(string root) => new(
-        root + "/entityTag", "weak_entity_tag", "entityTag must be the strong ETag exactly as returned by a read.");
-
     internal static CalendarRequestViolation DestinationOccupied { get; } = new(
         null, "destination_occupied", "A resource already exists at the destination href.");
 }

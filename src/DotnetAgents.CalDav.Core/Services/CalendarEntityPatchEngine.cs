@@ -592,7 +592,7 @@ internal sealed class CalendarEntityPatchEngine(
         _ = EntityTagHeaderValue.TryParse(revision.EntityTag, out var tag);
         return tag!.IsWeak
             ? Failure(CalendarEntityPatchCode.ConcurrencyUnavailable, phase: CalendarEntityPatchPhase.TargetRevision)
-                with { Violations = [CalendarEntityViolations.WeakEntityTag] }
+                with { Violations = [CalendarRevisionViolations.WeakEntityTag("/snapshot")] }
             : null;
     }
 
@@ -811,9 +811,9 @@ internal sealed class CalendarEntityPatchEngine(
     {
         var changed = snapshot.Projection.EntityUid is not null
             && !string.Equals(snapshot.Projection.EntityUid, revision.EntityUid, StringComparison.Ordinal)
-                ? CalendarEntityViolations.EntityUidMismatch
+                ? CalendarRevisionViolations.UidMismatch("/snapshot")
                 : !string.Equals(snapshot.EntityTag, revision.EntityTag, StringComparison.Ordinal)
-                    ? CalendarEntityViolations.RevisionChanged
+                    ? CalendarRevisionViolations.Changed("/snapshot")
                     : null;
         return changed is null
             ? null
