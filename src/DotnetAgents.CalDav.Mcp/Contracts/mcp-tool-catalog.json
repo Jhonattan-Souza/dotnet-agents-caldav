@@ -8,7 +8,7 @@
     "2025-11-25",
     "2026-07-28"
   ],
-  "serverInstructions": "CalDAV Calendars, Events, and To-dos; structuredContent is authoritative. Reads: calendar_occurrences.query for agendas in a bounded window with expanded recurrences; todos.query for To-do lists and due or completion filters; calendar_entities.query for persisted Event or To-do snapshots, title search, and revision-bound edits; calendar_resources.get for one known absolute href; calendars.free_busy for busy periods; calendar_resources.changes for sync polling. Call calendars.list only when a Calendar name, href, capability, or default is needed and unknown. Send both endpoints of every window. Continue a query with only its unchanged cursor and optional pageSize; snapshots are process-local and expire 10 minutes after the first page, so cursor_expired needs a new Start. Writes: events.create and todos.create need an authorized destination Calendar. Before a patch, completion, Occurrence change, move, or delete, get a fresh strong revision from a query or calendar_resources.get and pass it exactly, with the returned recurrenceIdentity for one Occurrence; after a conflict, read again and reconfirm intent. A protected mutation may return input_required: present the review, then call the same tool with the unchanged requestState and inputResponses; if the client cannot continue, leave it uncommitted and do not retry around it. Exact tools (calendar_resources.exact_*), when exposed, are only for byte-preserving access and require explicit absolute hrefs, and exact writes a complete caller-authored Calendar Object Resource; never fabricate one.",
+  "serverInstructions": "CalDAV Calendars, Events, and To-dos; structuredContent is authoritative. Reads: calendar_occurrences.query for agendas in a bounded window with expanded recurrences; todos.query for To-do lists and due or completion filters; calendar_entities.query for persisted Event or To-do snapshots, title search, and revision-bound edits; calendar_resources.get for one known absolute href; calendars.free_busy for busy periods; calendar_resources.changes for sync polling. Call calendars.list only when a needed Calendar name, href, capability, or default is unknown. Send both endpoints of every window. Continue a query with only its unchanged cursor and optional pageSize; snapshots are process-local and expire 10 minutes after the first page, so cursor_expired needs a new Start. Writes: events.create and todos.create need an authorized destination Calendar. Before a patch, completion, Occurrence change, move, or delete, get a fresh strong revision from a query or calendar_resources.get and pass it exactly, with the returned recurrenceIdentity for one Occurrence; after a conflict, read again and reconfirm intent. A protected mutation may return input_required unless CALDAV_CONFIRMATION_POLICY skips it: present the review, then call the same tool with the unchanged requestState and inputResponses; if the client cannot continue, leave it uncommitted, never retry around it. Exact tools (calendar_resources.exact_*), when exposed, are only for byte-preserving access, require explicit absolute hrefs, and exact writes a complete caller-authored Calendar Object Resource; never fabricate one.",
   "toolMetaKeys": {
     "cache": "io.github.jhonattan-souza/cache"
   },
@@ -2861,7 +2861,7 @@
       ]
     },
     "missingRequiredClientCapabilityError": {
-      "description": "On the 2026-07-28 revision a confirmation round is only opened for a request whose _meta declares io.modelcontextprotocol/clientCapabilities.elicitation with form support. A blank elicitation object counts as form support under the revision's compatibility rule; an elicitation that names only the url mode does not. A capability that is undeclared for that request is refused as this JSON-RPC error instead of a typed structuredContent result, which is the only such exception, and the refusal precedes every CalDAV request so the mutation is never attempted. Tools that confirm unconditionally refuse before argument admission; events.patch and todos.patch refuse only for the recurrence-definition, this-and-future, entire-set, and replaceAll patches that require confirmation.",
+      "description": "On the 2026-07-28 revision a confirmation round is only opened for a request whose _meta declares io.modelcontextprotocol/clientCapabilities.elicitation with form support. A blank elicitation object counts as form support under the revision's compatibility rule; an elicitation that names only the url mode does not. A capability that is undeclared for that request is refused as this JSON-RPC error instead of a typed structuredContent result, which is the only such exception, and the refusal precedes every CalDAV request so the mutation is never attempted. Tools whose confirmation the configured CALDAV_CONFIRMATION_POLICY keeps refuse before argument admission; events.patch and todos.patch refuse only for the recurrence-definition, this-and-future, entire-set, and replaceAll patches that still require confirmation. A call whose confirmation the policy skips never requires the capability.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -2911,7 +2911,7 @@
       }
     },
     "initializeHandshakeConfirmation": {
-      "description": "Sessions negotiated through initialize (2024-11-05 through 2025-11-25) declare client capabilities once for the session and receive no inputRequests result. Elicitation exists from 2025-06-18: when a 2025-06-18 or 2025-11-25 session declared elicitation with form support, including a blank elicitation object, the same confirmation form is sent as a classic server-to-client elicitation/create request inside the original tools/call and the tool completes in that call; requestState never leaves the server. The server does not bound the wait for that answer, but a confirmation answered more than 10 minutes after the review ends as confirmation_expired with mutationState not_attempted. A 2024-11-05 or 2025-03-26 session, and any session without form elicitation, receives the typed unsupported_capability result in phase mrtr with mutationState not_attempted instead of JSON-RPC error -32021, and the mutation is never attempted.",
+      "description": "Sessions negotiated through initialize (2024-11-05 through 2025-11-25) declare client capabilities once for the session and receive no inputRequests result. Elicitation exists from 2025-06-18: when a 2025-06-18 or 2025-11-25 session declared elicitation with form support, including a blank elicitation object, the same confirmation form is sent as a classic server-to-client elicitation/create request inside the original tools/call and the tool completes in that call; requestState never leaves the server. The server does not bound the wait for that answer, but a confirmation answered more than 10 minutes after the review ends as confirmation_expired with mutationState not_attempted. A 2024-11-05 or 2025-03-26 session, and any session without form elicitation, receives the typed unsupported_capability result in phase mrtr with mutationState not_attempted instead of JSON-RPC error -32021, and the mutation is never attempted. Mutations whose confirmation CALDAV_CONFIRMATION_POLICY skips need no elicitation on any revision.",
       "revisions": [
         "2025-06-18",
         "2025-11-25"
@@ -2923,6 +2923,54 @@
       "method": "elicitation/create",
       "requiredClientCapability": "elicitation.form",
       "undeclaredOutcome": "unsupported_capability"
+    },
+    "confirmationPolicy": {
+      "description": "CALDAV_CONFIRMATION_POLICY selects which mutations open a confirmation round. Skipping one removes only that round: the review, strong revision and If-Match checks, conflict and opaque or divergent-kind refusals, scheduling safety, and limits still apply, and a committed or unknown outcome reports confirmation skipped_by_policy. A continuation sent for a mutation the policy does not confirm is ignored.",
+      "environment": "CALDAV_CONFIRMATION_POLICY",
+      "default": "always",
+      "policies": {
+        "always": {
+          "confirms": [
+            "calendars.delete",
+            "calendar_resources.delete",
+            "calendar_resources.exact_create",
+            "calendar_resources.exact_replace",
+            "calendar_resources.exact_move",
+            "events.patch",
+            "todos.patch"
+          ],
+          "patchConfirmation": [
+            "recurrenceSet",
+            "this-and-future",
+            "entire-set",
+            "replaceAll"
+          ]
+        },
+        "destructive-scope": {
+          "confirms": [
+            "calendars.delete",
+            "calendar_resources.exact_create",
+            "calendar_resources.exact_replace",
+            "calendar_resources.exact_move",
+            "events.patch",
+            "todos.patch"
+          ],
+          "patchConfirmation": [
+            "recurrenceSet",
+            "this-and-future",
+            "entire-set"
+          ]
+        },
+        "never": {
+          "confirms": [],
+          "patchConfirmation": []
+        }
+      },
+      "incompleteAccept": {
+        "description": "The confirm field has no default. An accept whose content lacks a boolean confirm, such as a client that answers accept with an empty form, fails as confirmation_mismatch in phase mrtr with mutationState not_attempted; confirm false, decline and cancel remain confirmation_declined.",
+        "code": "confirmation_mismatch",
+        "mutationState": "not_attempted"
+      }
     }
   },
   "environment": [
@@ -3000,6 +3048,17 @@
       ],
       "default": "storage_only",
       "description": "Scheduling model for participation-bearing writes and Calendar collection deletion; server_managed allows them on servers advertising calendar-auto-schedule and discloses schedulingSideEffects"
+    },
+    {
+      "name": "CALDAV_CONFIRMATION_POLICY",
+      "required": false,
+      "enum": [
+        "always",
+        "destructive-scope",
+        "never"
+      ],
+      "default": "always",
+      "description": "Which confirmed mutations ask for MRTR confirmation: always (default) keeps every confirmation; destructive-scope keeps calendars.delete, exact writes and recurrence-definition, this-and-future and entire-set patches; never asks for none. A skipped confirmation is disclosed as confirmation skipped_by_policy"
     },
     {
       "name": "CALDAV_REDIRECT_HOSTS",
@@ -3110,7 +3169,7 @@
         "idempotentHint": false,
         "openWorldHint": true
       },
-      "description": "Confirm and delete one exact CalDAV Calendar collection, including its resources. When the scheduling mode and fresh OPTIONS evidence do not admit it, it deletes only after a bounded member scan finds no organizer or attendee data."
+      "description": "Confirm and delete one exact CalDAV Calendar collection, including its resources; only CALDAV_CONFIRMATION_POLICY=never skips the confirmation. When the scheduling mode and fresh OPTIONS evidence do not admit it, it deletes only after a bounded member scan finds no organizer or attendee data."
     },
     {
       "name": "calendar_entities.query",
@@ -3236,7 +3295,7 @@
         "idempotentHint": false,
         "openWorldHint": true
       },
-      "description": "Apply a revision-bound semantic patch to one Event resource at an explicitly supplied absolute snapshot href."
+      "description": "Apply a revision-bound semantic patch to one Event resource at an explicitly supplied absolute snapshot href. Recurrence-definition, this-and-future and entire-set patches confirm unless CALDAV_CONFIRMATION_POLICY=never; other replaceAll patches confirm only under the default always policy."
     },
     {
       "name": "todos.create",
@@ -3278,7 +3337,7 @@
         "idempotentHint": false,
         "openWorldHint": true
       },
-      "description": "Apply a revision-bound semantic patch to one To-do resource at an explicitly supplied absolute snapshot href; completion is reserved for todos.complete."
+      "description": "Apply a revision-bound semantic patch to one To-do resource at an explicitly supplied absolute snapshot href; completion is reserved for todos.complete. Recurrence-definition, this-and-future and entire-set patches confirm unless CALDAV_CONFIRMATION_POLICY=never; other replaceAll patches confirm only under the default always policy."
     },
     {
       "name": "todos.complete",
@@ -3446,7 +3505,7 @@
         "idempotentHint": false,
         "openWorldHint": true
       },
-      "description": "Confirm and delete one revision-bound Calendar Object Resource."
+      "description": "Confirm and delete one revision-bound Calendar Object Resource; CALDAV_CONFIRMATION_POLICY=destructive-scope or never skips the confirmation."
     },
     {
       "name": "calendars.inspect",
@@ -3574,7 +3633,7 @@
         "idempotentHint": false,
         "openWorldHint": true
       },
-      "description": "Create a complete caller-authored Calendar Object Resource at an explicitly provided absolute destination resource href."
+      "description": "Create a complete caller-authored Calendar Object Resource at an explicitly provided absolute destination resource href after confirmation, which only CALDAV_CONFIRMATION_POLICY=never skips."
     },
     {
       "name": "calendar_resources.exact_replace",
@@ -3596,7 +3655,7 @@
         "idempotentHint": false,
         "openWorldHint": true
       },
-      "description": "Confirm and replace one revision-bound resource at its explicitly provided absolute href with a complete caller-authored Calendar Object Resource."
+      "description": "Confirm and replace one revision-bound resource at its explicitly provided absolute href with a complete caller-authored Calendar Object Resource; only CALDAV_CONFIRMATION_POLICY=never skips the confirmation."
     },
     {
       "name": "calendar_resources.exact_move",
@@ -3618,7 +3677,7 @@
         "idempotentHint": false,
         "openWorldHint": true
       },
-      "description": "Review, confirm, and atomically move one strong-revision-bound complete resource to an explicitly provided absolute destination href with constant work and authoritative-byte verification."
+      "description": "Review, confirm, and atomically move one strong-revision-bound complete resource to an explicitly provided absolute destination href with constant work and authoritative-byte verification; only CALDAV_CONFIRMATION_POLICY=never skips the confirmation."
     }
   ],
   "$defs": {
@@ -10261,6 +10320,12 @@
         "possible"
       ]
     },
+    "confirmationSkip": {
+      "description": "Present only when CALDAV_CONFIRMATION_POLICY skipped the MRTR confirmation this call would ask for under the default always policy, and only on outcomes whose mutationState is committed or unknown. skipped_by_policy: the write was admitted without a confirmation round; review, revision, If-Match, scheduling and limit checks still applied.",
+      "enum": [
+        "skipped_by_policy"
+      ]
+    },
     "toolsCallMetadata": {
       "type": "object",
       "required": [
@@ -10505,6 +10570,9 @@
         },
         "schedulingSideEffects": {
           "$ref": "#/$defs/schedulingSideEffects"
+        },
+        "confirmation": {
+          "$ref": "#/$defs/confirmationSkip"
         },
         "calendar": {
           "$ref": "#/$defs/calendarDescriptor"
@@ -10801,6 +10869,9 @@
         },
         "schedulingSideEffects": {
           "$ref": "#/$defs/schedulingSideEffects"
+        },
+        "confirmation": {
+          "$ref": "#/$defs/confirmationSkip"
         }
       }
     },
@@ -10909,6 +10980,9 @@
         },
         "schedulingSideEffects": {
           "$ref": "#/$defs/schedulingSideEffects"
+        },
+        "confirmation": {
+          "$ref": "#/$defs/confirmationSkip"
         }
       }
     },
@@ -10930,6 +11004,9 @@
         },
         "schedulingSideEffects": {
           "$ref": "#/$defs/schedulingSideEffects"
+        },
+        "confirmation": {
+          "$ref": "#/$defs/confirmationSkip"
         },
         "snapshot": {
           "$ref": "#/$defs/calendarSnapshot"
@@ -10960,6 +11037,9 @@
         },
         "schedulingSideEffects": {
           "$ref": "#/$defs/schedulingSideEffects"
+        },
+        "confirmation": {
+          "$ref": "#/$defs/confirmationSkip"
         },
         "deletionReceipt": {
           "$ref": "#/$defs/deletionReceipt"
@@ -11104,6 +11184,9 @@
         },
         "schedulingSideEffects": {
           "$ref": "#/$defs/schedulingSideEffects"
+        },
+        "confirmation": {
+          "$ref": "#/$defs/confirmationSkip"
         },
         "currentSnapshot": {
           "$ref": "#/$defs/exactConflictSnapshot"

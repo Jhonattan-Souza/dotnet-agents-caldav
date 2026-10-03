@@ -938,6 +938,99 @@ public sealed partial class CalendarCollectionToolsTests
         result.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("confirmation_mismatch");
     }
 
+    [Fact]
+    public async Task DeleteRawAsync_DestructiveScopePolicyStillRequiresConfirmation()
+    {
+        const string href = "https://cal.example/calendars/user/tasks/";
+        var module = Substitute.For<ICalendarCollectionModule>();
+        module.ReviewDeleteAsync(Arg.Any<CalendarCollectionDeleteRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CalendarCollectionDeleteReviewResult(
+                null,
+                new CalendarCollectionDeleteReviewBinding(href, "digest"),
+                Descriptor(href)));
+        var sut = CreateTool(module, new FixedTimeProvider(DateTimeOffset.Parse("2026-08-16T12:00:00Z")));
+        using var policy = CalendarConfirmationPolicy.Attach(CalDavConfirmationPolicies.DestructiveScope);
+
+        var request = await Should.ThrowAsync<InputRequiredException>(() => sut.DeleteRawAsync(
+            DeleteArguments(href), null, null, true, CancellationToken.None));
+
+        request.Result.InputRequests!["confirm_delete"].ElicitationParams!.RequestedSchema!
+            .Properties["confirm"].ShouldBeOfType<ElicitRequestParams.BooleanSchema>().Default.ShouldBeNull();
+        await module.DidNotReceive().ExecuteConfirmedDeleteAsync(
+            Arg.Any<CalendarCollectionDeleteRequest>(),
+            Arg.Any<CalendarCollectionDeleteReviewBinding>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task DeleteRawAsync_NeverPolicyReviewsThenDeletesWithoutConfirmation()
+    {
+        const string href = "https://cal.example/calendars/user/tasks/";
+        var module = Substitute.For<ICalendarCollectionModule>();
+        var descriptor = Descriptor(href);
+        var binding = new CalendarCollectionDeleteReviewBinding(href, "digest");
+        module.ReviewDeleteAsync(Arg.Any<CalendarCollectionDeleteRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CalendarCollectionDeleteReviewResult(null, binding, descriptor));
+        module.ExecuteConfirmedDeleteAsync(
+                Arg.Any<CalendarCollectionDeleteRequest>(),
+                Arg.Any<CalendarCollectionDeleteReviewBinding>(),
+                Arg.Any<CancellationToken>())
+            .Returns(CalendarCollectionDeleteResult.Success(descriptor));
+        var sut = CreateTool(module, new FixedTimeProvider(DateTimeOffset.Parse("2026-08-16T12:00:00Z")));
+        using var policy = CalendarConfirmationPolicy.Attach(CalDavConfirmationPolicies.Never);
+
+        var result = await sut.DeleteRawAsync(DeleteArguments(href), null, null, false, CancellationToken.None);
+
+        result.IsError.ShouldBe(false, result.StructuredContent?.ToString());
+        var structured = result.StructuredContent!.Value;
+        structured.GetProperty("outcome").GetString().ShouldBe("success");
+        structured.GetProperty("confirmation").GetString().ShouldBe("skipped_by_policy");
+        DotnetAgents.CalDav.Mcp.Hosting.CalendarOutputSchemaGuard.Validate("calendars.delete", result);
+        await module.Received(1).ReviewDeleteAsync(new CalendarCollectionDeleteRequest(href), Arg.Any<CancellationToken>());
+        await module.Received(1).ExecuteConfirmedDeleteAsync(
+            new CalendarCollectionDeleteRequest(href),
+            binding,
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task DeleteRawAsync_AcceptWithoutBooleanConfirmFailsExplicitlyWithoutDeleting()
+    {
+        const string href = "https://cal.example/calendars/user/tasks/";
+        var module = Substitute.For<ICalendarCollectionModule>();
+        module.ReviewDeleteAsync(Arg.Any<CalendarCollectionDeleteRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CalendarCollectionDeleteReviewResult(
+                null,
+                new CalendarCollectionDeleteReviewBinding(href, "digest"),
+                Descriptor(href)));
+        var sut = CreateTool(module, new FixedTimeProvider(DateTimeOffset.Parse("2026-08-16T12:00:00Z")));
+        var first = await Should.ThrowAsync<InputRequiredException>(() => sut.DeleteRawAsync(
+            DeleteArguments(href), null, null, true, CancellationToken.None));
+
+        var result = await sut.DeleteRawAsync(
+            DeleteArguments(href),
+            first.Result.RequestState,
+            new Dictionary<string, InputResponse>
+            {
+                ["confirm_delete"] = InputResponse.FromElicitResult(new ElicitResult
+                {
+                    Action = "accept",
+                    Content = new Dictionary<string, JsonElement>()
+                })
+            },
+            true,
+            CancellationToken.None);
+
+        var structured = result.StructuredContent!.Value;
+        structured.GetProperty("code").GetString().ShouldBe("confirmation_mismatch");
+        structured.GetProperty("mutationState").GetString().ShouldBe("not_attempted");
+        structured.GetProperty("message").GetString().ShouldBe(CalendarMutationConfirmation.IncompleteAcceptMessage);
+        await module.DidNotReceive().ExecuteConfirmedDeleteAsync(
+            Arg.Any<CalendarCollectionDeleteRequest>(),
+            Arg.Any<CalendarCollectionDeleteReviewBinding>(),
+            Arg.Any<CancellationToken>());
+    }
+
     private static CalendarCollectionTools CreateTool(
         ICalendarCollectionModule module,
         TimeProvider time) => new(

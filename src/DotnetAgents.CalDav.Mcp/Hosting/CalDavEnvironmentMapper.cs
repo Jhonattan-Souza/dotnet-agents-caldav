@@ -37,6 +37,7 @@ public static class CalDavEnvironmentMapper
             options.EvaluationTimeZone = getEnv("CALDAV_EVALUATION_TIME_ZONE");
             options.InteroperabilityProfile = getEnv("CALDAV_INTEROPERABILITY_PROFILE");
             options.SchedulingMode = getEnv("CALDAV_SCHEDULING_MODE");
+            options.ConfirmationPolicy = getEnv("CALDAV_CONFIRMATION_POLICY");
             options.RedirectHosts = getEnv("CALDAV_REDIRECT_HOSTS");
         };
     }

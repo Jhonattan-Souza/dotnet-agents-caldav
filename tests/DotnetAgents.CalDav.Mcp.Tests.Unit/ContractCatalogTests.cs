@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using DotnetAgents.CalDav.Core.Configuration;
 using DotnetAgents.CalDav.Core.Models;
 using DotnetAgents.CalDav.Mcp.Hosting;
 using Shouldly;
@@ -71,6 +72,58 @@ public sealed class ContractCatalogTests
                 .ShouldNotContain("schedulingSideEffects");
         }
     }
+
+    [Fact]
+    public void Confirmation_policy_is_closed_matches_the_runtime_values_and_discloses_skips()
+    {
+        var catalog = ReadJson("mcp-tool-catalog.json");
+        var definitions = catalog["$defs"]!;
+        var environment = catalog["environment"]!.AsArray()
+            .Single(item => item!["name"]!.GetValue<string>() == "CALDAV_CONFIRMATION_POLICY")!;
+        string[] policies =
+        [
+            CalDavConfirmationPolicies.Always,
+            CalDavConfirmationPolicies.DestructiveScope,
+            CalDavConfirmationPolicies.Never
+        ];
+
+        environment["required"]!.GetValue<bool>().ShouldBeFalse();
+        environment["default"]!.GetValue<string>().ShouldBe(CalDavConfirmationPolicies.Always);
+        EnumValues(environment).ShouldBe(policies);
+        EnumValues(definitions["confirmationSkip"]!).ShouldBe(["skipped_by_policy"]);
+        foreach (var name in new[]
+                 {
+                     "snapshotMutationSuccess", "deleteMutationSuccess", "calendarCollectionDeleteSuccess",
+                     "mutationErrorOutcome", "calendarCollectionMutationErrorOutcome", "exactMutationErrorOutcome"
+                 })
+        {
+            definitions[name]!["properties"]!["confirmation"]!["$ref"]!.GetValue<string>()
+                .ShouldBe("#/$defs/confirmationSkip");
+            definitions[name]!["required"]!.AsArray().Select(item => item!.GetValue<string>())
+                .ShouldNotContain("confirmation");
+        }
+
+        var contract = catalog["mrtrWireContract"]!["confirmationPolicy"]!;
+        contract["environment"]!.GetValue<string>().ShouldBe("CALDAV_CONFIRMATION_POLICY");
+        contract["policies"]!.AsObject().Select(policy => policy.Key).ShouldBe(policies);
+        Confirms(contract, CalDavConfirmationPolicies.Always).ShouldBe(
+        [
+            "calendars.delete", "calendar_resources.delete", "calendar_resources.exact_create",
+            "calendar_resources.exact_replace", "calendar_resources.exact_move", "events.patch", "todos.patch"
+        ]);
+        Confirms(contract, CalDavConfirmationPolicies.DestructiveScope)
+            .ShouldBe(Confirms(contract, CalDavConfirmationPolicies.Always).Where(tool => tool != "calendar_resources.delete"));
+        Confirms(contract, CalDavConfirmationPolicies.Never).ShouldBeEmpty();
+        contract["policies"]![CalDavConfirmationPolicies.DestructiveScope]!["patchConfirmation"]!.AsArray()
+            .Select(item => item!.GetValue<string>()).ShouldBe(["recurrenceSet", "this-and-future", "entire-set"]);
+        contract["incompleteAccept"]!["code"]!.GetValue<string>().ShouldBe("confirmation_mismatch");
+        contract["incompleteAccept"]!["mutationState"]!.GetValue<string>().ShouldBe("not_attempted");
+        catalog["mrtrWireContract"]!["missingRequiredClientCapabilityError"]!["description"]!.GetValue<string>()
+            .ShouldContain("A call whose confirmation the policy skips never requires the capability.");
+    }
+
+    private static string[] Confirms(JsonNode contract, string policy) =>
+        contract["policies"]![policy]!["confirms"]!.AsArray().Select(item => item!.GetValue<string>()).ToArray();
 
     [Fact]
     public void Calendar_entity_query_catalog_equals_the_closed_typed_failure_vocabulary()

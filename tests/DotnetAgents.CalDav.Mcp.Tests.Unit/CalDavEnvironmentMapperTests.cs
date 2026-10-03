@@ -141,6 +141,7 @@ public class CalDavEnvironmentMapperTests
             "CALDAV_EVALUATION_TIME_ZONE",
             "CALDAV_INTEROPERABILITY_PROFILE",
             "CALDAV_SCHEDULING_MODE",
+            "CALDAV_CONFIRMATION_POLICY",
             "CALDAV_REDIRECT_HOSTS"
         ]);
     }
@@ -159,6 +160,23 @@ public class CalDavEnvironmentMapperTests
         configure(options);
 
         options.SchedulingMode.ShouldBe(mode);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("always")]
+    [InlineData("destructive-scope")]
+    [InlineData("never")]
+    [InlineData("Never")]
+    public void MapFromEnvironment_MapsConfirmationPolicyWithoutInterpretingIt(string? policy)
+    {
+        var configure = CalDavEnvironmentMapper.MapFromEnvironment(name =>
+            name == "CALDAV_CONFIRMATION_POLICY" ? policy : null);
+        var options = new CalDavOptions();
+
+        configure(options);
+
+        options.ConfirmationPolicy.ShouldBe(policy);
     }
 
     [Fact]

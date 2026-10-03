@@ -137,6 +137,25 @@ public class CalDavMcpRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_UnknownConfirmationPolicyFailsStartupWithoutEchoingTheValue()
+    {
+        const string privateValue = "Never-private";
+        var output = new StringWriter();
+
+        var exitCode = await new CalDavMcpRunner(output).RunAsync(options =>
+        {
+            options.BaseUrl = "https://caldav.example.com";
+            options.Username = "user";
+            options.Password = "pass";
+            options.ConfirmationPolicy = privateValue;
+        }, TestContext.Current.CancellationToken);
+
+        exitCode.ShouldBe(1);
+        output.ToString().ShouldContain("CalDav:ConfirmationPolicy must be 'always', 'destructive-scope', or 'never'");
+        output.ToString().ShouldNotContain(privateValue);
+    }
+
+    [Fact]
     public async Task RunAsync_MissingUsername_ReturnsExitCode1_WithUsernameInError()
     {
         var sw = new StringWriter();

@@ -255,6 +255,10 @@ _Avoid_: Meeting invitations, send invite, scheduling support
 The typed `schedulingSideEffects` value, `possible` or `none`, on a scheduling-governed mutation outcome under Server-managed Scheduling whose write committed or may have committed. `possible` means this call admitted a write because the server advertised automatic scheduling, so the server may have contacted participants; `none` means this call admitted no write on a server that advertised automatic scheduling.
 _Avoid_: Invitation receipt, delivery status
 
+**Confirmation Policy**:
+The configured rule, `always` by default or opt-in `destructive-scope` or `never`, that decides which MRTR-confirmed mutations still ask the user before they write. Skipping a confirmation removes only that round; review, revision, scheduling, and limit checks still apply, and a write that committed or may have committed reports `confirmation: skipped_by_policy`.
+_Avoid_: Confirmation toggle, auto-approve, trust mode
+
 **Inert External Reference**:
 A URI-bearing Calendar Entity value that is preserved and exposed as data but is never automatically fetched, opened, joined, or executed.
 _Avoid_: Integration, active link

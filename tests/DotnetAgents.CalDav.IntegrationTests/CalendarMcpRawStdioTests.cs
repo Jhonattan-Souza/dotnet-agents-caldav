@@ -16,7 +16,7 @@ using Xunit;
 namespace DotnetAgents.CalDav.IntegrationTests;
 
 /// <summary>Exercises raw JSON evidence that the SDK's dictionary client cannot represent.</summary>
-public sealed class CalendarMcpRawStdioTests
+public sealed partial class CalendarMcpRawStdioTests
 {
     [Fact]
     public async Task LegacyInitializeToolNameIsUnknownWhileTheProtocolHandshakeRemainsSupported()
@@ -1320,7 +1320,8 @@ public sealed class CalendarMcpRawStdioTests
         string baseUrl,
         string calendarHref,
         bool exposeExact = false,
-        string password = "test")
+        string password = "test",
+        string? confirmationPolicy = null)
     {
         var startInfo = new ProcessStartInfo("dotnet", GetServerAssemblyPath())
         {
@@ -1336,6 +1337,8 @@ public sealed class CalendarMcpRawStdioTests
         startInfo.Environment["CALDAV_CALENDAR_HREFS"] = calendarHref;
         startInfo.Environment["CALDAV_INTEROPERABILITY_PROFILE"] = "radicale-3.7.8";
         startInfo.Environment["CALDAV_EXPOSE_EXACT_TOOLS"] = exposeExact ? "true" : "false";
+        if (confirmationPolicy is not null)
+            startInfo.Environment["CALDAV_CONFIRMATION_POLICY"] = confirmationPolicy;
         return Process.Start(startInfo)!;
     }
 
@@ -1610,6 +1613,7 @@ public sealed class CalendarMcpRawStdioTests
         private int _deleted;
         private int _propFindCount;
         private int _requestCount;
+        private int _putCount;
         private string? _observedIfMatch;
 
         public DeleteServer()
@@ -1634,6 +1638,8 @@ public sealed class CalendarMcpRawStdioTests
         public int PropFindCount => Volatile.Read(ref _propFindCount);
 
         public int RequestCount => Volatile.Read(ref _requestCount);
+
+        public int PutCount => Volatile.Read(ref _putCount);
 
         public bool IsDeleted => Volatile.Read(ref _deleted) != 0;
 
@@ -1690,6 +1696,8 @@ public sealed class CalendarMcpRawStdioTests
                     context.Response.Close();
                     return;
                 default:
+                    if (context.Request.HttpMethod == "PUT")
+                        Interlocked.Increment(ref _putCount);
                     context.Response.StatusCode = (int)HttpStatusCode.MethodNotAllowed;
                     context.Response.Close();
                     return;

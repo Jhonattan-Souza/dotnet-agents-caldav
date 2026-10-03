@@ -56,12 +56,13 @@ internal sealed class CalendarCollectionTools
         OpenWorld = true,
         UseStructuredContent = true,
         OutputSchemaType = typeof(CalendarCollectionDeleteSuccessResult)),
-     Description("Confirm and delete one exact CalDAV Calendar collection, including its resources. When the scheduling mode and fresh OPTIONS evidence do not admit it, it deletes only after a bounded member scan finds no organizer or attendee data.")]
+     Description("Confirm and delete one exact CalDAV Calendar collection, including its resources; only CALDAV_CONFIRMATION_POLICY=never skips the confirmation. When the scheduling mode and fresh OPTIONS evidence do not admit it, it deletes only after a bounded member scan finds no organizer or attendee data.")]
     public Task<CallToolResult> DeleteAsync(
         RequestContext<CallToolRequestParams> requestContext,
         CancellationToken cancellationToken)
     {
-        CalendarMrtrCapabilityGuard.RequireConfirmationCapability(requestContext);
+        if (CalendarConfirmationPolicy.RequiresConfirmation(destructiveScope: true))
+            CalendarMrtrCapabilityGuard.RequireConfirmationCapability(requestContext);
         return DeleteRawAsync(
             requestContext.Params?.Arguments,
             requestContext.Params?.RequestState,
@@ -164,70 +165,31 @@ internal sealed class CalendarCollectionTools
         bool mrtrSupported,
         CancellationToken cancellationToken)
     {
-        var continuation = requestState is not null || inputResponses is not null;
+        var confirm = CalendarConfirmationPolicy.RequiresConfirmation(destructiveScope: true);
+        var continuation = confirm && (requestState is not null || inputResponses is not null);
         if (continuation && !mrtrSupported)
             return Error(MrtrUnsupported(), "Calendar collection deletion requires the client to support form elicitation for confirmation.",
                 CalendarMutationState.NotAttempted);
 
         using var deadline = new CancellationTokenSource(BeforeDispatchDeadline, _timeProvider);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
+        using var skipped = confirm ? null : CalendarConfirmationPolicy.Skip();
         try
         {
             var review = await _module.ReviewDeleteAsync(request, linked.Token).ConfigureAwait(false);
             if (review.Outcome is not null)
                 return Error(review.Outcome);
+            if (!confirm)
+                return await ExecuteReviewedDeleteAsync(request, review.Binding!, linked.Token).ConfigureAwait(false);
             if (!continuation)
-            {
-                if (!mrtrSupported)
-                    return Error(MrtrUnsupported(),
-                        "Calendar collection deletion requires the client to support form elicitation for confirmation.",
-                        CalendarMutationState.NotAttempted);
-                var binding = review.Binding!;
-                var state = _stateProtector.ProtectCalendarCollectionDelete(binding);
-                throw new InputRequiredException(
-                    new Dictionary<string, InputRequest>
-                    {
-                        [ConfirmationKey] = InputRequest.ForElicitation(new ElicitRequestParams
-                        {
-                            Mode = "form",
-                            Message = ConfirmationMessage(review.Calendar!),
-                            RequestedSchema = new ElicitRequestParams.RequestSchema
-                            {
-                                Properties = new Dictionary<string, ElicitRequestParams.PrimitiveSchemaDefinition>
-                                {
-                                    ["confirm"] = new ElicitRequestParams.BooleanSchema
-                                    {
-                                        Title = "Confirm collection deletion",
-                                        Description = "Delete the collection and all Calendar Object Resources below it.",
-                                        Default = false
-                                    }
-                                },
-                                Required = ["confirm"]
-                            }
-                        })
-                    },
-                    state);
-            }
+                return RequestDeleteConfirmation(review, mrtrSupported);
 
-            if (!TryReadContinuation(requestState, inputResponses, review.Binding!, out var decision, out var expired))
-                return Error(new(
-                        expired
-                            ? CalendarTelemetryErrorCode.ConfirmationExpired
-                            : CalendarTelemetryErrorCode.ConfirmationMismatch,
-                        CalendarTelemetryErrorCategory.Confirmation,
-                        CalendarTelemetryErrorPhase.Mrtr,
-                        false),
-                    expired
-                        ? "The mutation confirmation has expired."
-                        : "The mutation confirmation does not match the reviewed request.",
-                    CalendarMutationState.NotAttempted);
+            var decision = ReadContinuation(requestState, inputResponses, review.Binding!);
             if (decision == ConfirmationDecision.Declined)
                 return DeleteDeclined();
-
-            var result = await _module.ExecuteConfirmedDeleteAsync(request, review.Binding!, linked.Token).ConfigureAwait(false);
-            return result.Code == CalendarCollectionDeleteCode.Success && result.Calendar is not null
-                ? CalendarToolResult.Success(DeleteSuccess(result.Calendar!), result.MutationState).FinalizeResult()
-                : Error(result);
+            if (decision != ConfirmationDecision.Confirmed)
+                return ConfirmationError(decision);
+            return await ExecuteReviewedDeleteAsync(request, review.Binding!, linked.Token).ConfigureAwait(false);
         }
         catch (InputRequiredException)
         {
@@ -290,42 +252,76 @@ internal sealed class CalendarCollectionTools
         or BrokenCircuitException
         or RateLimiterRejectedException;
 
-    private bool TryReadContinuation(
+    private CallToolResult RequestDeleteConfirmation(CalendarCollectionDeleteReviewResult review, bool mrtrSupported)
+    {
+        if (!mrtrSupported)
+            return Error(MrtrUnsupported(),
+                "Calendar collection deletion requires the client to support form elicitation for confirmation.",
+                CalendarMutationState.NotAttempted);
+        var state = _stateProtector.ProtectCalendarCollectionDelete(review.Binding!);
+        throw new InputRequiredException(
+            new Dictionary<string, InputRequest>
+            {
+                [ConfirmationKey] = InputRequest.ForElicitation(new ElicitRequestParams
+                {
+                    Mode = "form",
+                    Message = ConfirmationMessage(review.Calendar!),
+                    RequestedSchema = CalendarMutationConfirmation.CreateSchema(
+                        "Confirm collection deletion",
+                        "Delete the collection and all Calendar Object Resources below it.")
+                })
+            },
+            state);
+    }
+
+    private async Task<CallToolResult> ExecuteReviewedDeleteAsync(
+        CalendarCollectionDeleteRequest request,
+        CalendarCollectionDeleteReviewBinding binding,
+        CancellationToken cancellationToken)
+    {
+        var result = await _module.ExecuteConfirmedDeleteAsync(request, binding, cancellationToken).ConfigureAwait(false);
+        return result.Code == CalendarCollectionDeleteCode.Success && result.Calendar is not null
+            ? CalendarToolResult.Success(DeleteSuccess(result.Calendar!), result.MutationState).FinalizeResult()
+            : Error(result);
+    }
+
+    private static CallToolResult ConfirmationError(ConfirmationDecision decision) => Error(new(
+            decision == ConfirmationDecision.Expired
+                ? CalendarTelemetryErrorCode.ConfirmationExpired
+                : CalendarTelemetryErrorCode.ConfirmationMismatch,
+            CalendarTelemetryErrorCategory.Confirmation,
+            CalendarTelemetryErrorPhase.Mrtr,
+            false),
+        decision switch
+        {
+            ConfirmationDecision.Expired => "The mutation confirmation has expired.",
+            ConfirmationDecision.IncompleteAccept => CalendarMutationConfirmation.IncompleteAcceptMessage,
+            _ => "The mutation confirmation does not match the reviewed request."
+        },
+        CalendarMutationState.NotAttempted);
+
+    private ConfirmationDecision ReadContinuation(
         string? requestState,
         IDictionary<string, InputResponse>? inputResponses,
-        CalendarCollectionDeleteReviewBinding binding,
-        out ConfirmationDecision decision,
-        out bool expired)
+        CalendarCollectionDeleteReviewBinding binding)
     {
-        decision = ConfirmationDecision.Declined;
-        expired = false;
         if (string.IsNullOrEmpty(requestState)
             || inputResponses is null
             || inputResponses.Count != 1
             || !inputResponses.TryGetValue(ConfirmationKey, out var response)
             || response is null)
-            return false;
+            return ConfirmationDecision.Mismatch;
 
-        if (!_stateProtector.TryUnprotectCalendarCollectionDelete(requestState, binding, out expired))
-            return false;
+        if (!_stateProtector.TryUnprotectCalendarCollectionDelete(requestState, binding, out var expired))
+            return expired ? ConfirmationDecision.Expired : ConfirmationDecision.Mismatch;
 
-        var elicitation = response.Deserialize(InputResponse.ElicitResultJsonTypeInfo);
-        if (elicitation is null)
-            return false;
-        if (elicitation.Action is "decline" or "cancel")
+        return CalendarMutationConfirmation.Read(response) switch
         {
-            decision = ConfirmationDecision.Declined;
-            return true;
-        }
-        if (!string.Equals(elicitation.Action, "accept", StringComparison.Ordinal)
-            || elicitation.Content is null
-            || elicitation.Content.Count != 1
-            || !elicitation.Content.TryGetValue("confirm", out var confirmed)
-            || confirmed.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
-            return false;
-
-        decision = confirmed.GetBoolean() ? ConfirmationDecision.Confirmed : ConfirmationDecision.Declined;
-        return true;
+            CalendarConfirmationAnswer.Confirmed => ConfirmationDecision.Confirmed,
+            CalendarConfirmationAnswer.Declined => ConfirmationDecision.Declined,
+            CalendarConfirmationAnswer.IncompleteAccept => ConfirmationDecision.IncompleteAccept,
+            _ => ConfirmationDecision.Mismatch
+        };
     }
 
     private static string ConfirmationMessage(CalendarDescriptor descriptor)
@@ -492,7 +488,10 @@ internal sealed class CalendarCollectionTools
     private enum ConfirmationDecision
     {
         Declined,
-        Confirmed
+        Confirmed,
+        Expired,
+        IncompleteAccept,
+        Mismatch
     }
 }
 

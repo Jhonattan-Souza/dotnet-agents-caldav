@@ -277,6 +277,52 @@ public class CalDavOptionsTests
     }
 
     [Theory]
+    [InlineData(null, CalDavConfirmationPolicies.Always)]
+    [InlineData("", CalDavConfirmationPolicies.Always)]
+    [InlineData(CalDavConfirmationPolicies.Always, CalDavConfirmationPolicies.Always)]
+    [InlineData(CalDavConfirmationPolicies.DestructiveScope, CalDavConfirmationPolicies.DestructiveScope)]
+    [InlineData(CalDavConfirmationPolicies.Never, CalDavConfirmationPolicies.Never)]
+    public void ValidateCalDavOptions_AcceptsTheClosedConfirmationPolicies(string? policy, string effective)
+    {
+        var options = new CalDavOptions
+        {
+            BaseUrl = "https://caldav.example.com",
+            Username = "user",
+            Password = "pass",
+            ConfirmationPolicy = policy
+        };
+
+        new ValidateCalDavOptions().Validate(null, options).Succeeded.ShouldBeTrue();
+        CalDavConfirmationPolicies.Effective(options).ShouldBe(effective);
+    }
+
+    [Theory]
+    [InlineData("Always")]
+    [InlineData("NEVER")]
+    [InlineData(" never")]
+    [InlineData("never ")]
+    [InlineData("destructive_scope")]
+    [InlineData("destructive")]
+    [InlineData("none")]
+    [InlineData(" ")]
+    public void ValidateCalDavOptions_RejectsEveryOtherConfirmationPolicy(string policy)
+    {
+        var options = new CalDavOptions
+        {
+            BaseUrl = "https://caldav.example.com",
+            Username = "user",
+            Password = "pass",
+            ConfirmationPolicy = policy
+        };
+
+        var result = new ValidateCalDavOptions().Validate(null, options);
+
+        result.Failed.ShouldBeTrue();
+        result.Failures.ShouldHaveSingleItem().ShouldBe(
+            "CalDav:ConfirmationPolicy must be 'always', 'destructive-scope', or 'never' when specified.");
+    }
+
+    [Theory]
     [InlineData("*.icloud.com")]
     [InlineData("https://caldav.icloud.com")]
     [InlineData("caldav.icloud.com:443")]

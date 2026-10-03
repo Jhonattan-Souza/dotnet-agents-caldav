@@ -37,6 +37,10 @@ internal static class CalendarExecutionPolicy
                 EntityKind(requestedToolName));
             using var telemetryScope = CalendarTelemetry.Attach(telemetry);
             using var schedulingDisclosure = AttachSchedulingDisclosure(services, requestedToolName);
+            using var confirmationPolicy = CalendarConfirmationPolicy.Attach(
+                services.GetService<IOptions<CalDavOptions>>() is { } configured
+                    ? CalDavConfirmationPolicies.Effective(configured.Value)
+                    : null);
             CalendarMoveTelemetrySnapshot? moveTelemetry = null;
             var report = request.Params?.ProgressToken is { } token
                 ? (Func<ProgressNotificationValue, CancellationToken, Task>)((progress, progressCancellationToken) =>

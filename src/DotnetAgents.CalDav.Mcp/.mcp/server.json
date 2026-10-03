@@ -93,6 +93,17 @@
           ]
         },
         {
+          "name": "CALDAV_CONFIRMATION_POLICY",
+          "description": "Which confirmed mutations ask for confirmation: always (default) keeps every confirmation; destructive-scope skips it for single-resource deletion and single-scope replaceAll patches; never skips every confirmation and reports confirmation skipped_by_policy on the affected results (optional)",
+          "isRequired": false,
+          "default": "always",
+          "choices": [
+            "always",
+            "destructive-scope",
+            "never"
+          ]
+        },
+        {
           "name": "CALDAV_REDIRECT_HOSTS",
           "description": "Comma-separated HTTPS host allowlist for cross-origin redirects and discovered hrefs, such as .icloud.com; exact host names or leading-dot strict-subdomain suffixes that receive the configured credentials at the configured port (optional; omit to stay same-origin)",
           "isRequired": false

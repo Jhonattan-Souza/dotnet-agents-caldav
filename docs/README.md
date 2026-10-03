@@ -22,6 +22,8 @@ describes the shipped tool surface. Find behavioral regressions in
 - [Server-authoritative Move](adr/0006-server-authoritative-semantic-move.md)
 - [Complete MCP JSON presentation and result budgets](adr/0007-mcp-json-compatibility-results.md)
 - [Local Text Filter with server candidate reduction](adr/0008-local-text-filter-with-server-candidate-reduction.md)
+- [Opt-in server-managed scheduling](adr/0009-opt-in-server-managed-scheduling.md)
+- [Configurable confirmation policy](adr/0010-configurable-confirmation-policy.md)
 
 ## Historical performance observations
 
