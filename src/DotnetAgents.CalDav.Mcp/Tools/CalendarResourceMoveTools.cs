@@ -111,9 +111,9 @@ public sealed class CalendarResourceMoveTools
     private static CalendarToolResult Error(CalendarResourceMoveResult result)
     {
         var facts = CalendarTelemetryFacts.From(result);
-        return Error(
+        var terminal = Error(
             facts,
-            Message(result.Code),
+            CalendarErrorViolations.MessageOr(result.Violations, Message(result.Code)),
             result.MutationState,
             result.AuthorizedCandidates is { Count: > 0 }
                 ? result.AuthorizedCandidates.Select(CalendarAuthorizedCandidateResult.FromDescriptor).ToArray()
@@ -128,6 +128,8 @@ public sealed class CalendarResourceMoveTools
                     Dimension: result.LimitDimension is null
                         ? null
                         : LimitDimension(result.LimitDimension.Value)));
+        CalendarErrorViolations.AttachRequestViolations(terminal.Value, result.Violations);
+        return terminal;
     }
 
     private static string Message(CalendarResourceMoveCode code) => code switch
