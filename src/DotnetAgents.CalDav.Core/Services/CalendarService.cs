@@ -298,7 +298,7 @@ internal sealed class CalendarService : ICalendarService
             || HasEncodedPathSeparator(candidate)
             || !string.Equals(candidate.AbsoluteUri, href, StringComparison.Ordinal))
         {
-            violation = CalendarHrefViolations.Canonical("/href", href, candidate)!;
+            violation = CalendarHrefViolations.Canonical("/href", href, candidate);
             return false;
         }
 

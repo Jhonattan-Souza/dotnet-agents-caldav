@@ -115,6 +115,16 @@ internal sealed class ExactCalendarResourceWriteTools
         string? requestState,
         IDictionary<string, InputResponse>? inputResponses,
         bool mrtrSupported,
+        CancellationToken cancellationToken) => AnchorResourceViolations(
+        await CreateCoreAsync(arguments, requestState, inputResponses, mrtrSupported, cancellationToken)
+            .ConfigureAwait(false),
+        arguments);
+
+    private async Task<CallToolResult> CreateCoreAsync(
+        IDictionary<string, JsonElement>? arguments,
+        string? requestState,
+        IDictionary<string, InputResponse>? inputResponses,
+        bool mrtrSupported,
         CancellationToken cancellationToken)
     {
         if (MeasureArguments(arguments) > MaximumArgumentBytes)
@@ -251,6 +261,16 @@ internal sealed class ExactCalendarResourceWriteTools
     }
 
     internal async Task<CallToolResult> ReplaceRawAsync(
+        IDictionary<string, JsonElement>? arguments,
+        string? requestState,
+        IDictionary<string, InputResponse>? inputResponses,
+        bool mrtrSupported,
+        CancellationToken cancellationToken) => AnchorResourceViolations(
+        await ReplaceCoreAsync(arguments, requestState, inputResponses, mrtrSupported, cancellationToken)
+            .ConfigureAwait(false),
+        arguments);
+
+    private async Task<CallToolResult> ReplaceCoreAsync(
         IDictionary<string, JsonElement>? arguments,
         string? requestState,
         IDictionary<string, InputResponse>? inputResponses,
@@ -782,17 +802,33 @@ internal sealed class ExactCalendarResourceWriteTools
             Content = [new TextContentBlock { Text = "Exact Calendar Object Resource write made no change." }]
         }, CalendarMutationState.NotAttempted);
 
+    private const string Utf8ResourcePointer = "/utf8Resource";
+
     private static CalendarToolResult ExactError(CalendarExactResourceResult result)
     {
         var facts = CalendarTelemetryFacts.From(result);
-        return TypedError(
+        var terminal = TypedError(
             facts,
-            Message(result.Code),
+            CalendarErrorViolations.MessageOr(result.Violations, Message(result.Code)),
             result.MutationState,
             result.Snapshot is null ? null : ExactConflictSnapshotResult.FromSnapshot(result.Snapshot),
             result.RetryAfterMilliseconds,
             result.Limits is null ? null : CalendarEntityCreateLimits.FromLimits(result.Limits));
+        if (CalendarErrorViolations.FromRequestViolations(result.Violations, ResolvePointer) is { } violations)
+            CalendarErrorViolations.Attach(terminal.Value, violations);
+        return terminal;
     }
+
+    /// <summary>The body reason anchors at utf8Resource until the entry point learns the caller sent base64.</summary>
+    private static string ResolvePointer(string pointer) =>
+        pointer == "/resource" ? Utf8ResourcePointer : pointer;
+
+    private static CallToolResult AnchorResourceViolations(
+        CallToolResult result,
+        IDictionary<string, JsonElement>? arguments) =>
+        arguments?.ContainsKey("base64Utf8Resource") == true
+            ? CalendarErrorViolations.RebasePointer(result, Utf8ResourcePointer, "/base64Utf8Resource")
+            : result;
 
     private static string Message(CalendarExactResourceCode code) => code switch
     {

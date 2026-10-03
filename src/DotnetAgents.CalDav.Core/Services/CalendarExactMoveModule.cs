@@ -397,7 +397,10 @@ internal sealed class CalendarExactMoveModule(
                 (CalendarExactResourceCode.InvalidInput, CalendarExactResourcePhase.SelectionDiscoveryCapability),
             _ => throw new ArgumentOutOfRangeException(nameof(failure))
         };
-        return Failure(code, phase);
+        return Failure(code, phase) with
+        {
+            Violations = [CalendarMoveViolations.From(failure.Reason, "/revision/href", "/destinationHref")]
+        };
     }
 
     private static CalendarExactResourceResult FromSharedResult(CalendarResourceMoveResult result) => new(
