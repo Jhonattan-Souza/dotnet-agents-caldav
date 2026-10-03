@@ -455,7 +455,7 @@ internal static class CalendarEntityPatchEditor
         return current?.Equals("CANCELLED", StringComparison.OrdinalIgnoreCase) == true;
     }
 
-    private static (CalendarEventPatch? Patch, CalendarEntityViolation? Rejection) PrepareScalarPatch(
+    private static (CalendarEventPatch? Patch, CalendarRequestViolation? Rejection) PrepareScalarPatch(
         CalendarResourceSnapshot snapshot,
         CalendarContentDocument document,
         CalendarContentComponent master,
@@ -475,7 +475,7 @@ internal static class CalendarEntityPatchEditor
             : (null, CalendarEntityViolations.DerivedValueReserved(CalendarEntityViolations.Fields + "/" + derived));
     }
 
-    private static CalendarEntityViolation? ScalarTransitionRejection(
+    private static CalendarRequestViolation? ScalarTransitionRejection(
         CalendarContentDocument document,
         CalendarContentComponent master,
         CalendarEventPatch patch,
@@ -494,7 +494,7 @@ internal static class CalendarEntityPatchEditor
     }
 
     /// <summary>A timed-to-date Event start has no implicit end; any other failure is an unshiftable stored end.</summary>
-    private static CalendarEntityViolation SpanPreservationRejection(
+    private static CalendarRequestViolation SpanPreservationRejection(
         CalendarContentDocument document,
         CalendarContentComponent master,
         CalendarEntityKind kind) =>
@@ -990,7 +990,7 @@ internal static class CalendarEntityPatchEditor
         CalendarContentComponent master,
         CalendarEventPatch patch,
         CalendarEntityKind kind,
-        out CalendarEntityViolation? rejection)
+        out CalendarRequestViolation? rejection)
     {
         rejection = null;
         try
@@ -1040,7 +1040,7 @@ internal static class CalendarEntityPatchEditor
     private static CalendarEntityPatchResult Failure(
         CalendarEntityPatchCode code,
         CalendarResourceSnapshot? snapshot = null,
-        CalendarEntityViolation? violation = null) => new(
+        CalendarRequestViolation? violation = null) => new(
         code,
         CalendarMutationState.NotAttempted,
         snapshot,
@@ -1066,6 +1066,6 @@ internal static class CalendarEntityPatchEditor
         TimeSpan? Due,
         bool Failure)
     {
-        public CalendarEntityViolation? Rejection { get; init; }
+        public CalendarRequestViolation? Rejection { get; init; }
     }
 }

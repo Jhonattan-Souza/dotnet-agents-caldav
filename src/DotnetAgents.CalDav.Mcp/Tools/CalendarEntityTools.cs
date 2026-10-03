@@ -93,7 +93,7 @@ public sealed class CalendarEntityTools
 
     private static CalendarToolResult ErrorCandidate(
         QueryFailure failure,
-        CalendarStructuredErrorFacts facts) => CalendarToolResult.Error(new CallToolResult
+        CalendarStructuredErrorFacts facts) => CalendarToolResult.Error(CalendarErrorViolations.AttachRequestViolations(new CallToolResult
         {
             IsError = true,
             StructuredContent = JsonSerializer.SerializeToElement(new CalendarEntityQueryErrorResult(
@@ -115,7 +115,7 @@ public sealed class CalendarEntityTools
             failure.AuthorizedCandidates?.Select(Candidate).ToArray(),
             failure.RetryAfterMs)),
             Content = [new TextContentBlock { Text = "Calendar Entity query failed." }]
-        }, facts);
+        }, failure.Violations), facts);
 
     private static CalendarAuthorizedCandidateResult Candidate(QueryAuthorizedCandidate candidate) => new(
         new CalendarHref(candidate.CalendarHref),

@@ -331,7 +331,7 @@ internal static class CalendarRecurrenceSetPatchEditor
         CalendarContentDocument document,
         CalendarResourceSnapshot snapshot,
         CalendarEntityPatchCode code,
-        CalendarEntityViolation? violation = null) => new(
+        CalendarRequestViolation? violation = null) => new(
         document,
         false,
         new CalendarEntityPatchResult(

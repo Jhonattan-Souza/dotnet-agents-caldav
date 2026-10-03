@@ -1078,7 +1078,7 @@ internal sealed class CalendarCreationModule(
 
     private static CalendarEntityCreateResult SemanticFailure(
         CalendarEntityCreateCode code,
-        CalendarEntityViolation? violation) =>
+        CalendarRequestViolation? violation) =>
         Failure(code) with { Violations = violation is null ? null : [violation] };
 
     private static bool HasSameOrigin(Uri left, Uri right) =>

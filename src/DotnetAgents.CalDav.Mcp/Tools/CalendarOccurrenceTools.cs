@@ -92,7 +92,7 @@ public sealed class CalendarOccurrenceTools
 
     private static CalendarToolResult ErrorCandidate(
         QueryFailure failure,
-        CalendarStructuredErrorFacts facts) => CalendarToolResult.Error(new CallToolResult
+        CalendarStructuredErrorFacts facts) => CalendarToolResult.Error(CalendarErrorViolations.AttachRequestViolations(new CallToolResult
         {
             IsError = true,
             StructuredContent = JsonSerializer.SerializeToElement(new CalendarOccurrenceQueryErrorResult(
@@ -114,7 +114,7 @@ public sealed class CalendarOccurrenceTools
                 failure.AuthorizedCandidates?.Select(Candidate).ToArray(),
                 failure.RetryAfterMs)),
             Content = [new TextContentBlock { Text = "Occurrence query failed." }]
-        }, facts);
+        }, failure.Violations), facts);
 
     private static bool TryCreateRequest(
         IDictionary<string, JsonElement>? arguments,

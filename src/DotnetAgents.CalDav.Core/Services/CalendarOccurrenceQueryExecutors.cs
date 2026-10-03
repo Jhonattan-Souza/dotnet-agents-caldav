@@ -18,7 +18,11 @@ internal sealed class CalendarOccurrenceQueryStartExecutor(
         CancellationToken cancellationToken)
     {
         if (!IsValid(request))
-            return Failure(CalendarQueryFailures.InvalidInput("The Occurrence query input is invalid."));
+        {
+            return Failure(CalendarQueryWindows.InvalidInput(
+                CalendarQueryFailures.InvalidInput("The Occurrence query input is invalid."),
+                request.Query is null ? null : CalendarQueryWindows.Violation(request.Query.From, request.Query.To)));
+        }
         if (!CalendarTextCriteria.TryCreate(request.Query.TextFilter, out var criteria))
             return Failure(CalendarQueryFailures.InvalidTextFilter("Occurrence"));
         var temporal = temporalContextResolver.Resolve(new CalendarTemporalContextRequest(

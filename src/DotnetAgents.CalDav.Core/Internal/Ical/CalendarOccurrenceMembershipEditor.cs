@@ -281,7 +281,7 @@ internal static class CalendarOccurrenceMembershipEditor
     private static CalendarEntityPatchResult Failure(
         CalendarEntityPatchCode code,
         CalendarResourceSnapshot snapshot,
-        CalendarEntityViolation? violation = null) => new(
+        CalendarRequestViolation? violation = null) => new(
         code,
         CalendarMutationState.NotAttempted,
         snapshot,

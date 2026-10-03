@@ -33,8 +33,8 @@ internal static class CalendarErrorViolations
     /// Anchors typed Core reasons at the caller's arguments. A reason whose semantic pointer names no argument
     /// in this request, such as a fault in stored data, contributes only its message.
     /// </summary>
-    internal static IReadOnlyList<CalendarInputViolation>? FromEntityViolations(
-        IReadOnlyList<CalendarEntityViolation>? violations,
+    internal static IReadOnlyList<CalendarInputViolation>? FromRequestViolations(
+        IReadOnlyList<CalendarRequestViolation>? violations,
         Func<string, string?> resolvePointer)
     {
         if (violations is not { Count: > 0 })
@@ -48,8 +48,14 @@ internal static class CalendarErrorViolations
         return resolved.Count == 0 ? null : Normalize(resolved);
     }
 
+    /// <summary>Attaches typed reasons whose pointers already address this tool's arguments.</summary>
+    internal static CallToolResult AttachRequestViolations(
+        CallToolResult result,
+        IReadOnlyList<CalendarRequestViolation>? violations) =>
+        FromRequestViolations(violations, pointer => pointer) is { } resolved ? Attach(result, resolved) : result;
+
     /// <summary>Returns the first typed reason's fixed message, or the caller's fallback.</summary>
-    internal static string MessageOr(IReadOnlyList<CalendarEntityViolation>? violations, string fallback) =>
+    internal static string MessageOr(IReadOnlyList<CalendarRequestViolation>? violations, string fallback) =>
         violations is [var first, ..] ? first.Message : fallback;
 
     internal static CallToolResult Attach(

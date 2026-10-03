@@ -111,7 +111,8 @@ public sealed record QueryFailure(
     QueryFailurePhase Phase,
     QueryExecutionLimits? Limits = null,
     IReadOnlyList<QueryAuthorizedCandidate>? AuthorizedCandidates = null,
-    int? RetryAfterMs = null);
+    int? RetryAfterMs = null,
+    IReadOnlyList<CalendarRequestViolation>? Violations = null);
 
 /// <summary>Closed expected query failure vocabulary.</summary>
 public enum QueryFailureCode
