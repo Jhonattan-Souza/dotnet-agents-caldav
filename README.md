@@ -105,7 +105,7 @@ Credentials are attached only to the `CALDAV_URL` origin and HTTPS hosts authori
 - `calendar_resources.get` — Read an authoritative semantic-or-opaque snapshot by confirmed absolute href.
 - `events.create` — Create one Event in a selected Calendar. Timed Events without an explicit `end` or `duration` default to `PT1H`; date-only Events remain one nominal day. A recurring Event's `start` must be the first occurrence of its `rrule`.
 - `events.patch` — Apply a revision-bound semantic patch to one Event resource.
-- `todos.create` — Create one To-do in a selected Calendar. A recurring To-do requires `start` on the first occurrence of its `rrule`, and `due` must be later than `start` in the same temporal family.
+- `todos.create` — Create one To-do in a selected Calendar. A recurring To-do requires `start` on the first occurrence of its `rrule`, and `due` must be later than `start` in the same temporal family; a date-only To-do due on day D uses `start` D and `due` D+1.
 - `todos.patch` — Apply a revision-bound semantic patch to one To-do resource.
 - `todos.complete` — Complete one non-recurring To-do or one explicitly identified recurring Occurrence.
 - `calendar_occurrences.add` — Add one explicit RDATE identity.

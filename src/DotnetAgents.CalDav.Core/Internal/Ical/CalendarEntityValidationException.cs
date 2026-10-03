@@ -43,7 +43,9 @@ internal static class CalendarEntityViolations
         $"{endField} must use the same temporal kind and time zone as start.");
 
     internal static CalendarEntityValidationException NotAfterStart(string fields, string endField) => Reject(
-        fields + "/" + endField, endField + "_not_after_start", $"{endField} must be later than start.");
+        fields + "/" + endField, endField + "_not_after_start",
+        $"{endField} must be later than start. A date value is an exclusive boundary, "
+        + $"so a single day D uses start D and {endField} D+1.");
 
     internal static CalendarEntityValidationException TemporalValueInvalid(string pointer, ArgumentException inner) =>
         new(new CalendarEntityViolation(pointer, "temporal_value_invalid", inner.Message), inner);
