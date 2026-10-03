@@ -12,6 +12,12 @@ internal sealed class CalendarEntityValidationException : ArgumentException
     public CalendarRequestViolation Violation { get; }
 }
 
+/// <summary>
+/// An <see cref="ArgumentException"/> whose message is a fixed literal authored by the Calendar Entity validator,
+/// so it can be surfaced to callers; any other argument failure keeps a generic message.
+/// </summary>
+internal sealed class CalendarAuthoredArgumentException(string message) : ArgumentException(message);
+
 /// <summary>Typed reasons for complete Calendar Entity creation, with fixed messages that never echo authored values.</summary>
 internal static class CalendarEntityViolations
 {
@@ -57,14 +63,11 @@ internal static class CalendarEntityViolations
         new(new CalendarRequestViolation(Fields + "/" + field, "field_value_invalid", AuthoredMessage(inner)), inner);
 
     /// <summary>
-    /// Surfaces a message only when the validator itself threw it as a fixed literal; messages from the BCL,
+    /// Surfaces a message only when the validator authored it as a fixed literal; messages from the BCL,
     /// Ical.Net, or NodaTime are replaced so they can never echo values or library internals.
     /// </summary>
     private static string AuthoredMessage(ArgumentException exception) =>
-        exception.GetType() == typeof(ArgumentException)
-        && exception.TargetSite?.DeclaringType == typeof(CalendarEntityCreateValidator)
-            ? exception.Message
-            : "This value is invalid for its field.";
+        exception is CalendarAuthoredArgumentException ? exception.Message : "This value is invalid for its field.";
 
     internal static string Collection(CalendarCollectionField field)
     {

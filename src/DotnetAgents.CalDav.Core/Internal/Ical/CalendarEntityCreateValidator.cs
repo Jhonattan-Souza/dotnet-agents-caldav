@@ -239,26 +239,26 @@ internal static class CalendarEntityCreateValidator
     private static void RejectAddressed<T>(CalendarScalarPatch<T>? patch)
     {
         if (patch is not null)
-            throw new ArgumentException("The scalar does not belong to this Calendar Entity kind.");
+            throw new CalendarAuthoredArgumentException("The scalar does not belong to this Calendar Entity kind.");
     }
 
     private static void ValidatePriority(int value)
     {
         if (value is < 0 or > 9)
-            throw new ArgumentException("Priority must be between zero and nine.");
+            throw new CalendarAuthoredArgumentException("Priority must be between zero and nine.");
     }
 
     private static void ValidatePercentComplete(int value)
     {
         if (value is < 0 or > 100)
-            throw new ArgumentException("Percent complete must be between zero and one hundred.");
+            throw new CalendarAuthoredArgumentException("Percent complete must be between zero and one hundred.");
     }
 
     private static void ValidateTodoPatchStatus(string value)
     {
         ValidateOpenEnum(value, TodoStatuses);
         if (value.Equals("COMPLETED", StringComparison.OrdinalIgnoreCase))
-            throw new ArgumentException("Use todos.complete to complete a To-do; a patch cannot set status COMPLETED.");
+            throw new CalendarAuthoredArgumentException("Use todos.complete to complete a To-do; a patch cannot set status COMPLETED.");
     }
 
     private static void ValidateEventRecurrence(
@@ -296,7 +296,7 @@ internal static class CalendarEntityCreateValidator
             ValidateRecurrenceOverrideIdentity(recurrenceOverride.RecurrenceIdentity, masterStart!, identities, index);
             ValidateOverrideRange(recurrenceOverride.Range);
             if (recurrenceOverride.Fields.RecurrenceSet is not null)
-                throw new ArgumentException("A recurrence override cannot contain a nested recurrence set.");
+                throw new CalendarAuthoredArgumentException("A recurrence override cannot contain a nested recurrence set.");
             validateOverride(recurrenceOverride, index);
         }
     }
@@ -336,7 +336,7 @@ internal static class CalendarEntityCreateValidator
             ValidateRecurrenceOverrideIdentity(recurrenceOverride.RecurrenceIdentity, masterStart!, identities, index);
             ValidateOverrideRange(recurrenceOverride.Range);
             if (recurrenceOverride.Fields.RecurrenceSet is not null)
-                throw new ArgumentException("A recurrence override cannot contain a nested recurrence set.");
+                throw new CalendarAuthoredArgumentException("A recurrence override cannot contain a nested recurrence set.");
             validateOverride(recurrenceOverride, index);
         }
     }
@@ -410,16 +410,16 @@ internal static class CalendarEntityCreateValidator
         CalendarEntityKind expectedKind)
     {
         if (!Enum.IsDefined(patch.Operation) || patch.OrphanReconciliations is null)
-            throw new ArgumentException("The recurrence-set patch shape is invalid.");
+            throw new CalendarAuthoredArgumentException("The recurrence-set patch shape is invalid.");
         if (patch.Operation == CalendarScalarPatchOperation.Clear)
         {
             if (patch.Value is not null)
-                throw new ArgumentException("A cleared recurrence set cannot carry a value.");
+                throw new CalendarAuthoredArgumentException("A cleared recurrence set cannot carry a value.");
             ValidateReconciliations(patch.OrphanReconciliations, masterStart);
             return;
         }
         if (patch.Value is null)
-            throw new ArgumentException("A set recurrence operation requires a value.");
+            throw new CalendarAuthoredArgumentException("A set recurrence operation requires a value.");
         var recurrenceDates = patch.Value.RecurrenceDates?
             .Select(value => new CalendarRecurrenceDateCreate(Value: value))
             .ToArray();
@@ -442,11 +442,11 @@ internal static class CalendarEntityCreateValidator
         foreach (var recurrenceOverride in overrides ?? [])
         {
             if (recurrenceOverride.EntityKind != expectedKind)
-                throw new ArgumentException("A recurrence override must match the master Entity Kind.");
+                throw new CalendarAuthoredArgumentException("A recurrence override must match the master Entity Kind.");
             ValidatePatchOverrideIdentity(recurrenceOverride, masterStart, identities);
             ValidateOverrideRange(recurrenceOverride.Range);
             if (!Enum.IsDefined(recurrenceOverride.Status))
-                throw new ArgumentException("The recurrence override status is invalid.");
+                throw new CalendarAuthoredArgumentException("The recurrence override status is invalid.");
             if (recurrenceOverride.MovedStart is not null)
                 ValidateRecurrenceFamily(recurrenceOverride.MovedStart, masterStart);
             if (recurrenceOverride.MovedEnd is not null)
@@ -469,7 +469,7 @@ internal static class CalendarEntityCreateValidator
         var identity = recurrenceOverride.RecurrenceIdentity;
         var key = $"{identity.Kind:D}|{identity.TimeZoneId}|{identity.Value}|{recurrenceOverride.Range:D}";
         if (!identities.Add(key))
-            throw new ArgumentException("A recurrence override identity and range discriminator must be unique.");
+            throw new CalendarAuthoredArgumentException("A recurrence override identity and range discriminator must be unique.");
     }
 
     private static void ValidateReconciliations(
@@ -485,10 +485,10 @@ internal static class CalendarEntityCreateValidator
                     && (reconciliation.OverrideKind is null
                         || !Enum.IsDefined(reconciliation.OverrideKind.Value)))
             {
-                throw new ArgumentException("The orphan reconciliation shape is invalid.");
+                throw new CalendarAuthoredArgumentException("The orphan reconciliation shape is invalid.");
             }
             if (masterStart is null)
-                throw new ArgumentException("A recurring Calendar Entity requires a start.");
+                throw new CalendarAuthoredArgumentException("A recurring Calendar Entity requires a start.");
             ValidateRecurrenceFamily(reconciliation.RecurrenceIdentity, masterStart);
         }
     }
@@ -545,7 +545,7 @@ internal static class CalendarEntityCreateValidator
         string pointer)
     {
         if ((recurrenceDate.Value is null) == (recurrenceDate.Period is null))
-            throw new ArgumentException("A recurrence date must contain one temporal value or one period.");
+            throw new CalendarAuthoredArgumentException("A recurrence date must contain one temporal value or one period.");
         if (recurrenceDate.Value is not null)
         {
             ValidateRecurrenceFamily(recurrenceDate.Value, masterStart, pointer);
@@ -553,10 +553,10 @@ internal static class CalendarEntityCreateValidator
         }
         var period = recurrenceDate.Period!;
         if (period.Start.Kind == CalendarTemporalKind.Date)
-            throw new ArgumentException("A recurrence period must use a date-time temporal family.");
+            throw new CalendarAuthoredArgumentException("A recurrence period must use a date-time temporal family.");
         ValidateRecurrenceFamily(period.Start, masterStart);
         if ((period.End is null) == (period.Duration is null))
-            throw new ArgumentException("A recurrence period requires exactly one end or duration.");
+            throw new CalendarAuthoredArgumentException("A recurrence period requires exactly one end or duration.");
         if (period.End is not null)
             ValidateOrderedTemporal(ValidateTemporal(period.Start), ValidateTemporal(period.End));
         ValidateDuration(period.Duration, period.Start.Kind == CalendarTemporalKind.Date);
@@ -568,7 +568,7 @@ internal static class CalendarEntityCreateValidator
     {
         _ = ValidateTemporal(value);
         if (!SharesTemporalFamily(value, masterStart))
-            throw new ArgumentException("A recurrence identity must match the master start temporal family.");
+            throw new CalendarAuthoredArgumentException("A recurrence identity must match the master start temporal family.");
     }
 
     private static void ValidateRecurrenceFamily(
@@ -602,7 +602,7 @@ internal static class CalendarEntityCreateValidator
         if (range == CalendarRecurrenceOverrideRange.ThisAndPrior)
             throw new CalendarRecurrenceUnevaluableException();
         if (range is not null && !Enum.IsDefined(range.Value))
-            throw new ArgumentException("The recurrence override range is invalid.");
+            throw new CalendarAuthoredArgumentException("The recurrence override range is invalid.");
     }
 
     private static void ValidateOverrideStatus(
@@ -611,7 +611,7 @@ internal static class CalendarEntityCreateValidator
         int index)
     {
         if (!Enum.IsDefined(status))
-            throw new ArgumentException("The recurrence override status is invalid.");
+            throw new CalendarAuthoredArgumentException("The recurrence override status is invalid.");
         var fieldsCancelled = fieldsStatus?.Equals("CANCELLED", StringComparison.OrdinalIgnoreCase) == true;
         if (fieldsStatus is not null
             && (status == CalendarRecurrenceOverrideStatus.Cancelled) != fieldsCancelled)
@@ -631,7 +631,7 @@ internal static class CalendarEntityCreateValidator
         ValidateSafeValue(summary);
         ValidateSafeValue(description);
         if (priority is < 0 or > 9)
-            throw new ArgumentException("Priority must be between zero and nine.");
+            throw new CalendarAuthoredArgumentException("Priority must be between zero and nine.");
         foreach (var category in categories ?? [])
             ValidateSafeValue(category);
         ValidateStructuredData(structuredData, entityKind);
@@ -668,7 +668,7 @@ internal static class CalendarEntityCreateValidator
         foreach (var relation in relations ?? [])
         {
             if (relation.Value.Length == 0)
-                throw new ArgumentException("A relation value is required.");
+                throw new CalendarAuthoredArgumentException("A relation value is required.");
             ValidateSafeValue(relation.Value);
             ValidateOpenEnum(relation.RelationType, RelationTypes);
             ValidateTypedParameters(relation.Parameters ?? [], "TEXT", "RELTYPE");
@@ -750,7 +750,7 @@ internal static class CalendarEntityCreateValidator
             return;
         var value = property.Value;
         if (value.Kind != CalendarTemporalKind.UtcDateTime)
-            throw new ArgumentException("Participant revision timestamps must be UTC DATE-TIME values.");
+            throw new CalendarAuthoredArgumentException("Participant revision timestamps must be UTC DATE-TIME values.");
         ValidateTemporal(value);
         ValidateTypedParameters(property.Parameters, "DATE-TIME", "TZID");
     }
@@ -768,7 +768,7 @@ internal static class CalendarEntityCreateValidator
         if (property is null)
             return;
         if (property.Value < minimum || property.Value > maximum)
-            throw new ArgumentException("An integer structured property is outside its allowed range.");
+            throw new CalendarAuthoredArgumentException("An integer structured property is outside its allowed range.");
         ValidateTypedParameters(property.Parameters, "INTEGER");
     }
 
@@ -776,12 +776,12 @@ internal static class CalendarEntityCreateValidator
     {
         var action = alarm.Action.Value.ToUpperInvariant();
         if (action is not ("DISPLAY" or "AUDIO" or "EMAIL"))
-            throw new ArgumentException("The alarm action is invalid.");
+            throw new CalendarAuthoredArgumentException("The alarm action is invalid.");
         ValidateTextValue(alarm.Action, "VALUE");
         ValidateSafeValue(alarm.Trigger.Value, allowNewLines: false);
         ValidateParameters(alarm.Trigger.Parameters);
         if (string.IsNullOrWhiteSpace(alarm.Trigger.Value))
-            throw new ArgumentException("An alarm trigger is required.");
+            throw new CalendarAuthoredArgumentException("An alarm trigger is required.");
         ValidateTextValue(alarm.Description, "VALUE");
         ValidateTextValue(alarm.Summary, "VALUE");
         foreach (var attendee in alarm.Attendees ?? [])
@@ -805,7 +805,7 @@ internal static class CalendarEntityCreateValidator
                 out _);
         if (!relative && !absolute)
         {
-            throw new ArgumentException("The alarm trigger is invalid.");
+            throw new CalendarAuthoredArgumentException("The alarm trigger is invalid.");
         }
         ValidateAlarmTriggerParameters(alarm.Trigger.Parameters, relative);
     }
@@ -814,14 +814,14 @@ internal static class CalendarEntityCreateValidator
     {
         var locations = alarm.ProximityLocations ?? [];
         if (locations.Count > 0 && alarm.Proximity is null)
-            throw new ArgumentException("Alarm proximity locations require PROXIMITY.");
+            throw new CalendarAuthoredArgumentException("Alarm proximity locations require PROXIMITY.");
         if (locations.Any(location =>
                 location.Url is null
                 || !location.Url.Uri.StartsWith("geo:", StringComparison.OrdinalIgnoreCase)))
-            throw new ArgumentException("Alarm VLOCATION values require URL geo URI values.");
+            throw new CalendarAuthoredArgumentException("Alarm VLOCATION values require URL geo URI values.");
         if (alarm.Proximity?.Value.ToUpperInvariant() is ("ARRIVE" or "DEPART") && locations.Count == 0)
         {
-            throw new ArgumentException("ARRIVE and DEPART alarms require VLOCATION URL geo URI values.");
+            throw new CalendarAuthoredArgumentException("ARRIVE and DEPART alarms require VLOCATION URL geo URI values.");
         }
     }
 
@@ -835,17 +835,17 @@ internal static class CalendarEntityCreateValidator
             parameter.Name.Equals("RELATED", StringComparison.OrdinalIgnoreCase));
         ValidateAlarmTriggerValueParameter(value, relative);
         if (!relative && value is null)
-            throw new ArgumentException("An absolute alarm trigger requires VALUE=DATE-TIME.");
+            throw new CalendarAuthoredArgumentException("An absolute alarm trigger requires VALUE=DATE-TIME.");
         if (related is not null && !IsValidRelatedParameter(related, relative))
         {
-            throw new ArgumentException("The alarm trigger RELATED parameter is invalid for its value shape.");
+            throw new CalendarAuthoredArgumentException("The alarm trigger RELATED parameter is invalid for its value shape.");
         }
     }
 
     private static void ValidateAlarmRepeat(CalendarAlarm alarm)
     {
         if ((alarm.Repeat is null) != (alarm.Duration is null))
-            throw new ArgumentException("Alarm repeat and duration must be supplied together.");
+            throw new CalendarAuthoredArgumentException("Alarm repeat and duration must be supplied together.");
         ValidateIntegerProperty(alarm.Repeat, 1, int.MaxValue);
         if (alarm.Duration is null)
             return;
@@ -856,7 +856,7 @@ internal static class CalendarEntityCreateValidator
     private static void ValidateAlarmTriggerValueParameter(CalendarParameter? value, bool relative)
     {
         if (value is not null && !HasSingleValue(value, relative ? "DURATION" : "DATE-TIME"))
-            throw new ArgumentException("The alarm trigger VALUE parameter does not match its value shape.");
+            throw new CalendarAuthoredArgumentException("The alarm trigger VALUE parameter does not match its value shape.");
     }
 
     private static bool IsValidRelatedParameter(CalendarParameter related, bool relative) => relative
@@ -891,7 +891,7 @@ internal static class CalendarEntityCreateValidator
             || alarm.Attendees is { Count: > 0 }
             || alarm.Attachments is { Count: > 0 })
         {
-            throw new ArgumentException("A display alarm requires only its description.");
+            throw new CalendarAuthoredArgumentException("A display alarm requires only its description.");
         }
     }
 
@@ -902,14 +902,14 @@ internal static class CalendarEntityCreateValidator
             || alarm.Attendees is { Count: > 0 }
             || alarm.Attachments is { Count: > 1 })
         {
-            throw new ArgumentException("An audio alarm allows at most one attachment.");
+            throw new CalendarAuthoredArgumentException("An audio alarm allows at most one attachment.");
         }
     }
 
     private static void ValidateEmailAlarm(CalendarAlarm alarm)
     {
         if (alarm.Description is null || alarm.Summary is null || alarm.Attendees is not { Count: > 0 })
-            throw new ArgumentException("An email alarm requires description, summary, and at least one attendee.");
+            throw new CalendarAuthoredArgumentException("An email alarm requires description, summary, and at least one attendee.");
     }
 
     private static void ValidateRequestStatus(CalendarRequestStatus status)
@@ -920,7 +920,7 @@ internal static class CalendarEntityCreateValidator
             || status.Code.AsSpan(0, separator).ContainsAnyExceptInRange('0', '9')
             || status.Code.AsSpan(separator + 1).ContainsAnyExceptInRange('0', '9'))
         {
-            throw new ArgumentException("A request status code must contain two numeric components.");
+            throw new CalendarAuthoredArgumentException("A request status code must contain two numeric components.");
         }
         ValidateSafeValue(status.Description);
         ValidateSafeValue(status.ExceptionData);
@@ -937,7 +937,7 @@ internal static class CalendarEntityCreateValidator
             CalendarTemporalKind.UtcDateTime =>
                 ValidateUnzonedTemporal(value, "yyyy-MM-dd'T'HH:mm:ss", utcSuffix: true),
             CalendarTemporalKind.ZonedDateTime => ValidateZonedTemporal(value),
-            _ => throw new ArgumentException("The temporal kind is invalid.")
+            _ => throw new CalendarAuthoredArgumentException("The temporal kind is invalid.")
         };
     }
 
@@ -955,7 +955,7 @@ internal static class CalendarEntityCreateValidator
                 DateTimeStyles.None,
                 out var parsed))
         {
-            throw new ArgumentException("The temporal value is invalid.");
+            throw new CalendarAuthoredArgumentException("The temporal value is invalid.");
         }
         return new ValidatedTemporal(
             value.Kind,
@@ -975,7 +975,7 @@ internal static class CalendarEntityCreateValidator
                 DateTimeStyles.None,
                 out var parsed))
         {
-            throw new ArgumentException("The named-zone temporal value is invalid.");
+            throw new CalendarAuthoredArgumentException("The named-zone temporal value is invalid.");
         }
         return ResolveZonedTemporal(value, parsed, zone);
     }
@@ -994,11 +994,11 @@ internal static class CalendarEntityCreateValidator
         }
         catch (SkippedTimeException)
         {
-            throw new ArgumentException("The named-zone local time does not exist.");
+            throw new CalendarAuthoredArgumentException("The named-zone local time does not exist.");
         }
         catch (AmbiguousTimeException)
         {
-            throw new ArgumentException("The named-zone local time is ambiguous.");
+            throw new CalendarAuthoredArgumentException("The named-zone local time is ambiguous.");
         }
     }
 
@@ -1008,7 +1008,7 @@ internal static class CalendarEntityCreateValidator
             || !string.Equals(start.TimeZoneId, end.TimeZoneId, StringComparison.Ordinal)
             || end.Comparable <= start.Comparable)
         {
-            throw new ArgumentException("The end or due must have the same temporal family and be later than the start.");
+            throw new CalendarAuthoredArgumentException("The end or due must have the same temporal family and be later than the start.");
         }
     }
 
@@ -1020,7 +1020,7 @@ internal static class CalendarEntityCreateValidator
             || !duration.IsStrictlyPositive
             || dateOnly && duration.Accurate != TimeSpan.Zero)
         {
-            throw new ArgumentException("The duration is invalid for this temporal family.");
+            throw new CalendarAuthoredArgumentException("The duration is invalid for this temporal family.");
         }
     }
 
@@ -1031,7 +1031,7 @@ internal static class CalendarEntityCreateValidator
             || geo.Latitude is < -90 or > 90
             || geo.Longitude is < -180 or > 180))
         {
-            throw new ArgumentException("The geographic coordinates are invalid.");
+            throw new CalendarAuthoredArgumentException("The geographic coordinates are invalid.");
         }
     }
 
@@ -1064,7 +1064,7 @@ internal static class CalendarEntityCreateValidator
         {
             ValidateSafeValue(value.Uid, allowNewLines: false);
             if (string.IsNullOrEmpty(value.Uid))
-                throw new ArgumentException("A VLOCATION or VRESOURCE UID is required.");
+                throw new CalendarAuthoredArgumentException("A VLOCATION or VRESOURCE UID is required.");
             ValidateTypedParameters(value.Parameters, "TEXT", "VALUE");
             ValidateTextValue(value.Name);
             ValidateTextValue(value.Description);
@@ -1072,7 +1072,7 @@ internal static class CalendarEntityCreateValidator
             ValidateComponentTypes(value.ComponentTypes, isResource: !allowUrl);
             ValidateUriValue(value.Url);
             if (!allowUrl && value.Url is not null)
-                throw new ArgumentException("VRESOURCE does not support URL.");
+                throw new CalendarAuthoredArgumentException("VRESOURCE does not support URL.");
             ValidateRelations(value.RelatedTo);
             ValidateUriValues(value.Concepts);
             ValidateNamedUris(value.Links, "URI", "LABEL");
@@ -1090,10 +1090,10 @@ internal static class CalendarEntityCreateValidator
         if (!isResource)
             return;
         if (componentTypes.Value.Count != 1)
-            throw new ArgumentException("VRESOURCE RESOURCE-TYPE requires exactly one token.");
+            throw new CalendarAuthoredArgumentException("VRESOURCE RESOURCE-TYPE requires exactly one token.");
         ValidateToken(componentTypes.Value[0]);
         if (!ResourceTypes.Contains(componentTypes.Value[0]))
-            throw new ArgumentException("VRESOURCE RESOURCE-TYPE is not a recognized registered value.");
+            throw new CalendarAuthoredArgumentException("VRESOURCE RESOURCE-TYPE is not a recognized registered value.");
     }
 
     private static void ValidateUriValues(IReadOnlyList<CalendarUriValue>? values)
@@ -1130,7 +1130,7 @@ internal static class CalendarEntityCreateValidator
     {
         ValidateTextValue(value, "VALUE");
         if (string.IsNullOrEmpty(value.Value))
-            throw new ArgumentException(message);
+            throw new CalendarAuthoredArgumentException(message);
     }
 
     private static void ValidateRequiredOpenEnumProperty(
@@ -1154,10 +1154,10 @@ internal static class CalendarEntityCreateValidator
             if (!names.Add(parameter.Name)
                 || reservedParameterNames.Contains(parameter.Name, StringComparer.OrdinalIgnoreCase))
             {
-                throw new ArgumentException("An iCalendar parameter name may occur only once and cannot duplicate a first-class field.");
+                throw new CalendarAuthoredArgumentException("An iCalendar parameter name may occur only once and cannot duplicate a first-class field.");
             }
             if (parameter.Values is null || parameter.Values.Count == 0)
-                throw new ArgumentException("A parameter requires at least one value.");
+                throw new CalendarAuthoredArgumentException("A parameter requires at least one value.");
             foreach (var value in parameter.Values)
                 ValidateSafeValue(value);
         }
@@ -1174,7 +1174,7 @@ internal static class CalendarEntityCreateValidator
         var value = parameters.SingleOrDefault(parameter =>
             parameter.Name.Equals("VALUE", StringComparison.OrdinalIgnoreCase));
         if (value is not null && !HasSingleValue(value, expectedValueType))
-            throw new ArgumentException("The explicit VALUE parameter is incompatible with the property value family.");
+            throw new CalendarAuthoredArgumentException("The explicit VALUE parameter is incompatible with the property value family.");
     }
 
     private static void ValidateUris(IReadOnlyList<string>? values)
@@ -1189,7 +1189,7 @@ internal static class CalendarEntityCreateValidator
             return;
         ValidateSafeValue(value, allowNewLines: false);
         if (!Uri.TryCreate(value, UriKind.Absolute, out _))
-            throw new ArgumentException("An absolute URI is required.");
+            throw new CalendarAuthoredArgumentException("An absolute URI is required.");
     }
 
     private static void ValidateToken(string? value)
@@ -1197,7 +1197,7 @@ internal static class CalendarEntityCreateValidator
         if (value is null)
             return;
         if (value.Length == 0 || value.Any(character => !char.IsAsciiLetterOrDigit(character) && character != '-'))
-            throw new ArgumentException("An iCalendar token is invalid.");
+            throw new CalendarAuthoredArgumentException("An iCalendar token is invalid.");
     }
 
     private static void ValidateOpenEnum(string? value, IReadOnlySet<string> recognizedValues)
@@ -1208,7 +1208,7 @@ internal static class CalendarEntityCreateValidator
         if (!recognizedValues.Contains(value)
             && (!value.StartsWith("X-", StringComparison.OrdinalIgnoreCase) || value.Length == 2))
         {
-            throw new ArgumentException("An open enumeration value must be recognized or use the X- extension form.");
+            throw new CalendarAuthoredArgumentException("An open enumeration value must be recognized or use the X- extension form.");
         }
     }
 
@@ -1224,18 +1224,18 @@ internal static class CalendarEntityCreateValidator
             if (character == '\r')
             {
                 if (!allowNewLines || index + 1 >= value.Length || value[index + 1] != '\n')
-                    throw new ArgumentException("A value contains an unsafe carriage return.");
+                    throw new CalendarAuthoredArgumentException("A value contains an unsafe carriage return.");
                 index++;
                 continue;
             }
             if (character is '\n' or '\t')
             {
                 if (!allowNewLines)
-                    throw new ArgumentException("A value contains an unsafe control character.");
+                    throw new CalendarAuthoredArgumentException("A value contains an unsafe control character.");
                 continue;
             }
             if (char.IsControl(character))
-                throw new ArgumentException("A value contains an unsafe control character.");
+                throw new CalendarAuthoredArgumentException("A value contains an unsafe control character.");
         }
     }
 
