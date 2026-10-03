@@ -46,7 +46,7 @@ public sealed class CalendarEntityCreateTools
         OpenWorld = true,
         UseStructuredContent = true,
         OutputSchemaType = typeof(CalendarEntityCreateSuccessResult)),
-     Description("Create one typed To-do in the default or explicitly selected Calendar. When start and due are both present, due must share start's temporal kind and time zone and be later than start. With a recurrenceSet, start is required and must be the first occurrence of rrule. A rejected field is named by violations[].pointer and violations[].code.")]
+     Description("Create one typed To-do in the default or explicitly selected Calendar. When start and due are both present, due must share start's temporal kind and time zone and be later than start. With a recurrenceSet, start is required and must be the first occurrence of rrule. For a date-only To-do due on day D, use start D and due D+1. A rejected field is named by violations[].pointer and violations[].code.")]
     public Task<CallToolResult> CreateTodoAsync(
         RequestContext<CallToolRequestParams> requestContext,
         CancellationToken cancellationToken) =>
