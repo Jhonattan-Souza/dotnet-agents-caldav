@@ -111,7 +111,7 @@ internal sealed class CalendarEntityPatchTools
             return Error();
         if (!RequiresConfirmation(request.Target, request.Patch))
             return await ExecuteMutationAsync(
-                token => _calendarService.PatchEventAsync(request, token), cancellationToken);
+                token => _calendarService.PatchEventAsync(request, token), arguments, cancellationToken);
         CalendarMrtrCapabilityGuard.RequireConfirmationCapability(
             requestState, inputResponses, mrtrSupported, clientCapabilities);
         return await ConfirmEventAsync(request, arguments!, requestState, inputResponses, mrtrSupported, cancellationToken);
@@ -150,7 +150,7 @@ internal sealed class CalendarEntityPatchTools
             return Error();
         if (!RequiresConfirmation(request.Target, request.Patch))
             return await ExecuteMutationAsync(
-                token => _calendarService.PatchTodoAsync(request, token), cancellationToken);
+                token => _calendarService.PatchTodoAsync(request, token), arguments, cancellationToken);
         CalendarMrtrCapabilityGuard.RequireConfirmationCapability(
             requestState, inputResponses, mrtrSupported, clientCapabilities);
         return await ConfirmTodoAsync(request, arguments!, requestState, inputResponses, mrtrSupported, cancellationToken);
@@ -273,6 +273,7 @@ internal sealed class CalendarEntityPatchTools
             return await ContinueAfterConfirmationAsync(
                 operation,
                 revision,
+                arguments,
                 binding,
                 requestState,
                 inputResponses,
@@ -284,7 +285,7 @@ internal sealed class CalendarEntityPatchTools
 
         var initialReview = await review(cancellationToken).ConfigureAwait(false);
         if (initialReview.Outcome is not null)
-            return ToToolResult(initialReview.Outcome);
+            return ToToolResult(initialReview.Outcome, arguments);
         if (!HasValidIntentDigest(initialReview.IntentDigest))
             return PreviewProtocolError();
         if (!mrtrSupported || _stateProtector is null)
@@ -318,6 +319,7 @@ internal sealed class CalendarEntityPatchTools
     private async Task<CallToolResult> ContinueAfterConfirmationAsync(
         string operation,
         CalendarResourceRevisionReference revision,
+        IDictionary<string, JsonElement> arguments,
         byte[] binding,
         string? requestState,
         IDictionary<string, InputResponse>? inputResponses,
@@ -333,22 +335,23 @@ internal sealed class CalendarEntityPatchTools
             return ConfirmationError(confirmation.Decision == ConfirmationDecision.Expired);
         var continuationReview = await review(cancellationToken).ConfigureAwait(false);
         if (continuationReview.Outcome is not null)
-            return ToToolResult(continuationReview.Outcome);
+            return ToToolResult(continuationReview.Outcome, arguments);
         if (!HasValidIntentDigest(continuationReview.IntentDigest)
             || !_stateProtector!.MatchesIntent(confirmation.IntentBinding!, continuationReview.IntentDigest.Span))
             return ConfirmationError(expired: false);
         if (!mrtrSupported)
             return UnsupportedMrtrError();
-        return await ExecuteMutationAsync(execute, cancellationToken).ConfigureAwait(false);
+        return await ExecuteMutationAsync(execute, arguments, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<CallToolResult> ExecuteMutationAsync(
         Func<CancellationToken, Task<CalendarEntityPatchResult>> execute,
+        IDictionary<string, JsonElement>? arguments,
         CancellationToken cancellationToken)
     {
         try
         {
-            return ToToolResult(await execute(cancellationToken).ConfigureAwait(false));
+            return ToToolResult(await execute(cancellationToken).ConfigureAwait(false), arguments);
         }
         catch (OperationCanceledException)
         {
@@ -359,7 +362,7 @@ internal sealed class CalendarEntityPatchTools
             return ToToolResult(new CalendarEntityPatchResult(
                 CalendarEntityPatchCode.Indeterminate,
                 CalendarMutationState.Unknown,
-                Phase: CalendarEntityPatchPhase.PostWriteVerificationOrReconciliation));
+                Phase: CalendarEntityPatchPhase.PostWriteVerificationOrReconciliation), arguments);
         }
     }
 
@@ -539,7 +542,9 @@ internal sealed class CalendarEntityPatchTools
         Content = [new TextContentBlock { Text = "Calendar Entity patch completed." }]
     };
 
-    private static CallToolResult ToToolResult(CalendarEntityPatchResult result)
+    private static CallToolResult ToToolResult(
+        CalendarEntityPatchResult result,
+        IDictionary<string, JsonElement>? arguments)
     {
         var terminal = result.Code switch
         {
@@ -547,7 +552,7 @@ internal sealed class CalendarEntityPatchTools
                 CalendarToolResult.Success(Success(result.Snapshot), result.MutationState),
             CalendarEntityPatchCode.NoChange =>
                 CalendarToolResult.Success(NoChange(result.Snapshot?.Diagnostics ?? []), result.MutationState),
-            _ => Error(result)
+            _ => Error(result, arguments)
         };
         return terminal.FinalizeBounded((_, _) => NamedError(new CalendarStructuredErrorFacts(
                 CalendarTelemetryErrorCode.PayloadTooLarge,
@@ -579,16 +584,21 @@ internal sealed class CalendarEntityPatchTools
             Content = [new TextContentBlock { Text = "Calendar Entity patch confirmation was declined." }]
         }, CalendarMutationState.NotAttempted).FinalizeResult();
 
-    private static CalendarToolResult Error(CalendarEntityPatchResult result)
+    private static CalendarToolResult Error(
+        CalendarEntityPatchResult result,
+        IDictionary<string, JsonElement>? arguments)
     {
         var facts = CalendarTelemetryFacts.From(result);
-        return CalendarToolResult.Error(new CallToolResult
+        var violations = CalendarErrorViolations.FromEntityViolations(
+            result.Violations,
+            pointer => CalendarPatchViolationPointers.Resolve(pointer, arguments));
+        var body = new CallToolResult
         {
             IsError = true,
             StructuredContent = JsonSerializer.SerializeToElement(new CalendarEntityCreateErrorResult(
                 facts.CodeName,
                 facts.CategoryName,
-                Message(result.Code),
+                CalendarErrorViolations.MessageOr(result.Violations, Message(result.Code)),
                 facts.Retryable,
                 facts.PhaseName,
                 CalendarTelemetryVocabulary.MutationStateName(result.MutationState),
@@ -598,7 +608,11 @@ internal sealed class CalendarEntityPatchTools
                     ? null
                     : new CalendarEntityCreateLimits(Dimension: LimitDimension(result.LimitDimension.Value)))),
             Content = [new TextContentBlock { Text = "Calendar Entity patch failed." }]
-        }, facts, result.MutationState);
+        };
+        return CalendarToolResult.Error(
+            violations is null ? body : CalendarErrorViolations.Attach(body, violations),
+            facts,
+            result.MutationState);
     }
 
     private static string Message(CalendarEntityPatchCode code) => code switch

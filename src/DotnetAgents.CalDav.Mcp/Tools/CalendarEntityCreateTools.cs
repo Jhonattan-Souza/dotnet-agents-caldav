@@ -178,8 +178,8 @@ public sealed class CalendarEntityCreateTools
     private static CalendarToolResult Error(CalendarEntityCreateResult result)
     {
         var facts = CalendarTelemetryFacts.From(result);
-        var violations = ToInputViolations(result.Violations);
-        var message = result.Violations is [var first, ..] ? first.Message : Describe(result.Code);
+        var violations = CalendarErrorViolations.FromEntityViolations(result.Violations, ResolvePointer);
+        var message = CalendarErrorViolations.MessageOr(result.Violations, Describe(result.Code));
         return Error(
             facts,
             message,
@@ -192,14 +192,9 @@ public sealed class CalendarEntityCreateTools
             violations: violations);
     }
 
-    /// <summary>Anchors typed Core reasons at the authored <c>entity.fields</c> argument.</summary>
-    private static IReadOnlyList<CalendarInputViolation>? ToInputViolations(
-        IReadOnlyList<CalendarEntityViolation>? violations) => violations is { Count: > 0 }
-        ? CalendarErrorViolations.Normalize(violations.Select(violation => new CalendarInputViolation(
-            "/entity/fields" + violation.FieldPointer,
-            violation.Code,
-            violation.Message)))
-        : null;
+    /// <summary>Anchors semantic <c>/fields</c> pointers at the authored <c>entity.fields</c> argument.</summary>
+    private static string? ResolvePointer(string pointer) =>
+        pointer.StartsWith("/fields", StringComparison.Ordinal) ? "/entity" + pointer : null;
 
     private static string Describe(
         CalendarEntityCreateCode code) => code switch

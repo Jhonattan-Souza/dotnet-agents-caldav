@@ -601,9 +601,21 @@ internal sealed class CalendarEntityPatchEngine(
             return Failure(revisionShapeFailure.Value, phase: CalendarEntityPatchPhase.TargetRevision);
         return ValidateAuthoritativeRevision(revision, snapshot)
             ?? ValidateProjection(snapshot, expectedKind)
-            ?? (!HasValidPatchShape(target, patch, expectedKind)
-                ? Failure(CalendarEntityPatchCode.InvalidInput)
-                : null);
+            ?? ValidatePatchShape(target, patch, expectedKind);
+    }
+
+    private static CalendarEntityPatchResult? ValidatePatchShape(
+        CalendarMutationTarget target,
+        CalendarEventPatch patch,
+        CalendarEntityKind expectedKind)
+    {
+        if (HasValidPatchShape(target, patch, expectedKind))
+            return null;
+        var violation = ScalarValueViolation(patch, expectedKind) ?? StructuredValueViolation(patch.Collections, expectedKind);
+        return Failure(CalendarEntityPatchCode.InvalidInput) with
+        {
+            Violations = violation is null ? null : [violation]
+        };
     }
 
     private static CalendarEntityPatchResult? ValidatePreparedOccurrence(
@@ -660,22 +672,53 @@ internal sealed class CalendarEntityPatchEngine(
         }
     }
 
-    private static bool HasValidStructuredValues(
-        IReadOnlyList<ICalendarCollectionPatch>? patches,
-        CalendarEntityKind expectedKind)
+    private static CalendarEntityViolation? ScalarValueViolation(CalendarEventPatch patch, CalendarEntityKind expectedKind)
     {
         try
         {
-            foreach (var patch in patches ?? [])
-            foreach (var value in (patch.AddValues ?? []).Concat(patch.RemoveValues ?? [])
-                         .Concat(patch.ReplacementValues ?? []))
-                _ = CalendarPatchOccurrenceSerializer.Serialize(patch.Field, value, expectedKind);
-            return true;
+            CalendarEntityCreateValidator.ValidatePatchScalars(patch, expectedKind);
+            return null;
         }
-        catch (Exception exception) when (exception is ArgumentException or InvalidCastException or InvalidOperationException)
+        catch (CalendarEntityValidationException exception)
         {
-            return false;
+            return exception.Violation;
         }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    private static bool HasValidStructuredValues(
+        IReadOnlyList<ICalendarCollectionPatch>? patches,
+        CalendarEntityKind expectedKind) => StructuredValueFailure(patches, expectedKind) is null;
+
+    private static CalendarEntityViolation? StructuredValueViolation(
+        IReadOnlyList<ICalendarCollectionPatch>? patches,
+        CalendarEntityKind expectedKind) => StructuredValueFailure(patches, expectedKind) switch
+        {
+            null => null,
+            var (field, exception) => CalendarEntityViolations.CollectionValueInvalid(field, exception)
+        };
+
+    private static (CalendarCollectionField Field, Exception Exception)? StructuredValueFailure(
+        IReadOnlyList<ICalendarCollectionPatch>? patches,
+        CalendarEntityKind expectedKind)
+    {
+        foreach (var patch in patches ?? [])
+        {
+            try
+            {
+                foreach (var value in (patch.AddValues ?? []).Concat(patch.RemoveValues ?? [])
+                             .Concat(patch.ReplacementValues ?? []))
+                    _ = CalendarPatchOccurrenceSerializer.Serialize(patch.Field, value, expectedKind);
+            }
+            catch (Exception exception) when (exception is ArgumentException or InvalidCastException or InvalidOperationException)
+            {
+                return (patch.Field, exception);
+            }
+        }
+        return null;
     }
 
     private static bool HasPatchIntent(CalendarEventPatch patch) => new object?[]

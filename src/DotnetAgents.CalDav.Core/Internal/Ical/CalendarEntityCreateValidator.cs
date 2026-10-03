@@ -60,7 +60,7 @@ internal static class CalendarEntityCreateValidator
         };
 
     public static void ValidateEvent(string uid, CalendarEventCreateFields fields) =>
-        ValidateEvent(uid, fields, string.Empty);
+        ValidateEvent(uid, fields, CalendarEntityViolations.Fields);
 
     private static void ValidateEvent(string uid, CalendarEventCreateFields fields, string fieldsPointer)
     {
@@ -83,7 +83,7 @@ internal static class CalendarEntityCreateValidator
     }
 
     public static void ValidateTodo(string uid, CalendarTodoCreateFields fields) =>
-        ValidateTodo(uid, fields, string.Empty);
+        ValidateTodo(uid, fields, CalendarEntityViolations.Fields);
 
     private static void ValidateTodo(string uid, CalendarTodoCreateFields fields, string fieldsPointer)
     {
@@ -104,7 +104,7 @@ internal static class CalendarEntityCreateValidator
     {
         if (fields.RecurrenceSet is null)
             return;
-        ValidateEventTemporalFields(fields, string.Empty);
+        ValidateEventTemporalFields(fields, CalendarEntityViolations.Fields);
         ValidateEventRecurrenceCore(
             fields.RecurrenceSet,
             fields.Start,
@@ -117,7 +117,7 @@ internal static class CalendarEntityCreateValidator
     {
         if (fields.RecurrenceSet is null)
             return;
-        ValidateTodoTemporalFields(fields, string.Empty);
+        ValidateTodoTemporalFields(fields, CalendarEntityViolations.Fields);
         ValidateTodoRecurrenceCore(
             fields.RecurrenceSet,
             fields.Start,
@@ -128,12 +128,12 @@ internal static class CalendarEntityCreateValidator
 
     internal static void ValidatePatchScalars(CalendarEventPatch patch, CalendarEntityKind entityKind)
     {
-        ValidateScalar(patch.Summary, value => ValidateSafeValue(value));
-        ValidateScalar(patch.Description, value => ValidateSafeValue(value));
-        ValidateScalar(patch.Start, value => ValidateTemporal(value));
-        ValidateScalar(patch.Duration, value => ValidateDuration(value, dateOnly: false));
-        ValidateScalar(patch.Priority, ValidatePriority);
-        ValidateScalar(patch.Organizer, value => ValidateNamedUri(value, "CAL-ADDRESS", "CN"));
+        ValidateScalar(patch.Summary, "summary", value => ValidateSafeValue(value));
+        ValidateScalar(patch.Description, "description", value => ValidateSafeValue(value));
+        ValidateScalar(patch.Start, "start", value => ValidateTemporal(value));
+        ValidateScalar(patch.Duration, "duration", value => ValidateDuration(value, dateOnly: false));
+        ValidateScalar(patch.Priority, "priority", ValidatePriority);
+        ValidateScalar(patch.Organizer, "organizer", value => ValidateNamedUri(value, "CAL-ADDRESS", "CN"));
         if (entityKind == CalendarEntityKind.Event)
             ValidateEventPatchScalars(patch);
         else
@@ -158,8 +158,8 @@ internal static class CalendarEntityCreateValidator
         string? duration)
     {
         if (start is null)
-            throw new ArgumentException("An Event start is required.");
-        ValidateTemporalCombination(start, end, duration);
+            throw CalendarEntityViolations.StartRequired(CalendarEntityViolations.Fields);
+        ValidateTemporalCombination(start, end, duration, "end");
     }
 
     private static void ValidateTodoPatchFinalTemporal(
@@ -168,43 +168,45 @@ internal static class CalendarEntityCreateValidator
         string? duration)
     {
         if (duration is not null && start is null)
-            throw new ArgumentException("A To-do duration requires a start.");
-        ValidateTemporalCombination(start, due, duration);
+            throw CalendarEntityViolations.DurationRequiresStart(CalendarEntityViolations.Fields);
+        ValidateTemporalCombination(start, due, duration, "due");
     }
 
     private static void ValidateTemporalCombination(
         CalendarTemporalValue? start,
         CalendarTemporalValue? endOrDue,
-        string? duration)
+        string? duration,
+        string endField)
     {
         if (endOrDue is not null && duration is not null)
-            throw new ArgumentException("End or due and duration are mutually exclusive.");
+            throw CalendarEntityViolations.DurationExclusive(CalendarEntityViolations.Fields, endField);
         if (start is not null && endOrDue is not null)
-            ValidatePatchOrderedTemporal(start, endOrDue);
-        ValidateDuration(duration, start?.Kind == CalendarTemporalKind.Date);
+            ValidatePatchOrderedTemporal(start, endOrDue, endField);
+        ValidateDurationField(duration, start?.Kind == CalendarTemporalKind.Date, CalendarEntityViolations.Fields);
     }
 
-    private static void ValidatePatchOrderedTemporal(CalendarTemporalValue start, CalendarTemporalValue endOrDue)
+    private static void ValidatePatchOrderedTemporal(
+        CalendarTemporalValue start,
+        CalendarTemporalValue endOrDue,
+        string endField)
     {
-        if (start.Kind != endOrDue.Kind
-            || !string.Equals(start.TimeZoneId, endOrDue.TimeZoneId, StringComparison.Ordinal)
-            || string.CompareOrdinal(endOrDue.Value, start.Value) <= 0)
-        {
-            throw new ArgumentException("The end or due must have the same temporal family and be later than the start.");
-        }
+        if (!SharesTemporalFamily(endOrDue, start))
+            throw CalendarEntityViolations.TemporalFamilyMismatch(CalendarEntityViolations.Fields, endField);
+        if (string.CompareOrdinal(endOrDue.Value, start.Value) <= 0)
+            throw CalendarEntityViolations.NotAfterStart(CalendarEntityViolations.Fields, endField);
     }
 
     private static void ValidateEventPatchScalars(CalendarEventPatch patch)
     {
         RejectAddressed(patch.Due);
         RejectAddressed(patch.PercentComplete);
-        ValidateScalar(patch.End, value => ValidateTemporal(value));
-        ValidateScalar(patch.Location, value => ValidateSafeValue(value));
-        ValidateScalar(patch.Geo, value => ValidateGeo(value));
-        ValidateScalar(patch.Status, value => ValidateOpenEnum(value, EventStatuses));
-        ValidateScalar(patch.Transparency, value => ValidateOpenEnum(value, EventTransparencies));
-        ValidateScalar(patch.Classification, value => ValidateOpenEnum(value, Classifications));
-        ValidateScalar(patch.Url, value => ValidateUri(value));
+        ValidateScalar(patch.End, "end", value => ValidateTemporal(value));
+        ValidateScalar(patch.Location, "location", value => ValidateSafeValue(value));
+        ValidateScalar(patch.Geo, "geo", value => ValidateGeo(value));
+        ValidateScalar(patch.Status, "status", value => ValidateOpenEnum(value, EventStatuses));
+        ValidateScalar(patch.Transparency, "transparency", value => ValidateOpenEnum(value, EventTransparencies));
+        ValidateScalar(patch.Classification, "classification", value => ValidateOpenEnum(value, Classifications));
+        ValidateScalar(patch.Url, "url", value => ValidateUri(value));
     }
 
     private static void ValidateTodoPatchScalars(CalendarEventPatch patch)
@@ -215,15 +217,23 @@ internal static class CalendarEntityCreateValidator
         RejectAddressed(patch.Transparency);
         RejectAddressed(patch.Classification);
         RejectAddressed(patch.Url);
-        ValidateScalar(patch.Due, value => ValidateTemporal(value));
-        ValidateScalar(patch.Status, ValidateTodoPatchStatus);
-        ValidateScalar(patch.PercentComplete, ValidatePercentComplete);
+        ValidateScalar(patch.Due, "due", value => ValidateTemporal(value));
+        ValidateScalar(patch.Status, "status", ValidateTodoPatchStatus);
+        ValidateScalar(patch.PercentComplete, "percentComplete", ValidatePercentComplete);
     }
 
-    private static void ValidateScalar<T>(CalendarScalarPatch<T>? patch, Action<T> validate)
+    private static void ValidateScalar<T>(CalendarScalarPatch<T>? patch, string field, Action<T> validate)
     {
-        if (patch?.Operation == CalendarScalarPatchOperation.Set)
+        if (patch?.Operation != CalendarScalarPatchOperation.Set)
+            return;
+        try
+        {
             validate(patch.Value!);
+        }
+        catch (ArgumentException exception) when (exception is not CalendarEntityValidationException)
+        {
+            throw CalendarEntityViolations.FieldValueInvalid(field, exception);
+        }
     }
 
     private static void RejectAddressed<T>(CalendarScalarPatch<T>? patch)
@@ -248,7 +258,7 @@ internal static class CalendarEntityCreateValidator
     {
         ValidateOpenEnum(value, TodoStatuses);
         if (value.Equals("COMPLETED", StringComparison.OrdinalIgnoreCase))
-            throw new ArgumentException("To-do completion is reserved for the coordinated completion operation.");
+            throw new ArgumentException("Use todos.complete to complete a To-do; a patch cannot set status COMPLETED.");
     }
 
     private static void ValidateEventRecurrence(
@@ -491,9 +501,9 @@ internal static class CalendarEntityCreateValidator
         CalendarTemporalValue? masterStart)
     {
         if (masterStart is null)
-            throw CalendarEntityViolations.RecurrenceStartRequired(string.Empty);
+            throw CalendarEntityViolations.RecurrenceStartRequired(CalendarEntityViolations.Fields);
         if (!HasRecurrenceData(rule, recurrenceDates, exceptionDates, hasOverrides))
-            throw CalendarEntityViolations.RecurrenceDataRequired(string.Empty);
+            throw CalendarEntityViolations.RecurrenceDataRequired(CalendarEntityViolations.Fields);
         if (rule is not null)
             _ = CalendarCreateRecurrenceAnalyzer.Analyze(rule, masterStart);
         ValidateRecurrenceRule(rule);
