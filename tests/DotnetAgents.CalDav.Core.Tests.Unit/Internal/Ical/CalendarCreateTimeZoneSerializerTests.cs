@@ -171,6 +171,26 @@ public sealed class CalendarCreateTimeZoneSerializerTests
             "2026-11-01T02:30:00");
     }
 
+    [Fact]
+    public void SerializeEvent_UntilHorizonCoversTheFinalYearOfAYearlyByDayRule()
+    {
+        var bytes = CalendarEntityCreateSerializer.SerializeEvent(
+            "until-horizon",
+            new CalendarEventCreateFields(
+                Start: Zoned("2024-03-17T10:00:00"),
+                End: Zoned("2024-03-17T11:00:00"),
+                RecurrenceSet: new CalendarEventRecurrenceSetCreate(
+                    Rule: "FREQ=YEARLY;BYMONTH=3;BYDAY=3SU;UNTIL=20260315T140000Z")),
+            DateTimeOffset.Parse("2000-01-01T00:00:00Z"));
+
+        Encoding.UTF8.GetString(ExtractTimeZone(bytes)).ShouldContain("20260308T020000");
+        AssertOccurrence(
+            Evaluate(bytes, "2026-03-15T13:59:59Z", "2026-03-15T15:00:01Z"),
+            "2026-03-15T14:00:00Z",
+            "2026-03-15T15:00:00Z",
+            "2026-03-15T11:00:00");
+    }
+
     private static CalendarOccurrenceEvaluation Evaluate(byte[] bytes, string from, string to)
     {
         var document = CalendarContentDocument.Parse(bytes);

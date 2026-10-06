@@ -26,6 +26,30 @@ public sealed class CalendarOccurrenceEvaluatorTests
         occurrence.Timing.EffectiveEnd!.Value.ShouldBe("2026-08-17T15:00:00Z");
     }
 
+    [Theory]
+    [InlineData("DTSTART:20160221T120000Z", "20190217T120000Z", null)]
+    [InlineData("DTSTART;TZID=America/Sao_Paulo:20160221T090000", "20190217T120000Z", null)]
+    [InlineData("DTSTART:20160221T090000", "20190217T090000", "America/Sao_Paulo")]
+    public void Evaluate_YearlyByDayRuleKeepsItsFinalOccurrenceOnUntil(
+        string startLine,
+        string until,
+        string? evaluationTimeZone)
+    {
+        var result = EvaluateSingleOccurrenceEvent(
+            $"{startLine}\r\nDURATION:PT1H\r\nRRULE:FREQ=YEARLY;BYMONTH=2;BYDAY=3SU;UNTIL={until}\r\n",
+            "2016-01-01T00:00:00Z",
+            "2020-01-01T00:00:00Z",
+            evaluationTimeZone);
+
+        result.Code.ShouldBe(CalendarOccurrenceEvaluationCode.Success);
+        result.Items.Select(item => item.Timing.EvaluatedStartUtc!.Value).ShouldBe([
+            "2016-02-21T12:00:00Z",
+            "2017-02-19T12:00:00Z",
+            "2018-02-18T12:00:00Z",
+            "2019-02-17T12:00:00Z"
+        ]);
+    }
+
     [Fact]
     public void Evaluate_CancelledRangeOmitsUntilLaterRangeWhileExactOverrideWins()
     {

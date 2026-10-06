@@ -433,7 +433,8 @@ internal static class CalendarOccurrencePatchBuilder
             return false;
         var identities = GetKnownIdentityKeys(document, master, overrides);
         var observed = 0;
-        foreach (var period in new RecurrencePatternEvaluator(new RecurrenceRule(rules[0].RawEncodedValue)).Evaluate(
+        foreach (var period in CalendarRecurrenceExpansion.EvaluateRule(
+                     new RecurrenceRule(rules[0].RawEncodedValue),
                      nominalStart,
                      nominalStart,
                      new EvaluationOptions { MaxUnmatchedIncrementsLimit = MaximumRecurrenceWork }))

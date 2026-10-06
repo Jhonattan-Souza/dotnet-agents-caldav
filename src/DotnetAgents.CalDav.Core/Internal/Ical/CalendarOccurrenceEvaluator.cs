@@ -677,7 +677,8 @@ internal static class CalendarOccurrenceEvaluator
             && query.EvaluationTimeZone is not null;
         return timeZoneId is not null || usesEvaluationZone
             ? CreateLocalOccurrences(properties, resolver, query, timeZoneId)
-            : master.GetOccurrences(
+            : CalendarRecurrenceExpansion.GetOccurrences(
+                master,
                 searchStart,
                 new EvaluationOptions { MaxUnmatchedIncrementsLimit = MaximumUnmatchedIncrements });
     }
@@ -743,12 +744,12 @@ internal static class CalendarOccurrenceEvaluator
         var periodStart = count is null
             ? new CalDateTime(Max(nominalStart.Value, SubtractSafely(searchFrom, TimeSpan.FromDays(2)).UtcDateTime))
             : nominalStart;
-        var starts = new RecurrencePatternEvaluator(evaluationPattern)
-                .Evaluate(
-                    nominalStart,
-                    periodStart,
-                    new EvaluationOptions { MaxUnmatchedIncrementsLimit = MaximumUnmatchedIncrements })
-                .Select(period => period.StartTime);
+        var starts = CalendarRecurrenceExpansion.EvaluateRule(
+                evaluationPattern,
+                nominalStart,
+                periodStart,
+                new EvaluationOptions { MaxUnmatchedIncrementsLimit = MaximumUnmatchedIncrements })
+            .Select(period => period.StartTime);
         return TakeValidLocalStarts(starts, nominalStart, timeZoneId, resolver, count);
     }
 

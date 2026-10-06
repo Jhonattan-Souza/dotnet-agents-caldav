@@ -64,6 +64,26 @@ public sealed class CalendarOccurrenceMutationServiceTests
     }
 
     [Fact]
+    public async Task ExcludeOccurrenceAsync_RecognizesTheFinalOccurrenceOfAYearlyByDayRule()
+    {
+        const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:series-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20160221T120000Z\r\nRRULE:FREQ=YEARLY;BYMONTH=2;BYDAY=3SU;UNTIL=20190217T120000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        const string expected = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:series-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20160221T120000Z\r\nRRULE:FREQ=YEARLY;BYMONTH=2;BYDAY=3SU;UNTIL=20190217T120000Z\r\nEXDATE:20190217T120000Z\r\nLAST-MODIFIED:20260817T120000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        var client = ClientReturning(original, expected);
+        ReadOnlyMemory<byte> dispatched = default;
+        client.UpdateCalendarResourceAsync(
+                Arg.Do<CalendarResourceUpdateRequest>(request => dispatched = request.AuthoritativeUtf8),
+                Arg.Any<CancellationToken>())
+            .Returns(new CalendarResourceUpdateDispatchResult(CalendarResourceUpdateDispatchCode.Dispatched));
+
+        var result = await CreateService(client).ExcludeOccurrenceAsync(
+            Request(new(CalendarTemporalKind.UtcDateTime, "2019-02-17T12:00:00Z")),
+            CancellationToken.None);
+
+        result.Code.ShouldBe(CalendarEntityPatchCode.Success);
+        Encoding.UTF8.GetString(dispatched.Span).ShouldBe(expected);
+    }
+
+    [Fact]
     public async Task RestoreExclusionAsync_RemovesOnlyTheAddressedExdateValue()
     {
         const string original = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//fixture//EN\r\nBEGIN:VEVENT\r\nUID:series-1\r\nDTSTAMP:20260816T100000Z\r\nDTSTART:20260818T090000Z\r\nRRULE:FREQ=DAILY;COUNT=4\r\nEXDATE;X-KEEP=opaque:20260819T090000Z,20260820T090000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
