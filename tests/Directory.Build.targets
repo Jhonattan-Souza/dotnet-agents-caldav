@@ -3,5 +3,8 @@
     <None Include="$(MSBuildThisFileDirectory)testconfig.json"
           Link="$(AssemblyName).testconfig.json"
           CopyToOutputDirectory="PreserveNewest" />
+    <None Include="$(MSBuildThisFileDirectory)fixtures/client-content/*.ics"
+          Link="Fixtures/ClientContent/%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

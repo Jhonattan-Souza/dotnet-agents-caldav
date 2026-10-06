@@ -357,7 +357,7 @@ internal sealed class CalendarTemporalResolver
                 throw new InvalidOperationException("The VTIMEZONE contains an incomplete observance.");
             var from = (TimeSpan)observance.OffsetFrom;
             var to = (TimeSpan)observance.OffsetTo;
-            foreach (var occurrence in observance.GetOccurrences(observance.DtStart, options))
+            foreach (var occurrence in CalendarRecurrenceExpansion.GetOccurrences(observance, observance.DtStart, options))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var transition = occurrence.Period.StartTime.Value;

@@ -103,6 +103,25 @@ public sealed class CalendarTimeZoneResolutionTests
         ]);
     }
 
+    [Theory]
+    [InlineData("20171210T090000", "2017-12-10T11:00:00Z")]
+    [InlineData("20190310T090000", "2019-03-10T12:00:00Z")]
+    [InlineData("20261010T090000", "2026-10-10T12:00:00Z")]
+    public void Evaluate_Ical4jSaoPauloZoneResolvesBeforeAndAfterDaylightSavingAbolition(
+        string localStart,
+        string expectedStartUtc)
+    {
+        var result = Evaluate(
+            Resource(
+                $"DTSTART;TZID=America/Sao_Paulo:{localStart}\r\nDURATION:PT1H\r\n",
+                ClientTimeZone("ical4j-tzurl-2025a-america-sao-paulo.ics")),
+            "2017-01-01T00:00:00Z",
+            "2027-01-01T00:00:00Z");
+
+        result.Code.ShouldBe(CalendarOccurrenceEvaluationCode.Success);
+        result.Items.ShouldHaveSingleItem().Timing.EvaluatedStartUtc!.Value.ShouldBe(expectedStartUtc);
+    }
+
     [Fact]
     public void Evaluate_UnresolvableIdentifierWithoutVtimezoneStaysTemporalUnresolved()
     {
@@ -311,7 +330,19 @@ public sealed class CalendarTimeZoneResolutionTests
         "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\n" + supportingComponents
         + $"BEGIN:VEVENT\r\nUID:zone\r\nDTSTAMP:20260815T120000Z\r\n{temporalLines}END:VEVENT\r\nEND:VCALENDAR\r\n");
 
-    private static CalendarOccurrenceEvaluation Evaluate(byte[] bytes)
+    private static string ClientTimeZone(string fixture)
+    {
+        var content = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "ClientContent", fixture))
+            .ReplaceLineEndings("\r\n");
+        var start = content.IndexOf("BEGIN:VTIMEZONE\r\n", StringComparison.Ordinal);
+        const string end = "END:VTIMEZONE\r\n";
+        return content[start..(content.IndexOf(end, start, StringComparison.Ordinal) + end.Length)];
+    }
+
+    private static CalendarOccurrenceEvaluation Evaluate(byte[] bytes) =>
+        Evaluate(bytes, "2026-03-01T00:00:00Z", "2026-03-20T00:00:00Z");
+
+    private static CalendarOccurrenceEvaluation Evaluate(byte[] bytes, string from, string to)
     {
         var document = CalendarContentDocument.Parse(bytes);
         var projected = CalendarResourceProjector.Project(document);
@@ -327,8 +358,8 @@ public sealed class CalendarTimeZoneResolutionTests
             snapshot,
             new CalendarOccurrenceQuery(
                 CalendarEntityScope.Selected(new CalendarReference(Href: CalendarHref)),
-                DateTimeOffset.Parse("2026-03-01T00:00:00Z"),
-                DateTimeOffset.Parse("2026-03-20T00:00:00Z"),
+                DateTimeOffset.Parse(from),
+                DateTimeOffset.Parse(to),
                 "UTC"),
             document,
             CalendarResourceProjector.LoadTypedCalendar(document),

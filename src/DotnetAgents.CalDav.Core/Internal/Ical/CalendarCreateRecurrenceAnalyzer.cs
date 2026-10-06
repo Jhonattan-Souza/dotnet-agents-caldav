@@ -43,8 +43,8 @@ internal static class CalendarCreateRecurrenceAnalyzer
             var nominalStart = CreateStart(masterStart);
             var unbounded = pattern.Count is null && pattern.Until is null;
             var maximumStarts = unbounded ? 1 : MaximumProfileOccurrences + 1;
-            var starts = new RecurrencePatternEvaluator(pattern)
-                .Evaluate(
+            var starts = CalendarRecurrenceExpansion.EvaluateRule(
+                    pattern,
                     nominalStart,
                     nominalStart,
                     new EvaluationOptions { MaxUnmatchedIncrementsLimit = MaximumProfileOccurrences })
