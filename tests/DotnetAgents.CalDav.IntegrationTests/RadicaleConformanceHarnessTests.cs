@@ -692,7 +692,7 @@ public sealed partial class RadicaleConformanceHarnessTests(RadicaleConformanceF
             "VEVENT");
         var durationContent = System.Text.Encoding.UTF8.GetString(durationZone.Snapshot!.AuthoritativeUtf8.Span);
         durationContent.ShouldContain("DURATION:P1D");
-        durationContent.ShouldContain("20400311T020000");
+        durationContent.ShouldContain("RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU\r\n");
 
         await fixture.DeleteResourceHrefAsync(
             eventHref,
