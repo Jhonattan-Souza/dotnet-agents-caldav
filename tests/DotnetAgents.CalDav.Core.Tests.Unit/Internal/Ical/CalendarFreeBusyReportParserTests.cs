@@ -113,6 +113,7 @@ public class CalendarFreeBusyReportParserTests
     [InlineData("RDATE:20260905T010000Z")]
     [InlineData("EXDATE:20260905T010000Z")]
     [InlineData("rrule:FREQ=DAILY;COUNT=3")]
+    [InlineData("EXRULE:FREQ=DAILY;COUNT=3")]
     public void ProhibitedRecurrenceNeverBecomesCompleteBusyInformation(string recurrence)
     {
         foreach (var freeBusy in new[] { string.Empty, "FREEBUSY:20260905T010000Z/PT1H" })
@@ -399,10 +400,31 @@ public class CalendarFreeBusyReportParserTests
     [InlineData("RRULE:FREQ=DAILY;COUNT=2")]
     [InlineData("RDATE:20260905T030000Z")]
     [InlineData("EXDATE:20260905T010000Z")]
+    [InlineData("EXRULE:FREQ=DAILY;COUNT=2")]
     public void RadicaleProfileRejectsRecurrenceInPeriodComponents(string recurrence)
     {
         var body = RadicaleComponent("DTSTART:20260905T010000Z", "DTEND:20260905T020000Z", "BUSY")
             .Replace("FBTYPE:BUSY", "FBTYPE:BUSY\n" + recurrence, StringComparison.Ordinal);
+
+        Should.Throw<CalendarProtocolException>(() => ParseRadicale(body)).Code.ShouldBe("upstream_protocol_error");
+    }
+
+    [Theory]
+    [InlineData("DURATION:PT8H")]
+    [InlineData("DURATION:PT1H")]
+    public void RadicaleProfileRejectsADurationBesideThePeriod(string duration)
+    {
+        // DTSTART and DTEND are the period; a DURATION would be a second, possibly conflicting, definition.
+        var body = RadicaleComponent("DTSTART:20260905T010000Z", "DTEND:20260905T020000Z", "BUSY")
+            .Replace("FBTYPE:BUSY", "FBTYPE:BUSY\n" + duration, StringComparison.Ordinal);
+
+        Should.Throw<CalendarProtocolException>(() => ParseRadicale(body)).Code.ShouldBe("upstream_protocol_error");
+    }
+
+    [Fact]
+    public void RadicaleProfileRejectsACalendarWithoutBusyComponentsThatIsNotOtherwiseEmpty()
+    {
+        var body = RadicaleEmptyReport.Replace("END:VCALENDAR", NewYorkTimeZone + "END:VCALENDAR", StringComparison.Ordinal);
 
         Should.Throw<CalendarProtocolException>(() => ParseRadicale(body)).Code.ShouldBe("upstream_protocol_error");
     }

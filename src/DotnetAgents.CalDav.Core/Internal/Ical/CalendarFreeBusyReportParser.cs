@@ -16,7 +16,7 @@ internal static class CalendarFreeBusyReportParser
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private static readonly FrozenSet<string> RecurrenceProperties = new[]
     {
-        "RRULE", "RDATE", "EXDATE"
+        "RRULE", "RDATE", "EXDATE", "EXRULE"
     }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
     private static readonly FrozenSet<string> BusyComponentProperties = new[]
     {
@@ -108,8 +108,9 @@ internal static class CalendarFreeBusyReportParser
             throw InvalidResponse();
         var busyComponents = document.Components.Where(component => component.Path is [_, { Name: "VFREEBUSY" }]).ToArray();
         // RFC 4791 section 7.10 requires a VFREEBUSY component. Radicale 3.7.8
-        // reports a window without busy time as an otherwise empty VCALENDAR.
-        if (busyComponents.Length == 0 && !radicaleProfile)
+        // reports a window without busy time as an otherwise empty VCALENDAR, so
+        // only a VCALENDAR without any child component counts as that report.
+        if (busyComponents.Length == 0 && !(radicaleProfile && document.Components.Count == 1))
             throw InvalidResponse();
         var versions = document.Properties.Where(property => property.ComponentPath.Count == 1
             && property.Name.Equals("VERSION", StringComparison.OrdinalIgnoreCase)).ToArray();
@@ -129,8 +130,9 @@ internal static class CalendarFreeBusyReportParser
     private static void ValidatePropertyScope(IReadOnlyList<CalendarContentProperty> properties)
     {
         // RFC 5545 section 3.6 places busy periods, their types and bounds inside
-        // VFREEBUSY. Recurrence properties are prohibited there by section 3.6.4:
-        // the server must expand them into periods. Ignoring any misplaced
+        // VFREEBUSY. Recurrence properties are prohibited there by section 3.6.4,
+        // including the RFC 2445 EXRULE that RFC 5545 retired: the server must
+        // expand them into periods. Ignoring any misplaced
         // representation could turn busy time into an empty report. Time zone
         // observances legitimately carry their own DTSTART and recurrence rules.
         foreach (var property in properties)
@@ -314,7 +316,8 @@ internal static class CalendarFreeBusyReportParser
         {
             var start = Named(properties, "DTSTART").ToArray();
             var end = Named(properties, "DTEND").ToArray();
-            if (busyType.Parameters.Count != 0 || start.Length != 1 || end.Length != 1)
+            // DTSTART and DTEND are the period; a DURATION would define it a second time.
+            if (busyType.Parameters.Count != 0 || start.Length != 1 || end.Length != 1 || Named(properties, "DURATION").Any())
                 throw InvalidResponse();
             Add(CreatePeriod(ReadInstant(start[0]), ReadInstant(end[0]), NormalizeBusyType(busyType.RawEncodedValue)));
         }
