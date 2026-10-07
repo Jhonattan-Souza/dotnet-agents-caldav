@@ -437,36 +437,47 @@ public class CalendarFreeBusyReportParserTests
     }
 
     [Fact]
-    public void RadicaleProfileRejectsZonedValueWhoseLocalDefinitionIsInconsistent()
+    public void RadicaleProfileRejectsZonedValueWhoseIncompleteLocalDefinitionDisagreesWithTzdb()
     {
-        // Observed when Radicale emitted a truncated definition registered by an earlier
-        // resource: daylight time recurs yearly without any return to standard time.
-        const string inconsistent = """
-            BEGIN:VTIMEZONE
-            TZID:America/New_York
-            BEGIN:STANDARD
-            DTSTART:20000101T000000
-            RRULE:FREQ=YEARLY;BYMONTH=1;UNTIL=20250101T050000Z
-            TZNAME:EST
-            TZOFFSETFROM:-0500
-            TZOFFSETTO:-0500
-            END:STANDARD
-            BEGIN:DAYLIGHT
-            DTSTART:20260308T020000
-            RRULE:FREQ=YEARLY;BYDAY=2SU;BYMONTH=3
-            TZNAME:EDT
-            TZOFFSETFROM:-0500
-            TZOFFSETTO:-0400
-            END:DAYLIGHT
-            END:VTIMEZONE
-
-            """;
-        var body = RadicaleComponent("DTSTART;TZID=America/New_York:20260905T090000",
-                "DTEND;TZID=America/New_York:20260905T094500", "BUSY")
-            .Replace("BEGIN:VFREEBUSY", inconsistent + "BEGIN:VFREEBUSY", StringComparison.Ordinal);
+        var body = RadicaleComponent("DTSTART;TZID=America/New_York:20261205T090000",
+                "DTEND;TZID=America/New_York:20261205T094500", "BUSY")
+            .Replace("BEGIN:VFREEBUSY", IncompleteNewYorkTimeZone + "BEGIN:VFREEBUSY", StringComparison.Ordinal);
 
         Should.Throw<CalendarProtocolException>(() => ParseRadicale(body)).Code.ShouldBe("upstream_protocol_error");
     }
+
+    [Fact]
+    public void RadicaleProfileResolvesZonedValueWhereTzdbConfirmsItsIncompleteLocalDefinition()
+    {
+        var body = RadicaleComponent("DTSTART;TZID=America/New_York:20260905T090000",
+                "DTEND;TZID=America/New_York:20260905T094500", "BUSY")
+            .Replace("BEGIN:VFREEBUSY", IncompleteNewYorkTimeZone + "BEGIN:VFREEBUSY", StringComparison.Ordinal);
+
+        ParseRadicale(body).ShouldBe([new CalendarBusyPeriod("2026-09-05T13:00:00Z", "2026-09-05T13:45:00Z", "BUSY")]);
+    }
+
+    // Observed when Radicale emitted a truncated definition registered by an earlier
+    // resource: daylight time recurs yearly without any return to standard time.
+    private const string IncompleteNewYorkTimeZone = """
+        BEGIN:VTIMEZONE
+        TZID:America/New_York
+        BEGIN:STANDARD
+        DTSTART:20000101T000000
+        RRULE:FREQ=YEARLY;BYMONTH=1;UNTIL=20250101T050000Z
+        TZNAME:EST
+        TZOFFSETFROM:-0500
+        TZOFFSETTO:-0500
+        END:STANDARD
+        BEGIN:DAYLIGHT
+        DTSTART:20260308T020000
+        RRULE:FREQ=YEARLY;BYDAY=2SU;BYMONTH=3
+        TZNAME:EDT
+        TZOFFSETFROM:-0500
+        TZOFFSETTO:-0400
+        END:DAYLIGHT
+        END:VTIMEZONE
+
+        """;
 
     private const string NewYorkTimeZone = """
         BEGIN:VTIMEZONE

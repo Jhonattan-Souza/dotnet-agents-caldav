@@ -14,6 +14,10 @@ public sealed class CalendarTimeZoneResolutionTests
         + "BEGIN:STANDARD\r\nDTSTART:19700101T000000\r\nTZOFFSETFROM:+0100\r\nTZOFFSETTO:+0100\r\nEND:STANDARD\r\n"
         + "END:VTIMEZONE\r\n";
 
+    private const string IncompleteNewYorkZone = "BEGIN:VTIMEZONE\r\nTZID:America/New_York\r\n"
+        + "BEGIN:DAYLIGHT\r\nDTSTART:20260308T020000\r\nRRULE:FREQ=YEARLY;BYDAY=2SU;BYMONTH=3\r\n"
+        + "TZOFFSETFROM:-0500\r\nTZOFFSETTO:-0400\r\nEND:DAYLIGHT\r\nEND:VTIMEZONE\r\n";
+
     [Theory]
     [InlineData("America/New_York", "America/New_York", false)]
     [InlineData("US/Eastern", "US/Eastern", false)]
@@ -120,6 +124,51 @@ public sealed class CalendarTimeZoneResolutionTests
 
         result.Code.ShouldBe(CalendarOccurrenceEvaluationCode.Success);
         result.Items.ShouldHaveSingleItem().Timing.EvaluatedStartUtc!.Value.ShouldBe(expectedStartUtc);
+    }
+
+    [Fact]
+    public void Evaluate_Davx5MinifiedZoneLeavesDaylightTimeItNoLongerDescribesUnresolved()
+    {
+        var result = Evaluate(
+            Resource(
+                "DTSTART;TZID=America/Sao_Paulo:20171210T090000\r\nDURATION:PT1H\r\n",
+                ClientTimeZone("davx5-4.5.20-ical4j-4.3.0-america-sao-paulo-minified.ics")),
+            "2017-12-01T00:00:00Z",
+            "2018-01-01T00:00:00Z");
+
+        result.Code.ShouldBe(CalendarOccurrenceEvaluationCode.TemporalUnresolved);
+        result.Items.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Evaluate_Davx5MinifiedZoneKeepsItsLastObservanceInEffect()
+    {
+        var result = Evaluate(
+            File.ReadAllBytes(ClientContentPath("davx5-4.5.20-ical4j-4.3.0-america-sao-paulo-minified.ics")),
+            "2026-10-01T00:00:00Z",
+            "2026-10-10T00:00:00Z");
+
+        result.Code.ShouldBe(CalendarOccurrenceEvaluationCode.Success);
+        var timing = result.Items.ShouldHaveSingleItem().Timing;
+        timing.EvaluatedStartUtc!.Value.ShouldBe("2026-10-04T12:00:00Z");
+        timing.EvaluatedEndUtc!.Value.ShouldBe("2026-10-05T21:00:01Z");
+    }
+
+    [Theory]
+    [InlineData("PT1H", "Success")]
+    [InlineData("PT2400H", "TemporalUnresolved")]
+    public void Evaluate_IncompleteZoneProjectsAnAccurateEndOnlyWhereTzdbConfirmsIt(
+        string duration,
+        string expectedCode)
+    {
+        var result = Evaluate(
+            Resource(
+                $"DTSTART;TZID=America/New_York:20260905T090000\r\nDURATION:{duration}\r\n",
+                IncompleteNewYorkZone),
+            "2026-09-01T00:00:00Z",
+            "2026-09-10T00:00:00Z");
+
+        result.Code.ShouldBe(Enum.Parse<CalendarOccurrenceEvaluationCode>(expectedCode));
     }
 
     [Fact]
@@ -332,12 +381,14 @@ public sealed class CalendarTimeZoneResolutionTests
 
     private static string ClientTimeZone(string fixture)
     {
-        var content = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "ClientContent", fixture))
-            .ReplaceLineEndings("\r\n");
+        var content = File.ReadAllText(ClientContentPath(fixture)).ReplaceLineEndings("\r\n");
         var start = content.IndexOf("BEGIN:VTIMEZONE\r\n", StringComparison.Ordinal);
         const string end = "END:VTIMEZONE\r\n";
         return content[start..(content.IndexOf(end, start, StringComparison.Ordinal) + end.Length)];
     }
+
+    private static string ClientContentPath(string fixture) =>
+        Path.Combine(AppContext.BaseDirectory, "Fixtures", "ClientContent", fixture);
 
     private static CalendarOccurrenceEvaluation Evaluate(byte[] bytes) =>
         Evaluate(bytes, "2026-03-01T00:00:00Z", "2026-03-20T00:00:00Z");

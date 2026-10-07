@@ -13,7 +13,8 @@ namespace DotnetAgents.CalDav.Core.Internal.Ical;
 
 /// <summary>
 /// Resolves UTC and named-zone entity values without a host-zone fallback. An embedded VTIMEZONE
-/// always wins; a TZID without one resolves through tzdb or its Windows mapping.
+/// always wins, but one that omits observances counts only where tzdb agrees; a TZID without one
+/// resolves through tzdb or its Windows mapping.
 /// </summary>
 internal sealed class CalendarTemporalResolver
 {
@@ -213,7 +214,7 @@ internal sealed class CalendarTemporalResolver
             return ResolveFromTzdb(local, timeZoneId, generated);
         var typedDefinitions = FindTypedLocalDefinitions(timeZoneId);
         return typedDefinitions.Count == 1
-            ? ResolveFromLocalDefinition(local, typedDefinitions[0], generated, _cancellationToken)
+            ? ResolveFromLocalDefinition(local, typedDefinitions[0], timeZoneId, generated, _cancellationToken)
             : new(null, true);
     }
 
@@ -236,7 +237,7 @@ internal sealed class CalendarTemporalResolver
             return ProjectFromTzdb(instant, timeZoneId);
         var definitions = FindTypedLocalDefinitions(timeZoneId);
         return definitions.Count == 1
-            ? ProjectFromLocalDefinition(instant, definitions[0], _cancellationToken)
+            ? ProjectFromLocalDefinition(instant, definitions[0], timeZoneId, _cancellationToken)
             : null;
     }
 
@@ -251,17 +252,19 @@ internal sealed class CalendarTemporalResolver
     private static DateTime? ProjectFromLocalDefinition(
         DateTimeOffset instant,
         VTimeZone zone,
+        string timeZoneId,
         CancellationToken cancellationToken)
     {
         try
         {
-            if (!TryGetConsistentTransitions(zone, instant.UtcDateTime, cancellationToken, out var transitions)
+            if (!TryGetUnambiguousTransitions(zone, instant.UtcDateTime, cancellationToken, out var transitions)
                 || transitions.Length == 0)
                 return null;
             var previous = transitions.LastOrDefault(transition =>
                 GetTransitionInstant(transition) <= instant);
             var offset = previous?.OffsetTo ?? transitions[0].OffsetFrom;
-            return DateTime.SpecifyKind(instant.UtcDateTime + offset, DateTimeKind.Unspecified);
+            var local = DateTime.SpecifyKind(instant.UtcDateTime + offset, DateTimeKind.Unspecified);
+            return IsChained(transitions) || ProjectFromTzdb(instant, timeZoneId) == local ? local : null;
         }
         catch (Exception exception) when (exception is EvaluationLimitExceededException
             or EvaluationOutOfRangeException
@@ -313,20 +316,23 @@ internal sealed class CalendarTemporalResolver
     private static ResolvedCalendarInstant ResolveFromLocalDefinition(
         DateTime local,
         VTimeZone zone,
+        string timeZoneId,
         bool generated,
         CancellationToken cancellationToken)
     {
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!TryGetConsistentTransitions(zone, local, cancellationToken, out var transitions)
+            if (!TryGetUnambiguousTransitions(zone, local, cancellationToken, out var transitions)
                 || transitions.Length == 0)
                 return new(null, true);
             var offset = ResolveLocalOffset(local, transitions, generated, out var skipped);
-            if (skipped)
-                return new(null, false, true);
-            var utcTicks = checked(local.Ticks - offset.Ticks);
-            return new(new DateTimeOffset(new DateTime(utcTicks, DateTimeKind.Utc)), false);
+            ResolvedCalendarInstant resolved = skipped
+                ? new(null, false, true)
+                : new(new DateTimeOffset(new DateTime(checked(local.Ticks - offset.Ticks), DateTimeKind.Utc)), false);
+            return IsChained(transitions) || ResolveFromTzdb(local, timeZoneId, generated) == resolved
+                ? resolved
+                : new(null, true);
         }
         catch (Exception exception) when (exception is EvaluationLimitExceededException
             or EvaluationOutOfRangeException
@@ -339,6 +345,16 @@ internal sealed class CalendarTemporalResolver
             return new(null, true);
         }
     }
+
+    /// <summary>
+    /// Whether every onset starts from the offset the previous one ended at. A definition that breaks this chain
+    /// omits observances: DAVx5 keeps only America/Sao_Paulo's last STANDARD rule, and Radicale has emitted a
+    /// yearly DAYLIGHT rule without its return to standard time. Its answer is used only where the IANA zone of the
+    /// same TZID confirms it, so an incomplete definition never yields a wrong instant.
+    /// </summary>
+    private static bool IsChained(ZoneTransition[] transitions) => transitions
+        .Zip(transitions.Skip(1))
+        .All(pair => pair.First.OffsetTo == pair.Second.OffsetFrom);
 
     private static IEnumerable<ZoneTransition> GetTransitions(
         VTimeZone zone,
@@ -371,7 +387,11 @@ internal sealed class CalendarTemporalResolver
         }
     }
 
-    private static bool TryGetConsistentTransitions(
+    /// <summary>
+    /// Orders every observance onset; two different onsets at one local time are ambiguous. Each onset's
+    /// TZOFFSETTO applies until the next one, as RFC 5545 defines, even where the next TZOFFSETFROM disagrees.
+    /// </summary>
+    private static bool TryGetUnambiguousTransitions(
         VTimeZone zone,
         DateTime local,
         CancellationToken cancellationToken,
@@ -381,14 +401,7 @@ internal sealed class CalendarTemporalResolver
             .Distinct()
             .OrderBy(item => item.LocalStart)
             .ToArray();
-        if (transitions.GroupBy(item => item.LocalStart).Any(group => group.Count() > 1))
-            return false;
-        for (var index = 1; index < transitions.Length; index++)
-        {
-            if (transitions[index - 1].OffsetTo != transitions[index].OffsetFrom)
-                return false;
-        }
-        return true;
+        return transitions.GroupBy(item => item.LocalStart).All(group => group.Count() == 1);
     }
 
     private static TimeSpan ResolveLocalOffset(
