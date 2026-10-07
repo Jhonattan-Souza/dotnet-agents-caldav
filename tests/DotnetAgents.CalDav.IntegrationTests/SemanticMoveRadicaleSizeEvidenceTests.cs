@@ -160,7 +160,7 @@ public sealed class SemanticMoveRadicaleSizeEvidenceTests(
             options.CalendarHrefs = calendarHrefs;
             options.Username = RadicaleConformanceFixture.Username;
             options.Password = RadicaleConformanceFixture.Password;
-            options.InteroperabilityProfile = "radicale-3.8.2";
+            options.InteroperabilityProfile = "radicale";
         });
         services.AddSingleton<IHttpMessageHandlerBuilderFilter>(wire);
         return services.BuildServiceProvider();

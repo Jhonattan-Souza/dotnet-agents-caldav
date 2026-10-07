@@ -70,9 +70,9 @@ The other compatibility lanes use distinct manifests and pinned images.
 They reuse the RFC fixture's Aspire collector. By default these lanes leave
 the Move interoperability profile unset, so Semantic and Exact Move must return
 `unsupported_capability`. `compat.py nextcloud ... --move-profile` configures
-the verified `nextcloud-34.0.3` profile instead; the functional lane then
+the `nextcloud` profile instead; the functional lane then
 expects committed Semantic Moves and `unsupported_capability` for the
-same-Calendar Exact Move that Nextcloud rejects. Baikal 0.10.1 has no verified
+same-Calendar Exact Move that Nextcloud rejects. Baikal 0.10.1 has no supported
 profile.
 Collection deletion and participation-bearing writes also fail without an
 attempt when OPTIONS advertises automatic scheduling.
@@ -117,11 +117,12 @@ cleanup.
 
 Radicale 3.7.8 returned nonconforming native free/busy content despite HTTP 200:
 one VFREEBUSY per period, with `DTSTART`/`DTEND` and a standalone FBTYPE
-instead of FREEBUSY periods, which the former `radicale-3.7.8` profile
-accepted. Radicale 3.8.2 returns RFC 4791 FREEBUSY periods, so the
-`radicale-3.8.2` profile has no free/busy special case and the scenario
-requires success on every lane. Radicale 3.7.8 also reported the cancelled
-Event as a `FREE` period. The 2026-09-05 records predate the 3.7.8 workaround
+instead of FREEBUSY periods. Radicale 3.8.2 returns RFC 4791 FREEBUSY periods,
+and the scenario requires success on every lane. The `radicale` profile still
+admits the 3.7.8 shape, on historical evidence plus regression tests over the
+recorded responses, so installations on that runtime keep working; see
+[ADR 0014](../../../docs/adr/0014-family-interoperability-profiles.md).
+Radicale 3.7.8 also reported the cancelled Event as a `FREE` period. The 2026-09-05 records predate the 3.7.8 workaround
 and show `upstream_protocol_error`.
 Radicale also synthesizes a display name after removal; the scenario records
 `committed_but_unverified` and verifies description-only removal separately.

@@ -1,5 +1,5 @@
 {
-  "profile": "radicale-3.8.2",
+  "profile": "radicale",
   "image": "ghcr.io/kozea/radicale@sha256:81e4ba1904211dff559e3e87a0030673a32a8b945dfc59a311d4d8dfe57238b5",
   "ociIndexDigest": "sha256:81e4ba1904211dff559e3e87a0030673a32a8b945dfc59a311d4d8dfe57238b5",
   "platformManifests": {

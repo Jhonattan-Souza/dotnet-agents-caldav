@@ -741,8 +741,10 @@ public sealed class ContractCatalogTests
     [Fact]
     public void Radicale_profile_records_both_manifests_and_all_required_variants()
     {
-        var profile = ReadJson("radicale-3.8.2-profile.json");
+        var profile = ReadJson("radicale-profile.json");
 
+        profile["profile"]!.GetValue<string>().ShouldBe(CalDavInteroperabilityProfiles.Radicale);
+        profile["runtime"]!["radicale"]!.GetValue<string>().ShouldBe("3.8.2");
         profile["ociIndexDigest"]!.GetValue<string>().ShouldBe(RadicaleConformanceIndexDigest);
         profile["platformManifests"]!.AsObject().Count.ShouldBe(2);
         profile["runtime"]!["python"]!.GetValue<string>().ShouldBe("3.14.8");

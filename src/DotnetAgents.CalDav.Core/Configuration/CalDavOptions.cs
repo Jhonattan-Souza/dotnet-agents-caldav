@@ -1,3 +1,5 @@
+using System.Collections.Frozen;
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Options;
 
 namespace DotnetAgents.CalDav.Core.Configuration;
@@ -216,17 +218,19 @@ internal sealed class ValidateCalDavOptions : IValidateOptions<CalDavOptions>
         && (string.Equals(original, uri.AbsoluteUri, StringComparison.Ordinal)
             || string.Equals(original + '/', uri.AbsoluteUri, StringComparison.Ordinal));
 
-    private static bool IsSupportedInteroperabilityProfile(string? profile) =>
-        string.IsNullOrEmpty(profile) || CalDavInteroperabilityProfiles.IsVerified(profile);
-
     private static void ValidateInteroperabilityProfile(string? profile, ICollection<string> failures)
     {
-        if (!IsSupportedInteroperabilityProfile(profile))
+        if (string.IsNullOrEmpty(profile) || CalDavInteroperabilityProfiles.IsSupported(profile))
+            return;
+        if (CalDavInteroperabilityProfiles.TryGetRetiredFamily(profile, out var family))
         {
-            failures.Add("CalDav:InteroperabilityProfile must be one of "
-                + string.Join(", ", CalDavInteroperabilityProfiles.Verified.Select(value => $"'{value}'"))
-                + " when specified.");
+            failures.Add($"CalDav:InteroperabilityProfile '{profile}' is a retired versioned value. Set '{family}' only after "
+                + $"checking the '{family}' profile's current requirements, because its accepted behavior changed.");
+            return;
         }
+        failures.Add("CalDav:InteroperabilityProfile must be one of "
+            + string.Join(", ", CalDavInteroperabilityProfiles.Supported.Select(value => $"'{value}'"))
+            + " when specified.");
     }
 
     private static void ValidateSchedulingMode(string? mode, ICollection<string> failures)
@@ -308,25 +312,47 @@ internal static class BearerTokenSyntax
         && value.All(character => character is > ' ' and < '\u007f');
 }
 
-/// <summary>Closed set of server runtimes with verified atomic mutation preconditions.</summary>
+/// <summary>
+/// Closed set of server-family policies this client implements. See ADR 0014. Each policy is backed by
+/// the evidence of one digest-pinned Verified Runtime; selecting it is the operator's assertion that the
+/// deployment meets its requirements, including atomic <c>Overwrite: F</c> and <c>CALDAV:no-uid-conflict</c>.
+/// </summary>
 public static class CalDavInteroperabilityProfiles
 {
-    public const string Radicale_3_8_2 = "radicale-3.8.2";
+    public const string Radicale = "radicale";
 
-    public const string Nextcloud_34_0_3 = "nextcloud-34.0.3";
+    public const string Nextcloud = "nextcloud";
 
-    /// <summary>Every verified profile, each backed by a digest-pinned contract and dated observation record.</summary>
-    public static IReadOnlyList<string> Verified { get; } = [Radicale_3_8_2, Nextcloud_34_0_3];
+    /// <summary>Every supported profile, each backed by a digest-pinned contract and dated observation record.</summary>
+    public static IReadOnlyList<string> Supported { get; } = [Radicale, Nextcloud];
 
-    internal static bool IsVerified(string? profile) =>
-        profile is not null && Verified.Contains(profile, StringComparer.Ordinal);
+    // Versioned values accepted by earlier releases, mapped to the family policy that replaced them.
+    private static readonly FrozenDictionary<string, string> RetiredFamilies = new Dictionary<string, string>
+    {
+        ["radicale-3.7.8"] = Radicale,
+        ["radicale-3.8.2"] = Radicale,
+        ["nextcloud-34.0.3"] = Nextcloud
+    }.ToFrozenDictionary(StringComparer.Ordinal);
+
+    internal static bool IsSupported(string? profile) =>
+        profile is not null && Supported.Contains(profile, StringComparer.Ordinal);
+
+    internal static bool TryGetRetiredFamily(string profile, [NotNullWhen(true)] out string? family) =>
+        RetiredFamilies.TryGetValue(profile, out family);
 
     /// <summary>
-    /// Whether the verified runtime commits a MOVE that renames a resource within its Calendar.
-    /// Nextcloud 34.0.3 rejects that MOVE with HTTP 403, so Exact Move fails closed before dispatch.
+    /// Whether the policy delegates a MOVE that renames a resource within its Calendar. Nextcloud 34.0.3
+    /// rejected that MOVE with HTTP 403, so Exact Move fails closed before dispatch under <see cref="Nextcloud"/>.
     /// </summary>
     internal static bool SupportsSameCalendarMove(string? profile) =>
-        string.Equals(profile, Radicale_3_8_2, StringComparison.Ordinal);
+        string.Equals(profile, Radicale, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Whether free/busy admits the fail-safe representation Radicale 3.7.8 returned: one VFREEBUSY per
+    /// period with a standalone FBTYPE, or an empty VCALENDAR without busy time.
+    /// </summary>
+    internal static bool ToleratesRadicalePeriodComponents(string? profile) =>
+        string.Equals(profile, Radicale, StringComparison.Ordinal);
 }
 
 internal static class IanaTimeZoneIds

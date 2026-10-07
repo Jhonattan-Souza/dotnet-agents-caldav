@@ -21,8 +21,12 @@ A protocol behavior available to an operation at a defined origin, Calendar, or 
 _Avoid_: Feature flag, server promise
 
 **Interoperability Profile**:
-An evidence-backed statement of CalDAV Capabilities and limitations for one precisely identified server runtime.
-_Avoid_: Compatibility mode, generic server support
+A named policy of CalDAV Capabilities and limitations for one server family, backed by Verified Runtime evidence; selecting it is the operator's assertion that the deployment meets its requirements, not a certification of every version of that family.
+_Avoid_: Compatibility mode, generic server support, versioned profile
+
+**Verified Runtime**:
+The exact server runtime, identified by image digest, dependencies, configuration, and platform, whose observed behavior is the evidence behind an Interoperability Profile.
+_Avoid_: Supported version, profile version
 
 **Calendar Scope**:
 The explicit set of Calendars eligible for an operation, identified by canonical href rather than partial href or inferred Calendar Name matches.

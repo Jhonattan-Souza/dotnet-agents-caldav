@@ -1057,7 +1057,7 @@ public sealed partial class RadicaleConformanceHarnessTests(RadicaleConformanceF
         string calendarHref,
         ConcurrentQueue<string>? requestTrace = null,
         IHttpMessageHandlerBuilderFilter? mutationFilter = null,
-        string? interoperabilityProfile = CalDavInteroperabilityProfiles.Radicale_3_8_2)
+        string? interoperabilityProfile = CalDavInteroperabilityProfiles.Radicale)
     {
         var services = new ServiceCollection();
         services.AddLogging();

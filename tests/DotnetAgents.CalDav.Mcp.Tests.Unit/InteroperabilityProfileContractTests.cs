@@ -12,9 +12,9 @@ public sealed class InteroperabilityProfileContractTests
     [Fact]
     public void Nextcloud_profile_pins_the_observed_image_and_runtime()
     {
-        var profile = ReadProfile(CalDavInteroperabilityProfiles.Nextcloud_34_0_3);
+        var profile = ReadProfile(CalDavInteroperabilityProfiles.Nextcloud);
 
-        profile["profile"]!.GetValue<string>().ShouldBe(CalDavInteroperabilityProfiles.Nextcloud_34_0_3);
+        profile["profile"]!.GetValue<string>().ShouldBe(CalDavInteroperabilityProfiles.Nextcloud);
         profile["image"]!.GetValue<string>().ShouldBe("docker.io/library/nextcloud@" + NextcloudIndexDigest);
         profile["ociIndexDigest"]!.GetValue<string>().ShouldBe(NextcloudIndexDigest);
         profile["platformManifests"]!.AsObject().Select(entry => entry.Key)
@@ -27,19 +27,29 @@ public sealed class InteroperabilityProfileContractTests
     }
 
     [Fact]
-    public void Every_verified_profile_has_a_contract_and_catalog_documentation()
+    public void Every_supported_profile_has_one_family_contract_and_catalog_documentation()
     {
         var catalog = JsonNode.Parse(File.ReadAllText(Path.Combine(
             RepositoryRoot(), "src", "DotnetAgents.CalDav.Mcp", "Contracts", "mcp-tool-catalog.json")))!;
-        var description = catalog["environment"]!.AsArray()
-            .Single(item => item!["name"]!.GetValue<string>() == "CALDAV_INTEROPERABILITY_PROFILE")!
-            ["description"]!.GetValue<string>();
+        var environment = catalog["environment"]!.AsArray()
+            .Single(item => item!["name"]!.GetValue<string>() == "CALDAV_INTEROPERABILITY_PROFILE")!;
+        var description = environment["description"]!.GetValue<string>();
 
-        foreach (var profile in CalDavInteroperabilityProfiles.Verified)
+        environment["required"]!.GetValue<bool>().ShouldBeFalse();
+        environment["enum"]!.AsArray().Select(value => value!.GetValue<string>())
+            .ShouldBe(CalDavInteroperabilityProfiles.Supported);
+        Directory.GetFiles(Path.Combine(RepositoryRoot(), "contracts"), "*-profile.json")
+            .Select(path => Path.GetFileName(path)).Order(StringComparer.Ordinal)
+            .ShouldBe(CalDavInteroperabilityProfiles.Supported.Select(profile => profile + "-profile.json")
+                .Order(StringComparer.Ordinal));
+        foreach (var profile in CalDavInteroperabilityProfiles.Supported)
         {
             ReadProfile(profile)["profile"]!.GetValue<string>().ShouldBe(profile);
             description.ShouldContain(profile);
         }
+        // A Verified Runtime pin bump changes the profile contract, never the operator-facing description.
+        description.ShouldNotMatch(@"\d+\.\d+");
+        description.ShouldContain("#supported-servers");
     }
 
     private static JsonObject ReadProfile(string profile)

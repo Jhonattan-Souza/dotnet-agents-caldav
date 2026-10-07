@@ -96,7 +96,9 @@ discovery is not treated as proof of atomic UID enforcement. A profile whose
 runtime rejects a rename within one Calendar also rejects that Exact Move
 before dispatch. Addendum (2026-10-06): `radicale-3.8.2` replaces
 `radicale-3.7.8`; Radicale 3.8.2 still commits a same-Calendar rename MOVE with
-201.
+201. Addendum (2026-10-06): [ADR 0014](0014-family-interoperability-profiles.md)
+replaces the versioned values with the family profiles `radicale` and
+`nextcloud`.
 
 Exact Move MRTR returns only a protected `CalendarExactMoveReviewBinding` from
 the initial call. A confirmed call performs fresh authorization, discovery,

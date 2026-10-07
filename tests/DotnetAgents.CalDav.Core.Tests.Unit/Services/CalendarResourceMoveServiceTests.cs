@@ -1115,7 +1115,7 @@ public sealed class CalendarResourceMoveServiceTests
         string calendarHrefs = "https://cal.example/tasks/,https://cal.example/archive/",
         string? defaultTodoCalendarName = null,
         TimeProvider? timeProvider = null,
-        string? interoperabilityProfile = CalDavInteroperabilityProfiles.Radicale_3_8_2) => new(
+        string? interoperabilityProfile = CalDavInteroperabilityProfiles.Radicale) => new(
         client,
         Options.Create(new CalDavOptions
         {

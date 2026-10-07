@@ -252,6 +252,10 @@ public sealed class CalendarMoveModuleTests
 
         result.Code.ShouldBe(CalendarResourceMoveCode.UnsupportedCapability);
         result.MutationState.ShouldBe(CalendarMutationState.NotAttempted);
+        var violation = result.Violations.ShouldNotBeNull().ShouldHaveSingleItem();
+        violation.Code.ShouldBe("interoperability_profile_unverified");
+        violation.Message.ShouldBe("Moves require CALDAV_INTEROPERABILITY_PROFILE to select a supported profile; "
+            + "configure it only when the deployment meets that profile's requirements.");
         transport.Trace.ShouldBe(["discover"]);
     }
 
@@ -600,7 +604,7 @@ public sealed class CalendarMoveModuleTests
 
     private static CalendarMoveModule Module(
         ScriptedMoveTransport transport,
-        string? interoperabilityProfile = CalDavInteroperabilityProfiles.Radicale_3_8_2,
+        string? interoperabilityProfile = CalDavInteroperabilityProfiles.Radicale,
         string? calendarHrefs = "https://cal.example/tasks/,https://cal.example/archive/")
     {
         var options = new CalDavOptions

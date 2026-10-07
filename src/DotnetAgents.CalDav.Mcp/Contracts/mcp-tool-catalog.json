@@ -3037,7 +3037,11 @@
     {
       "name": "CALDAV_INTEROPERABILITY_PROFILE",
       "required": false,
-      "description": "Verified server profile; radicale-3.8.2 or nextcloud-34.0.3 enables server-authoritative MOVE"
+      "enum": [
+        "radicale",
+        "nextcloud"
+      ],
+      "description": "Server family profile, radicale or nextcloud; setting it asserts that the deployment meets that profile's requirements, including atomic Overwrite: F and CALDAV:no-uid-conflict enforcement, and enables server-authoritative MOVE; requirements and tested runtimes: https://github.com/Jhonattan-Souza/dotnet-agents-caldav#supported-servers"
     },
     {
       "name": "CALDAV_SCHEDULING_MODE",
@@ -3484,7 +3488,7 @@
         "idempotentHint": false,
         "openWorldHint": true
       },
-      "description": "Move one revision-bound semantic resource with server-authoritative preconditions and bounded bilateral reconciliation; requires a verified interoperability profile."
+      "description": "Move one revision-bound semantic resource with server-authoritative preconditions and bounded bilateral reconciliation; requires a supported interoperability profile."
     },
     {
       "name": "calendar_resources.delete",

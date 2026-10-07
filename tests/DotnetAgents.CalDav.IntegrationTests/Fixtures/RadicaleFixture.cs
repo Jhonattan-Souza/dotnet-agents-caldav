@@ -50,7 +50,7 @@ public sealed class RadicaleFixture : IAsyncLifetime
         environment["CALDAV_URL"] = BaseUrl;
         environment["CALDAV_USERNAME"] = TestUsername;
         environment["CALDAV_PASSWORD"] = TestPassword;
-        environment["CALDAV_INTEROPERABILITY_PROFILE"] = "radicale-3.8.2";
+        environment["CALDAV_INTEROPERABILITY_PROFILE"] = "radicale";
     }
 
     // ── IAsyncLifetime ─────────────────────────────────────────────────────

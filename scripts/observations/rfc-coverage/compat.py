@@ -17,8 +17,8 @@ IMAGES = {
 }
 
 
-# Verified Move interoperability profiles; Baikal 0.10.1 commits MOVE despite a UID conflict.
-MOVE_PROFILES = {'nextcloud': 'nextcloud-34.0.3'}
+# Supported Move interoperability profiles by family; Baikal 0.10.1 commits MOVE despite a UID conflict.
+MOVE_PROFILES = {'nextcloud': 'nextcloud'}
 
 
 BAIKAL_SETUP = r'''<?php

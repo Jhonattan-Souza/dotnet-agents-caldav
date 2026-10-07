@@ -148,7 +148,7 @@ class Functional:
         destination=href.replace('exact-functional','exact-moved')
         self.owned.add(destination)
         # Only the Radicale profile commits a rename within one Calendar; Nextcloud answers 403.
-        rename=self.state.get('profile')=='radicale-3.8.2'
+        rename=self.state.get('profile')=='radicale'
         await self.call('calendar_resources.exact_move',dict(revision=snapshot['entityRevision'],destinationHref=destination),
                         _expected='success' if rename else 'unsupported_capability')
         if rename:

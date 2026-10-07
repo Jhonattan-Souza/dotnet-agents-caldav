@@ -31,7 +31,8 @@ internal static class CalendarMoveViolations
             [CalendarMoveAuthorizationFailureReason.DestinationSelectionAmbiguous] = (Anchor.Destination, "destination_ambiguous",
                 "More than one authorized Calendar matches the destination; select one by href from authorizedCandidates."),
             [CalendarMoveAuthorizationFailureReason.InteroperabilityProfileUnverified] = (Anchor.None, "interoperability_profile_unverified",
-                "Moves need CALDAV_INTEROPERABILITY_PROFILE set for a verified server."),
+                "Moves require CALDAV_INTEROPERABILITY_PROFILE to select a supported profile; "
+                + "configure it only when the deployment meets that profile's requirements."),
             [CalendarMoveAuthorizationFailureReason.SourceOwnershipMissing] = (Anchor.Source, "no_owning_calendar",
                 "No discovered Calendar directly contains the source href."),
             [CalendarMoveAuthorizationFailureReason.SourceOwnershipAmbiguous] = (Anchor.None, "source_ownership_ambiguous",

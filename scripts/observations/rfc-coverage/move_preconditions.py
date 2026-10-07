@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Observe the atomic MOVE preconditions a verified interoperability profile requires.
+"""Observe the atomic MOVE preconditions an interoperability profile's Verified Runtime must pass.
 
 Required cases are the atomic guarantees Move modules delegate to the server and
 the digest-pinned Radicale reference satisfies: a byte-preserving MOVE

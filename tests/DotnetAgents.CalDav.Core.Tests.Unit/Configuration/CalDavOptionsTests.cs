@@ -198,6 +198,12 @@ public class CalDavOptionsTests
 
     [Theory]
     [InlineData("unverified")]
+    [InlineData("Radicale")]
+    [InlineData("NEXTCLOUD")]
+    [InlineData(" radicale")]
+    [InlineData("radicale ")]
+    [InlineData("nextcloud\t")]
+    [InlineData("baikal")]
     [InlineData("Radicale-3.7.8")]
     [InlineData("radicale-3.8.2 ")]
     public void ValidateCalDavOptions_RejectsUnknownInteroperabilityProfile(string profile)
@@ -211,13 +217,36 @@ public class CalDavOptionsTests
         });
 
         result.Failed.ShouldBeTrue();
-        result.Failures.ShouldContain(failure => failure.Contains("InteroperabilityProfile", StringComparison.Ordinal));
+        result.Failures.ShouldHaveSingleItem()
+            .ShouldBe("CalDav:InteroperabilityProfile must be one of 'radicale', 'nextcloud' when specified.");
     }
 
     [Theory]
-    [InlineData(CalDavInteroperabilityProfiles.Radicale_3_8_2)]
-    [InlineData(CalDavInteroperabilityProfiles.Nextcloud_34_0_3)]
-    public void ValidateCalDavOptions_AcceptsVerifiedInteroperabilityProfile(string profile)
+    [InlineData("radicale-3.7.8", "radicale")]
+    [InlineData("radicale-3.8.2", "radicale")]
+    [InlineData("nextcloud-34.0.3", "nextcloud")]
+    public void ValidateCalDavOptions_NamesTheFamilyValueForARetiredVersionedProfile(string profile, string family)
+    {
+        var result = new ValidateCalDavOptions().Validate(null, new CalDavOptions
+        {
+            BaseUrl = "https://caldav.example.com",
+            Username = "user",
+            Password = "pass",
+            InteroperabilityProfile = profile
+        });
+
+        result.Failed.ShouldBeTrue();
+        result.Failures.ShouldHaveSingleItem().ShouldBe(
+            $"CalDav:InteroperabilityProfile '{profile}' is a retired versioned value. Set '{family}' only after "
+            + $"checking the '{family}' profile's current requirements, because its accepted behavior changed.");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(CalDavInteroperabilityProfiles.Radicale)]
+    [InlineData(CalDavInteroperabilityProfiles.Nextcloud)]
+    public void ValidateCalDavOptions_AcceptsAbsentOrSupportedInteroperabilityProfile(string? profile)
     {
         var result = new ValidateCalDavOptions().Validate(null, new CalDavOptions
         {
@@ -687,13 +716,14 @@ public class CalDavOptionsTests
     }
 
     [Fact]
-    public void InteroperabilityProfiles_ListEveryVerifiedRuntimeAndOnlyRadicaleCommitsSameCalendarMove()
+    public void InteroperabilityProfiles_ListEverySupportedFamilyAndOnlyRadicaleCommitsSameCalendarMove()
     {
-        CalDavInteroperabilityProfiles.Verified.ShouldBe(["radicale-3.8.2", "nextcloud-34.0.3"]);
-        CalDavInteroperabilityProfiles.IsVerified(null).ShouldBeFalse();
-        CalDavInteroperabilityProfiles.SupportsSameCalendarMove(CalDavInteroperabilityProfiles.Radicale_3_8_2)
+        CalDavInteroperabilityProfiles.Supported.ShouldBe(["radicale", "nextcloud"]);
+        CalDavInteroperabilityProfiles.IsSupported(null).ShouldBeFalse();
+        CalDavInteroperabilityProfiles.IsSupported("radicale-3.8.2").ShouldBeFalse();
+        CalDavInteroperabilityProfiles.SupportsSameCalendarMove(CalDavInteroperabilityProfiles.Radicale)
             .ShouldBeTrue();
-        CalDavInteroperabilityProfiles.SupportsSameCalendarMove(CalDavInteroperabilityProfiles.Nextcloud_34_0_3)
+        CalDavInteroperabilityProfiles.SupportsSameCalendarMove(CalDavInteroperabilityProfiles.Nextcloud)
             .ShouldBeFalse();
         CalDavInteroperabilityProfiles.SupportsSameCalendarMove(null).ShouldBeFalse();
     }
