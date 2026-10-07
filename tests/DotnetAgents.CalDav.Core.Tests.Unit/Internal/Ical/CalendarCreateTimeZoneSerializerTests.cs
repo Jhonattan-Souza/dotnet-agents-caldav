@@ -197,6 +197,23 @@ public sealed class CalendarCreateTimeZoneSerializerTests
         result.Items.ShouldHaveSingleItem().Timing.EvaluatedStartUtc!.Value.ShouldBe(expectedLaterUtc);
     }
 
+    // Atlantic/South_Georgia has kept one offset since 1890; a value before that still needs its local mean time.
+    [Fact]
+    public void SerializeForLocalValues_KeepsTheOffsetBeforeAZoneSettledOnItsCurrentOne()
+    {
+        var definition = CalendarCreateTimeZoneSerializer.SerializeForLocalValues(
+            "Atlantic/South_Georgia",
+            [new DateTime(1800, 6, 1, 12, 0, 0)]);
+        var bytes = Encoding.UTF8.GetBytes(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\n" + definition
+            + "BEGIN:VEVENT\r\nUID:early\r\nDTSTAMP:20260815T120000Z\r\nDTSTART;TZID=Atlantic/South_Georgia:18000601T120000\r\n"
+            + "DURATION:PT1H\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n");
+
+        var result = Evaluate(bytes, "1800-06-01T00:00:00Z", "1800-06-02T00:00:00Z");
+
+        result.Items.ShouldHaveSingleItem().Timing.EvaluatedStartUtc!.Value.ShouldBe("1800-06-01T14:26:08Z");
+    }
+
     [Fact]
     public void SerializeForLocalValues_EveryTzdbZoneAgreesWithTzdbLongAfterItsValue()
     {
