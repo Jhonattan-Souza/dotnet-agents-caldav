@@ -353,7 +353,7 @@ public sealed class ExactMoveMrtrRadicaleSizeEvidenceTests(
             options.CalendarHrefs = calendarHrefs;
             options.Username = RadicaleConformanceFixture.Username;
             options.Password = RadicaleConformanceFixture.Password;
-            options.InteroperabilityProfile = "radicale-3.7.8";
+            options.InteroperabilityProfile = "radicale-3.8.2";
         });
         services.AddSingleton<IHttpMessageHandlerBuilderFilter>(wire);
         return services.BuildServiceProvider();

@@ -176,6 +176,34 @@ public sealed class CalendarTimeZoneResolutionTests
         result.Code.ShouldBe(Enum.Parse<CalendarOccurrenceEvaluationCode>(expectedCode));
     }
 
+    // Observed when Radicale emitted a truncated definition registered by an earlier resource: daylight time
+    // recurs yearly without any return to standard time.
+    [Theory]
+    [InlineData("20260905T090000", "2026-09-01T00:00:00Z", "2026-09-10T00:00:00Z", "2026-09-05T13:00:00Z")]
+    [InlineData("20261205T090000", "2026-12-01T00:00:00Z", "2026-12-10T00:00:00Z", null)]
+    public void Evaluate_RadicaleIncompleteZoneResolvesOnlyWhereTzdbConfirmsIt(
+        string localStart,
+        string from,
+        string to,
+        string? expectedStartUtc)
+    {
+        var result = Evaluate(
+            Resource(
+                $"DTSTART;TZID=America/New_York:{localStart}\r\nDURATION:PT45M\r\n",
+                "BEGIN:VTIMEZONE\r\nTZID:America/New_York\r\n"
+                + "BEGIN:STANDARD\r\nDTSTART:20000101T000000\r\nRRULE:FREQ=YEARLY;BYMONTH=1;UNTIL=20250101T050000Z\r\n"
+                + "TZOFFSETFROM:-0500\r\nTZOFFSETTO:-0500\r\nEND:STANDARD\r\n"
+                + "BEGIN:DAYLIGHT\r\nDTSTART:20260308T020000\r\nRRULE:FREQ=YEARLY;BYDAY=2SU;BYMONTH=3\r\n"
+                + "TZOFFSETFROM:-0500\r\nTZOFFSETTO:-0400\r\nEND:DAYLIGHT\r\nEND:VTIMEZONE\r\n"),
+            from,
+            to);
+
+        if (expectedStartUtc is null)
+            result.Code.ShouldBe(CalendarOccurrenceEvaluationCode.TemporalUnresolved);
+        else
+            result.Items.ShouldHaveSingleItem().Timing.EvaluatedStartUtc!.Value.ShouldBe(expectedStartUtc);
+    }
+
     [Fact]
     public void Evaluate_UnresolvableIdentifierWithoutVtimezoneStaysTemporalUnresolved()
     {

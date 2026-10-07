@@ -2198,7 +2198,7 @@ public sealed class CalendarMcpStdioIntegrationTests
         ["CALDAV_USERNAME"] = "caldavtest",
         ["CALDAV_PASSWORD"] = "caldavtest123",
         ["CALDAV_CALENDAR_HREFS"] = $"{_fixture.BaseUrl}{_fixture.TodoCalendarHref}",
-        ["CALDAV_INTEROPERABILITY_PROFILE"] = "radicale-3.7.8",
+        ["CALDAV_INTEROPERABILITY_PROFILE"] = "radicale-3.8.2",
         ["CALDAV_EVALUATION_TIME_ZONE"] = "UTC"
     };
 

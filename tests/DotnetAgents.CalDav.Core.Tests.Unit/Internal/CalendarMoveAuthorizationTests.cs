@@ -67,7 +67,7 @@ public sealed class CalendarMoveAuthorizationTests
     }
 
     [Theory]
-    [InlineData(CalDavInteroperabilityProfiles.Radicale_3_7_8)]
+    [InlineData(CalDavInteroperabilityProfiles.Radicale_3_8_2)]
     [InlineData(CalDavInteroperabilityProfiles.Nextcloud_34_0_3)]
     public async Task EveryVerifiedProfileAuthorizesMoveBetweenCalendars(string profile)
     {
@@ -90,7 +90,7 @@ public sealed class CalendarMoveAuthorizationTests
     }
 
     [Theory]
-    [InlineData(CalDavInteroperabilityProfiles.Radicale_3_7_8, true)]
+    [InlineData(CalDavInteroperabilityProfiles.Radicale_3_8_2, true)]
     [InlineData(CalDavInteroperabilityProfiles.Nextcloud_34_0_3, false)]
     public async Task ExactSameCalendarRenameRequiresAProfileThatCommitsIt(string profile, bool authorized)
     {
@@ -341,7 +341,7 @@ public sealed class CalendarMoveAuthorizationTests
             selected,
             interoperabilityProfile: scenario == SemanticAuthorityFailure.Profile
                 ? null
-                : CalDavInteroperabilityProfiles.Radicale_3_7_8);
+                : CalDavInteroperabilityProfiles.Radicale_3_8_2);
         var request = new CalendarResourceMoveRequest(
             new CalendarResourceRevisionReference(
                 SourceHref,
@@ -500,7 +500,7 @@ public sealed class CalendarMoveAuthorizationTests
     private static AuthorizationFixture Fixture(
         IReadOnlyList<CalendarDescriptor> calendars,
         CalendarSelectionResult todoDefault,
-        string? interoperabilityProfile = CalDavInteroperabilityProfiles.Radicale_3_7_8,
+        string? interoperabilityProfile = CalDavInteroperabilityProfiles.Radicale_3_8_2,
         string? redirectHosts = null,
         string? calendarHrefs = null)
     {

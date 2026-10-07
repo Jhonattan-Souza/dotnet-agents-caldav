@@ -9,8 +9,8 @@ namespace DotnetAgents.CalDav.Core.Internal.Ical;
 internal static class CalendarFreeBusyReportParser
 {
     internal const int MaximumPeriods = 5000;
-    // One Radicale 3.7.8 busy period component spends six content lines, so the
-    // structural budget must admit the period budget in that representation.
+    // A server may spend one VFREEBUSY component of several content lines on each
+    // period, so the structural budget admits the period budget in that shape.
     private const int MaximumContentLines = 40000;
     private const int MaximumComponentDepth = 3;
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
@@ -24,25 +24,23 @@ internal static class CalendarFreeBusyReportParser
     }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Parses a free/busy REPORT body. RFC 4791 section 7.10 content is always accepted,
-    /// including busy periods spread over several VFREEBUSY components. The Radicale
-    /// 3.7.8 representation is accepted only for that verified interoperability profile.
+    /// Parses an RFC 4791 section 7.10 free/busy REPORT body, including busy periods
+    /// spread over several VFREEBUSY components.
     /// </summary>
     internal static IReadOnlyList<CalendarBusyPeriod> Parse(
         byte[] body,
         DateTimeOffset from,
         DateTimeOffset to,
-        CancellationToken cancellationToken,
-        bool radicaleProfile = false)
+        CancellationToken cancellationToken)
     {
         try
         {
             var content = Unfold(body);
             ValidateStructureBudget(content, cancellationToken);
             var document = CalendarContentDocument.Parse(content);
-            var busyComponents = ValidateComponents(document, radicaleProfile);
+            var busyComponents = ValidateComponents(document);
             ValidatePropertyScope(document.Properties);
-            var collector = new BusyPeriodCollector(document, from, to, radicaleProfile, cancellationToken);
+            var collector = new BusyPeriodCollector(from, to, cancellationToken);
             var properties = document.Properties
                 .Where(IsBusyComponentProperty)
                 .ToLookup(property => property.ComponentPath[1].Occurrence);
@@ -99,7 +97,7 @@ internal static class CalendarFreeBusyReportParser
         }
     }
 
-    private static CalendarContentComponent[] ValidateComponents(CalendarContentDocument document, bool radicaleProfile)
+    private static CalendarContentComponent[] ValidateComponents(CalendarContentDocument document)
     {
         // A VTIMEZONE may accompany zoned values; any other component could carry
         // busy information that this parser would otherwise silently ignore.
@@ -107,9 +105,8 @@ internal static class CalendarFreeBusyReportParser
             || !document.Components.All(IsPermittedComponent))
             throw InvalidResponse();
         var busyComponents = document.Components.Where(component => component.Path is [_, { Name: "VFREEBUSY" }]).ToArray();
-        // RFC 4791 section 7.10 requires a VFREEBUSY component. Radicale 3.7.8
-        // reports a window without busy time as an otherwise empty VCALENDAR.
-        if (busyComponents.Length == 0 && !radicaleProfile)
+        // RFC 4791 section 7.10 requires a VFREEBUSY component, even for a window without busy time.
+        if (busyComponents.Length == 0)
             throw InvalidResponse();
         var versions = document.Properties.Where(property => property.ComponentPath.Count == 1
             && property.Name.Equals("VERSION", StringComparison.OrdinalIgnoreCase)).ToArray();
@@ -265,36 +262,20 @@ internal static class CalendarFreeBusyReportParser
 
     /// <summary>Counts every reported period against one budget before clipping it to the requested window.</summary>
     private sealed class BusyPeriodCollector(
-        CalendarContentDocument document,
         DateTimeOffset from,
         DateTimeOffset to,
-        bool radicaleProfile,
         CancellationToken cancellationToken)
     {
         private int _observed;
-        private CalendarTemporalResolver? _resolver;
 
         public List<NativeBusyPeriod> Periods { get; } = [];
 
         public void ReadComponent(IReadOnlyList<CalendarContentProperty> properties)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var busyTypes = Named(properties, "FBTYPE").ToArray();
-            if (busyTypes.Length == 0)
-            {
-                ReadPeriodList(properties);
-                return;
-            }
-            // FBTYPE is a FREEBUSY parameter. As a component property it is a stray
-            // type unless it is the one type of a Radicale 3.7.8 period component,
-            // whose DTSTART and DTEND are the busy period rather than its bounds.
-            if (!radicaleProfile || busyTypes.Length != 1 || Named(properties, "FREEBUSY").Any())
+            // FBTYPE is a FREEBUSY parameter; as a component property it is a stray type.
+            if (Named(properties, "FBTYPE").Any())
                 throw InvalidResponse();
-            ReadPeriodComponent(properties, busyTypes[0]);
-        }
-
-        private void ReadPeriodList(IReadOnlyList<CalendarContentProperty> properties)
-        {
             // The successful native REPORT determines the requested window. The
             // component's optional bounds describe its busy information and need
             // only be valid and internally consistent when supplied.
@@ -309,45 +290,6 @@ internal static class CalendarFreeBusyReportParser
                     Add(ReadPeriod(property.RawEncodedValue[range], busyType));
             }
         }
-
-        private void ReadPeriodComponent(IReadOnlyList<CalendarContentProperty> properties, CalendarContentProperty busyType)
-        {
-            var start = Named(properties, "DTSTART").ToArray();
-            var end = Named(properties, "DTEND").ToArray();
-            if (busyType.Parameters.Count != 0 || start.Length != 1 || end.Length != 1)
-                throw InvalidResponse();
-            Add(CreatePeriod(ReadInstant(start[0]), ReadInstant(end[0]), NormalizeBusyType(busyType.RawEncodedValue)));
-        }
-
-        private DateTimeOffset ReadInstant(CalendarContentProperty property)
-        {
-            ValidateSingleValuedParameter(property, "VALUE");
-            ValidateSingleValuedParameter(property, "TZID");
-            if (property.ValueType != CalendarPropertyValueType.DateTime)
-                throw InvalidResponse();
-            if (!HasParameter(property, "TZID"))
-                return ParseUtc(property.RawEncodedValue);
-            if (property.RawEncodedValue.EndsWith('Z'))
-                throw InvalidResponse();
-            // A zoned value resolves through the report's own VTIMEZONE when present.
-            // No evaluation zone is supplied, so a floating value never resolves.
-            _resolver ??= CreateTimeZoneResolver();
-            return _resolver.Resolve(ToCalendarProperty(property)).Value ?? throw InvalidResponse();
-        }
-
-        private CalendarTemporalResolver CreateTimeZoneResolver()
-        {
-            var zones = document.Components.Where(component => component.Path is [_, { Name: "VTIMEZONE" }])
-                .Select(component => document.GetComponentOccurrence(component.Path).OriginalSlice.TrimEnd('\r', '\n') + "\r\n");
-            var calendar = Encoding.UTF8.GetBytes("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//dotnet-agents-caldav//free-busy//EN\r\n"
-                + string.Concat(zones) + "END:VCALENDAR\r\n");
-            var properties = CalendarContentDocument.Parse(calendar).Properties.Select(ToCalendarProperty).ToArray();
-            return new CalendarTemporalResolver(properties, calendar, cancellationToken);
-        }
-
-        private static CalendarProperty ToCalendarProperty(CalendarContentProperty property) => new(
-            property.ComponentPath, property.Name, property.Parameters,
-            property.ValueType, property.RawEncodedValue, property.OriginalSlice);
 
         private void Add(NativeBusyPeriod period)
         {

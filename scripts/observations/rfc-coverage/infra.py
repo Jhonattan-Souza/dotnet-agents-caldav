@@ -14,7 +14,7 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 
-RADICALE = 'ghcr.io/kozea/radicale@sha256:3a0080ea51ac69dcd74e345b9587dc14a8c8af0652046069005749f9a75c5c80'
+RADICALE = 'ghcr.io/kozea/radicale@sha256:81e4ba1904211dff559e3e87a0030673a32a8b945dfc59a311d4d8dfe57238b5'
 DASHBOARD = 'mcr.microsoft.com/dotnet/aspire-dashboard:13.4.2@sha256:76d05882595dd43e708d6ef3e269d98ca763694c0c822bbe98edc99790eaad1b'
 
 
@@ -45,7 +45,7 @@ def up(root):
     run = 'caldav-rfc-' + secrets.token_hex(4)
     state = dict(run=run, username='rfctest', password=secrets.token_hex(16),
                  api_key=secrets.token_hex(24), containers=[],
-                 profile='radicale-3.7.8', home_path='/rfctest/')
+                 profile='radicale-3.8.2', home_path='/rfctest/')
     def save():
         path.write_text(json.dumps(state, indent=2))
         path.chmod(0o600)

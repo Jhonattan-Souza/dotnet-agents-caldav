@@ -28,7 +28,7 @@ def environment(state, service, otlp=True, exact=False):
     env.update(CALDAV_URL=state['url'], CALDAV_USERNAME=state['username'], CALDAV_PASSWORD=state['password'],
                CALDAV_DEFAULT_EVENT_CALENDAR_NAME='Performance events',
                CALDAV_DEFAULT_TODO_CALENDAR_NAME='Performance todos',
-               CALDAV_EVALUATION_TIME_ZONE='America/Sao_Paulo', CALDAV_INTEROPERABILITY_PROFILE='radicale-3.7.8',
+               CALDAV_EVALUATION_TIME_ZONE='America/Sao_Paulo', CALDAV_INTEROPERABILITY_PROFILE='radicale-3.8.2',
                OTEL_SERVICE_NAME=service)
     if otlp:
         env.update(OTEL_EXPORTER_OTLP_ENDPOINT=state['otlp'], OTEL_EXPORTER_OTLP_PROTOCOL='http/protobuf')

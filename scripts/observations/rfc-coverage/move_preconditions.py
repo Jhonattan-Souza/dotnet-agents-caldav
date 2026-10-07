@@ -2,7 +2,7 @@
 """Observe the atomic MOVE preconditions a verified interoperability profile requires.
 
 Required cases are the atomic guarantees Move modules delegate to the server and
-the digest-pinned Radicale 3.7.8 reference satisfies: a byte-preserving MOVE
+the digest-pinned Radicale reference satisfies: a byte-preserving MOVE
 between Calendars, `Overwrite: F` rejection of an occupied destination, and
 same-kind and cross-kind UID rejection without a commit. Supplementary cases
 are recorded without deciding a profile: a stale `If-Match` (the reference does

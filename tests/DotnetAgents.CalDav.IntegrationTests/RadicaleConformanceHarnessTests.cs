@@ -36,8 +36,8 @@ public sealed partial class RadicaleConformanceHarnessTests(RadicaleConformanceF
             "aarch64" => RadicaleConformanceFixture.Arm64ManifestDigest,
             _ => throw new InvalidOperationException($"Unsupported architecture {fixture.Runtime.RuntimeArchitecture}")
         });
-        fixture.Runtime.RadicaleVersion.ShouldBe("3.7.8");
-        fixture.Runtime.PythonVersion.ShouldBe("3.14.7");
+        fixture.Runtime.RadicaleVersion.ShouldBe("3.8.2");
+        fixture.Runtime.PythonVersion.ShouldBe("3.14.8");
         fixture.Runtime.VobjectVersion.ShouldBe("0.9.9");
         fixture.Runtime.RuntimeTimeZone.ShouldBe(fixture.Variant.TimeZone);
         fixture.Runtime.StrictPreconditions.ShouldBe(fixture.Variant.StrictPreconditions);
@@ -1057,7 +1057,7 @@ public sealed partial class RadicaleConformanceHarnessTests(RadicaleConformanceF
         string calendarHref,
         ConcurrentQueue<string>? requestTrace = null,
         IHttpMessageHandlerBuilderFilter? mutationFilter = null,
-        string? interoperabilityProfile = CalDavInteroperabilityProfiles.Radicale_3_7_8)
+        string? interoperabilityProfile = CalDavInteroperabilityProfiles.Radicale_3_8_2)
     {
         var services = new ServiceCollection();
         services.AddLogging();

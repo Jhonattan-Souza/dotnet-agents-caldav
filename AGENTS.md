@@ -29,7 +29,7 @@ dotnet tool run slopwatch analyze --config .slopwatch/slopwatch.json --fail-on w
 
 - `run-test-suite.sh` creates a fresh temporary artifact directory, removes it after complete success, and prints and preserves it after failure. A caller-provided `--artifacts-dir` must be empty and remains caller-owned.
 - Coverage aggregation accepts exactly one current root-level Cobertura and OpenCover report for each test project; nested or historical reports are never merged.
-- Pull-request and release gates enforce warnings as errors, method complexity at most 10, 90% line coverage, 85% branch coverage, complete test results with no skipped/explicit/quarantined/flaky evidence, and baseline, strict-preconditions, and alternate-time-zone variants of one digest-pinned Radicale 3.7.8 profile.
+- Pull-request and release gates enforce warnings as errors, method complexity at most 10, 90% line coverage, 85% branch coverage, complete test results with no skipped/explicit/quarantined/flaky evidence, and baseline, strict-preconditions, and alternate-time-zone variants of one digest-pinned Radicale 3.8.2 profile.
 
 ## Invariants
 

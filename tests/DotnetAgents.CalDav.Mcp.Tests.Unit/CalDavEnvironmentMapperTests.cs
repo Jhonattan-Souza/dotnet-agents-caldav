@@ -83,7 +83,7 @@ public class CalDavEnvironmentMapperTests
             ["CALDAV_PASSWORD"] = "pass",
             ["CALDAV_DEFAULT_TODO_CALENDAR_NAME"] = "My To-dos",
             ["CALDAV_DEFAULT_EVENT_CALENDAR_NAME"] = "My Events",
-            ["CALDAV_INTEROPERABILITY_PROFILE"] = "radicale-3.7.8",
+            ["CALDAV_INTEROPERABILITY_PROFILE"] = "radicale-3.8.2",
         };
 
         var configure = CalDavEnvironmentMapper.MapFromEnvironment(key => envVars.GetValueOrDefault(key));
@@ -92,7 +92,7 @@ public class CalDavEnvironmentMapperTests
 
         options.DefaultTodoCalendarName.ShouldBe("My To-dos");
         options.DefaultEventCalendarName.ShouldBe("My Events");
-        options.InteroperabilityProfile.ShouldBe("radicale-3.7.8");
+        options.InteroperabilityProfile.ShouldBe("radicale-3.8.2");
     }
 
     [Fact]

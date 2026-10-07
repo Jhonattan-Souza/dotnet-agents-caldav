@@ -113,7 +113,7 @@ public sealed class ExactMoveMrtrWorkEvidenceTests(ITestOutputHelper output)
         Username = "user",
         Password = "secret",
         CalendarHrefs = $"{ObservationHandler.SourceCalendarHref},{ObservationHandler.DestinationCalendarHref}",
-        InteroperabilityProfile = "radicale-3.7.8"
+        InteroperabilityProfile = "radicale-3.8.2"
     };
 
     private static ICalendarService CreateEvidenceService(HttpClient httpClient, CalDavOptions options) =>

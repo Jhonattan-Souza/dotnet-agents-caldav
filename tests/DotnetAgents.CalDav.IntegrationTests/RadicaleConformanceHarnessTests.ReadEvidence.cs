@@ -13,7 +13,7 @@ public sealed partial class RadicaleConformanceHarnessTests
     private static readonly DateTimeOffset FreeBusyTo = new(2026, 10, 2, 0, 0, 0, TimeSpan.Zero);
 
     [Fact]
-    public async Task Pinned_profile_merges_native_free_busy_period_components_only_under_the_profile()
+    public async Task Pinned_runtime_returns_rfc_free_busy_periods_with_or_without_the_profile()
     {
         using var probe = CreateProbeClient();
         var calendar = new Uri(fixture.BaseUrl + "/conformance/evidence-free-busy/", UriKind.Absolute);
@@ -21,6 +21,7 @@ public sealed partial class RadicaleConformanceHarnessTests
         foreach (var (name, content) in FreeBusyCorpus())
             await PutResourceAsync(probe, new Uri(calendar, name + ".ics"), content);
 
+        IReadOnlyList<CalendarBusyPeriod> profiled;
         await using (var provider = CreateProvider(fixture.BaseUrl, calendar.AbsoluteUri))
         {
             var reports = provider.GetRequiredService<ICalendarReportModule>();
@@ -42,14 +43,14 @@ public sealed partial class RadicaleConformanceHarnessTests
             ]);
             empty.Complete.ShouldBeTrue();
             empty.Periods.ShouldBeEmpty();
+            profiled = busy.Periods;
         }
 
         await using (var unverified = CreateProvider(fixture.BaseUrl, calendar.AbsoluteUri, interoperabilityProfile: null))
         {
-            var error = await Should.ThrowAsync<CalendarProtocolException>(() => unverified
-                .GetRequiredService<ICalendarReportModule>()
-                .FreeBusyAsync(new(calendar.AbsoluteUri, FreeBusyFrom, FreeBusyTo), TestContext.Current.CancellationToken));
-            error.Code.ShouldBe("upstream_protocol_error");
+            var busy = await unverified.GetRequiredService<ICalendarReportModule>()
+                .FreeBusyAsync(new(calendar.AbsoluteUri, FreeBusyFrom, FreeBusyTo), TestContext.Current.CancellationToken);
+            busy.Periods.ShouldBe(profiled);
         }
     }
 
@@ -88,9 +89,9 @@ public sealed partial class RadicaleConformanceHarnessTests
         yield return ("transparent", Event("fb-transparent", "DTSTART:20261001T180000Z\r\nDTEND:20261001T190000Z\r\nTRANSP:TRANSPARENT\r\n"));
     }
 
-    // Radicale's vobject keeps one process-wide time zone definition per TZID and
-    // emits it with free/busy values. A TZID private to this test keeps other tests'
-    // America/New_York definitions out of this report and this definition out of theirs.
+    // Radicale's vobject keeps one process-wide time zone definition per TZID and reuses
+    // it for later resources. A TZID private to this test keeps this fixed offset out of
+    // other tests' America/New_York definitions.
     private static string ZonedEvent(string uid) =>
         "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Conformance//EN\r\n"
         + "BEGIN:VTIMEZONE\r\nTZID:X-Conformance/Free-Busy-Minus-Four\r\n"

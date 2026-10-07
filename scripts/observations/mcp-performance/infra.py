@@ -15,7 +15,7 @@ import urllib.request
 import urllib.parse
 import xml.etree.ElementTree as ET
 
-RADICALE = 'ghcr.io/kozea/radicale@sha256:3a0080ea51ac69dcd74e345b9587dc14a8c8af0652046069005749f9a75c5c80'
+RADICALE = 'ghcr.io/kozea/radicale@sha256:81e4ba1904211dff559e3e87a0030673a32a8b945dfc59a311d4d8dfe57238b5'
 DASHBOARD = 'mcr.microsoft.com/dotnet/aspire-dashboard:13.4.2@sha256:76d05882595dd43e708d6ef3e269d98ca763694c0c822bbe98edc99790eaad1b'
 
 
