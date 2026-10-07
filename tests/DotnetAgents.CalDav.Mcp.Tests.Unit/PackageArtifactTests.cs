@@ -59,8 +59,9 @@ public sealed class PackageArtifactTests
         var repositoryRoot = RepositoryRoot();
 
         AssertMcpAuthorityManifest(
-            File.ReadAllText(Path.Combine(repositoryRoot, "contracts", "0.2.0", "mcp-authority-manifest.json")),
-            File.ReadAllText(Path.Combine(repositoryRoot, "contracts", "0.2.0", "mcp-tool-catalog.json")),
+            File.ReadAllText(Path.Combine(repositoryRoot, "contracts", "mcp-authority-manifest.json")),
+            File.ReadAllText(Path.Combine(
+                repositoryRoot, "src", "DotnetAgents.CalDav.Mcp", "Contracts", "mcp-tool-catalog.json")),
             File.ReadAllText(Path.Combine(repositoryRoot, "Directory.Packages.props")));
     }
 

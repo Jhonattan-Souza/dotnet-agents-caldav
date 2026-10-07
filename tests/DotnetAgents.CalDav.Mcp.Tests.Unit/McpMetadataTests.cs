@@ -209,7 +209,7 @@ public class McpMetadataTests
         var projectDirectory = GetMcpProjectDir();
         var cancellationToken = TestContext.Current.CancellationToken;
         var metadata = await File.ReadAllTextAsync(Path.Combine(projectDirectory, ".mcp", "server.json"), cancellationToken);
-        var schemaPath = Path.GetFullPath(Path.Combine(projectDirectory, "..", "..", "contracts", "0.2.0", "mcp-server.schema.json"));
+        var schemaPath = Path.GetFullPath(Path.Combine(projectDirectory, "..", "..", "contracts", "mcp-server.schema.json"));
         var schema = McpRegistrySchema.Parse(await File.ReadAllTextAsync(schemaPath, cancellationToken));
         using var document = JsonDocument.Parse(metadata);
 

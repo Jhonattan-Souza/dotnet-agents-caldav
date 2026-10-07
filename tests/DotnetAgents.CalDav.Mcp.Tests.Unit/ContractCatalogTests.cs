@@ -904,7 +904,7 @@ public sealed class ContractCatalogTests
     }
 
     private static string ContractPath(string fileName) =>
-        Path.Combine(RepositoryRoot(), "contracts", "0.2.0", fileName);
+        Path.Combine(RepositoryRoot(), "contracts", fileName);
 
     private static string RepositoryRoot()
     {
