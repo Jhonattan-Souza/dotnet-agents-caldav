@@ -215,7 +215,7 @@ internal sealed class CalendarMoveAuthorization
             return CalendarResolution.Reject(Failure(
                 CalendarMoveAuthorizationFailureReason.EntityKindNotAdvertised,
                 [calendar]));
-        return CalDavInteroperabilityProfiles.IsVerified(_interoperabilityProfile)
+        return CalDavInteroperabilityProfiles.IsSupported(_interoperabilityProfile)
             ? new CalendarResolution.Resolved(calendar)
             : CalendarResolution.Reject(Failure(
                 CalendarMoveAuthorizationFailureReason.InteroperabilityProfileUnverified,

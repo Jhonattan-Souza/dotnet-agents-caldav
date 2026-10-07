@@ -1565,7 +1565,7 @@ public sealed class OpenTelemetryStdioIntegrationTests
             ["CALDAV_URL"] = baseUrl,
             ["CALDAV_USERNAME"] = "caldavtest",
             ["CALDAV_PASSWORD"] = "caldavtest123",
-            ["CALDAV_INTEROPERABILITY_PROFILE"] = "radicale-3.8.2",
+            ["CALDAV_INTEROPERABILITY_PROFILE"] = "radicale",
             ["CALDAV_CALENDAR_HREFS"] = calendarHrefs,
             ["CALDAV_DEFAULT_TODO_CALENDAR_NAME"] = defaultTodoCalendarName,
             ["CALDAV_EVALUATION_TIME_ZONE"] = evaluationTimeZone,
@@ -1789,7 +1789,7 @@ public sealed class OpenTelemetryStdioIntegrationTests
         environment["CALDAV_URL"] = baseUrl;
         environment["CALDAV_USERNAME"] = "caldavtest";
         environment["CALDAV_PASSWORD"] = "caldavtest123";
-        environment["CALDAV_INTEROPERABILITY_PROFILE"] = "radicale-3.8.2";
+        environment["CALDAV_INTEROPERABILITY_PROFILE"] = "radicale";
         environment["CALDAV_CALENDAR_HREFS"] = calendarHrefs;
         environment["CALDAV_EXPOSE_EXACT_TOOLS"] = exposeExact ? "true" : "false";
         environment["OTEL_EXPORTER_OTLP_ENDPOINT"] = endpoint.GetLeftPart(UriPartial.Authority);

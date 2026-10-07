@@ -1,5 +1,5 @@
 {
-  "profile": "nextcloud-34.0.3",
+  "profile": "nextcloud",
   "image": "docker.io/library/nextcloud@sha256:b97df9e0e1ee3c8c6cc009cb3f12ddce915d624d543b3bb93882025fe323a407",
   "ociIndexDigest": "sha256:b97df9e0e1ee3c8c6cc009cb3f12ddce915d624d543b3bb93882025fe323a407",
   "platformManifests": {

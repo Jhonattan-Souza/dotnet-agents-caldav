@@ -512,6 +512,26 @@ Radicale also reports CalendarServer `getctag`. `calendars.list` and
 It is omitted when absent and is never a revision or synchronization
 checkpoint.
 
+## Addendum, 2026-10-06: free/busy tolerance under the `radicale` profile
+
+This note supersedes the profile names in the 2026-09-24 addendum; that
+addendum's observations remain unchanged.
+[ADR 0014](adr/0014-family-interoperability-profiles.md) replaced the versioned
+values with the family profiles `radicale` and `nextcloud`. The family's
+current Verified Runtime, Radicale 3.8.2, returns RFC 4791 FREEBUSY periods,
+and conformance against it returns the same periods with or without the
+profile. The `radicale` profile still admits the Radicale 3.7.8 representation
+described above: one VFREEBUSY per period with a standalone `FBTYPE`, and an
+empty VCALENDAR without busy time. The tolerance is retained on the dated
+2026-09-24 observation plus regression tests over fixtures derived from the
+recorded responses. Those tests cover clipped, overlapping, tentative, zoned,
+cancelled, recurring, transparent, empty and rejection cases. Merging still
+only unions periods, so a `FREE` period never removes overlapping busy time.
+Without a profile, or under `nextcloud`, that shape fails with
+`upstream_protocol_error`. A stray, repeated or misplaced `FBTYPE`, malformed,
+floating or unresolvable values, recurrence properties and unknown components
+fail under every profile.
+
 ## Reproduce
 
 Use [the observation harness instructions](../scripts/observations/rfc-coverage/README.md)

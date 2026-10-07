@@ -146,8 +146,11 @@ public class McpMetadataTests
             .Single(item => item.GetProperty("name").GetString() == "CALDAV_INTEROPERABILITY_PROFILE")
             .GetProperty("description").GetString();
         profileDescription.ShouldNotBeNull();
-        foreach (var profile in CalDavInteroperabilityProfiles.Verified)
+        foreach (var profile in CalDavInteroperabilityProfiles.Supported)
             profileDescription.ShouldContain(profile);
+        profileDescription.ShouldContain("asserts that the deployment meets");
+        profileDescription.ShouldContain("#supported-servers");
+        Regex.IsMatch(profileDescription, @"\d+\.\d+").ShouldBeFalse();
         var description = root.GetProperty("description").GetString()!;
         description.ShouldContain("Calendars");
         description.ShouldContain("Events");

@@ -45,7 +45,7 @@ def up(root):
     run = 'caldav-rfc-' + secrets.token_hex(4)
     state = dict(run=run, username='rfctest', password=secrets.token_hex(16),
                  api_key=secrets.token_hex(24), containers=[],
-                 profile='radicale-3.8.2', home_path='/rfctest/')
+                 profile='radicale', home_path='/rfctest/')
     def save():
         path.write_text(json.dumps(state, indent=2))
         path.chmod(0o600)

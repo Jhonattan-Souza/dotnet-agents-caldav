@@ -95,7 +95,7 @@ public sealed class CalendarExactMoveServiceTests
         var service = CreateService(
             client,
             calendarHref,
-            interoperabilityProfile: CalDavInteroperabilityProfiles.Nextcloud_34_0_3);
+            interoperabilityProfile: CalDavInteroperabilityProfiles.Nextcloud);
 
         var review = await service.ReviewExactMoveResourceAsync(
             new CalendarExactMoveRequest(Revision(sourceHref), destinationHref),
@@ -1306,7 +1306,7 @@ public sealed class CalendarExactMoveServiceTests
         ICalendarClient client,
         string? calendarHref,
         TimeProvider? timeProvider = null,
-        string? interoperabilityProfile = CalDavInteroperabilityProfiles.Radicale_3_8_2) => new(
+        string? interoperabilityProfile = CalDavInteroperabilityProfiles.Radicale) => new(
         client,
         Options.Create(new CalDavOptions
         {

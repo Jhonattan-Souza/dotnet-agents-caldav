@@ -8,7 +8,7 @@ using Xunit;
 namespace DotnetAgents.CalDav.IntegrationTests.Fixtures;
 
 /// <summary>
-/// Starts the isolated Radicale interoperability profile used by the 0.2 contract.
+/// Starts the digest-pinned Radicale 3.8.2 Verified Runtime behind the radicale interoperability profile.
 /// It intentionally provisions no task-specific collections or resources.
 /// </summary>
 public sealed class RadicaleConformanceFixture : IAsyncLifetime

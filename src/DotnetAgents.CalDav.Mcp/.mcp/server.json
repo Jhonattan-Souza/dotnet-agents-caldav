@@ -79,7 +79,7 @@
         },
         {
           "name": "CALDAV_INTEROPERABILITY_PROFILE",
-          "description": "Verified server runtime profile; radicale-3.8.2 or nextcloud-34.0.3 enables server-authoritative MOVE (optional)",
+          "description": "Server family profile, radicale or nextcloud; setting it asserts that the deployment meets that profile's requirements, including atomic Overwrite: F and CALDAV:no-uid-conflict enforcement, and enables server-authoritative MOVE; requirements and tested runtimes: https://github.com/Jhonattan-Souza/dotnet-agents-caldav#supported-servers (optional)",
           "isRequired": false
         },
         {

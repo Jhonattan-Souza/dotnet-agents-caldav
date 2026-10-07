@@ -1662,7 +1662,7 @@ public sealed class CalendarExactResourceServiceTests
             Username = "user",
             Password = "secret",
             CalendarHrefs = calendarHref,
-            InteroperabilityProfile = CalDavInteroperabilityProfiles.Radicale_3_8_2,
+            InteroperabilityProfile = CalDavInteroperabilityProfiles.Radicale,
             RedirectHosts = redirectHosts
         }),
         Substitute.For<ILogger<CalendarService>>(),

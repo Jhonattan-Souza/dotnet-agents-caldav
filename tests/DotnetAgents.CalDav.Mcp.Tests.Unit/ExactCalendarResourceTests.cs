@@ -778,6 +778,7 @@ public sealed class ExactCalendarResourceTests
     [InlineData("endpoint")]
     [InlineData("scope")]
     [InlineData("profile")]
+    [InlineData("profile-family")]
     [InlineData("timeout")]
     public async Task ExactMoveRawAsync_ConfigurationBoundStateMismatchPerformsNoFreshReview(string changed)
     {
@@ -801,6 +802,7 @@ public sealed class ExactCalendarResourceTests
             case "endpoint": current.BaseUrl = "https://cal.example/other-caldav"; break;
             case "scope": current.CalendarHrefs = "https://cal.example/archive/"; break;
             case "profile": current.InteroperabilityProfile = null; break;
+            case "profile-family": current.InteroperabilityProfile = CalDavInteroperabilityProfiles.Nextcloud; break;
             default: current.RequestTimeout = TimeSpan.FromSeconds(20); break;
         }
         var secondTools = CreateWriteTools(service, time, key, current);
@@ -2529,7 +2531,7 @@ public sealed class ExactCalendarResourceTests
         Username = "user",
         Password = "secret",
         CalendarHrefs = "https://cal.example/events/",
-        InteroperabilityProfile = CalDavInteroperabilityProfiles.Radicale_3_8_2,
+        InteroperabilityProfile = CalDavInteroperabilityProfiles.Radicale,
         RequestTimeout = TimeSpan.FromSeconds(30)
     };
 
