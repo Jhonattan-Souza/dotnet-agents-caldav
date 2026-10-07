@@ -142,15 +142,17 @@ public class McpMetadataTests
             "bounded Calendar Entity Starts and every Occurrence or To-do Start");
         evaluationZoneDescription.ShouldNotContain("later", Case.Insensitive);
         evaluationZoneDescription.ShouldNotContain("cutover", Case.Insensitive);
-        var profileDescription = envVars.EnumerateArray()
-            .Single(item => item.GetProperty("name").GetString() == "CALDAV_INTEROPERABILITY_PROFILE")
-            .GetProperty("description").GetString();
+        var interoperabilityProfile = envVars.EnumerateArray()
+            .Single(item => item.GetProperty("name").GetString() == "CALDAV_INTEROPERABILITY_PROFILE");
+        interoperabilityProfile.GetProperty("choices").EnumerateArray().Select(item => item.GetString())
+            .ShouldBe(CalDavInteroperabilityProfiles.Supported);
+        var profileDescription = interoperabilityProfile.GetProperty("description").GetString();
         profileDescription.ShouldNotBeNull();
         foreach (var profile in CalDavInteroperabilityProfiles.Supported)
             profileDescription.ShouldContain(profile);
         profileDescription.ShouldContain("asserts that the deployment meets");
         profileDescription.ShouldContain("#supported-servers");
-        Regex.IsMatch(profileDescription, @"\d+\.\d+").ShouldBeFalse();
+        profileDescription.ShouldNotMatch(@"\d+\.\d+");
         var description = root.GetProperty("description").GetString()!;
         description.ShouldContain("Calendars");
         description.ShouldContain("Events");

@@ -147,8 +147,8 @@ python3 scripts/observations/rfc-coverage/infra.py down /tmp/caldav-rfc-nextclou
 python3 scripts/observations/rfc-coverage/infra.py down /tmp/caldav-rfc-run
 ```
 
-`move_preconditions.py` observes the raw `MOVE` guarantees a verified profile
-requires on any lane: a byte-preserving move between Calendars, `Overwrite: F`
+`move_preconditions.py` observes, on any lane, the raw `MOVE` guarantees a
+profile's Verified Runtime must pass: a byte-preserving move between Calendars, `Overwrite: F`
 rejection, and same-kind and cross-kind UID rejection without a commit. It
 also records a stale `If-Match`, a same-Calendar rename, and, with
 `--attendee-root` naming a Nextcloud fresh-user manifest, scheduling side

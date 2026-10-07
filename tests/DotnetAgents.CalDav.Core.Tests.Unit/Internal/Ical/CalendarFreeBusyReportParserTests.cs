@@ -319,14 +319,14 @@ public class CalendarFreeBusyReportParserTests
     }
 
     [Fact]
-    public void RadicaleProfileReproducesTheConformanceCorpusFromRecordedPeriodComponents()
+    public void RadicaleProfileReproducesTheConformanceCorpusFromPeriodComponents()
     {
         var from = new DateTimeOffset(2026, 10, 1, 8, 0, 0, TimeSpan.Zero);
         var to = new DateTimeOffset(2026, 10, 2, 0, 0, 0, TimeSpan.Zero);
 
         // Clipped, merged overlap, tentative, zoned, cancelled as FREE, and the in-window
         // recurrence; the transparent Event contributes nothing.
-        CalendarFreeBusyReportParser.Parse(Encoding.UTF8.GetBytes(RecordedRadicaleCorpusReport), from, to,
+        CalendarFreeBusyReportParser.Parse(Encoding.UTF8.GetBytes(RadicaleCorpusReport), from, to,
             CancellationToken.None, radicaleProfile: true).ShouldBe(
         [
             new CalendarBusyPeriod("2026-10-01T08:00:00Z", "2026-10-01T08:30:00Z", "BUSY"),
@@ -337,7 +337,7 @@ public class CalendarFreeBusyReportParserTests
             new CalendarBusyPeriod("2026-10-01T16:00:00Z", "2026-10-01T17:00:00Z", "BUSY")
         ]);
         Should.Throw<CalendarProtocolException>(() => CalendarFreeBusyReportParser.Parse(
-                Encoding.UTF8.GetBytes(RecordedRadicaleCorpusReport), from, to, CancellationToken.None))
+                Encoding.UTF8.GetBytes(RadicaleCorpusReport), from, to, CancellationToken.None))
             .Code.ShouldBe("upstream_protocol_error");
     }
 
@@ -391,6 +391,18 @@ public class CalendarFreeBusyReportParserTests
     public void RadicaleProfileStillRejectsStrayOrMalformedPeriodComponents(string start, string end, string busyType)
     {
         var body = RadicaleComponent(start, end, busyType);
+
+        Should.Throw<CalendarProtocolException>(() => ParseRadicale(body)).Code.ShouldBe("upstream_protocol_error");
+    }
+
+    [Theory]
+    [InlineData("RRULE:FREQ=DAILY;COUNT=2")]
+    [InlineData("RDATE:20260905T030000Z")]
+    [InlineData("EXDATE:20260905T010000Z")]
+    public void RadicaleProfileRejectsRecurrenceInPeriodComponents(string recurrence)
+    {
+        var body = RadicaleComponent("DTSTART:20260905T010000Z", "DTEND:20260905T020000Z", "BUSY")
+            .Replace("FBTYPE:BUSY", "FBTYPE:BUSY\n" + recurrence, StringComparison.Ordinal);
 
         Should.Throw<CalendarProtocolException>(() => ParseRadicale(body)).Code.ShouldBe("upstream_protocol_error");
     }
@@ -599,10 +611,12 @@ public class CalendarFreeBusyReportParserTests
 
         """;
 
-    // The conformance free/busy corpus as Radicale 3.7.8 returned it for 2026-10-01T08:00Z to
-    // 2026-10-02T00:00Z: the clipped Event keeps its full period, the zoned Event keeps its TZID
-    // beside the registry definition, the cancelled Event is FREE, and the transparent Event is omitted.
-    private const string RecordedRadicaleCorpusReport = """
+    // Derived from the recorded Radicale 3.7.8 responses: the conformance free/busy corpus for
+    // 2026-10-01T08:00Z to 2026-10-02T00:00Z in the 2026-09-24 characterized shape, whose merged
+    // periods the 3.7.8 conformance run asserted. The clipped Event keeps its full period, the zoned
+    // Event keeps its TZID beside the registry definition, the cancelled Event is FREE, and the
+    // transparent Event is omitted.
+    private const string RadicaleCorpusReport = """
         BEGIN:VCALENDAR
         VERSION:2.0
         PRODID:-//PYVOBJECT//NONSGML Version 0.9.9//EN
