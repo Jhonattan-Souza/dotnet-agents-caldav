@@ -91,7 +91,10 @@ checked:
   attendee resource and made no iMIP attempt.
 
 Each newly verified profile that advertises automatic scheduling needs the
-same evidence before promotion, as listed in the roadmap.
+same evidence before promotion, as listed in the roadmap. Addendum
+(2026-10-06): [ADR 0014](0014-family-interoperability-profiles.md) replaces
+the versioned values with the family profiles `radicale` and `nextcloud`; the
+`nextcloud` profile rests on the Nextcloud 34.0.3 evidence above.
 
 ### What remains blocked or absent
 
