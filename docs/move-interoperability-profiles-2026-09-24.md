@@ -128,7 +128,7 @@ profiles. The Radicale profile itself is unchanged by this record.
   Changing a pinned digest requires rerunning this harness and a new dated
   record.
 - The profile contract lives at
-  [`contracts/0.3.0/nextcloud-34.0.3-profile.json`](../contracts/0.3.0/nextcloud-34.0.3-profile.json).
+  [`contracts/nextcloud-34.0.3-profile.json`](../contracts/nextcloud-34.0.3-profile.json).
   Historical contract directories remain immutable.
 
 ## Reproduction

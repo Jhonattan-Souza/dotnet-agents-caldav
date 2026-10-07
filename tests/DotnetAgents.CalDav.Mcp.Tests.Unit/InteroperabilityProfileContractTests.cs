@@ -44,10 +44,7 @@ public sealed class InteroperabilityProfileContractTests
 
     private static JsonObject ReadProfile(string profile)
     {
-        var path = Directory.EnumerateFiles(Path.Combine(RepositoryRoot(), "contracts"), profile + "-profile.json",
-                SearchOption.AllDirectories)
-            .OrderBy(candidate => Version.Parse(Path.GetFileName(Path.GetDirectoryName(candidate)!)))
-            .Last();
+        var path = Path.Combine(RepositoryRoot(), "contracts", profile + "-profile.json");
         return JsonNode.Parse(File.ReadAllText(path))!.AsObject();
     }
 
