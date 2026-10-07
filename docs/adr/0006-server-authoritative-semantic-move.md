@@ -94,7 +94,9 @@ runtime evidence, and `nextcloud-34.0.3`, added from the
 Omission or any other value leaves both Move modes disabled; generic DAV
 discovery is not treated as proof of atomic UID enforcement. A profile whose
 runtime rejects a rename within one Calendar also rejects that Exact Move
-before dispatch.
+before dispatch. Addendum (2026-10-06): `radicale-3.8.2` replaces
+`radicale-3.7.8`; Radicale 3.8.2 still commits a same-Calendar rename MOVE with
+201.
 
 Exact Move MRTR returns only a protected `CalendarExactMoveReviewBinding` from
 the initial call. A confirmed call performs fresh authorization, discovery,
