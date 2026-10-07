@@ -125,7 +125,6 @@ public enum QueryFailureCode
     UpstreamProtocolError,
     UnsupportedCapability,
     ConcurrencyUnavailable,
-    TemporalUnresolved,
     RecurrenceUnevaluable,
     UpstreamUnavailable,
     UpstreamUnauthorized,

@@ -81,12 +81,11 @@ public sealed class CalendarQueryFailureTests
             CalendarQueryFailures.Protocol(),
             CalendarQueryFailures.UnsupportedCapability(),
             CalendarQueryFailures.ConcurrencyUnavailable(),
-            CalendarQueryFailures.TemporalUnresolved(),
             CalendarQueryFailures.RecurrenceUnevaluable(),
             CalendarQueryFailures.UpstreamUnavailable()
         };
 
-        failures.Length.ShouldBe(14);
+        failures.Length.ShouldBe(13);
         failures.ShouldAllBe(failure => Enum.IsDefined(failure.Category) && Enum.IsDefined(failure.Phase));
         failures.Single(failure => failure.Code == QueryFailureCode.Busy).RetryAfterMs.ShouldBe(10);
         failures.Count(failure => failure.Code == QueryFailureCode.PayloadTooLarge).ShouldBe(2);

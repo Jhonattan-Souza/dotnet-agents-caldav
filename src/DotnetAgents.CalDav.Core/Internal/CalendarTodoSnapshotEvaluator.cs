@@ -57,26 +57,27 @@ internal static class CalendarTodoSnapshotEvaluator
                     new QueryExecutionLimits(OccurrenceCount: observedOccurrences)));
             }
             if (evaluated.IsTemporallyUnresolved)
-                excludedIndeterminate += ExcludeUnresolved(resource, query, unresolved);
+                ExcludeUnresolved(resource, query, unresolved, ref excludedIndeterminate);
             rows.AddRange(evaluated.Rows);
         }
 
-        var result = FilterOrderAndProject(rows, query, projection, cancellationToken);
-        return result.Error is not null
-            ? result
-            : result with
-            {
-                ExcludedIndeterminateCount = result.ExcludedIndeterminateCount + excludedIndeterminate,
-                TemporallyUnresolvedUtf8 = unresolved.Encode()
-            };
+        return FilterOrderAndProject(
+            rows,
+            query,
+            projection,
+            excludedIndeterminate,
+            unresolved.Encode(),
+            cancellationToken);
     }
 
     // A non-recurring To-do's completion state needs no instants, so a To-do the completion filter excludes is
-    // never disclosed as temporally unresolved. Returns 1 when it is excluded as indeterminate.
-    private static int ExcludeUnresolved(
+    // never disclosed as temporally unresolved. Without a window it would have been a row, so an indeterminate one
+    // still counts as excluded indeterminate; inside a window its membership is unknown, so it does not.
+    private static void ExcludeUnresolved(
         AcquiredCalendarResource resource,
         CalendarTodoQuery query,
-        CalendarTemporallyUnresolvedResources unresolved)
+        CalendarTemporallyUnresolvedResources unresolved,
+        ref int excludedIndeterminate)
     {
         var document = resource.Document!;
         if (!IsRecurring(document))
@@ -85,10 +86,13 @@ internal static class CalendarTodoSnapshotEvaluator
                 document,
                 document.GetMasterComponent(CalendarEntityKind.Todo).Path).State;
             if (!(query.CompletionStates ?? DefaultStates).Contains(state))
-                return state == CalendarTodoCompletionState.Indeterminate ? 1 : 0;
+            {
+                if (state == CalendarTodoCompletionState.Indeterminate && query.From is null)
+                    excludedIndeterminate++;
+                return;
+            }
         }
         unresolved.Add(resource.Snapshot.ResourceHref);
-        return 0;
     }
 
     // Text-mismatched resources leave before temporal evaluation, so a server pre-filter cannot change failures.
@@ -134,7 +138,7 @@ internal static class CalendarTodoSnapshotEvaluator
         }
         catch (CalendarTodoTemporalUnresolvedException)
         {
-            return CalendarTodoResourceEvaluation.TemporallyUnresolved();
+            return CalendarTodoResourceEvaluation.TemporallyUnresolved(0);
         }
         catch (Exception exception) when (exception is FormatException or ArgumentException or InvalidOperationException)
         {
@@ -189,7 +193,7 @@ internal static class CalendarTodoSnapshotEvaluator
             resource.TypedCalendar,
             cancellationToken);
         if (evaluated.Code == CalendarOccurrenceEvaluationCode.TemporalUnresolved)
-            return CalendarTodoResourceEvaluation.TemporallyUnresolved();
+            return CalendarTodoResourceEvaluation.TemporallyUnresolved(evaluated.ObservedOccurrenceCount);
         if (evaluated.Code != CalendarOccurrenceEvaluationCode.Success)
             return CalendarTodoResourceEvaluation.Failure(EvaluationFailure(evaluated));
         var rows = evaluated.Items
@@ -296,9 +300,10 @@ internal static class CalendarTodoSnapshotEvaluator
         IReadOnlyList<CalendarTodoEvaluatedRow> rows,
         CalendarTodoQuery query,
         IReadOnlyList<CalendarTodoProjectionField> projection,
+        int excludedIndeterminate,
+        ReadOnlyMemory<byte> temporallyUnresolvedUtf8,
         CancellationToken cancellationToken)
     {
-        var excludedIndeterminate = 0;
         var states = query.CompletionStates ?? DefaultStates;
         var filtered = new List<CalendarTodoEvaluatedRow>(rows.Count);
         foreach (var row in rows)
@@ -334,7 +339,7 @@ internal static class CalendarTodoSnapshotEvaluator
             projected.MoveToImmutable(),
             projectedBytes,
             excludedIndeterminate,
-            default);
+            temporallyUnresolvedUtf8);
     }
 
     private static StoredCalendarEntityQueryItem Project(
@@ -475,7 +480,8 @@ internal static class CalendarTodoSnapshotEvaluator
 
         internal static CalendarTodoResourceEvaluation Failure(QueryFailure error) => new([], 0, error);
 
-        internal static CalendarTodoResourceEvaluation TemporallyUnresolved() => new([], 0, null, true);
+        internal static CalendarTodoResourceEvaluation TemporallyUnresolved(int observedOccurrences) =>
+            new([], observedOccurrences, null, true);
     }
 
     private sealed record TodoTiming(

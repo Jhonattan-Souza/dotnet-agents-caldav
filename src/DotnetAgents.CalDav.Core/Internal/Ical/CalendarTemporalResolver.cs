@@ -350,7 +350,7 @@ internal sealed class CalendarTemporalResolver
     /// Whether every onset starts from the offset the previous one ended at. A definition that breaks this chain
     /// omits observances: DAVx5 keeps only America/Sao_Paulo's last STANDARD rule, and Radicale has emitted a
     /// yearly DAYLIGHT rule without its return to standard time. Its answer is used only where the IANA zone of the
-    /// same TZID confirms it, so an incomplete definition never yields a wrong instant.
+    /// same TZID confirms it.
     /// </summary>
     private static bool IsChained(ZoneTransition[] transitions) => transitions
         .Zip(transitions.Skip(1))
@@ -362,10 +362,12 @@ internal sealed class CalendarTemporalResolver
         CancellationToken cancellationToken)
     {
         var count = 0;
-        var end = local.AddYears(1);
-        var options = new EvaluationOptions { MaxUnmatchedIncrementsLimit = MaximumZoneTransitions };
         if (zone.TimeZoneInfos.Count == 0)
             throw new InvalidOperationException("The VTIMEZONE has no observances.");
+        // A value before the first onset still sees a year of onsets, so an incomplete definition shows its break.
+        var firstOnset = zone.TimeZoneInfos.Min(observance => observance.DtStart?.Value ?? DateTime.MaxValue);
+        var end = (local >= firstOnset ? local : firstOnset).AddYears(1);
+        var options = new EvaluationOptions { MaxUnmatchedIncrementsLimit = MaximumZoneTransitions };
         foreach (var observance in zone.TimeZoneInfos)
         {
             cancellationToken.ThrowIfCancellationRequested();
