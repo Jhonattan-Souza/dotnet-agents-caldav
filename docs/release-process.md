@@ -51,6 +51,7 @@ The NuGet package contains only files with a package-consumer purpose:
 - `skills/caldav-calendars/SKILL.md` for harness-neutral Agent Skills discovery or installation;
 - PDBs and the symbol package for SourceLink and debugging.
 
-Versioned contracts, schemas, interoperability profiles, compatibility
-matrices, and ADRs remain in the repository. Published release
-history is maintained through GitHub Releases.
+The live contract inputs under `contracts/` (the MCP registry schema, the
+authority manifest, and the interoperability profiles) and the ADRs remain in
+the repository. Published release history is maintained through GitHub
+Releases.
