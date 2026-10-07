@@ -154,7 +154,7 @@ public sealed class CalendarQueryTextSearchTests
     }
 
     [Fact]
-    public async Task TextMismatchedResourceIsDroppedBeforeTemporalEvaluationCanFail()
+    public async Task TextMismatchedResourceIsDroppedBeforeTemporalEvaluationCanExcludeIt()
     {
         var resources = new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -174,9 +174,12 @@ public sealed class CalendarQueryTextSearchTests
             CancellationToken.None);
         var entities = await StartEntitiesAsync(provider, new CalendarTextFilter("dentist"), windowed: true);
 
-        filtered.ShouldBeOfType<QueryReply<CalendarOccurrenceQueryItem>.Page>().Value.Items.Count.ShouldBe(1);
-        unfiltered.ShouldBeOfType<QueryReply<CalendarOccurrenceQueryItem>.Failure>().Error.Code
-            .ShouldBe(QueryFailureCode.TemporalUnresolved);
+        var filteredPage = filtered.ShouldBeOfType<QueryReply<CalendarOccurrenceQueryItem>.Page>().Value;
+        filteredPage.Items.Count.ShouldBe(1);
+        filteredPage.StructuredContent.TryGetProperty("temporallyUnresolved", out _).ShouldBeFalse();
+        unfiltered.ShouldBeOfType<QueryReply<CalendarOccurrenceQueryItem>.Page>().Value.StructuredContent
+            .GetProperty("temporallyUnresolved").GetProperty("hrefs").EnumerateArray()
+            .Select(href => href.GetString()).ShouldBe([Href("unresolved")]);
         EntityUids(entities).ShouldBe(["dentist"]);
     }
 

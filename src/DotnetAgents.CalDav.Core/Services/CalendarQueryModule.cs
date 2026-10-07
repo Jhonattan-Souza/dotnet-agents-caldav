@@ -153,6 +153,7 @@ internal sealed class CalendarEntityQueryStartExecutor
                 acquired.Diagnostics,
                 temporalContext,
                 criteria,
+                filtered.Unresolved,
                 execution.Token);
     }
 
@@ -161,6 +162,7 @@ internal sealed class CalendarEntityQueryStartExecutor
         IReadOnlyList<QueryDiagnostic> diagnostics,
         TemporalEvaluationContext? temporalContext,
         CalendarTextCriteria? criteria,
+        CalendarTemporallyUnresolvedResources unresolved,
         CancellationToken cancellationToken)
     {
         var countFailure = CalendarQuerySnapshotPolicy.Validate(snapshots.Count, 0);
@@ -182,7 +184,9 @@ internal sealed class CalendarEntityQueryStartExecutor
         var diagnosticsUtf8 = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(diagnostics);
         var temporalContextUtf8 = CalendarTemporalEvaluationContextCodec.Encode(temporalContext);
         var textFilterUtf8 = criteria?.EncodeBinding() ?? [];
-        var retainedBytes = itemBytes + diagnosticsUtf8.Length + temporalContextUtf8.Length + textFilterUtf8.Length;
+        var unresolvedUtf8 = unresolved.Encode();
+        var retainedBytes = itemBytes + diagnosticsUtf8.Length + temporalContextUtf8.Length + textFilterUtf8.Length
+            + unresolvedUtf8.Length;
         var retainedFailure = CalendarQuerySnapshotPolicy.Validate(projected.Count, retainedBytes);
         if (retainedFailure is not null)
             return CompletedCalendarEntityQuery.Failure(retainedFailure);
@@ -191,7 +195,8 @@ internal sealed class CalendarEntityQueryStartExecutor
             diagnosticsUtf8,
             retainedBytes,
             temporalContextUtf8,
-            textFilterUtf8);
+            textFilterUtf8,
+            unresolvedUtf8);
     }
 
     private static FilterResult Filter(
@@ -202,6 +207,7 @@ internal sealed class CalendarEntityQueryStartExecutor
         CancellationToken cancellationToken)
     {
         var filtered = new List<AcquiredCalendarResource>();
+        var unresolved = new CalendarTemporallyUnresolvedResources();
         var occurrenceCount = 0;
         foreach (var resource in resources.Where(resource => MatchesKind(resource.Snapshot, query.EntityKinds)
                      && MatchesText(resource, criteria)))
@@ -226,13 +232,17 @@ internal sealed class CalendarEntityQueryStartExecutor
             var failure = TemporalFailure(temporal.Match, occurrenceCount);
             if (failure is not null)
                 return FilterResult.Failure(failure);
-            if (temporal.Match != CalendarEntityTemporalMatch.NoMatch)
+            if (temporal.Match == CalendarEntityTemporalMatch.Unresolved)
+                unresolved.Add(snapshot.ResourceHref);
+            else if (temporal.Match != CalendarEntityTemporalMatch.NoMatch)
                 filtered.Add(resource);
         }
-        return FilterResult.Success(filtered
-            .OrderBy(resource => resource.Snapshot.CalendarHref, StringComparer.Ordinal)
-            .ThenBy(resource => resource.Snapshot.ResourceHref, StringComparer.Ordinal)
-            .ToArray());
+        return FilterResult.Success(
+            filtered
+                .OrderBy(resource => resource.Snapshot.CalendarHref, StringComparer.Ordinal)
+                .ThenBy(resource => resource.Snapshot.ResourceHref, StringComparer.Ordinal)
+                .ToArray(),
+            unresolved);
     }
 
     private static QueryFailure? TemporalFailure(CalendarEntityTemporalMatch match, int occurrenceCount) => match switch
@@ -243,7 +253,6 @@ internal sealed class CalendarEntityQueryStartExecutor
         _ when occurrenceCount > CalendarQueryPolicy.MaximumOccurrences => CalendarQueryFailures.Limit(
             "The Calendar Entity query exhausted its occurrence budget.",
             new QueryExecutionLimits(OccurrenceCount: occurrenceCount)),
-        CalendarEntityTemporalMatch.Unresolved => CalendarQueryFailures.TemporalUnresolved(),
         CalendarEntityTemporalMatch.Unevaluable => CalendarQueryFailures.RecurrenceUnevaluable(),
         _ => null
     };
@@ -270,11 +279,16 @@ internal sealed class CalendarEntityQueryStartExecutor
 
     private static QueryReply<CalendarEntityQueryItem>.Failure Failure(QueryFailure failure) => new(failure);
 
-    private sealed record FilterResult(IReadOnlyList<AcquiredCalendarResource> Resources, QueryFailure? Error)
+    private sealed record FilterResult(
+        IReadOnlyList<AcquiredCalendarResource> Resources,
+        CalendarTemporallyUnresolvedResources Unresolved,
+        QueryFailure? Error)
     {
-        internal static FilterResult Success(IReadOnlyList<AcquiredCalendarResource> resources) => new(resources, null);
+        internal static FilterResult Success(
+            IReadOnlyList<AcquiredCalendarResource> resources,
+            CalendarTemporallyUnresolvedResources unresolved) => new(resources, unresolved, null);
 
-        internal static FilterResult Failure(QueryFailure error) => new([], error);
+        internal static FilterResult Failure(QueryFailure error) => new([], new(), error);
     }
 
 }
@@ -299,6 +313,7 @@ internal sealed record CompletedCalendarEntityQuery(
     long RetainedBytes,
     ReadOnlyMemory<byte> TemporalEvaluationContextUtf8,
     ReadOnlyMemory<byte> TextFilterUtf8,
+    ReadOnlyMemory<byte> TemporallyUnresolvedUtf8,
     QueryFailure? Error)
 {
     internal static CompletedCalendarEntityQuery Success(
@@ -306,18 +321,26 @@ internal sealed record CompletedCalendarEntityQuery(
         ReadOnlyMemory<byte> diagnosticsUtf8,
         long retainedBytes,
         ReadOnlyMemory<byte> temporalEvaluationContextUtf8,
-        ReadOnlyMemory<byte> textFilterUtf8) =>
-        new(items, diagnosticsUtf8, retainedBytes, temporalEvaluationContextUtf8, textFilterUtf8, null);
+        ReadOnlyMemory<byte> textFilterUtf8,
+        ReadOnlyMemory<byte> temporallyUnresolvedUtf8) => new(
+        items,
+        diagnosticsUtf8,
+        retainedBytes,
+        temporalEvaluationContextUtf8,
+        textFilterUtf8,
+        temporallyUnresolvedUtf8,
+        null);
 
     internal static CompletedCalendarEntityQuery Failure(QueryFailure error) =>
-        new([], ReadOnlyMemory<byte>.Empty, 0, ReadOnlyMemory<byte>.Empty, ReadOnlyMemory<byte>.Empty, error);
+        new([], default, 0, default, default, default, error);
 
     internal CalendarQuerySnapshotDraft ToSnapshotDraft() => new(
         Items,
         DiagnosticsUtf8,
         RetainedBytes,
         TemporalEvaluationContextUtf8,
-        TextFilterUtf8: TextFilterUtf8);
+        TextFilterUtf8: TextFilterUtf8,
+        TemporallyUnresolvedUtf8: TemporallyUnresolvedUtf8);
 }
 
 internal static class CalendarQueryFailures

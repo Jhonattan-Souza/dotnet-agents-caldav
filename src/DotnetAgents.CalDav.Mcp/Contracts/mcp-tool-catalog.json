@@ -4906,6 +4906,30 @@
         }
       ]
     },
+    "temporallyUnresolvedResources": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Temporally Unresolved Resources this query needed instants for but could not place, excluded from items instead of guessed into or out of the result. count is complete; hrefs is the first 25 resource hrefs in ordinal order. Absent when nothing was excluded.",
+      "required": [
+        "count",
+        "hrefs"
+      ],
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "hrefs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 25,
+          "items": {
+            "type": "string",
+            "format": "uri"
+          }
+        }
+      }
+    },
     "todoQuerySuccess": {
       "type": "object",
       "additionalProperties": false,
@@ -4957,6 +4981,9 @@
               ]
             }
           }
+        },
+        "temporallyUnresolved": {
+          "$ref": "#/$defs/temporallyUnresolvedResources"
         },
         "pagination": {
           "$ref": "#/$defs/entityQueryPagination"
@@ -5826,6 +5853,9 @@
             }
           }
         },
+        "temporallyUnresolved": {
+          "$ref": "#/$defs/temporallyUnresolvedResources"
+        },
         "pagination": {
           "$ref": "#/$defs/entityQueryPagination"
         }
@@ -5960,6 +5990,9 @@
               ]
             }
           }
+        },
+        "temporallyUnresolved": {
+          "$ref": "#/$defs/temporallyUnresolvedResources"
         },
         "pagination": {
           "$ref": "#/$defs/entityQueryPagination"

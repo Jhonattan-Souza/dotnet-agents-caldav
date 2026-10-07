@@ -14,14 +14,17 @@ internal sealed record CalendarTodoEvaluationResult(
     ImmutableArray<StoredCalendarEntityQueryItem> Items,
     long ProjectedBytes,
     int ExcludedIndeterminateCount,
+    ReadOnlyMemory<byte> TemporallyUnresolvedUtf8,
     QueryFailure? Error)
 {
     internal static CalendarTodoEvaluationResult Success(
         ImmutableArray<StoredCalendarEntityQueryItem> items,
         long projectedBytes,
-        int excludedIndeterminateCount) => new(items, projectedBytes, excludedIndeterminateCount, null);
+        int excludedIndeterminateCount,
+        ReadOnlyMemory<byte> temporallyUnresolvedUtf8) =>
+        new(items, projectedBytes, excludedIndeterminateCount, temporallyUnresolvedUtf8, null);
 
-    internal static CalendarTodoEvaluationResult Failure(QueryFailure error) => new([], 0, 0, error);
+    internal static CalendarTodoEvaluationResult Failure(QueryFailure error) => new([], 0, 0, default, error);
 }
 
 internal static class CalendarTodoSnapshotEvaluator
@@ -36,6 +39,8 @@ internal static class CalendarTodoSnapshotEvaluator
         CancellationToken cancellationToken)
     {
         var rows = new List<CalendarTodoEvaluatedRow>();
+        var unresolved = new CalendarTemporallyUnresolvedResources();
+        var excludedIndeterminate = 0;
         var observedOccurrences = 0;
         foreach (var resource in resources.Where(resource => MayMatchText(resource, criteria)))
         {
@@ -51,10 +56,39 @@ internal static class CalendarTodoSnapshotEvaluator
                     "The To-do query exhausted its occurrence budget.",
                     new QueryExecutionLimits(OccurrenceCount: observedOccurrences)));
             }
+            if (evaluated.IsTemporallyUnresolved)
+                excludedIndeterminate += ExcludeUnresolved(resource, query, unresolved);
             rows.AddRange(evaluated.Rows);
         }
 
-        return FilterOrderAndProject(rows, query, projection, cancellationToken);
+        var result = FilterOrderAndProject(rows, query, projection, cancellationToken);
+        return result.Error is not null
+            ? result
+            : result with
+            {
+                ExcludedIndeterminateCount = result.ExcludedIndeterminateCount + excludedIndeterminate,
+                TemporallyUnresolvedUtf8 = unresolved.Encode()
+            };
+    }
+
+    // A non-recurring To-do's completion state needs no instants, so a To-do the completion filter excludes is
+    // never disclosed as temporally unresolved. Returns 1 when it is excluded as indeterminate.
+    private static int ExcludeUnresolved(
+        AcquiredCalendarResource resource,
+        CalendarTodoQuery query,
+        CalendarTemporallyUnresolvedResources unresolved)
+    {
+        var document = resource.Document!;
+        if (!IsRecurring(document))
+        {
+            var state = CalendarTodoCompletionClassifier.Classify(
+                document,
+                document.GetMasterComponent(CalendarEntityKind.Todo).Path).State;
+            if (!(query.CompletionStates ?? DefaultStates).Contains(state))
+                return state == CalendarTodoCompletionState.Indeterminate ? 1 : 0;
+        }
+        unresolved.Add(resource.Snapshot.ResourceHref);
+        return 0;
     }
 
     // Text-mismatched resources leave before temporal evaluation, so a server pre-filter cannot change failures.
@@ -100,7 +134,7 @@ internal static class CalendarTodoSnapshotEvaluator
         }
         catch (CalendarTodoTemporalUnresolvedException)
         {
-            return CalendarTodoResourceEvaluation.Failure(CalendarQueryFailures.TemporalUnresolved());
+            return CalendarTodoResourceEvaluation.TemporallyUnresolved();
         }
         catch (Exception exception) when (exception is FormatException or ArgumentException or InvalidOperationException)
         {
@@ -154,6 +188,8 @@ internal static class CalendarTodoSnapshotEvaluator
             document,
             resource.TypedCalendar,
             cancellationToken);
+        if (evaluated.Code == CalendarOccurrenceEvaluationCode.TemporalUnresolved)
+            return CalendarTodoResourceEvaluation.TemporallyUnresolved();
         if (evaluated.Code != CalendarOccurrenceEvaluationCode.Success)
             return CalendarTodoResourceEvaluation.Failure(EvaluationFailure(evaluated));
         var rows = evaluated.Items
@@ -297,7 +333,8 @@ internal static class CalendarTodoSnapshotEvaluator
         return CalendarTodoEvaluationResult.Success(
             projected.MoveToImmutable(),
             projectedBytes,
-            excludedIndeterminate);
+            excludedIndeterminate,
+            default);
     }
 
     private static StoredCalendarEntityQueryItem Project(
@@ -420,7 +457,6 @@ internal static class CalendarTodoSnapshotEvaluator
 
     private static QueryFailure EvaluationFailure(CalendarOccurrenceEvaluation evaluation) => evaluation.Code switch
     {
-        CalendarOccurrenceEvaluationCode.TemporalUnresolved => CalendarQueryFailures.TemporalUnresolved(),
         CalendarOccurrenceEvaluationCode.LimitExhausted => CalendarQueryFailures.Limit(
             "The To-do query exhausted its occurrence budget.",
             new QueryExecutionLimits(OccurrenceCount: evaluation.ObservedOccurrenceCount)),
@@ -430,13 +466,16 @@ internal static class CalendarTodoSnapshotEvaluator
     private sealed record CalendarTodoResourceEvaluation(
         IReadOnlyList<CalendarTodoEvaluatedRow> Rows,
         int ObservedOccurrences,
-        QueryFailure? Error)
+        QueryFailure? Error,
+        bool IsTemporallyUnresolved = false)
     {
         internal static CalendarTodoResourceEvaluation Success(
             IReadOnlyList<CalendarTodoEvaluatedRow> rows,
             int observedOccurrences) => new(rows, observedOccurrences, null);
 
         internal static CalendarTodoResourceEvaluation Failure(QueryFailure error) => new([], 0, error);
+
+        internal static CalendarTodoResourceEvaluation TemporallyUnresolved() => new([], 0, null, true);
     }
 
     private sealed record TodoTiming(

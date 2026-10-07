@@ -211,6 +211,10 @@ _Avoid_: Default time zone, host time zone, missing time zone
 A resource-local VTIMEZONE whose observances do not chain because its author omitted some. It places a Temporal Value only where the IANA zone of the same TZID gives the same instant, and otherwise leaves that value unresolved.
 _Avoid_: Invalid time zone, tzdb fallback, truncated zone repair
 
+**Temporally Unresolved Resource**:
+A Calendar Object Resource whose Temporal Values an operation needs but cannot place as instants. It is neither opaque nor indeterminate in To-do Completion State, and its authoritative content is never rewritten to repair it.
+_Avoid_: Indeterminate resource, invalid time zone, broken entity
+
 **Temporal Evaluation Context**:
 The explicit IANA time zone used to compare or expand floating and date-only Temporal Values without changing their preserved temporal kind. A caller context is distinct from a validated deployment configuration context; neither permits inference from Calendar, server, operating-system, process, host, locale, or location state.
 _Avoid_: Default time zone, host time zone

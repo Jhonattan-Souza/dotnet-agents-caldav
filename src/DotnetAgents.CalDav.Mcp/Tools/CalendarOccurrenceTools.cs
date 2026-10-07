@@ -281,6 +281,7 @@ public sealed record CalendarOccurrenceQuerySuccessResult(
     [property: JsonPropertyName("items")] IReadOnlyList<CalendarOccurrenceSnapshotResult> Items,
     [property: JsonPropertyName("diagnostics")] IReadOnlyList<CalendarDiagnosticResult> Diagnostics,
     [property: JsonPropertyName("temporalEvaluationContext"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CalendarTemporalEvaluationContextResult? TemporalEvaluationContext,
+    [property: JsonPropertyName("temporallyUnresolved"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CalendarTemporallyUnresolvedResult? TemporallyUnresolved,
     [property: JsonPropertyName("pagination")] CalendarPagination Pagination);
 
 public sealed record CalendarOccurrenceQueryErrorResult(

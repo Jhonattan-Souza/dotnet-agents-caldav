@@ -474,64 +474,84 @@ public sealed class CalendarQueryModuleTests
         }
     }
 
-    [Fact]
-    public async Task UnknownResourceLocalZoneFailsAtomicallyWithoutRetainingASnapshot()
+    [Theory]
+    [InlineData("unknown")]
+    [InlineData("conflicting")]
+    [InlineData("period")]
+    public async Task TemporallyUnresolvedResourceIsExcludedAndDisclosedBesideMatchingEntities(string scenario)
     {
         const string calendarHref = "https://cal.example/calendars/work/";
-        const string resourceHref = calendarHref + "unknown.ics";
-        var transport = new ScriptedCalendarQueryTransport(
-            [Calendar(calendarHref)],
-            static () => [resourceHref],
-            reads: _ => [CalendarResourceRead.Success(resourceHref, "\"r1\"", Ics(
-                "BEGIN:VEVENT\r\nUID:event\r\nDTSTAMP:20260823T120000Z\r\n"
-                + "DTSTART;TZID=Private/Unknown:20260824T120000\r\nEND:VEVENT\r\n"))]);
-        await using var provider = CreateProvider(transport, new MutableTimeProvider(Now));
-
-        var failure = (await provider.GetRequiredService<ICalendarQueryModule>().QueryEntitiesAsync(
-            new CalendarEntityQueryRequest.Start(new CalendarEntityQuery(
-                CalendarEntityScope.All,
-                [CalendarEntityKind.Event],
-                Now,
-                Now.AddDays(2),
-                "America/New_York")),
-            CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Failure>();
-
-        failure.Error.Code.ShouldBe(QueryFailureCode.TemporalUnresolved);
-        failure.Error.Retryable.ShouldBeFalse();
-        provider.GetRequiredService<CalendarQuerySnapshotStore>().ActiveSnapshotCount.ShouldBe(0);
-    }
-
-    [Fact]
-    public async Task ConflictingResourceLocalZonesFailAtomicallyWithoutRetainingASnapshot()
-    {
-        const string calendarHref = "https://cal.example/calendars/work/";
-        const string resourceHref = calendarHref + "conflicting.ics";
-        var transport = new ScriptedCalendarQueryTransport(
-            [Calendar(calendarHref)],
-            static () => [resourceHref],
-            reads: _ => [CalendarResourceRead.Success(resourceHref, "\"r1\"", Ics(
-                "BEGIN:VTIMEZONE\r\nTZID:Private/Conflicting\r\n"
+        const string matchingHref = calendarHref + "matching.ics";
+        const string unresolvedHref = calendarHref + "unresolved.ics";
+        var unresolved = scenario switch
+        {
+            "unknown" => Ics("BEGIN:VEVENT\r\nUID:event\r\nDTSTAMP:20260823T120000Z\r\n"
+                + "DTSTART;TZID=Private/Unknown:20260824T120000\r\nEND:VEVENT\r\n"),
+            "period" => Ics("BEGIN:VEVENT\r\nUID:event\r\nDTSTAMP:20260823T120000Z\r\nDTSTART:20260830T120000Z\r\n"
+                + "RDATE;TZID=Private/Unknown;VALUE=PERIOD:20260824T120000/20260824T130000\r\nEND:VEVENT\r\n"),
+            _ => Ics("BEGIN:VTIMEZONE\r\nTZID:Private/Conflicting\r\n"
                 + "BEGIN:STANDARD\r\nDTSTART:19700101T000000\r\nTZOFFSETFROM:+0000\r\nTZOFFSETTO:+0000\r\n"
                 + "END:STANDARD\r\nEND:VTIMEZONE\r\n"
                 + "BEGIN:VTIMEZONE\r\nTZID:Private/Conflicting\r\n"
                 + "BEGIN:STANDARD\r\nDTSTART:19700101T000000\r\nTZOFFSETFROM:+0100\r\nTZOFFSETTO:+0100\r\n"
                 + "END:STANDARD\r\nEND:VTIMEZONE\r\n"
                 + "BEGIN:VEVENT\r\nUID:event\r\nDTSTAMP:20260823T120000Z\r\n"
-                + "DTSTART;TZID=Private/Conflicting:20260824T120000\r\nEND:VEVENT\r\n"))]);
+                + "DTSTART;TZID=Private/Conflicting:20260824T120000\r\nEND:VEVENT\r\n")
+        };
+        var transport = new ScriptedCalendarQueryTransport(
+            [Calendar(calendarHref)],
+            static () => [matchingHref, unresolvedHref],
+            reads: _ =>
+            [
+                CalendarResourceRead.Success(matchingHref, "\"r1\"", Event(matchingHref)),
+                CalendarResourceRead.Success(unresolvedHref, "\"r1\"", unresolved)
+            ]);
         await using var provider = CreateProvider(transport, new MutableTimeProvider(Now));
 
-        var failure = (await provider.GetRequiredService<ICalendarQueryModule>().QueryEntitiesAsync(
+        var page = (await provider.GetRequiredService<ICalendarQueryModule>().QueryEntitiesAsync(
             new CalendarEntityQueryRequest.Start(new CalendarEntityQuery(
                 CalendarEntityScope.All,
                 [CalendarEntityKind.Event],
                 Now,
                 Now.AddDays(2),
                 "America/New_York")),
-            CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Failure>();
+            CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Page>();
 
-        failure.Error.Code.ShouldBe(QueryFailureCode.TemporalUnresolved);
-        failure.Error.Retryable.ShouldBeFalse();
-        provider.GetRequiredService<CalendarQuerySnapshotStore>().ActiveSnapshotCount.ShouldBe(0);
+        page.Value.Items.ShouldHaveSingleItem().Value.GetProperty("resourceRevision").GetProperty("href")
+            .GetString().ShouldBe(matchingHref);
+        var disclosure = page.Value.StructuredContent.GetProperty("temporallyUnresolved");
+        disclosure.GetProperty("count").GetInt32().ShouldBe(1);
+        disclosure.GetProperty("hrefs").EnumerateArray().Select(href => href.GetString()).ShouldBe([unresolvedHref]);
+    }
+
+    [Fact]
+    public async Task TemporallyUnresolvedDisclosureCountsEveryResourceAndSamplesTheFirstTwentyFiveHrefs()
+    {
+        const string calendarHref = "https://cal.example/calendars/work/";
+        var hrefs = Enumerable.Range(0, 26).Select(index => $"{calendarHref}{25 - index:D2}.ics").ToArray();
+        var transport = new ScriptedCalendarQueryTransport(
+            [Calendar(calendarHref)],
+            () => hrefs,
+            reads: requested => requested.Select(href => CalendarResourceRead.Success(href, "\"r1\"", Ics(
+                    $"BEGIN:VEVENT\r\nUID:{href[^6..^4]}\r\nDTSTAMP:20260823T120000Z\r\n"
+                    + "DTSTART;TZID=Private/Unknown:20260824T120000\r\nEND:VEVENT\r\n")))
+                .ToArray());
+        await using var provider = CreateProvider(transport, new MutableTimeProvider(Now));
+
+        var page = (await provider.GetRequiredService<ICalendarQueryModule>().QueryEntitiesAsync(
+            new CalendarEntityQueryRequest.Start(new CalendarEntityQuery(
+                CalendarEntityScope.All,
+                [CalendarEntityKind.Event],
+                Now,
+                Now.AddDays(2),
+                "UTC")),
+            CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Page>();
+
+        page.Value.Items.ShouldBeEmpty();
+        var disclosure = page.Value.StructuredContent.GetProperty("temporallyUnresolved");
+        disclosure.GetProperty("count").GetInt32().ShouldBe(26);
+        disclosure.GetProperty("hrefs").EnumerateArray().Select(href => href.GetString())
+            .ShouldBe(Enumerable.Range(0, 25).Select(index => $"{calendarHref}{index:D2}.ics"));
     }
 
     [Fact]
@@ -1340,7 +1360,6 @@ public sealed class CalendarQueryModuleTests
 
     [Theory]
     [InlineData("no_match", null)]
-    [InlineData("unresolved", QueryFailureCode.TemporalUnresolved)]
     [InlineData("unevaluable", QueryFailureCode.RecurrenceUnevaluable)]
     public async Task TemporalEvaluationReturnsClosedMatchOutcomes(string scenario, QueryFailureCode? expected)
     {
@@ -1349,7 +1368,6 @@ public sealed class CalendarQueryModuleTests
         var bytes = scenario switch
         {
             "no_match" => Event(resourceHref),
-            "unresolved" => Ics("BEGIN:VEVENT\r\nUID:item\r\nDTSTAMP:20260823T120000Z\r\nDTSTART;TZID=Private/Unknown:20260824T120000\r\nEND:VEVENT\r\n"),
             "unevaluable" => Ics("BEGIN:VEVENT\r\nUID:item\r\nDTSTAMP:20260823T120000Z\r\nDTSTART:20260824T120000Z\r\nRRULE:FREQ=DAILY\r\nRRULE:FREQ=WEEKLY\r\nEND:VEVENT\r\n"),
             _ => throw new ArgumentOutOfRangeException(nameof(scenario))
         };
@@ -1566,9 +1584,6 @@ public sealed class CalendarQueryModuleTests
     }
 
     [Theory]
-    [InlineData(
-        "RDATE;TZID=Private/Unknown;VALUE=PERIOD:20260824T120000/20260824T130000\r\n",
-        QueryFailureCode.TemporalUnresolved)]
     [InlineData(
         "RDATE;VALUE=PERIOD:20260824T120000Z/-PT1H\r\n",
         QueryFailureCode.RecurrenceUnevaluable)]

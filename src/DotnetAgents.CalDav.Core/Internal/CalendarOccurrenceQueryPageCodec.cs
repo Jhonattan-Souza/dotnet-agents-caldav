@@ -27,7 +27,8 @@ internal sealed class CalendarOccurrenceQueryPageCodec : ICalendarQueryPageCodec
     CalendarQueryFixedBudget ICalendarQueryPageCodec<CalendarOccurrenceQueryItem>.MeasureFixedBudget(
         CalendarQuerySnapshot snapshot) => MeasureFixedBudget(
         snapshot.DiagnosticsUtf8,
-        snapshot.TemporalEvaluationContextUtf8);
+        snapshot.TemporalEvaluationContextUtf8,
+        snapshot.TemporallyUnresolvedUtf8);
 
     QueryPage<CalendarOccurrenceQueryItem> ICalendarQueryPageCodec<CalendarOccurrenceQueryItem>.Materialize(
         CalendarQuerySnapshot snapshot,
@@ -50,6 +51,7 @@ internal sealed class CalendarOccurrenceQueryPageCodec : ICalendarQueryPageCodec
             writer.WritePropertyName("diagnostics");
             writer.WriteRawValue(snapshot.DiagnosticsUtf8.Span, skipInputValidation: true);
             WriteTemporalContext(writer, snapshot.TemporalEvaluationContextUtf8);
+            CalendarTemporallyUnresolvedResources.Write(writer, snapshot.TemporallyUnresolvedUtf8);
             writer.WritePropertyName("pagination");
             writer.WriteStartObject();
             writer.WriteString("mode", "query_result_snapshot");
@@ -79,18 +81,26 @@ internal sealed class CalendarOccurrenceQueryPageCodec : ICalendarQueryPageCodec
 
     private static CalendarQueryFixedBudget MeasureFixedBudget(
         ReadOnlyMemory<byte> diagnosticsUtf8,
-        ReadOnlyMemory<byte> temporalEvaluationContextUtf8)
+        ReadOnlyMemory<byte> temporalEvaluationContextUtf8,
+        ReadOnlyMemory<byte> temporallyUnresolvedUtf8)
     {
         var structured = new ArrayBufferWriter<byte>();
         using (var writer = new Utf8JsonWriter(structured))
-            WriteEmptyStructuredContent(writer, diagnosticsUtf8, temporalEvaluationContextUtf8);
+        {
+            WriteEmptyStructuredContent(
+                writer,
+                diagnosticsUtf8,
+                temporalEvaluationContextUtf8,
+                temporallyUnresolvedUtf8);
+        }
         return CalendarQueryPageBudget.Measure(structured.WrittenMemory, diagnosticsUtf8);
     }
 
     private static void WriteEmptyStructuredContent(
         Utf8JsonWriter writer,
         ReadOnlyMemory<byte> diagnosticsUtf8,
-        ReadOnlyMemory<byte> temporalEvaluationContextUtf8)
+        ReadOnlyMemory<byte> temporalEvaluationContextUtf8,
+        ReadOnlyMemory<byte> temporallyUnresolvedUtf8)
     {
         writer.WriteStartObject();
         writer.WriteString("outcome", "success");
@@ -100,6 +110,7 @@ internal sealed class CalendarOccurrenceQueryPageCodec : ICalendarQueryPageCodec
         writer.WritePropertyName("diagnostics");
         writer.WriteRawValue(diagnosticsUtf8.Span, skipInputValidation: true);
         WriteTemporalContext(writer, temporalEvaluationContextUtf8);
+        CalendarTemporallyUnresolvedResources.Write(writer, temporallyUnresolvedUtf8);
         writer.WritePropertyName("pagination");
         writer.WriteStartObject();
         writer.WriteString("mode", "query_result_snapshot");

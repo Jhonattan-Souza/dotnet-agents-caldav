@@ -337,7 +337,12 @@ public sealed record CalendarEntityQuerySuccessResult(
     [property: JsonPropertyName("items")] IReadOnlyList<CalendarSnapshotResult> Items,
     [property: JsonPropertyName("diagnostics")] IReadOnlyList<CalendarDiagnosticResult> Diagnostics,
     [property: JsonPropertyName("temporalEvaluationContext"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CalendarTemporalEvaluationContextResult? TemporalEvaluationContext,
+    [property: JsonPropertyName("temporallyUnresolved"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CalendarTemporallyUnresolvedResult? TemporallyUnresolved,
     [property: JsonPropertyName("pagination")] CalendarPagination Pagination);
+
+public sealed record CalendarTemporallyUnresolvedResult(
+    [property: JsonPropertyName("count")] int Count,
+    [property: JsonPropertyName("hrefs")] IReadOnlyList<string> Hrefs);
 
 public sealed record CalendarTemporalEvaluationContextResult(
     [property: JsonPropertyName("timeZone")] string TimeZone,

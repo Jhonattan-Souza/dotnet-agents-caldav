@@ -85,6 +85,47 @@ public sealed class CalendarOutputSchemaGuardTests
             Should.Throw<InvalidOperationException>(() => CalendarOutputSchemaGuard.Validate("todos.query", result));
     }
 
+    [Theory]
+    [InlineData("calendar_entities.query", 1, true)]
+    [InlineData("calendar_occurrences.query", 1, true)]
+    [InlineData("todos.query", 1, true)]
+    [InlineData("todos.query", 25, true)]
+    [InlineData("todos.query", 26, false)]
+    [InlineData("calendar_occurrences.query", 0, false)]
+    public void Validate_AcceptsABoundedTemporallyUnresolvedDisclosureOnQuerySuccess(
+        string toolName,
+        int hrefCount,
+        bool valid)
+    {
+        var structured = new JsonObject
+        {
+            ["outcome"] = "success",
+            ["items"] = new JsonArray(),
+            ["diagnostics"] = new JsonArray(),
+            ["temporallyUnresolved"] = new JsonObject
+            {
+                ["count"] = Math.Max(hrefCount, 1),
+                ["hrefs"] = new JsonArray(Enumerable.Range(0, hrefCount)
+                    .Select(index => (JsonNode)$"https://cal.example/todos/{index}.ics").ToArray())
+            },
+            ["pagination"] = new JsonObject { ["mode"] = "query_result_snapshot", ["nextCursor"] = null }
+        };
+        if (toolName == "todos.query")
+        {
+            structured["excludedIndeterminateCount"] = 0;
+            structured["temporalEvaluationContext"] = new JsonObject
+            {
+                ["timeZone"] = "America/Sao_Paulo", ["source"] = "caller"
+            };
+        }
+        var result = Result(structured.ToJsonString());
+
+        if (valid)
+            Should.NotThrow(() => CalendarOutputSchemaGuard.Validate(toolName, result));
+        else
+            Should.Throw<InvalidOperationException>(() => CalendarOutputSchemaGuard.Validate(toolName, result));
+    }
+
     private static void CorruptLastItem(JsonNode item, string variation)
     {
         switch (variation)
