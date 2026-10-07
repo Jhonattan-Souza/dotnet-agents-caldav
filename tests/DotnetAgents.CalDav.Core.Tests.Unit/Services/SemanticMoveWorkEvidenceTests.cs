@@ -31,7 +31,7 @@ public sealed class SemanticMoveWorkEvidenceTests(ITestOutputHelper output)
             Username = "user",
             Password = "secret",
             CalendarHrefs = $"{ObservationHandler.SourceCalendarHref},{ObservationHandler.DestinationCalendarHref}",
-            InteroperabilityProfile = "radicale-3.7.8"
+            InteroperabilityProfile = "radicale-3.8.2"
         };
         using var httpClient = new HttpClient(handler);
         var client = new CalDavClient(

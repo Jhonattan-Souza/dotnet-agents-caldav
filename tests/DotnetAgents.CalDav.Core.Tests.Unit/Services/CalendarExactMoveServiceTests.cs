@@ -1306,7 +1306,7 @@ public sealed class CalendarExactMoveServiceTests
         ICalendarClient client,
         string? calendarHref,
         TimeProvider? timeProvider = null,
-        string? interoperabilityProfile = CalDavInteroperabilityProfiles.Radicale_3_7_8) => new(
+        string? interoperabilityProfile = CalDavInteroperabilityProfiles.Radicale_3_8_2) => new(
         client,
         Options.Create(new CalDavOptions
         {

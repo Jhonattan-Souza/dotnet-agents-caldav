@@ -311,12 +311,12 @@ internal static class BearerTokenSyntax
 /// <summary>Closed set of server runtimes with verified atomic mutation preconditions.</summary>
 public static class CalDavInteroperabilityProfiles
 {
-    public const string Radicale_3_7_8 = "radicale-3.7.8";
+    public const string Radicale_3_8_2 = "radicale-3.8.2";
 
     public const string Nextcloud_34_0_3 = "nextcloud-34.0.3";
 
     /// <summary>Every verified profile, each backed by a digest-pinned contract and dated observation record.</summary>
-    public static IReadOnlyList<string> Verified { get; } = [Radicale_3_7_8, Nextcloud_34_0_3];
+    public static IReadOnlyList<string> Verified { get; } = [Radicale_3_8_2, Nextcloud_34_0_3];
 
     internal static bool IsVerified(string? profile) =>
         profile is not null && Verified.Contains(profile, StringComparer.Ordinal);
@@ -326,7 +326,7 @@ public static class CalDavInteroperabilityProfiles
     /// Nextcloud 34.0.3 rejects that MOVE with HTTP 403, so Exact Move fails closed before dispatch.
     /// </summary>
     internal static bool SupportsSameCalendarMove(string? profile) =>
-        string.Equals(profile, Radicale_3_7_8, StringComparison.Ordinal);
+        string.Equals(profile, Radicale_3_8_2, StringComparison.Ordinal);
 }
 
 internal static class IanaTimeZoneIds

@@ -2529,7 +2529,7 @@ public sealed class ExactCalendarResourceTests
         Username = "user",
         Password = "secret",
         CalendarHrefs = "https://cal.example/events/",
-        InteroperabilityProfile = CalDavInteroperabilityProfiles.Radicale_3_7_8,
+        InteroperabilityProfile = CalDavInteroperabilityProfiles.Radicale_3_8_2,
         RequestTimeout = TimeSpan.FromSeconds(30)
     };
 

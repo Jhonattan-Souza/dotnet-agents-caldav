@@ -68,7 +68,7 @@ client-specific commands.
 | `CALDAV_DEFAULT_TODO_CALENDAR_NAME` | No | Display name of the default Calendar for To-do operations |
 | `CALDAV_DEFAULT_EVENT_CALENDAR_NAME` | No | Display name of the default Calendar for Event operations |
 | `CALDAV_EVALUATION_TIME_ZONE` | Yes (installation) | Exact IANA zone used as the configured Temporal Evaluation Context for bounded Calendar Entity Starts and every Occurrence or To-do Start; invalid values fail startup and a caller `evaluationTimeZone` override wins. Manual runs may omit it when the call supplies an IANA identifier; To-do Starts require context even without a window |
-| `CALDAV_INTEROPERABILITY_PROFILE` | No | Set to `radicale-3.7.8` or `nextcloud-34.0.3` only for that verified runtime; otherwise server-authoritative Move fails closed with `unsupported_capability`  Radicale’s non-RFC free/busy representation requires `radicale-3.7.8` |
+| `CALDAV_INTEROPERABILITY_PROFILE` | No | Set to `radicale-3.8.2` or `nextcloud-34.0.3` only for that verified runtime; otherwise server-authoritative Move fails closed with `unsupported_capability` |
 | `CALDAV_SCHEDULING_MODE` | No | `storage_only` (default when unset or empty) or `server_managed`; any other value fails startup. `storage_only` blocks participation-bearing writes and Calendar collection deletion unless fresh OPTIONS evidence shows the server does not advertise `calendar-auto-schedule`. `server_managed` also allows them when the server advertises it; the server may then send invitations, updates or cancellations, and affected outcomes report `schedulingSideEffects`. See [ADR 0009](docs/adr/0009-opt-in-server-managed-scheduling.md) |
 | `CALDAV_CONFIRMATION_POLICY` | No | `always` (default when unset or empty), `destructive-scope`, or `never`; any other value fails startup. Chooses which mutations ask for MRTR confirmation; see [Confirmed mutations](#confirmed-mutations). A skipped confirmation removes only the confirmation round, and affected outcomes report `confirmation: skipped_by_policy`. See [ADR 0010](docs/adr/0010-configurable-confirmation-policy.md) |
 | `CALDAV_REDIRECT_HOSTS` | No | Comma-separated HTTPS host allowlist for providers that redirect or delegate to other hosts, such as `.icloud.com` for iCloud. An entry is an exact host name or a leading-dot suffix matching strict subdomains; schemes, ports, paths, wildcards and IP addresses fail startup, and `CALDAV_URL` must use HTTPS. Allowlisted hosts receive the configured credentials at the configured port; every other origin is refused before any request. Omit to keep every request on the `CALDAV_URL` origin |
@@ -222,7 +222,7 @@ A request whose `_meta` carries a W3C `traceparent`, the trace-context key MCP 2
 
 ## Supported servers
 
-The verified interoperability profiles are the official Radicale 3.7.8 image pinned in the [Radicale 3.7.8 profile](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/main/contracts/radicale-3.7.8-profile.json) and the official Nextcloud 34.0.3 Apache image pinned in the [Nextcloud 34.0.3 profile](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/main/contracts/nextcloud-34.0.3-profile.json). Set `CALDAV_INTEROPERABILITY_PROFILE` to `radicale-3.7.8` or `nextcloud-34.0.3` only for that runtime. Server-authoritative Semantic and Exact Move fail closed with `unsupported_capability` when the profile is omitted because atomic `Overwrite: F` and `CALDAV:no-uid-conflict` enforcement cannot be inferred from stored resources or generic DAV discovery. Nextcloud rejects a rename within one Calendar, so under `nextcloud-34.0.3` an Exact Move whose destination is in the source Calendar fails closed with `unsupported_capability` before any write. Baïkal 0.10.1 is not a verified profile: its MOVE commits a duplicate UID into the destination Calendar. The Radicale profile also admits its non-RFC free/busy representation described under Architecture. Other CalDAV servers remain unverified profiles even when capability negotiation allows other operations. The [2026-09-24 Move interoperability record](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/main/docs/move-interoperability-profiles-2026-09-24.md) holds the observations.
+The verified interoperability profiles are the official Radicale 3.8.2 image pinned in the [Radicale 3.8.2 profile](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/main/contracts/radicale-3.8.2-profile.json) and the official Nextcloud 34.0.3 Apache image pinned in the [Nextcloud 34.0.3 profile](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/main/contracts/nextcloud-34.0.3-profile.json). Set `CALDAV_INTEROPERABILITY_PROFILE` to `radicale-3.8.2` or `nextcloud-34.0.3` only for that runtime. Server-authoritative Semantic and Exact Move fail closed with `unsupported_capability` when the profile is omitted because atomic `Overwrite: F` and `CALDAV:no-uid-conflict` enforcement cannot be inferred from stored resources or generic DAV discovery. Nextcloud rejects a rename within one Calendar, so under `nextcloud-34.0.3` an Exact Move whose destination is in the source Calendar fails closed with `unsupported_capability` before any write. Baïkal 0.10.1 is not a verified profile: its MOVE commits a duplicate UID into the destination Calendar. Other CalDAV servers remain unverified profiles even when capability negotiation allows other operations. The [2026-09-24 Move interoperability record](https://github.com/Jhonattan-Souza/dotnet-agents-caldav/blob/main/docs/move-interoperability-profiles-2026-09-24.md) holds the observations.
 
 ## Architecture
 
@@ -251,15 +251,9 @@ Free/busy uses server permissions and temporal interpretation. It accepts
 whole-second UTC boundaries within 366 days and bounds the response to 5,000
 periods before merging. Periods from every VFREEBUSY component are clipped to
 the window and coalesced per busy type. An empty successful report means no
-reported busy time; a failed report does not. Radicale 3.7.8 returns one
-VFREEBUSY per busy period, with the period in `DTSTART`/`DTEND` (UTC, or
-`TZID`-qualified and resolved through the report's own VTIMEZONE, else tzdb;
-an unresolvable or inconsistent definition fails) and its type in a standalone `FBTYPE` property, and an empty
-VCALENDAR for a window without busy time. Only the `radicale-3.7.8` profile
-accepts that representation. Without it, the representation fails with
-`upstream_protocol_error`, as does, in every profile, a stray `FBTYPE` property
-(outside VFREEBUSY, repeated, beside `FREEBUSY`, or without exactly one
-`DTSTART` and `DTEND`) or any other misplaced or malformed busy information.
+reported busy time; a failed report does not. A report without a VFREEBUSY
+component, a stray `FBTYPE` property, or any other misplaced or malformed busy
+information fails with `upstream_protocol_error`.
 Free/busy and established sync checkpoints use one logical REPORT per call,
 with up to three HTTP attempts under the existing read retry policy, a 4 MiB
 response limit and a 30-second deadline. Initial authorization can add

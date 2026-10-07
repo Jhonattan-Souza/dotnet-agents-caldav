@@ -29,7 +29,7 @@ python3 scripts/observations/mcp-performance/infra.py verify /tmp/caldav-perf-ne
 ```
 
 `infra.py` reutiliza imagem, autenticação e storage do `RadicaleFixture`, com
-portas dinâmicas em loopback. Radicale 3.7.8 e Dashboard 13.4.2 mantêm os digests
+portas dinâmicas em loopback. Radicale 3.8.2 e Dashboard 13.4.2 mantêm os digests
 do checkout. Ambos recebem limites de 4 CPUs/2 GiB. Dashboard conserva login por
 token e autenticação por chave na API de exportação. O manifesto privado tem
 modo 0600. Não copie esse manifesto, config do Hermes, logs privados ou chaves

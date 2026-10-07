@@ -741,18 +741,18 @@ public sealed class ContractCatalogTests
     [Fact]
     public void Radicale_profile_records_both_manifests_and_all_required_variants()
     {
-        var profile = ReadJson("radicale-3.7.8-profile.json");
+        var profile = ReadJson("radicale-3.8.2-profile.json");
 
         profile["ociIndexDigest"]!.GetValue<string>().ShouldBe(RadicaleConformanceIndexDigest);
         profile["platformManifests"]!.AsObject().Count.ShouldBe(2);
-        profile["runtime"]!["python"]!.GetValue<string>().ShouldBe("3.14.7");
+        profile["runtime"]!["python"]!.GetValue<string>().ShouldBe("3.14.8");
         profile["runtime"]!["vobject"]!.GetValue<string>().ShouldBe("0.9.9");
         profile["variants"]!.AsArray().Select(value => value!["name"]!.GetValue<string>())
             .ShouldBe(["baseline", "strict-preconditions", "alternate-time-zone"]);
         profile["legacyTaskFixturesAreEvidence"]!.GetValue<bool>().ShouldBeFalse();
     }
 
-    private const string RadicaleConformanceIndexDigest = "sha256:3a0080ea51ac69dcd74e345b9587dc14a8c8af0652046069005749f9a75c5c80";
+    private const string RadicaleConformanceIndexDigest = "sha256:81e4ba1904211dff559e3e87a0030673a32a8b945dfc59a311d4d8dfe57238b5";
 
     private static JsonObject ReadJson(string fileName) => JsonNode.Parse(File.ReadAllText(
         fileName == "mcp-tool-catalog.json"

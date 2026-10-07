@@ -15,10 +15,10 @@ public sealed class RadicaleConformanceFixture : IAsyncLifetime
 {
     public const string Username = "conformance";
     public const string Password = "conformance";
-    public const string Image = "ghcr.io/kozea/radicale@sha256:3a0080ea51ac69dcd74e345b9587dc14a8c8af0652046069005749f9a75c5c80";
-    public const string IndexDigest = "sha256:3a0080ea51ac69dcd74e345b9587dc14a8c8af0652046069005749f9a75c5c80";
-    public const string Amd64ManifestDigest = "sha256:7e2d729c434574762b058d57c7c81641ade11655da6d0eede948512d53873e71";
-    public const string Arm64ManifestDigest = "sha256:1691eb75474f38f9c0ce75e60a026a3c338b7c91a1cd9ed622557f141b0eb5b8";
+    public const string Image = "ghcr.io/kozea/radicale@sha256:81e4ba1904211dff559e3e87a0030673a32a8b945dfc59a311d4d8dfe57238b5";
+    public const string IndexDigest = "sha256:81e4ba1904211dff559e3e87a0030673a32a8b945dfc59a311d4d8dfe57238b5";
+    public const string Amd64ManifestDigest = "sha256:b746b18b16753269596376d91fe995674f06e5a666ea882d1b1e31164a2e1f36";
+    public const string Arm64ManifestDigest = "sha256:16082b9b8c6aed9cb0f15164a123d675d96d872d2589428f4b83b14876e2da8a";
 
     private const int RadicalePort = 5232;
     private IContainer? _container;

@@ -75,7 +75,7 @@ public sealed partial class RadicaleConformanceHarnessTests
             options.CalendarHrefs = calendar.AbsoluteUri;
             options.Username = ConformanceUsername;
             options.Password = ConformancePassword;
-            options.InteroperabilityProfile = CalDavInteroperabilityProfiles.Radicale_3_7_8;
+            options.InteroperabilityProfile = CalDavInteroperabilityProfiles.Radicale_3_8_2;
             options.SchedulingMode = mode;
         });
         services.AddSingleton<IHttpMessageHandlerBuilderFilter>(new SafeRequestTraceFilter(trace));

@@ -50,7 +50,7 @@ public sealed class RadicaleFixture : IAsyncLifetime
         environment["CALDAV_URL"] = BaseUrl;
         environment["CALDAV_USERNAME"] = TestUsername;
         environment["CALDAV_PASSWORD"] = TestPassword;
-        environment["CALDAV_INTEROPERABILITY_PROFILE"] = "radicale-3.7.8";
+        environment["CALDAV_INTEROPERABILITY_PROFILE"] = "radicale-3.8.2";
     }
 
     // ── IAsyncLifetime ─────────────────────────────────────────────────────
@@ -63,7 +63,7 @@ public sealed class RadicaleFixture : IAsyncLifetime
         var configBytes = Encoding.UTF8.GetBytes(configContent);
         var usersBytes = Encoding.UTF8.GetBytes(usersContent);
 
-        _container = new ContainerBuilder("ghcr.io/kozea/radicale@sha256:3a0080ea51ac69dcd74e345b9587dc14a8c8af0652046069005749f9a75c5c80")
+        _container = new ContainerBuilder("ghcr.io/kozea/radicale@sha256:81e4ba1904211dff559e3e87a0030673a32a8b945dfc59a311d4d8dfe57238b5")
             .WithPortBinding(RadicalePort, true)
             .WithEnvironment("TZ", "UTC")
             .WithCommand("--config", "/config/config", "--hosts", "0.0.0.0:5232,[::]:5232")

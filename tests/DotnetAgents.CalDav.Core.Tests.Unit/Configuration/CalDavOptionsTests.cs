@@ -199,7 +199,7 @@ public class CalDavOptionsTests
     [Theory]
     [InlineData("unverified")]
     [InlineData("Radicale-3.7.8")]
-    [InlineData("radicale-3.7.8 ")]
+    [InlineData("radicale-3.8.2 ")]
     public void ValidateCalDavOptions_RejectsUnknownInteroperabilityProfile(string profile)
     {
         var result = new ValidateCalDavOptions().Validate(null, new CalDavOptions
@@ -215,7 +215,7 @@ public class CalDavOptionsTests
     }
 
     [Theory]
-    [InlineData(CalDavInteroperabilityProfiles.Radicale_3_7_8)]
+    [InlineData(CalDavInteroperabilityProfiles.Radicale_3_8_2)]
     [InlineData(CalDavInteroperabilityProfiles.Nextcloud_34_0_3)]
     public void ValidateCalDavOptions_AcceptsVerifiedInteroperabilityProfile(string profile)
     {
@@ -689,9 +689,9 @@ public class CalDavOptionsTests
     [Fact]
     public void InteroperabilityProfiles_ListEveryVerifiedRuntimeAndOnlyRadicaleCommitsSameCalendarMove()
     {
-        CalDavInteroperabilityProfiles.Verified.ShouldBe(["radicale-3.7.8", "nextcloud-34.0.3"]);
+        CalDavInteroperabilityProfiles.Verified.ShouldBe(["radicale-3.8.2", "nextcloud-34.0.3"]);
         CalDavInteroperabilityProfiles.IsVerified(null).ShouldBeFalse();
-        CalDavInteroperabilityProfiles.SupportsSameCalendarMove(CalDavInteroperabilityProfiles.Radicale_3_7_8)
+        CalDavInteroperabilityProfiles.SupportsSameCalendarMove(CalDavInteroperabilityProfiles.Radicale_3_8_2)
             .ShouldBeTrue();
         CalDavInteroperabilityProfiles.SupportsSameCalendarMove(CalDavInteroperabilityProfiles.Nextcloud_34_0_3)
             .ShouldBeFalse();

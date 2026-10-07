@@ -79,9 +79,9 @@ public partial class CalendarReportModuleTests
     }
 
     [Theory]
-    [InlineData(null, false)]
-    [InlineData(CalDavInteroperabilityProfiles.Radicale_3_7_8, true)]
-    public async Task RadicalePeriodComponentsAreAcceptedOnlyForTheVerifiedProfile(string? profile, bool accepted)
+    [InlineData(null)]
+    [InlineData(CalDavInteroperabilityProfiles.Radicale_3_8_2)]
+    public async Task Radicale378PeriodComponentsAreRejectedUnderEveryProfile(string? profile)
     {
         using var fixture = new Fixture();
         fixture.Options.InteroperabilityProfile = profile;
@@ -89,16 +89,9 @@ public partial class CalendarReportModuleTests
             + "DTEND:20260905T020000Z\r\nDTSTAMP:20260901T000000Z\r\nFBTYPE:BUSY-TENTATIVE\r\nEND:VFREEBUSY\r\nEND:VCALENDAR\r\n", "text/calendar");
 
         var request = new CalendarFreeBusyRequest(CalendarHref, From, From.AddDays(1));
-        if (accepted)
-        {
-            (await fixture.Module.FreeBusyAsync(request, CancellationToken.None)).Periods
-                .ShouldBe([new CalendarBusyPeriod("2026-09-05T01:00:00Z", "2026-09-05T02:00:00Z", "BUSY-TENTATIVE")]);
-        }
-        else
-        {
-            (await Should.ThrowAsync<CalendarProtocolException>(() => fixture.Module.FreeBusyAsync(request, CancellationToken.None)))
-                .Code.ShouldBe("upstream_protocol_error");
-        }
+
+        (await Should.ThrowAsync<CalendarProtocolException>(() => fixture.Module.FreeBusyAsync(request, CancellationToken.None)))
+            .Code.ShouldBe("upstream_protocol_error");
     }
 
     [Fact]

@@ -98,8 +98,8 @@ async def seed_and_busy(suite, href):
     for name,start,end,extra in corpus:
         put(suite,href+name+'.ics',event('rfc-'+name,start,end,extra))
     suite.phase='freebusy-known-intervals'
-    # Since 2026-09-24 the radicale-3.7.8 profile accepts Radicale's per-period
-    # VFREEBUSY representation; Radicale reports the cancelled Event as FREE time.
+    # Radicale 3.8.2 returns RFC 4791 FREEBUSY periods; Radicale 3.7.8 reported
+    # the cancelled Event as FREE time, which this run re-observes.
     busy=await suite.call('calendars.free_busy',dict(calendarHref=href,**{'from':BUSY_WINDOW['from_'],'to':BUSY_WINDOW['to']}),
                           _expected='success')
     actual=[(period['from'],period['to'],period['busyType']) for period in busy.get('periods',[])]

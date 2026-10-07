@@ -115,12 +115,14 @@ creates another disposable user in the owned container without changing
 server limits. Seed that new lane before using it; its parent owns container
 cleanup.
 
-Radicale 3.7.8 returns nonconforming native free/busy content despite HTTP 200:
+Radicale 3.7.8 returned nonconforming native free/busy content despite HTTP 200:
 one VFREEBUSY per period, with `DTSTART`/`DTEND` and a standalone FBTYPE
-instead of FREEBUSY periods. Since 2026-09-24 the `radicale-3.7.8` profile
-accepts that representation, so the scenario requires success on every lane;
-Radicale additionally reports the cancelled Event as a `FREE` period. The
-2026-09-05 records predate this and show `upstream_protocol_error`.
+instead of FREEBUSY periods, which the former `radicale-3.7.8` profile
+accepted. Radicale 3.8.2 returns RFC 4791 FREEBUSY periods, so the
+`radicale-3.8.2` profile has no free/busy special case and the scenario
+requires success on every lane. Radicale 3.7.8 also reported the cancelled
+Event as a `FREE` period. The 2026-09-05 records predate the 3.7.8 workaround
+and show `upstream_protocol_error`.
 Radicale also synthesizes a display name after removal; the scenario records
 `committed_but_unverified` and verifies description-only removal separately.
 
