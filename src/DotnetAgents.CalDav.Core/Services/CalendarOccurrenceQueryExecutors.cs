@@ -63,6 +63,7 @@ internal sealed class CalendarOccurrenceQueryStartExecutor(
     {
         var effectiveQuery = query with { EvaluationTimeZone = temporalContext.TimeZone };
         var occurrences = new List<EvaluatedOccurrence>();
+        var unresolved = new CalendarTemporallyUnresolvedResources();
         var observedCount = 0;
         using (CalendarQueryTelemetry.StartPhase(CalendarQueryPhase.Evaluation))
         {
@@ -86,6 +87,8 @@ internal sealed class CalendarOccurrenceQueryStartExecutor(
                 var failure = EvaluationFailure(evaluated.Code, observedCount);
                 if (failure is not null)
                     return CompletedCalendarOccurrenceQuery.Failure(failure);
+                if (evaluated.Code == CalendarOccurrenceEvaluationCode.TemporalUnresolved)
+                    unresolved.Add(snapshot.ResourceHref);
                 occurrences.AddRange(CalendarOccurrenceTextFilter.Select(resource, criteria, evaluated.Items));
             }
         }
@@ -96,7 +99,7 @@ internal sealed class CalendarOccurrenceQueryStartExecutor(
             .ThenBy(item => CalendarOccurrenceEvaluator.GetIdentitySortKey(item.RecurrenceIdentity), StringComparer.Ordinal)
             .ThenBy(item => item.Snapshot.ResourceHref, StringComparer.Ordinal)
             .ToArray();
-        return Project(ordered, acquired.Diagnostics, temporalContext, criteria, cancellationToken);
+        return Project(ordered, acquired.Diagnostics, temporalContext, criteria, unresolved, cancellationToken);
     }
 
     private static CompletedCalendarOccurrenceQuery Project(
@@ -104,6 +107,7 @@ internal sealed class CalendarOccurrenceQueryStartExecutor(
         IReadOnlyList<QueryDiagnostic> diagnostics,
         TemporalEvaluationContext temporalContext,
         CalendarTextCriteria? criteria,
+        CalendarTemporallyUnresolvedResources unresolved,
         CancellationToken cancellationToken)
     {
         var countFailure = CalendarQuerySnapshotPolicy.Validate(occurrences.Count, 0);
@@ -128,11 +132,18 @@ internal sealed class CalendarOccurrenceQueryStartExecutor(
         var diagnosticsUtf8 = JsonSerializer.SerializeToUtf8Bytes(diagnostics);
         var temporalContextUtf8 = CalendarTemporalEvaluationContextCodec.Encode(temporalContext);
         var textFilterUtf8 = criteria?.EncodeBinding() ?? [];
-        var retainedBytes = itemBytes + diagnosticsUtf8.Length + temporalContextUtf8.Length + textFilterUtf8.Length;
+        var unresolvedUtf8 = unresolved.Encode();
+        var retainedBytes = itemBytes + diagnosticsUtf8.Length + temporalContextUtf8.Length + textFilterUtf8.Length
+            + unresolvedUtf8.Length;
         var retainedFailure = CalendarQuerySnapshotPolicy.Validate(projected.Count, retainedBytes);
         return retainedFailure is null
             ? CompletedCalendarOccurrenceQuery.Success(
-                projected.MoveToImmutable(), diagnosticsUtf8, retainedBytes, temporalContextUtf8, textFilterUtf8)
+                projected.MoveToImmutable(),
+                diagnosticsUtf8,
+                retainedBytes,
+                temporalContextUtf8,
+                textFilterUtf8,
+                unresolvedUtf8)
             : CompletedCalendarOccurrenceQuery.Failure(retainedFailure);
     }
 
@@ -154,11 +165,13 @@ internal sealed class CalendarOccurrenceQueryStartExecutor(
 
     private static QueryFailure? EvaluationFailure(CalendarOccurrenceEvaluationCode code, int observedCount) => code switch
     {
-        CalendarOccurrenceEvaluationCode.Success when observedCount <= CalendarQueryPolicy.MaximumOccurrences => null,
-        CalendarOccurrenceEvaluationCode.LimitExhausted or CalendarOccurrenceEvaluationCode.Success => CalendarQueryFailures.Limit(
+        CalendarOccurrenceEvaluationCode.Success or CalendarOccurrenceEvaluationCode.TemporalUnresolved
+            when observedCount <= CalendarQueryPolicy.MaximumOccurrences => null,
+        CalendarOccurrenceEvaluationCode.LimitExhausted
+            or CalendarOccurrenceEvaluationCode.Success
+            or CalendarOccurrenceEvaluationCode.TemporalUnresolved => CalendarQueryFailures.Limit(
             "The Occurrence query exhausted its occurrence budget.",
             new QueryExecutionLimits(OccurrenceCount: observedCount)),
-        CalendarOccurrenceEvaluationCode.TemporalUnresolved => CalendarQueryFailures.TemporalUnresolved(),
         CalendarOccurrenceEvaluationCode.RecurrenceUnevaluable => CalendarQueryFailures.RecurrenceUnevaluable(),
         _ => CalendarQueryFailures.Protocol()
     };
@@ -186,6 +199,7 @@ internal sealed record CompletedCalendarOccurrenceQuery(
     long RetainedBytes,
     ReadOnlyMemory<byte> TemporalEvaluationContextUtf8,
     ReadOnlyMemory<byte> TextFilterUtf8,
+    ReadOnlyMemory<byte> TemporallyUnresolvedUtf8,
     QueryFailure? Error)
 {
     internal static CompletedCalendarOccurrenceQuery Success(
@@ -193,18 +207,26 @@ internal sealed record CompletedCalendarOccurrenceQuery(
         ReadOnlyMemory<byte> diagnosticsUtf8,
         long retainedBytes,
         ReadOnlyMemory<byte> temporalEvaluationContextUtf8,
-        ReadOnlyMemory<byte> textFilterUtf8) =>
-        new(items, diagnosticsUtf8, retainedBytes, temporalEvaluationContextUtf8, textFilterUtf8, null);
+        ReadOnlyMemory<byte> textFilterUtf8,
+        ReadOnlyMemory<byte> temporallyUnresolvedUtf8) => new(
+        items,
+        diagnosticsUtf8,
+        retainedBytes,
+        temporalEvaluationContextUtf8,
+        textFilterUtf8,
+        temporallyUnresolvedUtf8,
+        null);
 
     internal static CompletedCalendarOccurrenceQuery Failure(QueryFailure error) =>
-        new([], ReadOnlyMemory<byte>.Empty, 0, ReadOnlyMemory<byte>.Empty, ReadOnlyMemory<byte>.Empty, error);
+        new([], default, 0, default, default, default, error);
 
     internal CalendarQuerySnapshotDraft ToSnapshotDraft() => new(
         Items,
         DiagnosticsUtf8,
         RetainedBytes,
         TemporalEvaluationContextUtf8,
-        TextFilterUtf8: TextFilterUtf8);
+        TextFilterUtf8: TextFilterUtf8,
+        TemporallyUnresolvedUtf8: TemporallyUnresolvedUtf8);
 }
 
 /// <summary>

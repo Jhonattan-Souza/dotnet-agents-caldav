@@ -189,7 +189,8 @@ internal sealed record CalendarQuerySnapshotDraft(
     long RetainedBytes,
     ReadOnlyMemory<byte> TemporalEvaluationContextUtf8,
     ReadOnlyMemory<byte> AdditionalContextUtf8 = default,
-    ReadOnlyMemory<byte> TextFilterUtf8 = default)
+    ReadOnlyMemory<byte> TextFilterUtf8 = default,
+    ReadOnlyMemory<byte> TemporallyUnresolvedUtf8 = default)
 {
     internal CalendarQuerySnapshot CreateSnapshot(DateTimeOffset expiresAt) => new(
         Guid.NewGuid(),
@@ -199,5 +200,6 @@ internal sealed record CalendarQuerySnapshotDraft(
         RetainedBytes,
         TemporalEvaluationContextUtf8,
         AdditionalContextUtf8,
-        TextFilterUtf8);
+        TextFilterUtf8,
+        TemporallyUnresolvedUtf8);
 }

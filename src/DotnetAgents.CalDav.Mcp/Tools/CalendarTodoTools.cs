@@ -368,6 +368,7 @@ public sealed record CalendarTodoQuerySuccessResult(
     [property: JsonPropertyName("diagnostics")] IReadOnlyList<CalendarDiagnosticResult> Diagnostics,
     [property: JsonPropertyName("excludedIndeterminateCount")] int ExcludedIndeterminateCount,
     [property: JsonPropertyName("temporalEvaluationContext"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CalendarTemporalEvaluationContextResult? TemporalEvaluationContext,
+    [property: JsonPropertyName("temporallyUnresolved"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CalendarTemporallyUnresolvedResult? TemporallyUnresolved,
     [property: JsonPropertyName("pagination")] CalendarPagination Pagination);
 
 public sealed record CalendarTodoQueryErrorResult(

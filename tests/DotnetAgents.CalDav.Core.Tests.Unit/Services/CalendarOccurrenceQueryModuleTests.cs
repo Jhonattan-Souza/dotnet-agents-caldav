@@ -174,24 +174,50 @@ public sealed class CalendarOccurrenceQueryModuleTests
         provider.GetRequiredService<CalendarQuerySnapshotStore>().ActiveSnapshotCount.ShouldBe(0);
     }
 
-    [Theory]
-    [InlineData(true, QueryFailureCode.TemporalUnresolved)]
-    [InlineData(false, QueryFailureCode.RecurrenceUnevaluable)]
-    public async Task SemanticFailureIsAtomicAndPublishesNoPartialOccurrenceSnapshot(
-        bool unresolvedZone,
-        QueryFailureCode expectedCode)
+    [Fact]
+    public async Task UnevaluableRecurrenceIsAtomicAndPublishesNoPartialOccurrenceSnapshot()
     {
         const string calendarHref = "https://cal.example/calendars/work/";
-        var body = unresolvedZone ? UnknownZoneEvent() : UnevaluableEvent();
-        var transport = new OccurrenceTransport(calendarHref, [calendarHref + "event.ics"], _ => body);
+        var transport = new OccurrenceTransport(calendarHref, [calendarHref + "event.ics"], _ => UnevaluableEvent());
         await using var provider = CreateProvider(transport);
 
         var failure = (await provider.GetRequiredService<ICalendarQueryModule>().QueryOccurrencesAsync(
             new CalendarOccurrenceQueryRequest.Start(Query()),
             TestContext.Current.CancellationToken)).ShouldBeOfType<QueryReply<CalendarOccurrenceQueryItem>.Failure>();
 
-        failure.Error.Code.ShouldBe(expectedCode);
+        failure.Error.Code.ShouldBe(QueryFailureCode.RecurrenceUnevaluable);
         provider.GetRequiredService<CalendarQuerySnapshotStore>().ActiveSnapshotCount.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task TemporallyUnresolvedResourceIsExcludedAndDisclosedOnEveryPage()
+    {
+        const string calendarHref = "https://cal.example/calendars/work/";
+        var transport = new OccurrenceTransport(
+            calendarHref,
+            [calendarHref + "a.ics", calendarHref + "unknown-zone.ics", calendarHref + "b.ics"],
+            href => href.EndsWith("unknown-zone.ics", StringComparison.Ordinal)
+                ? UnknownZoneEvent()
+                : Event(href[(href.LastIndexOf('/') + 1)..^4], "fixture"));
+        await using var provider = CreateProvider(transport);
+        var module = provider.GetRequiredService<ICalendarQueryModule>();
+
+        var first = (await module.QueryOccurrencesAsync(
+            new CalendarOccurrenceQueryRequest.Start(Query(), PageSize: 1),
+            TestContext.Current.CancellationToken)).ShouldBeOfType<QueryReply<CalendarOccurrenceQueryItem>.Page>();
+        var second = (await module.QueryOccurrencesAsync(
+            new CalendarOccurrenceQueryRequest.Continue(first.Value.NextCursor!),
+            TestContext.Current.CancellationToken)).ShouldBeOfType<QueryReply<CalendarOccurrenceQueryItem>.Page>();
+
+        new[] { Href(first), Href(second) }.ShouldBe([calendarHref + "a.ics", calendarHref + "b.ics"]);
+        second.Value.NextCursor.ShouldBeNull();
+        foreach (var page in new[] { first, second })
+        {
+            var unresolved = page.Value.StructuredContent.GetProperty("temporallyUnresolved");
+            unresolved.GetProperty("count").GetInt32().ShouldBe(1);
+            unresolved.GetProperty("hrefs").EnumerateArray().Select(href => href.GetString())
+                .ShouldBe([calendarHref + "unknown-zone.ics"]);
+        }
     }
 
     private static CalendarOccurrenceQuery Query() => new(

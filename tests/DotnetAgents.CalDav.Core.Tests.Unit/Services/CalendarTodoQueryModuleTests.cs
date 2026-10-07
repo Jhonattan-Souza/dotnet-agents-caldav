@@ -180,6 +180,41 @@ public sealed class CalendarTodoQueryModuleTests
         provider.GetRequiredService<CalendarQuerySnapshotStore>().ActiveSnapshotCount.ShouldBe(0);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TemporallyUnresolvedTodosAreExcludedAndDisclosedAfterCompletionFiltering(bool windowed)
+    {
+        const string calendarHref = "https://cal.example/calendars/work/";
+        var transport = new TodoTransport(
+            calendarHref,
+            [calendarHref + "dated.ics", calendarHref + "unresolved-open.ics", calendarHref + "unresolved-done.ics"],
+            content: href => href.EndsWith("dated.ics", StringComparison.Ordinal)
+                ? Ics("BEGIN:VTODO\r\nUID:dated\r\nDTSTAMP:20260823T120000Z\r\nSUMMARY:Dated\r\n"
+                    + "DUE:20260824T130000Z\r\nEND:VTODO\r\n")
+                : Ics($"BEGIN:VTODO\r\nUID:{href[(href.LastIndexOf('/') + 1)..^4]}\r\nDTSTAMP:20260823T120000Z\r\n"
+                    + "DUE;TZID=Private/Unknown:20260824T130000\r\n"
+                    + (href.EndsWith("done.ics", StringComparison.Ordinal) ? "STATUS:COMPLETED\r\n" : string.Empty)
+                    + "END:VTODO\r\n"));
+        await using var provider = CreateProvider(transport);
+
+        var page = (await provider.GetRequiredService<ICalendarQueryModule>().QueryTodosAsync(
+            new CalendarTodoQueryRequest.Start(
+                new CalendarTodoQuery(
+                    CalendarEntityScope.All,
+                    From: windowed ? From : null,
+                    To: windowed ? To : null,
+                    EvaluationTimeZone: "UTC"),
+                [CalendarTodoProjectionField.Summary]),
+            CancellationToken.None)).ShouldBeOfType<QueryReply<CalendarTodoQueryPageItem>.Page>();
+
+        page.Value.Items.ShouldHaveSingleItem().Value.GetProperty("summary").GetString().ShouldBe("Dated");
+        var unresolved = page.Value.StructuredContent.GetProperty("temporallyUnresolved");
+        unresolved.GetProperty("count").GetInt32().ShouldBe(1);
+        unresolved.GetProperty("hrefs").EnumerateArray().Select(href => href.GetString())
+            .ShouldBe([calendarHref + "unresolved-open.ics"]);
+    }
+
     [Fact]
     public async Task GlobalOrderTraversesEquivalentlyAtEverySupportedRepresentativePageSize()
     {

@@ -87,7 +87,8 @@ internal sealed class CalendarTodoQueryStartExecutor(
             + diagnosticsUtf8.Length
             + temporalContextUtf8.Length
             + additionalContextUtf8.Length
-            + textFilterUtf8.Length;
+            + textFilterUtf8.Length
+            + evaluated.TemporallyUnresolvedUtf8.Length;
         var retainedFailure = CalendarQuerySnapshotPolicy.Validate(evaluated.Items.Length, retainedBytes);
         return retainedFailure is null
             ? CompletedCalendarTodoQuery.Success(
@@ -96,7 +97,8 @@ internal sealed class CalendarTodoQueryStartExecutor(
                 retainedBytes,
                 temporalContextUtf8,
                 additionalContextUtf8,
-                textFilterUtf8)
+                textFilterUtf8,
+                evaluated.TemporallyUnresolvedUtf8)
             : CompletedCalendarTodoQuery.Failure(retainedFailure);
     }
 
@@ -152,6 +154,7 @@ internal sealed record CompletedCalendarTodoQuery(
     ReadOnlyMemory<byte> TemporalEvaluationContextUtf8,
     ReadOnlyMemory<byte> AdditionalContextUtf8,
     ReadOnlyMemory<byte> TextFilterUtf8,
+    ReadOnlyMemory<byte> TemporallyUnresolvedUtf8,
     QueryFailure? Error)
 {
     internal static CompletedCalendarTodoQuery Success(
@@ -160,19 +163,22 @@ internal sealed record CompletedCalendarTodoQuery(
         long retainedBytes,
         ReadOnlyMemory<byte> temporalEvaluationContextUtf8,
         ReadOnlyMemory<byte> additionalContextUtf8,
-        ReadOnlyMemory<byte> textFilterUtf8) => new(
+        ReadOnlyMemory<byte> textFilterUtf8,
+        ReadOnlyMemory<byte> temporallyUnresolvedUtf8) => new(
         items,
         diagnosticsUtf8,
         retainedBytes,
         temporalEvaluationContextUtf8,
         additionalContextUtf8,
         textFilterUtf8,
+        temporallyUnresolvedUtf8,
         null);
 
     internal static CompletedCalendarTodoQuery Failure(QueryFailure error) => new(
         [],
         ReadOnlyMemory<byte>.Empty,
         0,
+        ReadOnlyMemory<byte>.Empty,
         ReadOnlyMemory<byte>.Empty,
         ReadOnlyMemory<byte>.Empty,
         ReadOnlyMemory<byte>.Empty,
@@ -184,5 +190,6 @@ internal sealed record CompletedCalendarTodoQuery(
         RetainedBytes,
         TemporalEvaluationContextUtf8,
         AdditionalContextUtf8,
-        TextFilterUtf8);
+        TextFilterUtf8,
+        TemporallyUnresolvedUtf8);
 }

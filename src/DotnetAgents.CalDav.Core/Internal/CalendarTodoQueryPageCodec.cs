@@ -88,6 +88,7 @@ internal sealed class CalendarTodoQueryPageCodec : ICalendarQueryPageCodec<Calen
             writer.WritePropertyName("temporalEvaluationContext");
             writer.WriteRawValue(snapshot.TemporalEvaluationContextUtf8.Span, skipInputValidation: true);
         }
+        CalendarTemporallyUnresolvedResources.Write(writer, snapshot.TemporallyUnresolvedUtf8);
         writer.WritePropertyName("pagination");
         writer.WriteStartObject();
         writer.WriteString("mode", "query_result_snapshot");

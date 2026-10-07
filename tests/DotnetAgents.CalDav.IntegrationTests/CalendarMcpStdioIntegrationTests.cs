@@ -611,8 +611,11 @@ public sealed class CalendarMcpStdioIntegrationTests
         var unresolvedHref = await PutResourceAsync("occurrence-unresolved.ics", Todo(
             "occurrence-unresolved", "DTSTART;TZID=Private/Unknown:20260816T100000\r\nDURATION:PT1H\r\n"));
         var unresolved = await CallOccurrenceAsync(client, "2026-08-16T00:00:00Z", "2026-08-17T00:00:00Z");
-        unresolved.IsError.ShouldBe(true);
-        unresolved.StructuredContent!.Value.GetProperty("code").GetString().ShouldBe("temporal_unresolved");
+        unresolved.IsError.ShouldNotBe(true);
+        var disclosure = unresolved.StructuredContent!.Value.GetProperty("temporallyUnresolved");
+        disclosure.GetProperty("count").GetInt32().ShouldBe(1);
+        disclosure.GetProperty("hrefs").EnumerateArray().ShouldHaveSingleItem().GetString()
+            .ShouldEndWith("/occurrence-unresolved.ics");
         await DeleteResourceAsync(unresolvedHref);
 
         var unevaluableHref = await PutResourceAsync("occurrence-unevaluable.ics", Todo(

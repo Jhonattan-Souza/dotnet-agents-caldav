@@ -272,8 +272,9 @@ public sealed partial class RadicaleConformanceHarnessTests(RadicaleConformanceF
                 DateTimeOffset.Parse("2026-08-16T00:00:00Z"),
                 DateTimeOffset.Parse("2026-08-17T00:00:00Z"),
                 "UTC")),
-            TestContext.Current.CancellationToken)).ShouldBeOfType<QueryReply<CalendarOccurrenceQueryItem>.Failure>();
-        unresolvedResult.Error.Code.ShouldBe(QueryFailureCode.TemporalUnresolved);
+            TestContext.Current.CancellationToken)).ShouldBeOfType<QueryReply<CalendarOccurrenceQueryItem>.Page>();
+        unresolvedResult.Value.StructuredContent.GetProperty("temporallyUnresolved").GetProperty("hrefs")
+            .EnumerateArray().ShouldHaveSingleItem().GetString().ShouldBe(unresolved.Href);
         await DeleteAsync(unresolved, TestContext.Current.CancellationToken);
 
         var unevaluable = await PutAndGetAsync(calendarHref, "unevaluable.ics", Event(
