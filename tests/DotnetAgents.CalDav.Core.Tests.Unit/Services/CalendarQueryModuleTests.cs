@@ -1576,11 +1576,7 @@ public sealed class CalendarQueryModuleTests
                 Now.AddDays(4))),
             CancellationToken.None);
 
-        if (expectedItems < 0)
-            reply.ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Failure>().Error.Code
-                .ShouldBe(QueryFailureCode.TemporalUnresolved);
-        else
-            reply.ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Page>().Value.Items.Count.ShouldBe(expectedItems);
+        reply.ShouldBeOfType<QueryReply<CalendarEntityQueryItem>.Page>().Value.Items.Count.ShouldBe(expectedItems);
     }
 
     [Theory]

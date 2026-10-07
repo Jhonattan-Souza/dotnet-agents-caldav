@@ -331,8 +331,14 @@ internal sealed record CompletedCalendarEntityQuery(
         temporallyUnresolvedUtf8,
         null);
 
-    internal static CompletedCalendarEntityQuery Failure(QueryFailure error) =>
-        new([], default, 0, default, default, default, error);
+    internal static CompletedCalendarEntityQuery Failure(QueryFailure error) => new(
+        [],
+        ReadOnlyMemory<byte>.Empty,
+        0,
+        ReadOnlyMemory<byte>.Empty,
+        ReadOnlyMemory<byte>.Empty,
+        ReadOnlyMemory<byte>.Empty,
+        error);
 
     internal CalendarQuerySnapshotDraft ToSnapshotDraft() => new(
         Items,
@@ -424,13 +430,6 @@ internal static class CalendarQueryFailures
         "A query candidate did not provide a strong Entity Tag.",
         false,
         QueryFailurePhase.TargetRevision);
-
-    internal static QueryFailure TemporalUnresolved() => new(
-        QueryFailureCode.TemporalUnresolved,
-        QueryFailureCategory.CapabilityAndProjection,
-        "Temporal evaluation could not be resolved.",
-        false,
-        QueryFailurePhase.CompleteResourceSemantics);
 
     internal static QueryFailure RecurrenceUnevaluable() => new(
         QueryFailureCode.RecurrenceUnevaluable,

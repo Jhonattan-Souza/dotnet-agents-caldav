@@ -278,7 +278,6 @@ public sealed class CalendarTodoToolsTests
     [InlineData(QueryFailureCode.UpstreamProtocolError, "upstream_protocol_error")]
     [InlineData(QueryFailureCode.UnsupportedCapability, "unsupported_capability")]
     [InlineData(QueryFailureCode.ConcurrencyUnavailable, "concurrency_unavailable")]
-    [InlineData(QueryFailureCode.TemporalUnresolved, "temporal_unresolved")]
     [InlineData(QueryFailureCode.RecurrenceUnevaluable, "recurrence_unevaluable")]
     [InlineData(QueryFailureCode.UpstreamUnavailable, "upstream_unavailable")]
     [InlineData(QueryFailureCode.UpstreamUnauthorized, "upstream_unauthorized")]

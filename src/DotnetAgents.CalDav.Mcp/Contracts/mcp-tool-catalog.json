@@ -5882,7 +5882,6 @@
             "upstream_protocol_error",
             "unsupported_capability",
             "concurrency_unavailable",
-            "temporal_unresolved",
             "recurrence_unevaluable",
             "upstream_unavailable",
             "upstream_unauthorized",

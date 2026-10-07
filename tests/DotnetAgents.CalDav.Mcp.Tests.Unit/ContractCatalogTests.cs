@@ -134,7 +134,7 @@ public sealed class ContractCatalogTests
         EnumValues(error["code"]!).ShouldBe([
             "invalid_input", "cursor_expired", "limit_exhausted", "busy", "payload_too_large",
             "upstream_protocol_error", "unsupported_capability", "concurrency_unavailable",
-            "temporal_unresolved", "recurrence_unevaluable", "upstream_unavailable",
+            "recurrence_unevaluable", "upstream_unavailable",
             "upstream_unauthorized", "upstream_forbidden", "upstream_rate_limited", "not_found",
             "ambiguous", "outside_scope"
         ]);

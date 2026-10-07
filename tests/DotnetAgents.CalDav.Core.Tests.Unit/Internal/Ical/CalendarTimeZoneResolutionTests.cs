@@ -126,15 +126,20 @@ public sealed class CalendarTimeZoneResolutionTests
         result.Items.ShouldHaveSingleItem().Timing.EvaluatedStartUtc!.Value.ShouldBe(expectedStartUtc);
     }
 
-    [Fact]
-    public void Evaluate_Davx5MinifiedZoneLeavesDaylightTimeItNoLongerDescribesUnresolved()
+    [Theory]
+    [InlineData("20171210T090000", "2017-12-01T00:00:00Z", "2018-01-01T00:00:00Z")]
+    [InlineData("20150601T090000", "2015-06-01T00:00:00Z", "2015-06-02T00:00:00Z")]
+    public void Evaluate_Davx5MinifiedZoneLeavesTimesItNoLongerDescribesUnresolved(
+        string localStart,
+        string from,
+        string to)
     {
         var result = Evaluate(
             Resource(
-                "DTSTART;TZID=America/Sao_Paulo:20171210T090000\r\nDURATION:PT1H\r\n",
+                $"DTSTART;TZID=America/Sao_Paulo:{localStart}\r\nDURATION:PT1H\r\n",
                 ClientTimeZone("davx5-4.5.20-ical4j-4.3.0-america-sao-paulo-minified.ics")),
-            "2017-12-01T00:00:00Z",
-            "2018-01-01T00:00:00Z");
+            from,
+            to);
 
         result.Code.ShouldBe(CalendarOccurrenceEvaluationCode.TemporalUnresolved);
         result.Items.ShouldBeEmpty();

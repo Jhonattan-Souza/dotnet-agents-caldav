@@ -214,7 +214,6 @@ internal static class CalendarTelemetryFacts
         QueryFailureCode.UpstreamProtocolError => CalendarTelemetryErrorCode.UpstreamProtocolError,
         QueryFailureCode.UnsupportedCapability => CalendarTelemetryErrorCode.UnsupportedCapability,
         QueryFailureCode.ConcurrencyUnavailable => CalendarTelemetryErrorCode.ConcurrencyUnavailable,
-        QueryFailureCode.TemporalUnresolved => CalendarTelemetryErrorCode.TemporalUnresolved,
         QueryFailureCode.RecurrenceUnevaluable => CalendarTelemetryErrorCode.RecurrenceUnevaluable,
         QueryFailureCode.UpstreamUnavailable => CalendarTelemetryErrorCode.UpstreamUnavailable,
         QueryFailureCode.UpstreamUnauthorized => CalendarTelemetryErrorCode.UpstreamUnauthorized,

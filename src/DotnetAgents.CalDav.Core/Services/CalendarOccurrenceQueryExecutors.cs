@@ -217,8 +217,14 @@ internal sealed record CompletedCalendarOccurrenceQuery(
         temporallyUnresolvedUtf8,
         null);
 
-    internal static CompletedCalendarOccurrenceQuery Failure(QueryFailure error) =>
-        new([], default, 0, default, default, default, error);
+    internal static CompletedCalendarOccurrenceQuery Failure(QueryFailure error) => new(
+        [],
+        ReadOnlyMemory<byte>.Empty,
+        0,
+        ReadOnlyMemory<byte>.Empty,
+        ReadOnlyMemory<byte>.Empty,
+        ReadOnlyMemory<byte>.Empty,
+        error);
 
     internal CalendarQuerySnapshotDraft ToSnapshotDraft() => new(
         Items,
