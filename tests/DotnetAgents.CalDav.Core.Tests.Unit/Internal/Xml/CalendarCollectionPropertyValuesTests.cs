@@ -105,16 +105,16 @@ public sealed class CalendarCollectionPropertyValuesTests
     }
 
     [Fact]
-    public void Collection_time_zone_carries_observances_across_its_fixed_window()
+    public void Collection_time_zone_runs_from_the_unix_era_into_the_current_recurring_rule()
     {
         var calendar = CalendarCollectionPropertyValues.SerializeTimeZone("America/New_York");
 
         calendar.ShouldContain("TZID:America/New_York\r\n");
-        calendar.ShouldContain("BEGIN:DAYLIGHT\r\n");
-        calendar.ShouldContain("BEGIN:STANDARD\r\n");
         calendar.ShouldContain("DTSTART:19700101T120000\r\n");
-        calendar.ShouldContain("RDATE:20990308T020000\r\n");
-        calendar.ShouldNotContain("RDATE:2100");
+        calendar.ShouldContain("RDATE:20070311T020000\r\n");
+        calendar.ShouldContain("BEGIN:STANDARD\r\nDTSTART:20071104T020000\r\nRRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU\r\n");
+        calendar.ShouldContain("BEGIN:DAYLIGHT\r\nDTSTART:20080309T020000\r\nRRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU\r\n");
+        calendar.ShouldNotContain("RDATE:2008");
         calendar.ShouldBe(CalendarCollectionPropertyValues.SerializeTimeZone("America/New_York"));
     }
 }

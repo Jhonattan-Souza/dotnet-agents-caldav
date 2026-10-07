@@ -23,13 +23,12 @@ internal sealed class CalendarRecurrenceUnevaluableException : Exception
     public CalendarRequestViolation? Violation { get; }
 }
 
-internal sealed record CalendarCreateRecurrenceAnalysis(bool IsUnbounded, DateTime LastLocalStart);
-
 internal static class CalendarCreateRecurrenceAnalyzer
 {
     public const int MaximumProfileOccurrences = 10_000;
 
-    public static CalendarCreateRecurrenceAnalysis Analyze(
+    /// <summary>Rejects a create recurrence rule that cannot be evaluated within the profile's occurrence limit.</summary>
+    public static void Validate(
         string rule,
         CalendarTemporalValue masterStart)
     {
@@ -52,7 +51,6 @@ internal static class CalendarCreateRecurrenceAnalyzer
                 .Take(maximumStarts)
                 .ToArray();
             EnsureProfileStarts(starts, nominalStart.Value);
-            return new CalendarCreateRecurrenceAnalysis(unbounded, starts[^1]);
         }
         catch (CalendarRecurrenceUnevaluableException)
         {

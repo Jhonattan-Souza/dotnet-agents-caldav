@@ -336,8 +336,8 @@ public sealed class CalendarTimeZoneResolutionTests
 
         content.Split("BEGIN:VTIMEZONE", StringSplitOptions.None).Length.ShouldBe(2);
         content.ShouldContain("PRODID:-//Example//EN\r\nBEGIN:VTIMEZONE\r\nTZID:Europe/Paris\r\n");
-        content.ShouldContain("BEGIN:STANDARD\r\nDTSTART:20260320T100000\r\n");
-        content.ShouldContain("BEGIN:DAYLIGHT\r\nDTSTART:20260329T020000\r\n");
+        content.ShouldContain("BEGIN:STANDARD\r\nDTSTART:19961027T030000\r\nRRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU\r\n");
+        content.ShouldContain("BEGIN:DAYLIGHT\r\nDTSTART:19970330T020000\r\nRRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU\r\n");
         content.ShouldContain("END:VTIMEZONE\r\nBEGIN:VEVENT\r\n");
     }
 

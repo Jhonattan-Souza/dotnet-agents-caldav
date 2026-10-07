@@ -668,8 +668,9 @@ public sealed partial class RadicaleConformanceHarnessTests(RadicaleConformanceF
             "pinned-unbounded-zone",
             "VEVENT");
         var unboundedContent = System.Text.Encoding.UTF8.GetString(unboundedZone.Snapshot!.AuthoritativeUtf8.Span);
-        unboundedContent.ShouldContain("RRULE:FREQ=YEARLY");
-        unboundedContent.ShouldContain("RDATE:9998");
+        unboundedContent.ShouldContain("RRULE:FREQ=YEARLY\r\n");
+        unboundedContent.ShouldContain("RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU\r\n");
+        unboundedContent.ShouldNotContain("RDATE:2008");
 
         var durationZone = await service.CreateEventAsync(
             new CalendarEventCreateRequest(

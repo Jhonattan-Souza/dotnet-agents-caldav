@@ -8,38 +8,28 @@ namespace DotnetAgents.CalDav.Core.Internal.Ical;
 
 internal static class CalendarCreateTimeZoneSerializer
 {
-    private static readonly Instant MaximumSupportedInstant = Instant.FromUtc(9999, 12, 31, 23, 59);
-    // A Calendar collection time zone has no temporal values to bound it. Midday avoids local
-    // transition gaps at the window edges; the window covers the Unix era through this century.
+    // A Calendar collection time zone has no temporal values to bound it. Midday avoids a local
+    // transition gap; the definition starts with the Unix era.
     private static readonly DateTime CollectionWindowStart = new(1970, 1, 1, 12, 0, 0, DateTimeKind.Unspecified);
-    private static readonly DateTime CollectionWindowEnd = new(2100, 1, 1, 12, 0, 0, DateTimeKind.Unspecified);
 
-    public static void AppendForEvent(StringBuilder destination, CalendarEventCreateFields fields)
-    {
-        var recurrence = Analyze(fields.RecurrenceSet?.Rule, fields.Start);
-        Append(destination, CollectEvent(fields, recurrence), fields.Start, recurrence);
-    }
+    public static void AppendForEvent(StringBuilder destination, CalendarEventCreateFields fields) =>
+        Append(destination, CollectEvent(fields));
 
-    public static void AppendForTodo(StringBuilder destination, CalendarTodoCreateFields fields)
-    {
-        var recurrence = Analyze(fields.RecurrenceSet?.Rule, fields.Start);
-        Append(destination, CollectTodo(fields, recurrence), fields.Start, recurrence);
-    }
+    public static void AppendForTodo(StringBuilder destination, CalendarTodoCreateFields fields) =>
+        Append(destination, CollectTodo(fields));
 
     /// <summary>Serializes one tzdb zone as the VCALENDAR required by CALDAV:calendar-timezone.</summary>
     public static string SerializeCollectionTimeZone(string timeZoneId) => new StringBuilder()
         .Append("BEGIN:VCALENDAR\r\n")
         .Append("VERSION:2.0\r\n")
         .Append("PRODID:-//dotnet-agents-caldav//EN\r\n")
-        .Append(SerializeZone(timeZoneId, CollectionWindowStart, CollectionWindowEnd, unbounded: false))
+        .Append(SerializeZone(timeZoneId, CollectionWindowStart))
         .Append("END:VCALENDAR\r\n")
         .ToString();
 
-    private static void Append(
-        StringBuilder destination,
-        IEnumerable<CalendarTemporalValue?> values,
-        CalendarTemporalValue? masterStart,
-        CalendarCreateRecurrenceAnalysis? recurrence)
+    // Each definition starts at its zone's earliest value and ends in the zone's never-ending rule, so later
+    // values, recurrences and durations need no further coverage.
+    private static void Append(StringBuilder destination, IEnumerable<CalendarTemporalValue?> values)
     {
         var zoneValues = values
             .Where(value => value?.Kind == CalendarTemporalKind.ZonedDateTime)
@@ -47,26 +37,7 @@ internal static class CalendarCreateTimeZoneSerializer
             .GroupBy(value => value.TimeZoneId!, StringComparer.Ordinal)
             .OrderBy(group => group.Key, StringComparer.Ordinal);
         foreach (var zone in zoneValues)
-            AppendZone(destination, zone, masterStart, recurrence);
-    }
-
-    private static CalendarCreateRecurrenceAnalysis? Analyze(
-        string? rule,
-        CalendarTemporalValue? masterStart) => rule is null || masterStart is null
-            ? null
-            : CalendarCreateRecurrenceAnalyzer.Analyze(rule, masterStart);
-
-    private static void AppendZone(
-        StringBuilder destination,
-        IGrouping<string, CalendarTemporalValue> zone,
-        CalendarTemporalValue? masterStart,
-        CalendarCreateRecurrenceAnalysis? recurrence)
-    {
-        var earliest = zone.Min(value => ParseLocal(value.Value));
-        var latest = zone.Max(value => ParseLocal(value.Value));
-        var isMasterZone = masterStart?.Kind == CalendarTemporalKind.ZonedDateTime
-            && string.Equals(masterStart.TimeZoneId, zone.Key, StringComparison.Ordinal);
-        destination.Append(SerializeZone(zone.Key, earliest, latest, isMasterZone && recurrence?.IsUnbounded == true));
+            destination.Append(SerializeZone(zone.Key, zone.Min(value => ParseLocal(value.Value))));
     }
 
     /// <summary>
@@ -77,46 +48,24 @@ internal static class CalendarCreateTimeZoneSerializer
     {
         var zone = DateTimeZoneProviders.Tzdb[timeZoneId];
         var earliest = LocalDateTime.FromDateTime(localValues.Min());
-        return SerializeZone(
-            timeZoneId,
-            zone,
-            earliest,
-            zone.AtLeniently(earliest).ToInstant(),
-            zone.AtLeniently(LocalDateTime.FromDateTime(localValues.Max())).ToInstant());
+        return SerializeZone(timeZoneId, zone, earliest, zone.AtLeniently(earliest).ToInstant());
     }
 
-    private static string SerializeZone(
-        string timeZoneId,
-        DateTime earliest,
-        DateTime latest,
-        bool unbounded)
+    private static string SerializeZone(string timeZoneId, DateTime earliest)
     {
         var zone = DateTimeZoneProviders.Tzdb[timeZoneId];
         var earliestLocal = LocalDateTime.FromDateTime(earliest);
-        var startInstant = zone.AtStrictly(earliestLocal).ToInstant();
-        var endInstant = unbounded
-            ? MaximumSupportedInstant
-            : zone.AtStrictly(LocalDateTime.FromDateTime(latest)).ToInstant();
-        return SerializeZone(timeZoneId, zone, earliestLocal, startInstant, endInstant);
+        return SerializeZone(timeZoneId, zone, earliestLocal, zone.AtStrictly(earliestLocal).ToInstant());
     }
 
     private static string SerializeZone(
         string timeZoneId,
         DateTimeZone zone,
         LocalDateTime earliestLocal,
-        Instant startInstant,
-        Instant endInstant)
+        Instant startInstant)
     {
-        if (endInstant <= startInstant)
-            endInstant = startInstant + Duration.FromSeconds(1);
-
-        var intervals = zone.GetZoneIntervals(startInstant, endInstant).ToArray();
-        var observances = new List<ZoneObservance>
-        {
-            ZoneObservance.Baseline(earliestLocal, intervals[0])
-        };
-        for (var index = 1; index < intervals.Length; index++)
-            observances.Add(ZoneObservance.Transition(intervals[index - 1], intervals[index]));
+        var tail = CalendarTimeZoneTail.Find(zone);
+        var observances = History(zone, tail, earliestLocal, startInstant);
 
         var content = new StringBuilder()
             .Append("BEGIN:VTIMEZONE\r\nTZID:").Append(EscapeText(timeZoneId)).Append("\r\n");
@@ -134,7 +83,39 @@ internal static class CalendarCreateTimeZoneSerializer
                 .Append("TZNAME:").Append(EscapeText(group.Key.Name)).Append("\r\n")
                 .Append("END:").Append(group.Key.ComponentName).Append("\r\n");
         }
+        foreach (var observance in tail.Observances.OrderBy(observance => observance.LocalStart))
+            AppendTailObservance(content, observance);
         return content.Append("END:VTIMEZONE\r\n").ToString();
+    }
+
+    /// <summary>Returns the exact onsets from the earliest value until the zone's never-ending rule begins.</summary>
+    private static List<ZoneObservance> History(
+        DateTimeZone zone,
+        ZoneTail tail,
+        LocalDateTime earliestLocal,
+        Instant startInstant)
+    {
+        if (tail.Start is not { } tailStart)
+            return [ZoneObservance.Baseline(earliestLocal, tail.Interval)];
+        if (startInstant >= tailStart)
+            return [];
+        var intervals = zone.GetZoneIntervals(startInstant, tailStart).ToArray();
+        var observances = new List<ZoneObservance> { ZoneObservance.Baseline(earliestLocal, intervals[0]) };
+        for (var index = 1; index < intervals.Length; index++)
+            observances.Add(ZoneObservance.Transition(intervals[index - 1], intervals[index]));
+        return observances;
+    }
+
+    private static void AppendTailObservance(StringBuilder content, ZoneTailObservance observance)
+    {
+        content.Append("BEGIN:").Append(observance.ComponentName).Append("\r\n")
+            .Append("DTSTART:").Append(FormatLocal(observance.LocalStart)).Append("\r\n");
+        if (observance.Rule is not null)
+            content.Append("RRULE:").Append(observance.Rule).Append("\r\n");
+        content.Append("TZOFFSETFROM:").Append(FormatOffset(observance.OffsetFrom)).Append("\r\n")
+            .Append("TZOFFSETTO:").Append(FormatOffset(observance.OffsetTo)).Append("\r\n")
+            .Append("TZNAME:").Append(EscapeText(observance.Name)).Append("\r\n")
+            .Append("END:").Append(observance.ComponentName).Append("\r\n");
     }
 
     private static string FormatLocal(LocalDateTime value) => value.ToString(
@@ -168,16 +149,10 @@ internal static class CalendarCreateTimeZoneSerializer
         CultureInfo.InvariantCulture,
         DateTimeStyles.None);
 
-    private static IEnumerable<CalendarTemporalValue?> CollectEvent(
-        CalendarEventCreateFields fields,
-        CalendarCreateRecurrenceAnalysis? recurrence = null)
+    private static IEnumerable<CalendarTemporalValue?> CollectEvent(CalendarEventCreateFields fields)
     {
         yield return fields.Start;
         yield return fields.End;
-        yield return ResolveDurationEnd(fields.Start, fields.Duration);
-        yield return ResolveLastStart(fields.Start, recurrence);
-        yield return ResolveLastExplicitEnd(fields.Start, fields.End, recurrence);
-        yield return ResolveLastDurationEnd(fields.Start, fields.Duration, recurrence);
         foreach (var value in CollectEventRecurrence(fields.RecurrenceSet))
             yield return value;
     }
@@ -199,16 +174,10 @@ internal static class CalendarCreateTimeZoneSerializer
         }
     }
 
-    private static IEnumerable<CalendarTemporalValue?> CollectTodo(
-        CalendarTodoCreateFields fields,
-        CalendarCreateRecurrenceAnalysis? recurrence = null)
+    private static IEnumerable<CalendarTemporalValue?> CollectTodo(CalendarTodoCreateFields fields)
     {
         yield return fields.Start;
         yield return fields.Due;
-        yield return ResolveDurationEnd(fields.Start, fields.Duration);
-        yield return ResolveLastStart(fields.Start, recurrence);
-        yield return ResolveLastExplicitEnd(fields.Start, fields.Due, recurrence);
-        yield return ResolveLastDurationEnd(fields.Start, fields.Duration, recurrence);
         foreach (var value in CollectTodoRecurrence(fields.RecurrenceSet))
             yield return value;
     }
@@ -228,46 +197,6 @@ internal static class CalendarCreateTimeZoneSerializer
             foreach (var value in CollectTodo(recurrenceOverride.Fields))
                 yield return value;
         }
-    }
-
-    private static CalendarTemporalValue? ResolveDurationEnd(
-        CalendarTemporalValue? start,
-        string? duration) => start?.Kind != CalendarTemporalKind.ZonedDateTime || duration is null
-            ? null
-            : CalendarDurationArithmetic.ResolveCreateEnd(start, duration);
-
-    private static CalendarTemporalValue? ResolveLastStart(
-        CalendarTemporalValue? start,
-        CalendarCreateRecurrenceAnalysis? recurrence) =>
-        start?.Kind != CalendarTemporalKind.ZonedDateTime || recurrence is null || recurrence.IsUnbounded
-            ? null
-            : start with
-            {
-                Value = recurrence.LastLocalStart.ToString(
-                    "yyyy-MM-dd'T'HH:mm:ss",
-                    CultureInfo.InvariantCulture)
-            };
-
-    private static CalendarTemporalValue? ResolveLastDurationEnd(
-        CalendarTemporalValue? start,
-        string? duration,
-        CalendarCreateRecurrenceAnalysis? recurrence)
-    {
-        var lastStart = ResolveLastStart(start, recurrence);
-        if (lastStart is null || duration is null)
-            return null;
-        return CalendarDurationArithmetic.ResolveCreateEnd(lastStart, duration);
-    }
-
-    private static CalendarTemporalValue? ResolveLastExplicitEnd(
-        CalendarTemporalValue? start,
-        CalendarTemporalValue? end,
-        CalendarCreateRecurrenceAnalysis? recurrence)
-    {
-        var lastStart = ResolveLastStart(start, recurrence);
-        if (start is null || end is null || lastStart is null)
-            return null;
-        return CalendarDurationArithmetic.ShiftCreateExplicitEnd(start, end, lastStart);
     }
 
     private sealed record ZoneObservance(LocalDateTime LocalStart, ZoneSignature Signature)
