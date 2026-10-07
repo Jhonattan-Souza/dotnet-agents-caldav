@@ -19,9 +19,13 @@ internal static class CalendarTimeZoneTail
     internal static ZoneTail Find(DateTimeZone zone)
     {
         var intervals = zone.GetZoneIntervals(Floor, Horizon).ToArray();
-        if (intervals.Length == 1)
-            return new ZoneTail(null, intervals[0], []);
-        return intervals[^1].HasEnd ? FindAlternating(intervals) : LastOffset(intervals);
+        if (intervals.Length > 1)
+            return intervals[^1].HasEnd ? FindAlternating(intervals) : LastOffset(intervals);
+        // A zone without onsets in the sampled range may still have settled on its offset before it.
+        var only = intervals[0];
+        return only.HasStart
+            ? LastOffset([zone.GetZoneInterval(only.Start - Duration.Epsilon), only])
+            : new ZoneTail(null, only, []);
     }
 
     // Also the fallback when no yearly rule fits before the horizon: the exact onsets then run up to it.
