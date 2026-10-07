@@ -505,7 +505,7 @@ internal static class CalendarEntityCreateValidator
         if (!HasRecurrenceData(rule, recurrenceDates, exceptionDates, hasOverrides))
             throw CalendarEntityViolations.RecurrenceDataRequired(CalendarEntityViolations.Fields);
         if (rule is not null)
-            _ = CalendarCreateRecurrenceAnalyzer.Analyze(rule, masterStart);
+            CalendarCreateRecurrenceAnalyzer.Validate(rule, masterStart);
         ValidateRecurrenceRule(rule);
         for (var index = 0; index < (recurrenceDates?.Count ?? 0); index++)
             ValidateRecurrenceDate(recurrenceDates![index], masterStart, CalendarEntityViolations.Item("rdates", index));

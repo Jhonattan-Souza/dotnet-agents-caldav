@@ -132,7 +132,7 @@ public sealed class CalendarCreateTimeZoneSerializerTests
     }
 
     [Fact]
-    public void SerializeEvent_ExplicitEndHorizonIncludesLastOccurrenceSpringTransition()
+    public void SerializeEvent_LastOccurrenceExplicitEndResolvesAcrossTheSpringTransition()
     {
         var bytes = CalendarEntityCreateSerializer.SerializeEvent(
             "explicit-end-horizon",
@@ -143,7 +143,6 @@ public sealed class CalendarCreateTimeZoneSerializerTests
                     Rule: "FREQ=WEEKLY;COUNT=2")),
             DateTimeOffset.Parse("2000-01-01T00:00:00Z"));
 
-        Encoding.UTF8.GetString(ExtractTimeZone(bytes)).ShouldContain("20260308T020000");
         AssertOccurrence(
             Evaluate(bytes, "2026-03-08T06:29:59Z", "2026-03-08T08:30:01Z"),
             "2026-03-08T06:30:00Z",
@@ -152,7 +151,7 @@ public sealed class CalendarCreateTimeZoneSerializerTests
     }
 
     [Fact]
-    public void SerializeTodo_ExplicitDueHorizonIncludesLastOccurrenceFallTransition()
+    public void SerializeTodo_LastOccurrenceExplicitDueResolvesAcrossTheFallTransition()
     {
         var bytes = CalendarEntityCreateSerializer.SerializeTodo(
             "explicit-due-horizon",
@@ -163,7 +162,6 @@ public sealed class CalendarCreateTimeZoneSerializerTests
                     Rule: "FREQ=WEEKLY;COUNT=2")),
             DateTimeOffset.Parse("2000-01-01T00:00:00Z"));
 
-        Encoding.UTF8.GetString(ExtractTimeZone(bytes)).ShouldContain("20261101T020000");
         AssertOccurrence(
             Evaluate(bytes, "2026-11-01T04:29:59Z", "2026-11-01T07:30:01Z"),
             "2026-11-01T04:30:00Z",
@@ -171,24 +169,63 @@ public sealed class CalendarCreateTimeZoneSerializerTests
             "2026-11-01T02:30:00");
     }
 
-    [Fact]
-    public void SerializeEvent_UntilHorizonCoversTheFinalYearOfAYearlyByDayRule()
+    // Radicale reuses a stored VTIMEZONE for later resources that name the same TZID without one, so the
+    // definition must stay correct beyond the values that produced it.
+    [Theory]
+    [InlineData("Europe/Paris", "2026-03-08T15:00:00", "20310701T100000", "2031-07-01T08:00:00Z")]
+    [InlineData("America/New_York", "2026-01-10T09:00:00", "20280701T100000", "2028-07-01T14:00:00Z")]
+    public void SerializeEvent_ZoneKeepsTheCurrentRuleBeyondItsValues(
+        string timeZoneId,
+        string createdLocal,
+        string laterLocal,
+        string expectedLaterUtc)
     {
+        var start = new CalendarTemporalValue(CalendarTemporalKind.ZonedDateTime, createdLocal, timeZoneId);
         var bytes = CalendarEntityCreateSerializer.SerializeEvent(
-            "until-horizon",
-            new CalendarEventCreateFields(
-                Start: Zoned("2024-03-17T10:00:00"),
-                End: Zoned("2024-03-17T11:00:00"),
-                RecurrenceSet: new CalendarEventRecurrenceSetCreate(
-                    Rule: "FREQ=YEARLY;BYMONTH=3;BYDAY=3SU;UNTIL=20260315T140000Z")),
+            "rule-horizon",
+            new CalendarEventCreateFields(Start: start, Duration: "PT1H"),
             DateTimeOffset.Parse("2000-01-01T00:00:00Z"));
+        var later = Encoding.UTF8.GetBytes(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\n"
+            + Encoding.UTF8.GetString(ExtractTimeZone(bytes))
+            + $"BEGIN:VEVENT\r\nUID:later\r\nDTSTAMP:20260815T120000Z\r\nDTSTART;TZID={timeZoneId}:{laterLocal}\r\n"
+            + "DURATION:PT1H\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n");
 
-        Encoding.UTF8.GetString(ExtractTimeZone(bytes)).ShouldContain("20260308T020000");
-        AssertOccurrence(
-            Evaluate(bytes, "2026-03-15T13:59:59Z", "2026-03-15T15:00:01Z"),
-            "2026-03-15T14:00:00Z",
-            "2026-03-15T15:00:00Z",
-            "2026-03-15T11:00:00");
+        var result = Evaluate(later, "2027-01-01T00:00:00Z", "2032-01-01T00:00:00Z");
+
+        result.Code.ShouldBe(CalendarOccurrenceEvaluationCode.Success);
+        result.Items.ShouldHaveSingleItem().Timing.EvaluatedStartUtc!.Value.ShouldBe(expectedLaterUtc);
+    }
+
+    [Fact]
+    public void SerializeForLocalValues_EveryTzdbZoneAgreesWithTzdbLongAfterItsValue()
+    {
+        var mismatches = new List<string>();
+        foreach (var id in NodaTime.DateTimeZoneProviders.Tzdb.Ids)
+        {
+            var zone = NodaTime.DateTimeZoneProviders.Tzdb[id];
+            var definition = CalendarCreateTimeZoneSerializer.SerializeForLocalValues(
+                id,
+                [new DateTime(2026, 3, 8, 15, 0, 0)]);
+            foreach (var local in new[] { "20400115T120000", "20400715T120000", "20990115T120000", "20990715T120000" })
+            {
+                var bytes = Encoding.UTF8.GetBytes(
+                    "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\n" + definition
+                    + $"BEGIN:VEVENT\r\nUID:zone\r\nDTSTAMP:20260815T120000Z\r\nDTSTART;TZID={id}:{local}\r\n"
+                    + "DURATION:PT1H\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n");
+                var expected = zone.AtLeniently(NodaTime.Text.LocalDateTimePattern
+                        .CreateWithInvariantCulture("yyyyMMdd'T'HHmmss").Parse(local).Value)
+                    .ToInstant().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", null);
+                var result = Evaluate(bytes, "2040-01-01T00:00:00Z", "2100-01-01T00:00:00Z");
+                var actual = result.Code == CalendarOccurrenceEvaluationCode.Success
+                    ? result.Items.Single().Timing.EvaluatedStartUtc!.Value
+                    : result.Code.ToString();
+                if (actual != expected)
+                    mismatches.Add($"{id} {local}: {actual} != {expected}");
+            }
+        }
+
+        mismatches.ShouldBeEmpty();
     }
 
     private static CalendarOccurrenceEvaluation Evaluate(byte[] bytes, string from, string to)

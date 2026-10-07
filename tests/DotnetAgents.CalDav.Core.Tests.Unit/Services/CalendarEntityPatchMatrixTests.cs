@@ -608,13 +608,14 @@ public sealed class CalendarEntityPatchMatrixTests
         eventExecution.Result.Code.ShouldBe(CalendarEntityPatchCode.Success);
         eventExecution.Outbound.ShouldContain(
             "PRODID:-//fixture//EN\r\nBEGIN:VTIMEZONE\r\nTZID:America/Sao_Paulo\r\nBEGIN:STANDARD\r\n"
-            + "DTSTART:20260821T103000\r\nTZOFFSETFROM:-0300\r\nTZOFFSETTO:-0300\r\nTZNAME:-03\r\n"
+            + "DTSTART:20190217T000000\r\nTZOFFSETFROM:-0200\r\nTZOFFSETTO:-0300\r\nTZNAME:-03\r\n"
             + "END:STANDARD\r\nEND:VTIMEZONE\r\nBEGIN:VEVENT\r\n");
         eventExecution.Outbound.ShouldContain("DTSTART;TZID=America/Sao_Paulo:20260821T103000\r\n");
         eventExecution.Outbound.ShouldContain("DTEND;TZID=America/Sao_Paulo:20260821T113000\r\n");
         todoExecution.Result.Code.ShouldBe(CalendarEntityPatchCode.Success);
         todoExecution.Outbound.ShouldContain("DUE;TZID=Europe/London:20260821T120000\r\n");
-        todoExecution.Outbound.ShouldContain("BEGIN:VTIMEZONE\r\nTZID:Europe/London\r\nBEGIN:DAYLIGHT\r\n");
+        todoExecution.Outbound.ShouldContain("BEGIN:VTIMEZONE\r\nTZID:Europe/London\r\nBEGIN:STANDARD\r\n"
+            + "DTSTART:19961027T020000\r\nRRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU\r\n");
         customExecution.Result.Code.ShouldBe(CalendarEntityPatchCode.InvalidInput);
         customExecution.Outbound.ShouldBeEmpty();
     }
